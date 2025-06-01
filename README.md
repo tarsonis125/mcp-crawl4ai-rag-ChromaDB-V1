@@ -43,7 +43,7 @@ Archon serves as a bridge between your documentation and your AI coding assistan
 - **Easy Connection**: Get connection details directly from the web UI
 - **Real-time Access**: Your AI agents get immediate access to newly added knowledge
 
-### �� Web Interface
+### 🖥 Web Interface
 - **MCP Dashboard**: Monitor server status, view real-time logs, and get connection configuration
 - **Server Management**: Start/stop the MCP server with one click, see uptime and status
 - **Settings Page**: Configure credentials (OpenAI API key) and RAG strategies through an intuitive UI
@@ -258,3 +258,105 @@ Archon is designed to grow with the community's needs. We welcome contributions 
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Integration with MCP Clients
+
+The Archon MCP server supports both **SSE** and **stdio** transports, making it compatible with various MCP clients:
+
+### Transport Selection
+
+You can choose the transport method through the MCP Dashboard:
+1. Open the MCP Dashboard at `http://localhost:3737`
+2. Navigate to the MCP Control page  
+3. In the "Transport Configuration" section, select:
+   - **SSE (Web)**: For web-based integrations and dashboard control
+   - **Stdio (Cursor/Claude)**: For standard MCP clients like Cursor, Claude Desktop, etc.
+
+### SSE Configuration
+
+Use SSE transport for web-based clients and dashboard integration:
+
+```json
+{
+  "mcpServers": {
+    "archon": {
+      "transport": "sse",
+      "url": "http://localhost:8051/sse"
+    }
+  }
+}
+```
+
+**Note for Windsurf users**: Use `serverUrl` instead of `url`:
+```json
+{
+  "mcpServers": {
+    "archon": {
+      "transport": "sse", 
+      "serverUrl": "http://localhost:8051/sse"
+    }
+  }
+}
+```
+
+### Stdio Configuration
+
+Use stdio transport for Cursor, Claude Desktop, and other standard MCP clients:
+
+```json
+{
+  "mcpServers": {
+    "archon": {
+      "command": "docker",
+      "args": [
+        "run", "--rm", "-i",
+        "--network", "mcp-crawl4ai-rag-ui_app-network",
+        "-e", "TRANSPORT=stdio",
+        "-e", "OPENAI_API_KEY",
+        "-e", "SUPABASE_URL", 
+        "-e", "SUPABASE_SERVICE_KEY",
+        "mcp-crawl4ai-rag-ui-backend"
+      ],
+      "env": {
+        "OPENAI_API_KEY": "your_openai_api_key",
+        "SUPABASE_URL": "your_supabase_url",
+        "SUPABASE_SERVICE_KEY": "your_supabase_service_key"
+      }
+    }
+  }
+}
+```
+
+Add this to your MCP client configuration file:
+- **Cursor**: `~/.cursor/mcp.json`
+- **Claude Desktop**: Platform-specific MCP configuration file
+
+### Alternative Stdio Setup (Python)
+
+For development or direct Python execution:
+
+```json
+{
+  "mcpServers": {
+    "archon": {
+      "command": "python",
+      "args": ["path/to/archon/src/crawl4ai_mcp.py"],
+      "env": {
+        "TRANSPORT": "stdio",
+        "OPENAI_API_KEY": "your_openai_api_key",
+        "SUPABASE_URL": "your_supabase_url",
+        "SUPABASE_SERVICE_KEY": "your_supabase_service_key"
+      }
+    }
+  }
+}
+```
+
+### Transport Switching
+
+To switch between transports:
+1. **Via UI**: Use the transport selection radio buttons in the MCP Dashboard
+2. **Via Environment**: Set the `TRANSPORT` environment variable to `sse` or `stdio`
+3. **Via API**: Update the transport credential through the credentials API
+
+The server will use the selected transport on the next restart.

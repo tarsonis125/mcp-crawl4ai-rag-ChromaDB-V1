@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Play, Square, Copy, Clock, Server, AlertCircle, CheckCircle, Loader, Trash2, Wrench, Code, ExternalLink, PlayCircle, Terminal } from 'lucide-react';
+import { Play, Square, Copy, Clock, Server, AlertCircle, CheckCircle, Loader, Trash2, Wrench, Code, ExternalLink, PlayCircle, Terminal, Radio } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -21,6 +21,7 @@ export const MCPPage = () => {
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [toolsError, setToolsError] = useState<string | null>(null);
+  const [selectedTransport, setSelectedTransport] = useState<'sse' | 'stdio'>('sse');
   const logsEndRef = useRef<HTMLDivElement>(null);
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const statusPollInterval = useRef<NodeJS.Timeout | null>(null);
@@ -134,6 +135,7 @@ export const MCPPage = () => {
   const handleStartServer = async () => {
     try {
       setIsStarting(true);
+      await updateTransport(selectedTransport);
       const response = await mcpService.startServer();
       showToast(response.message, 'success');
       // Immediately refresh status
@@ -193,19 +195,58 @@ export const MCPPage = () => {
     showToast('Configuration copied to clipboard', 'success');
   };
 
+  const updateTransport = async (transport: 'sse' | 'stdio') => {
+    try {
+      const baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
+      await fetch(`${baseUrl}/api/credentials/TRANSPORT`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: transport })
+      });
+    } catch (error) {
+      console.error('Failed to update transport:', error);
+    }
+  };
+
   const getConfigDisplay = () => {
     if (!config) return '';
     
-    const configObj = {
-      mcpServers: {
-        archon: {
-          transport: config.transport,
-          url: `http://${config.host}:${config.port}/${config.transport}`
+    if (selectedTransport === 'sse') {
+      // SSE configuration for web-based clients
+      const sseConfig = {
+        mcpServers: {
+          archon: {
+            transport: "sse",
+            url: `http://${config.host}:${config.port}/sse`
+          }
         }
-      }
-    };
-    
-    return JSON.stringify(configObj, null, 2);
+      };
+      return JSON.stringify(sseConfig, null, 2);
+    } else {
+      // Stdio configuration for Cursor/Claude Desktop
+      const stdioConfig = {
+        mcpServers: {
+          archon: {
+            command: "docker",
+            args: [
+              "run", "--rm", "-i",
+              "--network", "mcp-crawl4ai-rag-ui_app-network",
+              "-e", "TRANSPORT=stdio",
+              "-e", "OPENAI_API_KEY",
+              "-e", "SUPABASE_URL", 
+              "-e", "SUPABASE_SERVICE_KEY",
+              "mcp-crawl4ai-rag-ui-backend"
+            ],
+            env: {
+              OPENAI_API_KEY: "your_openai_api_key",
+              SUPABASE_URL: "your_supabase_url",
+              SUPABASE_SERVICE_KEY: "your_supabase_service_key"
+            }
+          }
+        }
+      };
+      return JSON.stringify(stdioConfig, null, 2);
+    }
   };
 
   const formatUptime = (seconds: number): string => {
@@ -437,14 +478,45 @@ export const MCPPage = () => {
             {serverStatus.status === 'running' && config && (
               <div className="border-t border-gray-200 dark:border-zinc-800 pt-4">
                 <h3 className="text-sm font-medium text-gray-700 dark:text-zinc-300 mb-3">
-                  Connection Configuration
+                  Transport Configuration
                 </h3>
+                
+                {/* Transport Selection */}
+                <div className="mb-4">
+                  <div className="flex gap-4 mb-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="transport"
+                        value="sse"
+                        checked={selectedTransport === 'sse'}
+                        onChange={(e) => setSelectedTransport(e.target.value as 'sse')}
+                        className="text-blue-500"
+                      />
+                      <span className="text-sm text-gray-700 dark:text-zinc-300">SSE (Web)</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="transport"
+                        value="stdio"
+                        checked={selectedTransport === 'stdio'}
+                        onChange={(e) => setSelectedTransport(e.target.value as 'stdio')}
+                        className="text-blue-500"
+                      />
+                      <span className="text-sm text-gray-700 dark:text-zinc-300">Stdio (Cursor/Claude)</span>
+                    </label>
+                  </div>
+                </div>
+
                 <div className="bg-gray-50 dark:bg-black/50 rounded-lg p-4 font-mono text-sm relative">
                   <pre className="text-gray-600 dark:text-zinc-400 whitespace-pre-wrap">
                     {getConfigDisplay()}
                   </pre>
                   <p className="text-xs text-gray-500 dark:text-zinc-500 mt-3 font-sans">
-                    Add this to your MCP client configuration (e.g., ~/.cursor/mcp.json)
+                    {selectedTransport === 'sse' 
+                      ? 'Add this to your web-based MCP client configuration'
+                      : 'Add this to your MCP client configuration (e.g., ~/.cursor/mcp.json)'}
                   </p>
                 </div>
                 <Button
@@ -490,7 +562,6 @@ export const MCPPage = () => {
                 onClick={handleClearLogs}
                 disabled={logs.length === 0}
               >
-                <Trash2 className="w-4 h-4 mr-1" />
                 Clear Logs
               </Button>
             </div>
@@ -547,9 +618,9 @@ export const MCPPage = () => {
                 disabled={isLoadingTools}
               >
                 {isLoadingTools ? (
-                  <Loader className="w-4 h-4 mr-1 animate-spin" />
+                  <Loader className="w-4 h-4 mr-1 animate-spin inline" />
                 ) : (
-                  <ExternalLink className="w-4 h-4 mr-1" />
+                  <ExternalLink className="w-4 h-4 mr-1 inline" />
                 )}
                 Refresh Tools
               </Button>
@@ -739,12 +810,12 @@ export const MCPPage = () => {
                   >
                     {isTestingTool ? (
                       <>
-                        <Loader className="w-4 h-4 mr-2 animate-spin" />
+                        <Loader className="w-4 h-4 mr-2 animate-spin inline" />
                         Testing...
                       </>
                     ) : (
                       <>
-                        <PlayCircle className="w-4 h-4 mr-2" />
+                        <PlayCircle className="w-4 h-4 mr-2 inline" />
                         Test Tool
                       </>
                     )}

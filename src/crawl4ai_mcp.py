@@ -1106,12 +1106,21 @@ async def crawl_recursive_internal_links(crawler: AsyncWebCrawler, start_urls: L
 
 async def main():
     transport = os.getenv("TRANSPORT", "sse")
+    host = os.getenv("HOST", "localhost")
+    port = int(os.getenv("PORT", "8051"))
+    
+    print(f"Starting MCP server with transport: {transport}")
+    
     if transport == 'sse':
-        # Run the MCP server with sse transport
+        # Run the MCP server with SSE transport (host/port already set in FastMCP constructor)
+        print(f"SSE server will be available at: http://{host}:{port}/sse")
         await mcp.run_sse_async()
-    else:
+    elif transport == 'stdio':
         # Run the MCP server with stdio transport
+        print("Stdio server ready for MCP client connections")
         await mcp.run_stdio_async()
+    else:
+        raise ValueError(f"Unsupported transport: {transport}. Use 'sse' or 'stdio'")
 
 if __name__ == "__main__":
     asyncio.run(main())

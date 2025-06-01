@@ -12,7 +12,7 @@ services:
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
       - HOST=${HOST:-localhost}
       - PORT=${PORT:-8051}
-      - TRANSPORT=${TRANSPORT:-stdio}
+      - TRANSPORT=${TRANSPORT:-sse}
       - MODEL_CHOICE=${MODEL_CHOICE:-gpt-4o-mini}
       - USE_CONTEXTUAL_EMBEDDINGS=${USE_CONTEXTUAL_EMBEDDINGS:-false}
       - USE_HYBRID_SEARCH=${USE_HYBRID_SEARCH:-false}
