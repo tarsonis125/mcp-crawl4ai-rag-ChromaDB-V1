@@ -10,9 +10,64 @@ from urllib.parse import urlparse
 import openai
 import re
 import time
+import asyncio
 
-# Load OpenAI API key for embeddings
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# OpenAI client will be configured dynamically when needed
+
+async def get_openai_api_key() -> Optional[str]:
+    """
+    Get the decrypted OpenAI API key from the credential service.
+    
+    Returns:
+        Decrypted OpenAI API key or None if not available
+    """
+    try:
+        from src.credential_service import credential_service
+        return await credential_service.get_credential('OPENAI_API_KEY', decrypt=True)
+    except Exception as e:
+        print(f"Error getting OpenAI API key from credential service: {e}")
+        # Fallback to environment variable
+        return os.getenv("OPENAI_API_KEY")
+
+def get_openai_api_key_sync() -> Optional[str]:
+    """
+    Synchronous version of get_openai_api_key for use in non-async contexts.
+    
+    Returns:
+        Decrypted OpenAI API key or None if not available
+    """
+    try:
+        print("Attempting to get OpenAI API key...")
+        
+        # Try to get from credential service directly (sync approach)
+        from src.credential_service import credential_service
+        
+        # Check if we have cached credentials
+        if hasattr(credential_service, '_cache') and credential_service._cache_initialized:
+            cached_value = credential_service._cache.get('OPENAI_API_KEY')
+            if isinstance(cached_value, dict) and cached_value.get("is_encrypted"):
+                encrypted_value = cached_value.get("encrypted_value")
+                if encrypted_value:
+                    try:
+                        decrypted_key = credential_service._decrypt_value(encrypted_value)
+                        print(f"Retrieved from cached credentials: {'***' if decrypted_key else 'None'}")
+                        return decrypted_key
+                    except Exception as decrypt_error:
+                        print(f"Error decrypting cached credential: {decrypt_error}")
+            elif cached_value:
+                print(f"Retrieved plain text from cache: {'***' if cached_value else 'None'}")
+                return cached_value
+        
+        # If no cached credentials, try environment variable
+        env_key = os.getenv("OPENAI_API_KEY")
+        print(f"Fallback to environment variable: {'***' if env_key else 'None'}")
+        return env_key
+        
+    except Exception as e:
+        print(f"Error getting OpenAI API key: {e}")
+        env_key = os.getenv("OPENAI_API_KEY")
+        print(f"Final fallback to environment: {'***' if env_key else 'None'}")
+        return env_key
 
 def get_supabase_client() -> Client:
     """
@@ -42,12 +97,24 @@ def create_embeddings_batch(texts: List[str]) -> List[List[float]]:
     if not texts:
         return []
     
+    # Get the decrypted API key
+    api_key = get_openai_api_key_sync()
+    if not api_key:
+        print("Error: No OpenAI API key available")
+        return [[0.0] * 1536 for _ in texts]
+    
+    # Debug logging (redacted key)
+    print(f"Using OpenAI API key: {api_key[:8]}...{api_key[-4:] if len(api_key) > 8 else '***'}")
+    
+    # Create OpenAI client with the decrypted key
+    client = openai.OpenAI(api_key=api_key)
+    
     max_retries = 3
     retry_delay = 1.0  # Start with 1 second delay
     
     for retry in range(max_retries):
         try:
-            response = openai.embeddings.create(
+            response = client.embeddings.create(
                 model="text-embedding-3-small", # Hardcoding embedding model for now, will change this later to be more dynamic
                 input=texts
             )
@@ -67,7 +134,7 @@ def create_embeddings_batch(texts: List[str]) -> List[List[float]]:
                 
                 for i, text in enumerate(texts):
                     try:
-                        individual_response = openai.embeddings.create(
+                        individual_response = client.embeddings.create(
                             model="text-embedding-3-small",
                             input=[text]
                         )
@@ -112,6 +179,15 @@ def generate_contextual_embedding(full_document: str, chunk: str) -> Tuple[str, 
         - The contextual text that situates the chunk within the document
         - Boolean indicating if contextual embedding was performed
     """
+    # Get the decrypted API key
+    api_key = get_openai_api_key_sync()
+    if not api_key:
+        print("Error: No OpenAI API key available for contextual embedding")
+        return chunk, False
+    
+    # Create OpenAI client with the decrypted key
+    client = openai.OpenAI(api_key=api_key)
+    
     model_choice = os.getenv("MODEL_CHOICE")
     
     try:
@@ -126,7 +202,7 @@ Here is the chunk we want to situate within the whole document
 Please give a short succinct context to situate this chunk within the overall document for the purposes of improving search retrieval of the chunk. Answer only with the succinct context and nothing else."""
 
         # Call the OpenAI API to generate contextual information
-        response = openai.chat.completions.create(
+        response = client.chat.completions.create(
             model=model_choice,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that provides concise contextual information."},
@@ -449,6 +525,15 @@ def generate_code_example_summary(code: str, context_before: str, context_after:
     Returns:
         A summary of what the code example demonstrates
     """
+    # Get the decrypted API key
+    api_key = get_openai_api_key_sync()
+    if not api_key:
+        print("Error: No OpenAI API key available for code example summary")
+        return "Code example for demonstration purposes."
+    
+    # Create OpenAI client with the decrypted key
+    client = openai.OpenAI(api_key=api_key)
+    
     model_choice = os.getenv("MODEL_CHOICE")
     
     # Create the prompt
@@ -468,7 +553,7 @@ Based on the code example and its surrounding context, provide a concise summary
 """
     
     try:
-        response = openai.chat.completions.create(
+        response = client.chat.completions.create(
             model=model_choice,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that provides concise code example summaries."},
@@ -635,7 +720,7 @@ def extract_source_summary(source_id: str, content: str, max_length: int = 500) 
     
     Args:
         source_id: The source ID (domain)
-        content: The content to extract a summary from
+        content: the content to extract a summary from
         max_length: Maximum length of the summary
         
     Returns:
@@ -646,6 +731,15 @@ def extract_source_summary(source_id: str, content: str, max_length: int = 500) 
     
     if not content or len(content.strip()) == 0:
         return default_summary
+    
+    # Get the decrypted API key
+    api_key = get_openai_api_key_sync()
+    if not api_key:
+        print(f"Error: No OpenAI API key available for source summary generation for {source_id}")
+        return default_summary
+    
+    # Create OpenAI client with the decrypted key
+    client = openai.OpenAI(api_key=api_key)
     
     # Get the model choice from environment variables
     model_choice = os.getenv("MODEL_CHOICE")
@@ -663,7 +757,7 @@ The above content is from the documentation for '{source_id}'. Please provide a 
     
     try:
         # Call the OpenAI API to generate the summary
-        response = openai.chat.completions.create(
+        response = client.chat.completions.create(
             model=model_choice,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that provides concise library/tool/framework summaries."},

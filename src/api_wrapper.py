@@ -458,6 +458,40 @@ class MCPServerManager:
 # Global instances
 mcp_manager = MCPServerManager()
 
+# WebSocket connection manager
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+    
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+    
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+    
+    async def send_personal_message(self, message: str, websocket: WebSocket):
+        try:
+            await websocket.send_text(message)
+        except:
+            self.disconnect(websocket)
+    
+    async def broadcast(self, message: dict):
+        disconnected = []
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except:
+                disconnected.append(connection)
+        
+        # Remove disconnected clients
+        for conn in disconnected:
+            self.disconnect(conn)
+
+# Global connection manager
+manager = ConnectionManager()
+
 
 # Lifespan manager
 @asynccontextmanager
@@ -583,10 +617,6 @@ async def websocket_log_stream(websocket: WebSocket):
 async def crawl_single_page(request: CrawlSingleRequest):
     """Crawl a single page."""
     try:
-        # Ensure crawling context is initialized
-        if not crawling_context._initialized:
-            await crawling_context.initialize()
-        
         # Create context for the MCP function
         ctx = crawling_context.create_context()
         
@@ -606,10 +636,6 @@ async def crawl_single_page(request: CrawlSingleRequest):
 async def smart_crawl_url(request: SmartCrawlRequest):
     """Smart crawl a URL."""
     try:
-        # Ensure crawling context is initialized
-        if not crawling_context._initialized:
-            await crawling_context.initialize()
-        
         # Create context for the MCP function
         ctx = crawling_context.create_context()
         
@@ -636,7 +662,7 @@ async def smart_crawl_url(request: SmartCrawlRequest):
 async def perform_rag_query(request: RAGQueryRequest):
     """Perform a RAG query."""
     try:
-        # Ensure crawling context is initialized
+        # Ensure crawling context is initialized once
         if not crawling_context._initialized:
             await crawling_context.initialize()
         
@@ -664,7 +690,7 @@ async def perform_rag_query(request: RAGQueryRequest):
 async def get_available_sources():
     """Get available sources."""
     try:
-        # Ensure crawling context is initialized
+        # Ensure crawling context is initialized once
         if not crawling_context._initialized:
             await crawling_context.initialize()
         
@@ -934,7 +960,7 @@ async def get_knowledge_items(
 ):
     """Get knowledge items with pagination and filtering."""
     try:
-        # Ensure crawling context is initialized
+        # Ensure crawling context is initialized once  
         if not crawling_context._initialized:
             await crawling_context.initialize()
         
@@ -1038,7 +1064,7 @@ async def crawl_knowledge_item(request: KnowledgeItemRequest):
             'chunk_size': 5000
         }
         
-        # Ensure crawling context is initialized
+        # Ensure crawling context is initialized once
         if not crawling_context._initialized:
             await crawling_context.initialize()
         
@@ -1058,6 +1084,16 @@ async def crawl_knowledge_item(request: KnowledgeItemRequest):
         if isinstance(result, str):
             result = json.loads(result)
         
+        # Broadcast update to WebSocket clients
+        await manager.broadcast({
+            "type": "crawl_completed",
+            "data": {
+                "url": str(request.url),
+                "success": result.get('success', False),
+                "message": f'Crawling completed for {request.url}'
+            }
+        })
+        
         return {
             'success': True,
             'message': f'Successfully started crawling {request.url}',
@@ -1072,7 +1108,7 @@ async def crawl_knowledge_item(request: KnowledgeItemRequest):
 async def delete_knowledge_item(source_id: str):
     """Delete a knowledge item from the database."""
     try:
-        # Ensure crawling context is initialized
+        # Ensure crawling context is initialized once
         if not crawling_context._initialized:
             await crawling_context.initialize()
         
@@ -1120,6 +1156,82 @@ async def upload_knowledge_document(request: Request):
 async def validation_exception_handler(request: Request, exc):
     """Handle validation errors."""
     return HTTPException(status_code=400, detail={'error': 'Validation error'})
+
+
+@app.websocket("/api/knowledge-items/stream")
+async def websocket_knowledge_items(websocket: WebSocket):
+    """WebSocket endpoint for real-time knowledge items updates."""
+    await manager.connect(websocket)
+    try:
+        # Send initial data
+        ctx = crawling_context.create_context()
+        sources_result = await mcp_get_available_sources(ctx)
+        
+        if isinstance(sources_result, str):
+            sources_data = json.loads(sources_result)
+        else:
+            sources_data = sources_result
+        
+        # Transform data for frontend
+        items = []
+        for source in sources_data.get('sources', []):
+            item = {
+                'id': source['source_id'],
+                'title': source.get('summary', 'Untitled'),
+                'url': f"source://{source['source_id']}",
+                'source_id': source['source_id'],
+                'metadata': {
+                    'knowledge_type': 'technical',
+                    'tags': [],
+                    'source_type': 'url',
+                    'status': 'active',
+                    'description': source.get('summary', ''),
+                    'chunks_count': source.get('total_word_count', 0),
+                    'word_count': source.get('total_word_count', 0),
+                    'last_scraped': source.get('updated_at'),
+                },
+                'created_at': source.get('created_at'),
+                'updated_at': source.get('updated_at')
+            }
+            items.append(item)
+        
+        await websocket.send_json({
+            "type": "knowledge_items_update",
+            "data": {
+                "items": items,
+                "total": len(items),
+                "page": 1,
+                "per_page": 20,
+                "pages": 1
+            }
+        })
+        
+        # Keep connection alive and listen for updates
+        while True:
+            await asyncio.sleep(5)  # Check for updates every 5 seconds
+            # Send heartbeat
+            await websocket.send_json({"type": "heartbeat"})
+            
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+        manager.disconnect(websocket)
+
+
+@app.websocket("/api/crawl/stream")
+async def websocket_crawl_status(websocket: WebSocket):
+    """WebSocket endpoint for real-time crawling status updates."""
+    await manager.connect(websocket)
+    try:
+        while True:
+            await asyncio.sleep(1)
+            # Send heartbeat
+            await websocket.send_json({"type": "heartbeat"})
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+    except Exception:
+        manager.disconnect(websocket)
 
 
 if __name__ == "__main__":

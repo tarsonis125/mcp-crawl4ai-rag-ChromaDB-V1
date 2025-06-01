@@ -12,6 +12,7 @@ import { useToast } from '../contexts/ToastContext';
 import { knowledgeBaseService, KnowledgeItem } from '../services/knowledgeBaseService';
 import { performRAGQuery } from '../services/api';
 import { KnowledgeItem as LegacyKnowledgeItem } from '../types/knowledge';
+import { knowledgeWebSocket } from '../services/websocketService';
 
 export const KnowledgeBasePage = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'mind-map'>('grid');
@@ -50,9 +51,39 @@ export const KnowledgeBasePage = () => {
     }
   };
 
-  // Initial load
+  // WebSocket connection for real-time updates
   useEffect(() => {
-    loadKnowledgeItems();
+    // Connect to WebSocket
+    knowledgeWebSocket.connect('/api/knowledge-items/stream');
+    
+    // Listen for knowledge items updates
+    const handleKnowledgeUpdate = (data: any) => {
+      if (data.type === 'knowledge_items_update') {
+        setKnowledgeItems(data.data.items);
+        setTotalItems(data.data.total);
+        setLoading(false);
+      }
+    };
+    
+    knowledgeWebSocket.addEventListener('knowledge_items_update', handleKnowledgeUpdate);
+    
+    // Cleanup on unmount
+    return () => {
+      knowledgeWebSocket.removeEventListener('knowledge_items_update', handleKnowledgeUpdate);
+      knowledgeWebSocket.disconnect();
+    };
+  }, []);
+  
+  // Fallback REST API load if WebSocket fails
+  useEffect(() => {
+    // Set a timeout to load via REST if WebSocket doesn't provide data quickly
+    const fallbackTimeout = setTimeout(() => {
+      if (knowledgeItems.length === 0 && loading) {
+        loadKnowledgeItems();
+      }
+    }, 3000);
+    
+    return () => clearTimeout(fallbackTimeout);
   }, []);
 
   // Reload when filters change
