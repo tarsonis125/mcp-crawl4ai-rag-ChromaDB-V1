@@ -195,37 +195,30 @@ export const KnowledgeBasePage = () => {
     setProgressItems(prev => [...prev, newProgressItem]);
     
     // Set up callbacks BEFORE connecting to ensure we don't miss any messages
+    // Single unified callback that handles all progress states
     const progressCallback = (data: CrawlProgressData) => {
-      console.log(`🎯 Progress update for ${progressId}:`, data);
+      console.log(`📨 Progress callback called for ${progressId}:`, data);
+      
       if (data.progressId === progressId) {
-        console.log(`✅ Progress ID matches, updating UI state`);
+        // Update progress first
         handleProgressUpdate(data);
-      } else {
-        console.log(`❌ Progress ID mismatch: expected ${progressId}, got ${data.progressId}`);
+        
+        // Then handle completion/error states
+        if (data.status === 'completed') {
+          handleProgressComplete(data);
+        } else if (data.status === 'error') {
+          handleProgressError(data.error || 'Crawling failed');
+        }
       }
     };
     
-    const completedCallback = (data: CrawlProgressData) => {
-      console.log(`Crawl completed for ${progressId}:`, data);
-      if (data.progressId === progressId) {
-        handleProgressComplete(data);
-      }
-    };
+    console.log(`🚀 Starting progress stream for ${progressId}`);
     
-    const errorCallback = (error: Error) => {
-      console.error(`Progress error for ${progressId}:`, error);
-      handleProgressError(error.message);
-    };
-    
-    // Register callbacks first
-    console.log(`📝 Registering callbacks for ${progressId}`);
-    crawlProgressService.onProgress(progressCallback);
-    crawlProgressService.onCompleted(completedCallback);
-    crawlProgressService.onError(errorCallback);
-    console.log(`✅ Callbacks registered, now connecting...`);
-    
-    // Connect to progress stream after registering callbacks
-    crawlProgressService.connect(progressId);
+    // Use the new streamProgress method (matches MCP pattern)
+    crawlProgressService.streamProgress(progressId, progressCallback, {
+      autoReconnect: true,
+      reconnectDelay: 5000
+    });
   };
 
   // Transform new KnowledgeItem format to legacy format for MindMapView

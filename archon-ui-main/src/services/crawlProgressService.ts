@@ -13,227 +13,131 @@ export interface CrawlProgressData {
   logs: string[];
 }
 
-type ProgressEventType = 'progress' | 'completed' | 'error';
+interface StreamProgressOptions {
+  autoReconnect?: boolean;
+  reconnectDelay?: number;
+}
+
 type ProgressCallback = (data: CrawlProgressData) => void;
-type ErrorCallback = (error: Error) => void;
 
 class CrawlProgressService {
-  private ws: WebSocket | null = null;
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
-  private reconnectInterval = 1000;
-  private progressId: string | null = null;
-  
-  // Event listeners
-  private progressCallbacks: ProgressCallback[] = [];
-  private errorCallbacks: ErrorCallback[] = [];
-  private completedCallbacks: ProgressCallback[] = [];
+  private baseUrl = (import.meta as any).env?.VITE_API_URL || this.getApiBaseUrl();
+
+  private getApiBaseUrl() {
+    const protocol = window.location.protocol;
+    const host = window.location.hostname;
+    const port = '8080'; // Backend API port
+    return `${protocol}//${host}:${port}`;
+  }
+
+  private wsUrl = this.baseUrl.replace('http', 'ws');
+  private progressWebSocket: WebSocket | null = null;
+  private reconnectTimeout: NodeJS.Timeout | null = null;
+  public isReconnecting = false;
 
   /**
-   * Connect to the crawl progress WebSocket stream
+   * Stream crawl progress similar to how MCP logs work
    */
-  connect(progressId: string): void {
-    this.progressId = progressId;
-    
-    // Use the current host but with the backend port
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname;
-    const port = '8080'; // Backend WebSocket port
-    const wsUrl = `${protocol}//${host}:${port}/api/crawl-progress/${progressId}`;
-    
-    console.log(`Connecting to crawl progress WebSocket: ${wsUrl}`);
-    
-    // Close existing WebSocket without clearing callbacks
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
+  streamProgress(
+    progressId: string,
+    onMessage: ProgressCallback,
+    options: StreamProgressOptions = {}
+  ): WebSocket {
+    const { autoReconnect = true, reconnectDelay = 5000 } = options;
 
-    this.ws = new WebSocket(wsUrl);
-    
-    this.ws.onopen = () => {
-      console.log(`Connected to crawl progress stream: ${progressId}`);
-      this.reconnectAttempts = 0;
+    // Close existing connection if any
+    this.disconnect();
+
+    const ws = new WebSocket(`${this.wsUrl}/api/crawl-progress/${progressId}`);
+    this.progressWebSocket = ws;
+
+    ws.onopen = () => {
+      console.log(`🚀 Connected to crawl progress stream: ${progressId}`);
+      this.isReconnecting = false;
     };
-    
-    this.ws.onmessage = (event) => {
-      console.log(`🔥 RAW WebSocket message received for ${progressId}:`, event.data);
+
+    ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        console.log(`🔥 PARSED WebSocket message for ${progressId}:`, message);
-        this.handleMessage(message);
+        
+        // Ignore ping messages
+        if (message.type === 'ping') {
+          return;
+        }
+
+        // Handle progress messages
+        if (message.type === 'crawl_progress' || message.type === 'crawl_completed' || message.type === 'crawl_error') {
+          if (message.data) {
+            onMessage(message.data);
+          }
+        }
       } catch (error) {
-        console.error('❌ Failed to parse progress message:', error, 'Raw data:', event.data);
+        console.error('Failed to parse progress message:', error);
       }
     };
-    
-    this.ws.onclose = () => {
+
+    ws.onclose = () => {
       console.log(`Crawl progress stream disconnected: ${progressId}`);
-      this.attemptReconnect();
+      this.progressWebSocket = null;
+      
+      if (autoReconnect && !this.isReconnecting) {
+        this.isReconnecting = true;
+        this.reconnectTimeout = setTimeout(() => {
+          this.isReconnecting = false;
+          this.streamProgress(progressId, onMessage, options);
+        }, reconnectDelay);
+      }
     };
-    
-    this.ws.onerror = (error) => {
+
+    ws.onerror = (error) => {
       console.error('Crawl progress WebSocket error:', error);
-      this.errorCallbacks.forEach(callback => {
-        try {
-          callback(new Error('WebSocket connection failed'));
-        } catch (err) {
-          console.error('Error in progress error callback:', err);
-        }
-      });
     };
+
+    return ws;
   }
 
   /**
-   * Handle incoming WebSocket messages
-   */
-  private handleMessage(message: any): void {
-    const { type, data } = message;
-    console.log(`📨 WebSocket message received - Type: ${type}, Progress ID: ${data?.progressId}`, message);
-    console.log(`📊 Available callbacks: Progress(${this.progressCallbacks.length}), Completed(${this.completedCallbacks.length}), Error(${this.errorCallbacks.length})`);
-    
-    switch (type) {
-      case 'crawl_progress':
-        console.log(`🚀 Calling ${this.progressCallbacks.length} progress callbacks`);
-        this.progressCallbacks.forEach((callback, index) => {
-          try {
-            console.log(`📤 Calling progress callback ${index + 1}`);
-            callback(data);
-          } catch (error) {
-            console.error('❌ Error in progress callback:', error);
-          }
-        });
-        break;
-        
-      case 'crawl_completed':
-        this.completedCallbacks.forEach(callback => {
-          try {
-            callback(data);
-          } catch (error) {
-            console.error('Error in completed callback:', error);
-          }
-        });
-        // Also notify progress callbacks for UI updates
-        this.progressCallbacks.forEach(callback => {
-          try {
-            callback({ ...data, status: 'completed' });
-          } catch (error) {
-            console.error('Error in progress callback:', error);
-          }
-        });
-        break;
-        
-      case 'crawl_error':
-        this.errorCallbacks.forEach(callback => {
-          try {
-            callback(new Error(data.error || 'Crawling failed'));
-          } catch (error) {
-            console.error('Error in error callback:', error);
-          }
-        });
-        // Also notify progress callbacks for UI updates
-        this.progressCallbacks.forEach(callback => {
-          try {
-            callback({ ...data, status: 'error' });
-          } catch (error) {
-            console.error('Error in progress callback:', error);
-          }
-        });
-        break;
-        
-      case 'heartbeat':
-        // Ignore heartbeat messages
-        break;
-        
-      default:
-        console.warn('Unknown progress message type:', type);
-    }
-  }
-
-  /**
-   * Attempt to reconnect to the WebSocket
-   */
-  private attemptReconnect(): void {
-    if (this.reconnectAttempts < this.maxReconnectAttempts && this.progressId) {
-      setTimeout(() => {
-        console.log(`Attempting to reconnect... (${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
-        this.reconnectAttempts++;
-        this.connect(this.progressId!);
-      }, this.reconnectInterval * Math.pow(2, this.reconnectAttempts));
-    }
-  }
-
-  /**
-   * Register a callback for progress updates
-   */
-  onProgress(callback: ProgressCallback): void {
-    this.progressCallbacks.push(callback);
-  }
-
-  /**
-   * Register a callback for completion events
-   */
-  onCompleted(callback: ProgressCallback): void {
-    this.completedCallbacks.push(callback);
-  }
-
-  /**
-   * Register a callback for error events
-   */
-  onError(callback: ErrorCallback): void {
-    this.errorCallbacks.push(callback);
-  }
-
-  /**
-   * Remove a progress callback
-   */
-  removeProgressCallback(callback: ProgressCallback): void {
-    const index = this.progressCallbacks.indexOf(callback);
-    if (index > -1) {
-      this.progressCallbacks.splice(index, 1);
-    }
-  }
-
-  /**
-   * Remove an error callback
-   */
-  removeErrorCallback(callback: ErrorCallback): void {
-    const index = this.errorCallbacks.indexOf(callback);
-    if (index > -1) {
-      this.errorCallbacks.splice(index, 1);
-    }
-  }
-
-  /**
-   * Emit an event (for testing purposes)
-   */
-  emit(eventType: ProgressEventType, data: any): void {
-    const message = { type: eventType, data };
-    this.handleMessage(message);
-  }
-
-  /**
-   * Reconnect to the current progress stream
-   */
-  reconnect(): void {
-    if (this.progressId) {
-      this.connect(this.progressId);
-    }
-  }
-
-  /**
-   * Disconnect from the WebSocket and clean up
+   * Disconnect from the WebSocket and clean up (similar to MCP service)
    */
   disconnect(): void {
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
     }
-    this.progressId = null;
-    this.reconnectAttempts = 0;
-    this.progressCallbacks = [];
-    this.errorCallbacks = [];
-    this.completedCallbacks = [];
+    
+    this.isReconnecting = false;
+
+    if (this.progressWebSocket) {
+      this.progressWebSocket.close();
+      this.progressWebSocket = null;
+    }
+  }
+
+  // Backward compatibility methods - now just wrappers around streamProgress
+  connect(progressId: string): void {
+    // This method is kept for backward compatibility but does nothing
+    // Use streamProgress instead
+    console.warn('crawlProgressService.connect() is deprecated. Use streamProgress() instead.');
+  }
+
+  onProgress(callback: ProgressCallback): void {
+    console.warn('crawlProgressService.onProgress() is deprecated. Pass callback to streamProgress() instead.');
+  }
+
+  onCompleted(callback: ProgressCallback): void {
+    console.warn('crawlProgressService.onCompleted() is deprecated. Pass callback to streamProgress() instead.');
+  }
+
+  onError(callback: (error: Error) => void): void {
+    console.warn('crawlProgressService.onError() is deprecated. Pass callback to streamProgress() instead.');
+  }
+
+  removeProgressCallback(callback: ProgressCallback): void {
+    // No-op for backward compatibility
+  }
+
+  removeErrorCallback(callback: (error: Error) => void): void {
+    // No-op for backward compatibility
   }
 }
 

@@ -289,6 +289,47 @@ Your AI assistant gains access to these tools:
 
 ---
 
+## 🌐 Real-time Communication Architecture
+
+Archon uses WebSocket connections for real-time streaming between the frontend and backend:
+
+### WebSocket Endpoints
+
+| Endpoint | Purpose | Status |
+|----------|---------|--------|
+| `/api/mcp/logs/stream` | MCP Server logs streaming | ✅ Working |
+| `/api/crawl-progress/{progress_id}` | Crawl progress updates | ✅ Working |
+| `/api/knowledge-items/stream` | Knowledge base updates | ✅ Working |
+
+### Network Configuration
+
+The Docker setup creates an isolated network (`mcp-crawl4ai-rag-ui_app-network`) where:
+
+- **Frontend Container**: Runs on port 3737 (Vite dev server)
+- **Backend Container**: Runs on ports 8080 (API) and 8051 (MCP Server)
+- **WebSocket Protocol**: Automatically upgraded from HTTP (`ws://localhost:8080`)
+
+### Connection Flow
+
+1. **Frontend** connects to WebSocket endpoints via browser
+2. **Docker Network** routes traffic between containers
+3. **Backend** manages WebSocket connections and broadcasts updates
+4. **Real-time Updates** flow from backend processes → WebSocket → frontend UI
+
+### Troubleshooting WebSocket Issues
+
+If WebSocket connections fail:
+
+1. **Check Docker network**: `docker network ls | grep mcp-crawl4ai`
+2. **Verify container ports**: `docker ps` (should show 8080:8080 mapping)
+3. **Test HTTP connectivity**: `curl http://localhost:8080/api/mcp/status`
+4. **Check browser console** for WebSocket error messages
+5. **Restart containers**: `docker-compose restart`
+
+The system automatically handles reconnection with exponential backoff (5-second delay).
+
+---
+
 ## 🧪 RAG Strategies
 
 Configure advanced RAG strategies through the Settings page:

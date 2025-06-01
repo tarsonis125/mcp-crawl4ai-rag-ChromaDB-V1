@@ -1506,18 +1506,16 @@ async def websocket_crawl_status(websocket: WebSocket):
 async def websocket_crawl_progress(websocket: WebSocket, progress_id: str):
     """WebSocket endpoint for tracking specific crawl progress."""
     print(f"DEBUG: WebSocket connection attempt for progress_id: {progress_id}")
-    await websocket.accept()
-    print(f"DEBUG: WebSocket connection accepted for progress_id: {progress_id}")
     
-    # Add WebSocket to progress manager
+    # Add WebSocket to progress manager (match MCP pattern - no manual accept, no await)
     await progress_manager.add_websocket(progress_id, websocket)
     print(f"DEBUG: WebSocket added to progress manager for progress_id: {progress_id}")
     
     try:
         while True:
-            # Keep connection alive with heartbeat (shorter interval like MCP)
-            await asyncio.sleep(5)
-            await websocket.send_json({"type": "heartbeat"})
+            # Keep connection alive with ping (match MCP pattern exactly)
+            await asyncio.sleep(1)
+            await websocket.send_json({"type": "ping"})
             
     except WebSocketDisconnect:
         print(f"DEBUG: WebSocket disconnected for progress_id: {progress_id}")
@@ -1525,6 +1523,10 @@ async def websocket_crawl_progress(websocket: WebSocket, progress_id: str):
     except Exception as e:
         print(f"DEBUG: WebSocket error for progress {progress_id}: {e}")
         progress_manager.remove_websocket(progress_id, websocket)
+        try:
+            await websocket.close()
+        except:
+            pass
 
 
 class CrawlProgressManager:
@@ -1605,9 +1607,13 @@ class CrawlProgressManager:
         # Send current progress if available
         if progress_id in self.active_crawls:
             try:
+                # Ensure progressId is included in the data
+                data = self.active_crawls[progress_id].copy()
+                data['progressId'] = progress_id
+                
                 message = {
                     "type": "crawl_progress",
-                    "data": self.active_crawls[progress_id]
+                    "data": data
                 }
                 print(f"DEBUG: Sending initial progress to new WebSocket: {message}")
                 await websocket.send_json(message)
@@ -1641,7 +1647,10 @@ class CrawlProgressManager:
             print(f"DEBUG: No WebSocket connections found for {progress_id}")
             return
         
-        progress_data = self.active_crawls.get(progress_id, {})
+        progress_data = self.active_crawls.get(progress_id, {}).copy()
+        # Ensure progressId is always included
+        progress_data['progressId'] = progress_id
+        
         message = {
             "type": "crawl_progress" if progress_data.get('status') != 'completed' else "crawl_completed",
             "data": progress_data
@@ -1653,7 +1662,9 @@ class CrawlProgressManager:
         for websocket in self.progress_websockets[progress_id]:
             try:
                 await websocket.send_json(message)
-            except Exception:
+                print(f"DEBUG: Successfully sent message to WebSocket client")
+            except Exception as e:
+                print(f"DEBUG: Failed to send to WebSocket client: {e}")
                 disconnected.append(websocket)
         
         # Clean up disconnected WebSockets
