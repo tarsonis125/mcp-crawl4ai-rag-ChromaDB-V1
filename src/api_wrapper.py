@@ -80,6 +80,7 @@ from src.utils import get_supabase_client
 
 from src.config import load_environment_config, get_rag_strategy_config
 from src.credential_service import credential_service, CredentialItem, initialize_credentials
+from src.archon_tasks_mcp import task_lookup, list_tasks, create_task, update_task_status, CreateTask, UpdateTaskStatus
 
 
 # Create a simple context class that matches what the MCP functions expect
@@ -1454,3 +1455,38 @@ async def websocket_crawl_status(websocket: WebSocket):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8080) 
+@app.post("/api/tasks")
+async def http_create_task(item: CreateTask):
+    """Create a new task via HTTP"""
+    return await create_task(crawling_context.create_context(), **item.dict())
+
+@app.patch("/api/tasks/{task_id}/status")
+async def http_update_task_status(task_id: str, item: UpdateTaskStatus):
+    """Update a task's status via HTTP"""
+    return await update_task_status(crawling_context.create_context(), task_id, item.status)
+
+# Task Management HTTP Endpoints
+@app.get("/api/tasks/{task_id}")
+async def http_task_lookup(task_id: str):
+    try:
+        return await task_lookup(crawling_context.create_context(), task_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.get("/api/tasks/by_project/{project_id}")
+async def http_list_tasks(project_id: str):
+    return await list_tasks(crawling_context.create_context(), project_id)
+
+@app.post("/api/tasks")
+async def http_create_task(item: CreateTask):
+    try:
+        return await create_task(crawling_context.create_context(), **item.dict())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.patch("/api/tasks/{task_id}/status")
+async def http_update_task_status(task_id: str, item: UpdateTaskStatus):
+    try:
+        return await update_task_status(crawling_context.create_context(), task_id, item.status)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
