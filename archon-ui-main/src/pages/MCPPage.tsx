@@ -1,10 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Play, Square, Copy, Clock, Server, AlertCircle, CheckCircle, Loader, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Card } from '../components/ui/Card';
-import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
-import { Badge } from '../components/ui/Badge';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import { useToast } from '../contexts/ToastContext';
 import { mcpService, ServerStatus, LogEntry, ServerConfig } from '../services/mcpService';
@@ -144,6 +142,21 @@ export const MCPPage = () => {
     showToast('Configuration copied to clipboard', 'success');
   };
 
+  const getConfigDisplay = () => {
+    if (!config) return '';
+    
+    const configObj = {
+      mcpServers: {
+        archon: {
+          transport: config.transport,
+          url: `http://${config.host}:${config.port}/${config.transport}`
+        }
+      }
+    };
+    
+    return JSON.stringify(configObj, null, 2);
+  };
+
   const formatUptime = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
@@ -239,7 +252,7 @@ export const MCPPage = () => {
                 >
                   {isStarting ? (
                     <>
-                      <Loader className="w-4 h-4 mr-2 animate-spin" />
+                      <Loader className="w-4 h-4 mr-2 animate-spin inline" />
                       Starting...
                     </>
                   ) : (
@@ -259,7 +272,7 @@ export const MCPPage = () => {
                 >
                   {isStopping ? (
                     <>
-                      <Loader className="w-4 h-4 mr-2 animate-spin" />
+                      <Loader className="w-4 h-4 mr-2 animate-spin inline" />
                       Stopping...
                     </>
                   ) : (
@@ -277,14 +290,14 @@ export const MCPPage = () => {
           {serverStatus.status === 'running' && config && (
             <div className="border-t border-gray-200 dark:border-zinc-800 pt-4">
               <h3 className="text-sm font-medium text-gray-700 dark:text-zinc-300 mb-3">
-                Connection Details
+                Connection Configuration
               </h3>
-              <div className="bg-gray-50 dark:bg-black/50 rounded-lg p-4 font-mono text-sm">
-                <p className="text-gray-600 dark:text-zinc-400">
-                  Transport: {config.transport}
-                </p>
-                <p className="text-gray-600 dark:text-zinc-400">
-                  URL: http://{config.host}:{config.port}/{config.transport}
+              <div className="bg-gray-50 dark:bg-black/50 rounded-lg p-4 font-mono text-sm relative">
+                <pre className="text-gray-600 dark:text-zinc-400 whitespace-pre-wrap">
+                  {getConfigDisplay()}
+                </pre>
+                <p className="text-xs text-gray-500 dark:text-zinc-500 mt-3 font-sans">
+                  Add this to your MCP client configuration (e.g., ~/.cursor/mcp.json)
                 </p>
               </div>
               <Button
@@ -294,7 +307,7 @@ export const MCPPage = () => {
                 className="mt-3"
               >
                 <Copy className="w-4 h-4 mr-2 inline" />
-                Copy Config
+                Copy Configuration
               </Button>
             </div>
           )}

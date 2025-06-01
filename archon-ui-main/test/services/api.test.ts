@@ -13,7 +13,7 @@ import {
   getAvailableSources,
   uploadDocument,
   getDatabaseMetrics
-} from '../../services/api'
+} from '@/services/api'
 
 // Mock fetch globally
 const mockFetch = vi.fn()

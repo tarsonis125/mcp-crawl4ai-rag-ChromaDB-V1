@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { ThemeProvider } from '../contexts/ThemeContext'
-import { KnowledgeBasePage } from '../pages/KnowledgeBasePage'
+import { ThemeProvider } from '@/contexts/ThemeContext'
+import { KnowledgeBasePage } from '@/pages/KnowledgeBasePage'
 
 describe('App Components', () => {
   it('renders KnowledgeBasePage without crashing', () => {

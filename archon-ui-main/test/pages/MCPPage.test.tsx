@@ -1,19 +1,67 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MCPPage } from './MCPPage';
-import { mcpService } from '../services/mcpService';
-import { useToast } from '../contexts/ToastContext';
+import { MCPPage } from '@/pages/MCPPage';
+import { mcpService } from '@/services/mcpService';
+import { useToast } from '@/contexts/ToastContext';
 
 // Mock the services and contexts
-vi.mock('../services/mcpService');
-vi.mock('../contexts/ToastContext');
+vi.mock('@/services/mcpService');
+vi.mock('@/contexts/ToastContext');
 
 describe('MCPPage', () => {
   const mockShowToast = vi.fn();
   
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
     (useToast as any).mockReturnValue({ showToast: mockShowToast });
+    
+    // Mock navigator.clipboard
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: vi.fn().mockResolvedValue(undefined)
+      }
+    });
+    
+    // Mock all mcpService methods
+    (mcpService.getStatus as any).mockResolvedValue({
+      status: 'stopped',
+      uptime: null,
+      logs: []
+    });
+    
+    (mcpService.getConfiguration as any).mockResolvedValue({
+      transport: 'sse',
+      host: 'localhost',
+      port: 8051
+    });
+    
+    (mcpService.getLogs as any).mockResolvedValue([]);
+    (mcpService.streamLogs as any).mockReturnValue({
+      close: vi.fn(),
+      onmessage: null,
+      onclose: null,
+      onerror: null
+    });
+    (mcpService.disconnectLogs as any).mockImplementation(() => {});
+    (mcpService.startServer as any).mockResolvedValue({
+      success: true,
+      status: 'starting',
+      message: 'MCP server is starting'
+    });
+    (mcpService.stopServer as any).mockResolvedValue({
+      success: true,
+      status: 'stopped',
+      message: 'MCP server stopped'
+    });
+    (mcpService.clearLogs as any).mockResolvedValue({
+      success: true,
+      message: 'Logs cleared'
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe('Server Status Display', () => {
@@ -123,23 +171,25 @@ describe('MCPPage', () => {
   describe('Log Display', () => {
     it('should display server logs', async () => {
       const mockLogs = [
-        '[INFO] MCP Server initialization...',
-        '[INFO] Loading configuration from /etc/mcp/config.json',
-        '[INFO] Server ready to start'
+        { level: 'INFO', message: 'MCP Server initialization...', timestamp: '2024-01-20T10:00:00Z' },
+        { level: 'INFO', message: 'Loading configuration from /etc/mcp/config.json', timestamp: '2024-01-20T10:00:01Z' },
+        { level: 'INFO', message: 'Server ready to start', timestamp: '2024-01-20T10:00:02Z' }
       ];
       
       (mcpService.getStatus as any).mockResolvedValue({
         status: 'running',
         uptime: 60,
-        logs: mockLogs
+        logs: []
       });
+      
+      (mcpService.getLogs as any).mockResolvedValue(mockLogs);
 
       render(<MCPPage />);
       
       await waitFor(() => {
-        mockLogs.forEach(log => {
-          expect(screen.getByText(log)).toBeInTheDocument();
-        });
+        expect(screen.getByText('[INFO] MCP Server initialization...')).toBeInTheDocument();
+        expect(screen.getByText('[INFO] Loading configuration from /etc/mcp/config.json')).toBeInTheDocument();
+        expect(screen.getByText('[INFO] Server ready to start')).toBeInTheDocument();
       });
     });
 
@@ -182,12 +232,18 @@ describe('MCPPage', () => {
     });
 
     it('should clear logs when clear button is clicked', async () => {
+      const mockLogs = [
+        { level: 'INFO', message: 'Log 1', timestamp: '2024-01-20T10:00:00Z' },
+        { level: 'INFO', message: 'Log 2', timestamp: '2024-01-20T10:00:01Z' }
+      ];
+      
       (mcpService.getStatus as any).mockResolvedValue({
         status: 'running',
         uptime: 60,
-        logs: ['Log 1', 'Log 2']
+        logs: []
       });
       
+      (mcpService.getLogs as any).mockResolvedValue(mockLogs);
       (mcpService.clearLogs as any).mockResolvedValue({
         success: true,
         message: 'Logs cleared'
@@ -195,13 +251,19 @@ describe('MCPPage', () => {
 
       render(<MCPPage />);
       
+      // Wait for logs to be displayed
+      await waitFor(() => {
+        expect(screen.getByText('[INFO] Log 1')).toBeInTheDocument();
+        expect(screen.getByText('[INFO] Log 2')).toBeInTheDocument();
+      });
+      
       const clearButton = await screen.findByText(/Clear Logs/i);
       fireEvent.click(clearButton);
       
       await waitFor(() => {
         expect(mcpService.clearLogs).toHaveBeenCalled();
-        expect(screen.queryByText('Log 1')).not.toBeInTheDocument();
-        expect(screen.queryByText('Log 2')).not.toBeInTheDocument();
+        expect(screen.queryByText('[INFO] Log 1')).not.toBeInTheDocument();
+        expect(screen.queryByText('[INFO] Log 2')).not.toBeInTheDocument();
       });
     });
   });
@@ -223,9 +285,9 @@ describe('MCPPage', () => {
       render(<MCPPage />);
       
       await waitFor(() => {
-        expect(screen.getByText(/Connection Details/i)).toBeInTheDocument();
-        expect(screen.getByText(/Transport: sse/i)).toBeInTheDocument();
-        expect(screen.getByText(/URL: http:\/\/localhost:8051\/sse/i)).toBeInTheDocument();
+        expect(screen.getByText(/Connection Configuration/i)).toBeInTheDocument();
+        expect(screen.getByText(/archon/)).toBeInTheDocument();
+        expect(screen.getByText(/http:\/\/localhost:8051\/sse/)).toBeInTheDocument();
       });
     });
 
@@ -244,7 +306,7 @@ describe('MCPPage', () => {
 
       render(<MCPPage />);
       
-      const copyButton = await screen.findByText(/Copy Config/i);
+      const copyButton = await screen.findByText(/Copy Configuration/i);
       fireEvent.click(copyButton);
       
       await waitFor(() => {
@@ -260,6 +322,8 @@ describe('MCPPage', () => {
         uptime: 60,
         logs: []
       });
+      
+      (mcpService.getLogs as any).mockResolvedValue([]);
 
       render(<MCPPage />);
       
@@ -281,6 +345,8 @@ describe('MCPPage', () => {
         uptime: 60,
         logs: []
       });
+      
+      (mcpService.getLogs as any).mockResolvedValue([]);
       
       const { unmount } = render(<MCPPage />);
       

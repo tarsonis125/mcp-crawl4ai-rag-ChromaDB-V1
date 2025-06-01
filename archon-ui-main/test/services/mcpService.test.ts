@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { mcpService } from './mcpService';
+import { mcpService } from '@/services/mcpService';
 
 // Mock fetch globally
 global.fetch = vi.fn();
@@ -87,7 +87,9 @@ describe('MCPService', () => {
       };
       
       // Trigger the onmessage handler
-      ws.onmessage({ data: JSON.stringify(logData) } as MessageEvent);
+      if (ws.onmessage) {
+        ws.onmessage({ data: JSON.stringify(logData) } as MessageEvent);
+      }
       
       expect(mockCallback).toHaveBeenCalledWith(logData);
     });
@@ -97,7 +99,9 @@ describe('MCPService', () => {
       const ws = mcpService.streamLogs(mockCallback, { autoReconnect: true });
       
       // Simulate disconnection
-      ws.onclose({} as CloseEvent);
+      if (ws.onclose) {
+        ws.onclose({} as CloseEvent);
+      }
       
       // Should attempt to reconnect
       expect(mcpService.isReconnecting).toBe(true);
