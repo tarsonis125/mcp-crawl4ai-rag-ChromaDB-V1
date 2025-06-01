@@ -48,7 +48,8 @@ import json
 import os
 import signal
 import re
-from typing import Dict, Any, Optional, List, Tuple
+import uuid
+from typing import Dict, Any, Optional, List, Tuple, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
 from collections import deque
@@ -1161,11 +1162,18 @@ async def get_knowledge_items(
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
 
-@app.post("/api/knowledge-items/crawl")
-async def crawl_knowledge_item(request: KnowledgeItemRequest):
-    """Crawl a URL and add it to the knowledge base."""
+async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemRequest):
+    """Perform the actual crawl operation with progress tracking."""
     try:
-        # Ensure crawling context is initialized once
+        # Update progress to crawling state
+        await progress_manager.update_progress(progress_id, {
+            'status': 'crawling',
+            'percentage': 10,
+            'currentUrl': str(request.url),
+            'log': f'Starting crawl of {request.url}'
+        })
+        
+        # Ensure crawling context is initialized
         if not crawling_context._initialized:
             await crawling_context.initialize()
         
@@ -1179,7 +1187,13 @@ async def crawl_knowledge_item(request: KnowledgeItemRequest):
             'update_frequency': request.update_frequency
         }
         
-        # Call the actual function
+        # Update progress during crawling
+        await progress_manager.update_progress(progress_id, {
+            'percentage': 30,
+            'log': 'Discovering pages...'
+        })
+        
+        # Call the actual crawling function
         result = await mcp_smart_crawl_url(
             ctx=ctx,
             url=str(request.url),
@@ -1192,20 +1206,55 @@ async def crawl_knowledge_item(request: KnowledgeItemRequest):
         if isinstance(result, str):
             result = json.loads(result)
         
-        # Broadcast update to WebSocket clients
+        # Update progress with completion data
+        completion_data = {
+            'chunksStored': result.get('total_chunks_stored', 0),
+            'wordCount': result.get('total_word_count', 0),
+            'log': 'Crawling completed successfully'
+        }
+        
+        await progress_manager.complete_crawl(progress_id, completion_data)
+        
+        # Broadcast final update to general WebSocket clients
         await manager.broadcast({
             "type": "crawl_completed",
             "data": {
                 "url": str(request.url),
                 "success": result.get('success', False),
-                "message": f'Crawling completed for {request.url}'
+                "message": f'Crawling completed for {request.url}',
+                "progressId": progress_id
             }
         })
         
+    except Exception as e:
+        error_message = f'Crawling failed: {str(e)}'
+        await progress_manager.error_crawl(progress_id, error_message)
+        print(f"Crawl error for {progress_id}: {e}")
+
+
+@app.post("/api/knowledge-items/crawl")
+async def crawl_knowledge_item(request: KnowledgeItemRequest):
+    """Crawl a URL and add it to the knowledge base with progress tracking."""
+    try:
+        # Generate unique progress ID
+        progress_id = str(uuid.uuid4())
+        
+        # Start progress tracking
+        progress_manager.start_crawl(progress_id, {
+            'progressId': progress_id,
+            'currentUrl': str(request.url),
+            'totalPages': 0,
+            'processedPages': 0
+        })
+        
+        # Start crawling in background
+        asyncio.create_task(_perform_crawl_with_progress(progress_id, request))
+        
         return {
             'success': True,
-            'message': f'Successfully started crawling {request.url}',
-            'crawl_result': result
+            'progressId': progress_id,
+            'message': 'Crawling started',
+            'estimatedDuration': '3-5 minutes'
         }
             
     except Exception as e:
@@ -1449,6 +1498,148 @@ async def websocket_crawl_status(websocket: WebSocket):
         manager.disconnect(websocket)
     except Exception:
         manager.disconnect(websocket)
+
+
+@app.websocket("/api/crawl-progress/{progress_id}")
+async def websocket_crawl_progress(websocket: WebSocket, progress_id: str):
+    """WebSocket endpoint for tracking specific crawl progress."""
+    await websocket.accept()
+    
+    # Add WebSocket to progress manager
+    await progress_manager.add_websocket(progress_id, websocket)
+    
+    try:
+        while True:
+            # Keep connection alive with heartbeat
+            await asyncio.sleep(30)
+            await websocket.send_json({"type": "heartbeat"})
+            
+    except WebSocketDisconnect:
+        progress_manager.remove_websocket(progress_id, websocket)
+    except Exception as e:
+        print(f"WebSocket error for progress {progress_id}: {e}")
+        progress_manager.remove_websocket(progress_id, websocket)
+
+
+class CrawlProgressManager:
+    """Manages crawling progress tracking and WebSocket streaming."""
+    
+    def __init__(self):
+        self.active_crawls: Dict[str, Dict[str, Any]] = {}
+        self.progress_websockets: Dict[str, List[WebSocket]] = {}
+    
+    def start_crawl(self, progress_id: str, initial_data: Dict[str, Any]) -> None:
+        """Start tracking a new crawl operation."""
+        self.active_crawls[progress_id] = {
+            'status': 'starting',
+            'percentage': 0,
+            'start_time': datetime.now(),
+            'logs': ['Starting crawl...'],
+            **initial_data
+        }
+        
+    async def update_progress(self, progress_id: str, update_data: Dict[str, Any]) -> None:
+        """Update crawling progress and notify connected clients."""
+        if progress_id not in self.active_crawls:
+            return
+        
+        # Update progress data
+        self.active_crawls[progress_id].update(update_data)
+        
+        # Add log if provided
+        if 'log' in update_data:
+            self.active_crawls[progress_id]['logs'].append(update_data['log'])
+            # Keep only last 50 logs
+            if len(self.active_crawls[progress_id]['logs']) > 50:
+                self.active_crawls[progress_id]['logs'] = self.active_crawls[progress_id]['logs'][-50:]
+        
+        # Broadcast to connected WebSocket clients
+        await self._broadcast_progress(progress_id)
+    
+    async def complete_crawl(self, progress_id: str, completion_data: Dict[str, Any]) -> None:
+        """Mark a crawl as completed and send final update."""
+        if progress_id not in self.active_crawls:
+            return
+        
+        completion_data.update({
+            'status': 'completed',
+            'percentage': 100,
+            'duration': str(datetime.now() - self.active_crawls[progress_id]['start_time'])
+        })
+        
+        self.active_crawls[progress_id].update(completion_data)
+        await self._broadcast_progress(progress_id)
+        
+        # Clean up after a delay
+        await asyncio.sleep(5)
+        if progress_id in self.active_crawls:
+            del self.active_crawls[progress_id]
+    
+    async def error_crawl(self, progress_id: str, error_message: str) -> None:
+        """Mark a crawl as failed and send error update."""
+        if progress_id not in self.active_crawls:
+            return
+        
+        self.active_crawls[progress_id].update({
+            'status': 'error',
+            'error': error_message,
+            'log': f'Error: {error_message}'
+        })
+        
+        await self._broadcast_progress(progress_id)
+    
+    async def add_websocket(self, progress_id: str, websocket: WebSocket) -> None:
+        """Add a WebSocket connection for progress updates."""
+        if progress_id not in self.progress_websockets:
+            self.progress_websockets[progress_id] = []
+        
+        self.progress_websockets[progress_id].append(websocket)
+        
+        # Send current progress if available
+        if progress_id in self.active_crawls:
+            try:
+                await websocket.send_json({
+                    "type": "crawl_progress",
+                    "data": self.active_crawls[progress_id]
+                })
+            except Exception as e:
+                print(f"Error sending initial progress: {e}")
+    
+    def remove_websocket(self, progress_id: str, websocket: WebSocket) -> None:
+        """Remove a WebSocket connection."""
+        if progress_id in self.progress_websockets:
+            try:
+                self.progress_websockets[progress_id].remove(websocket)
+                if not self.progress_websockets[progress_id]:
+                    del self.progress_websockets[progress_id]
+            except ValueError:
+                pass
+    
+    async def _broadcast_progress(self, progress_id: str) -> None:
+        """Broadcast progress update to all connected clients."""
+        if progress_id not in self.progress_websockets:
+            return
+        
+        progress_data = self.active_crawls.get(progress_id, {})
+        message = {
+            "type": "crawl_progress" if progress_data.get('status') != 'completed' else "crawl_completed",
+            "data": progress_data
+        }
+        
+        # Send to all connected WebSocket clients
+        disconnected = []
+        for websocket in self.progress_websockets[progress_id]:
+            try:
+                await websocket.send_json(message)
+            except Exception:
+                disconnected.append(websocket)
+        
+        # Clean up disconnected WebSockets
+        for ws in disconnected:
+            self.remove_websocket(progress_id, ws)
+
+# Global progress manager
+progress_manager = CrawlProgressManager()
 
 
 if __name__ == "__main__":

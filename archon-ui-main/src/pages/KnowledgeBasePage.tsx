@@ -13,6 +13,8 @@ import { knowledgeBaseService, KnowledgeItem } from '../services/knowledgeBaseSe
 import { performRAGQuery } from '../services/api';
 import { KnowledgeItem as LegacyKnowledgeItem } from '../types/knowledge';
 import { knowledgeWebSocket } from '../services/websocketService';
+import { CrawlingProgressCard } from '../components/CrawlingProgressCard';
+import { CrawlProgressData, crawlProgressService } from '../services/crawlProgressService';
 
 export const KnowledgeBasePage = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'mind-map'>('grid');
@@ -21,6 +23,7 @@ export const KnowledgeBasePage = () => {
   const [forceReanimate, setForceReanimate] = useState(0);
   const [typeFilter, setTypeFilter] = useState<'all' | 'technical' | 'business'>('all');
   const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>([]);
+  const [progressItems, setProgressItems] = useState<CrawlProgressData[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalItems, setTotalItems] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
@@ -144,6 +147,55 @@ export const KnowledgeBasePage = () => {
     }
   };
 
+  // Progress handling functions
+  const handleProgressComplete = (data: CrawlProgressData) => {
+    console.log('Crawl completed:', data);
+    // Remove from progress items
+    setProgressItems(prev => prev.filter(item => item.progressId !== data.progressId));
+    // Reload knowledge items to show the new item
+    loadKnowledgeItems();
+    showToast('Crawling completed successfully', 'success');
+  };
+
+  const handleProgressError = (error: string) => {
+    console.error('Crawl error:', error);
+    showToast(`Crawling failed: ${error}`, 'error');
+  };
+
+  const handleProgressUpdate = (data: CrawlProgressData) => {
+    setProgressItems(prev => 
+      prev.map(item => 
+        item.progressId === data.progressId ? data : item
+      )
+    );
+  };
+
+  const handleRetryProgress = (progressId: string) => {
+    // Find the progress item and restart the crawl
+    const progressItem = progressItems.find(item => item.progressId === progressId);
+    if (progressItem) {
+      // Remove the failed progress item
+      setProgressItems(prev => prev.filter(item => item.progressId !== progressId));
+      // This would typically trigger a new crawl - but that requires knowing the original URL
+      showToast('Retry functionality not implemented yet', 'warning');
+    }
+  };
+
+  const handleStartCrawl = (progressId: string, initialData: Partial<CrawlProgressData>) => {
+    const newProgressItem: CrawlProgressData = {
+      progressId,
+      status: 'starting',
+      percentage: 0,
+      logs: ['Starting crawl...'],
+      ...initialData
+    };
+    
+    setProgressItems(prev => [...prev, newProgressItem]);
+    
+    // Connect to progress stream
+    crawlProgressService.connect(progressId);
+  };
+
   // Transform new KnowledgeItem format to legacy format for MindMapView
   const transformItemsForMindMap = (items: KnowledgeItem[]): LegacyKnowledgeItem[] => {
     return items.map(item => ({
@@ -221,20 +273,38 @@ export const KnowledgeBasePage = () => {
             {/* Knowledge Items Grid/List with staggered animation that reanimates on view change */}
             <AnimatePresence mode="wait">
               <motion.div key={`view-${viewMode}-filter-${typeFilter}`} initial="hidden" animate="visible" variants={contentContainerVariants} className={`grid ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' : 'grid-cols-1 gap-3'}`}>
+                {/* Progress Items */}
+                {progressItems.map(progressData => (
+                  <motion.div key={progressData.progressId} variants={contentItemVariants}>
+                    <CrawlingProgressCard 
+                      progressData={progressData}
+                      onComplete={handleProgressComplete}
+                      onError={handleProgressError}
+                      onProgress={handleProgressUpdate}
+                      onRetry={() => handleRetryProgress(progressData.progressId)}
+                    />
+                  </motion.div>
+                ))}
+                
+                {/* Regular Knowledge Items */}
                 {filteredItems.length > 0 ? filteredItems.map(item => <motion.div key={item.id} variants={contentItemVariants}>
                       <KnowledgeItemCard item={item} viewMode={viewMode} onDelete={handleDeleteItem} />
-                    </motion.div>) : <motion.div variants={contentItemVariants} className="col-span-full py-10 text-center text-gray-500 dark:text-zinc-400">
+                    </motion.div>) : (progressItems.length === 0 && <motion.div variants={contentItemVariants} className="col-span-full py-10 text-center text-gray-500 dark:text-zinc-400">
                     No knowledge items found for the selected filter.
-                  </motion.div>}
+                  </motion.div>)}
               </motion.div>
             </AnimatePresence>
           </>}
       </div>
       {/* Add Knowledge Modal */}
-      {isAddModalOpen && <AddKnowledgeModal onClose={() => setIsAddModalOpen(false)} onSuccess={() => {
-        loadKnowledgeItems();
-        setIsAddModalOpen(false);
-      }} />}
+      {isAddModalOpen && <AddKnowledgeModal 
+        onClose={() => setIsAddModalOpen(false)} 
+        onSuccess={() => {
+          loadKnowledgeItems();
+          setIsAddModalOpen(false);
+        }}
+        onStartCrawl={handleStartCrawl}
+      />}
     </div>;
 };
 
@@ -449,11 +519,13 @@ const TestKnowledgeModal = ({ item, onClose }: TestKnowledgeModalProps) => {
 interface AddKnowledgeModalProps {
   onClose: () => void;
   onSuccess: () => void;
+  onStartCrawl: (progressId: string, initialData: Partial<CrawlProgressData>) => void;
 }
 
 const AddKnowledgeModal = ({
   onClose,
-  onSuccess
+  onSuccess,
+  onStartCrawl
 }: AddKnowledgeModalProps) => {
   const [method, setMethod] = useState<'url' | 'file'>('url');
   const [url, setUrl] = useState('');
@@ -482,7 +554,22 @@ const AddKnowledgeModal = ({
           update_frequency: parseInt(updateFrequency)
         });
         
-        showToast((result as any).message || 'Crawling started', 'success');
+        // Check if result contains a progressId for streaming
+        if ((result as any).progressId) {
+          // Start progress tracking
+          onStartCrawl((result as any).progressId, {
+            currentUrl: url.trim(),
+            totalPages: 0,
+            processedPages: 0
+          });
+          
+          showToast('Crawling started - tracking progress', 'success');
+          onClose(); // Close modal immediately
+        } else {
+          // Fallback for non-streaming response
+          showToast((result as any).message || 'Crawling started', 'success');
+          onSuccess();
+        }
       } else {
         if (!selectedFile) {
           showToast('Please select a file', 'error');
@@ -495,9 +582,8 @@ const AddKnowledgeModal = ({
         });
         
         showToast((result as any).message || 'Document uploaded successfully', 'success');
+        onSuccess();
       }
-      
-      onSuccess();
     } catch (error) {
       console.error('Failed to add knowledge:', error);
       showToast('Failed to add knowledge source', 'error');
