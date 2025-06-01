@@ -1,0 +1,275 @@
+-- Migration: Enhance sources table with title and metadata
+-- Date: 2025-06-01
+-- Description: Add title and metadata JSONB columns to sources table for better organization and categorization
+
+-- Add title column to store descriptive titles like "Pydantic AI API Reference"
+ALTER TABLE sources 
+ADD COLUMN IF NOT EXISTS title TEXT;
+
+-- Add metadata JSONB column to store knowledge_type, tags, and other metadata
+ALTER TABLE sources 
+ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}';
+
+-- Create indexes for better query performance
+CREATE INDEX IF NOT EXISTS idx_sources_title ON sources(title);
+CREATE INDEX IF NOT EXISTS idx_sources_metadata ON sources USING GIN(metadata);
+
+-- Create index for knowledge_type specifically since it will be commonly queried
+CREATE INDEX IF NOT EXISTS idx_sources_knowledge_type ON sources((metadata->>'knowledge_type'));
+
+-- Update existing records to have empty metadata if null
+UPDATE sources 
+SET metadata = '{}' 
+WHERE metadata IS NULL;
+
+-- Add comments to document the new columns
+COMMENT ON COLUMN sources.title IS 'Descriptive title for the source (e.g., "Pydantic AI API Reference")';
+COMMENT ON COLUMN sources.metadata IS 'JSONB field storing knowledge_type, tags, and other metadata';
+
+-- Example of metadata structure:
+-- {
+--   "knowledge_type": "technical" | "business",
+--   "tags": ["python", "ai", "framework"],
+--   "category": "documentation",
+--   "language": "python",
+--   "difficulty": "intermediate",
+--   "last_updated": "2025-06-01"
+-- } -- Credentials and Configuration Management Table
+-- This table stores both encrypted sensitive data and plain configuration settings
+
+CREATE TABLE IF NOT EXISTS app_credentials (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    key VARCHAR(255) UNIQUE NOT NULL,
+    value TEXT,                    -- For plain text config values
+    encrypted_value TEXT,          -- For encrypted sensitive data (bcrypt hashed)
+    is_encrypted BOOLEAN DEFAULT FALSE,
+    category VARCHAR(100),         -- Group related settings (e.g., 'rag_strategy', 'api_keys', 'server_config')
+    description TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create index for faster lookups
+CREATE INDEX IF NOT EXISTS idx_app_credentials_key ON app_credentials(key);
+CREATE INDEX IF NOT EXISTS idx_app_credentials_category ON app_credentials(category);
+
+-- Insert configuration settings from original .env-doc.md
+-- Note: Sensitive values like OPENAI_API_KEY will be added via the Settings UI with encryption
+
+-- Server Configuration
+INSERT INTO app_credentials (key, value, is_encrypted, category, description) VALUES
+('TRANSPORT', 'sse', false, 'server_config', 'The transport for the MCP server - either ''sse'' or ''stdio'' (defaults to sse if left empty)'),
+('HOST', 'localhost', false, 'server_config', 'Host to bind to if using sse as the transport (leave empty if using stdio)'),
+('PORT', '8051', false, 'server_config', 'Port to listen on if using sse as the transport (leave empty if using stdio)'),
+('MODEL_CHOICE', 'gpt-4o-mini', false, 'llm_config', 'The LLM you want to use for summaries and contextual embeddings. Generally this is a very cheap and fast LLM like gpt-4o-mini');
+
+-- RAG Strategy Configuration (all default to false)
+INSERT INTO app_credentials (key, value, is_encrypted, category, description) VALUES
+('USE_CONTEXTUAL_EMBEDDINGS', 'false', false, 'rag_strategy', 'Enhances embeddings with contextual information for better retrieval'),
+('USE_HYBRID_SEARCH', 'false', false, 'rag_strategy', 'Combines vector similarity search with keyword search for better results'),
+('USE_AGENTIC_RAG', 'false', false, 'rag_strategy', 'Enables code example extraction, storage, and specialized code search functionality'),
+('USE_RERANKING', 'false', false, 'rag_strategy', 'Applies cross-encoder reranking to improve search result relevance');
+
+-- Placeholder for sensitive credentials (to be added via Settings UI)
+INSERT INTO app_credentials (key, encrypted_value, is_encrypted, category, description) VALUES
+('OPENAI_API_KEY', NULL, true, 'api_keys', 'OpenAI API Key for embedding model (text-embedding-3-small). Get from: https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key');
+
+-- Create trigger to automatically update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+CREATE TRIGGER update_app_credentials_updated_at 
+    BEFORE UPDATE ON app_credentials 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Create RLS (Row Level Security) policies for future security
+ALTER TABLE app_credentials ENABLE ROW LEVEL SECURITY;
+
+-- Create policy that allows all operations for service role
+CREATE POLICY "Allow service role full access" ON app_credentials
+    FOR ALL USING (auth.role() = 'service_role');
+
+-- Create policy for authenticated users (adjust as needed for your security requirements)
+CREATE POLICY "Allow authenticated users to read and update" ON app_credentials
+    FOR ALL TO authenticated
+    USING (true); -- Enable the pgvector extension
+create extension if not exists vector;
+
+-- Drop tables if they exist (to allow rerunning the script)
+drop table if exists crawled_pages;
+drop table if exists code_examples;
+drop table if exists sources;
+
+-- Create the sources table
+create table sources (
+    source_id text primary key,
+    summary text,
+    total_word_count integer default 0,
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+    updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- Create the documentation chunks table
+create table crawled_pages (
+    id bigserial primary key,
+    url varchar not null,
+    chunk_number integer not null,
+    content text not null,
+    metadata jsonb not null default '{}'::jsonb,
+    source_id text not null,
+    embedding vector(1536),  -- OpenAI embeddings are 1536 dimensions
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+    
+    -- Add a unique constraint to prevent duplicate chunks for the same URL
+    unique(url, chunk_number),
+    
+    -- Add foreign key constraint to sources table
+    foreign key (source_id) references sources(source_id)
+);
+
+-- Create an index for better vector similarity search performance
+create index on crawled_pages using ivfflat (embedding vector_cosine_ops);
+
+-- Create an index on metadata for faster filtering
+create index idx_crawled_pages_metadata on crawled_pages using gin (metadata);
+
+-- Create an index on source_id for faster filtering
+CREATE INDEX idx_crawled_pages_source_id ON crawled_pages (source_id);
+
+-- Create a function to search for documentation chunks
+create or replace function match_crawled_pages (
+  query_embedding vector(1536),
+  match_count int default 10,
+  filter jsonb DEFAULT '{}'::jsonb,
+  source_filter text DEFAULT NULL
+) returns table (
+  id bigint,
+  url varchar,
+  chunk_number integer,
+  content text,
+  metadata jsonb,
+  source_id text,
+  similarity float
+)
+language plpgsql
+as $$
+#variable_conflict use_column
+begin
+  return query
+  select
+    id,
+    url,
+    chunk_number,
+    content,
+    metadata,
+    source_id,
+    1 - (crawled_pages.embedding <=> query_embedding) as similarity
+  from crawled_pages
+  where metadata @> filter
+    AND (source_filter IS NULL OR source_id = source_filter)
+  order by crawled_pages.embedding <=> query_embedding
+  limit match_count;
+end;
+$$;
+
+-- Enable RLS on the crawled_pages table
+alter table crawled_pages enable row level security;
+
+-- Create a policy that allows anyone to read crawled_pages
+create policy "Allow public read access to crawled_pages"
+  on crawled_pages
+  for select
+  to public
+  using (true);
+
+-- Enable RLS on the sources table
+alter table sources enable row level security;
+
+-- Create a policy that allows anyone to read sources
+create policy "Allow public read access to sources"
+  on sources
+  for select
+  to public
+  using (true);
+
+-- Create the code_examples table
+create table code_examples (
+    id bigserial primary key,
+    url varchar not null,
+    chunk_number integer not null,
+    content text not null,  -- The code example content
+    summary text not null,  -- Summary of the code example
+    metadata jsonb not null default '{}'::jsonb,
+    source_id text not null,
+    embedding vector(1536),  -- OpenAI embeddings are 1536 dimensions
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+    
+    -- Add a unique constraint to prevent duplicate chunks for the same URL
+    unique(url, chunk_number),
+    
+    -- Add foreign key constraint to sources table
+    foreign key (source_id) references sources(source_id)
+);
+
+-- Create an index for better vector similarity search performance
+create index on code_examples using ivfflat (embedding vector_cosine_ops);
+
+-- Create an index on metadata for faster filtering
+create index idx_code_examples_metadata on code_examples using gin (metadata);
+
+-- Create an index on source_id for faster filtering
+CREATE INDEX idx_code_examples_source_id ON code_examples (source_id);
+
+-- Create a function to search for code examples
+create or replace function match_code_examples (
+  query_embedding vector(1536),
+  match_count int default 10,
+  filter jsonb DEFAULT '{}'::jsonb,
+  source_filter text DEFAULT NULL
+) returns table (
+  id bigint,
+  url varchar,
+  chunk_number integer,
+  content text,
+  summary text,
+  metadata jsonb,
+  source_id text,
+  similarity float
+)
+language plpgsql
+as $$
+#variable_conflict use_column
+begin
+  return query
+  select
+    id,
+    url,
+    chunk_number,
+    content,
+    summary,
+    metadata,
+    source_id,
+    1 - (code_examples.embedding <=> query_embedding) as similarity
+  from code_examples
+  where metadata @> filter
+    AND (source_filter IS NULL OR source_id = source_filter)
+  order by code_examples.embedding <=> query_embedding
+  limit match_count;
+end;
+$$;
+
+-- Enable RLS on the code_examples table
+alter table code_examples enable row level security;
+
+-- Create a policy that allows anyone to read code_examples
+create policy "Allow public read access to code_examples"
+  on code_examples
+  for select
+  to public
+  using (true);
