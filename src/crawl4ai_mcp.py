@@ -1,8 +1,34 @@
 """
-MCP server for web crawling with Crawl4AI.
+MCP (Model Context Protocol) server for web crawling with Crawl4AI.
 
 This server provides tools to crawl websites using Crawl4AI, automatically detecting
 the appropriate crawl method based on URL type (sitemap, txt file, or regular webpage).
+
+The server supports two transport modes:
+- SSE (Server-Sent Events): For web-based integrations and dashboard control
+- stdio: For standard MCP clients like Cursor, Claude Desktop, etc.
+
+Key Features:
+- Intelligent URL detection (sitemaps, text files, regular pages)
+- Recursive crawling with depth control
+- Smart content chunking preserving code blocks and paragraphs
+- Vector database storage with Supabase pgvector
+- Advanced RAG strategies (contextual embeddings, hybrid search, reranking)
+- Code example extraction and summarization (when enabled)
+- Source management and organization
+
+Environment Variables:
+- TRANSPORT: Transport mode ('sse' or 'stdio'), defaults to 'sse'
+- HOST: Server host address, defaults to 'localhost'
+- PORT: Server port number, defaults to 8051
+- OPENAI_API_KEY: OpenAI API key for embeddings
+- SUPABASE_URL: Supabase project URL
+- SUPABASE_SERVICE_KEY: Supabase service key
+- MODEL_CHOICE: OpenAI model for embeddings, defaults to 'gpt-4o-mini'
+- USE_CONTEXTUAL_EMBEDDINGS: Enable contextual embeddings (true/false)
+- USE_HYBRID_SEARCH: Enable hybrid search combining vector and keyword (true/false)
+- USE_AGENTIC_RAG: Enable code example extraction (true/false)
+- USE_RERANKING: Enable result reranking with cross-encoder (true/false)
 """
 from mcp.server.fastmcp import FastMCP, Context
 from sentence_transformers import CrossEncoder
@@ -50,7 +76,16 @@ load_dotenv(dotenv_path, override=True)
 # Create a dataclass for our application context
 @dataclass
 class Crawl4AIContext:
-    """Context for the Crawl4AI MCP server."""
+    """
+    Context for the Crawl4AI MCP server.
+    
+    This context holds all the necessary resources for the MCP server to operate:
+    - AsyncWebCrawler instance for web crawling operations
+    - Supabase client for database operations
+    - Optional reranking model for improving search results
+    
+    The context is managed by the FastMCP lifespan and is available to all MCP tools.
+    """
     crawler: AsyncWebCrawler
     supabase_client: Client
     reranking_model: Optional[CrossEncoder] = None
@@ -60,11 +95,24 @@ async def crawl4ai_lifespan(server: FastMCP) -> AsyncIterator[Crawl4AIContext]:
     """
     Manages the Crawl4AI client lifecycle.
     
+    This context manager handles the initialization and cleanup of resources:
+    1. Creates and initializes the AsyncWebCrawler with headless browser
+    2. Establishes connection to Supabase database
+    3. Optionally loads the cross-encoder model for reranking
+    4. Ensures proper cleanup when the server shuts down
+    
+    The resources are made available to all MCP tools through the context.
+    
     Args:
         server: The FastMCP server instance
         
     Yields:
         Crawl4AIContext: The context containing the Crawl4AI crawler and Supabase client
+        
+    Environment Dependencies:
+        - SUPABASE_URL: Must be set for database connection
+        - SUPABASE_SERVICE_KEY: Must be set for database authentication
+        - USE_RERANKING: If 'true', loads the cross-encoder model
     """
     # Create browser configuration
     browser_config = BrowserConfig(
@@ -109,16 +157,28 @@ mcp = FastMCP(
 
 def rerank_results(model: CrossEncoder, query: str, results: List[Dict[str, Any]], content_key: str = "content") -> List[Dict[str, Any]]:
     """
-    Rerank search results using a cross-encoder model.
+    Rerank search results using a cross-encoder model for improved relevance.
+    
+    This function takes search results from vector/keyword search and re-scores them
+    using a cross-encoder model that directly compares the query with each result.
+    Cross-encoders typically provide better relevance scoring than bi-encoders used
+    in vector search, at the cost of higher computational requirements.
+    
+    The function adds a 'rerank_score' field to each result and sorts by this score.
     
     Args:
-        model: The cross-encoder model to use for reranking
-        query: The search query
-        results: List of search results
+        model: The cross-encoder model to use for reranking (e.g., ms-marco-MiniLM)
+        query: The search query to compare against
+        results: List of search results, each containing at least the content_key field
         content_key: The key in each result dict that contains the text content
         
     Returns:
-        Reranked list of results
+        Reranked list of results sorted by relevance (highest score first)
+        
+    Note:
+        - Falls back gracefully to original results if reranking fails
+        - Preserves all original fields in results
+        - Adds 'rerank_score' field with float values
     """
     if not model or not results:
         return results
@@ -192,7 +252,41 @@ def parse_sitemap(sitemap_url: str) -> List[str]:
     return urls
 
 def smart_chunk_markdown(text: str, chunk_size: int = 5000) -> List[str]:
-    """Split text into chunks, respecting code blocks and paragraphs."""
+    """
+    Split text into chunks intelligently, respecting code blocks and paragraphs.
+    
+    This function implements a context-aware chunking strategy that:
+    1. Preserves code blocks (```) as complete units when possible
+    2. Prefers to break at paragraph boundaries (\\n\\n)
+    3. Falls back to sentence boundaries (. ) if needed
+    4. Only splits mid-content when absolutely necessary
+    
+    The algorithm ensures that important semantic units like code examples
+    remain intact, improving the quality of RAG retrieval.
+    
+    Args:
+        text: The markdown text to chunk
+        chunk_size: Maximum size of each chunk in characters (default: 5000)
+        
+    Returns:
+        List of text chunks, each no larger than chunk_size
+        
+    Algorithm:
+        1. Start from position 0
+        2. Look ahead chunk_size characters
+        3. Search backwards for the best split point:
+           - First priority: Code block boundary (```)
+           - Second priority: Paragraph break (\\n\\n)
+           - Third priority: Sentence end (. )
+        4. Only use the split point if it's after 30% of chunk_size
+        5. Clean up and store the chunk
+        6. Move to the next position and repeat
+        
+    Example:
+        >>> text = "# Title\\n\\nParagraph 1.\\n\\n```python\\ncode\\n```\\n\\nParagraph 2."
+        >>> chunks = smart_chunk_markdown(text, chunk_size=50)
+        >>> len(chunks) == 2  # Split preserves code block
+    """
     chunks = []
     start = 0
     text_length = len(text)
@@ -277,12 +371,51 @@ async def crawl_single_page(ctx: Context, url: str) -> str:
     This tool is ideal for quickly retrieving content from a specific URL without following links.
     The content is stored in Supabase for later retrieval and querying.
     
+    The tool performs the following operations:
+    1. Crawls the specified URL using a headless browser
+    2. Extracts and converts content to markdown format
+    3. Chunks the content intelligently preserving structure
+    4. Generates embeddings for each chunk (using OpenAI)
+    5. Stores chunks in Supabase with vector embeddings
+    6. Updates source metadata with title and summary
+    7. Optionally extracts and processes code examples
+    
     Args:
-        ctx: The MCP server provided context
-        url: URL of the web page to crawl
+        ctx: The MCP server provided context containing crawler and database clients
+        url: URL of the web page to crawl (must be a valid HTTP/HTTPS URL)
     
     Returns:
-        Summary of the crawling operation and storage in Supabase
+        JSON string with the operation results including:
+        - success: Boolean indicating if crawl succeeded
+        - url: The crawled URL
+        - chunks_stored: Number of content chunks created
+        - code_examples_stored: Number of code examples extracted (if enabled)
+        - content_length: Total characters in the crawled content
+        - total_word_count: Total word count across all chunks
+        - source_id: The domain/source identifier
+        - links_count: Count of internal and external links found
+        - error: Error message if crawl failed
+        
+    Example Response:
+        {
+            "success": true,
+            "url": "https://docs.example.com/guide",
+            "chunks_stored": 5,
+            "code_examples_stored": 3,
+            "content_length": 15000,
+            "total_word_count": 2500,
+            "source_id": "docs.example.com",
+            "links_count": {
+                "internal": 10,
+                "external": 5
+            }
+        }
+        
+    Notes:
+        - Uses CacheMode.BYPASS to always fetch fresh content
+        - Automatically extracts source_id from URL domain
+        - Respects USE_AGENTIC_RAG env var for code extraction
+        - All database operations are transactional
     """
     try:
         # Get the crawler from the context

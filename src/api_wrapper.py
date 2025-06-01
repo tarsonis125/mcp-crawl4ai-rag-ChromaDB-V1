@@ -1,6 +1,45 @@
 """
-Backend API wrapper that provides REST endpoints for the React app.
-This server manages the MCP server process and forwards requests.
+FastAPI Backend for Archon Knowledge Engine
+
+This module provides the REST API and WebSocket endpoints for the Archon UI.
+It acts as a wrapper around the MCP server and provides additional functionality
+for web-based interactions.
+
+Key Responsibilities:
+1. MCP Server Lifecycle Management
+   - Start/stop the MCP server process
+   - Monitor server status and health
+   - Stream server logs via WebSocket
+
+2. Credential Management
+   - Store and retrieve encrypted credentials
+   - Manage API keys and configuration
+   - Support for different credential categories
+
+3. Knowledge Base Operations
+   - Web crawling endpoints
+   - RAG query processing
+   - Source management
+   - Document uploads
+
+4. Real-time Communication
+   - WebSocket endpoints for live updates
+   - Server-sent events for log streaming
+   - Connection management for multiple clients
+
+Architecture:
+- FastAPI for REST endpoints
+- WebSocket support for real-time features
+- Subprocess management for MCP server
+- Integration with Supabase for data persistence
+- Encryption support for sensitive credentials
+
+Environment Variables:
+- SUPABASE_URL: Supabase project URL (required)
+- SUPABASE_SERVICE_KEY: Supabase service key (required)
+- OPENAI_API_KEY: OpenAI API key (can be set via UI)
+- HOST: Backend host (default: 0.0.0.0)
+- PORT: Backend port (default: 8080)
 """
 import asyncio
 import subprocess

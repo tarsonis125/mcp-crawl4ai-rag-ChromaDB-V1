@@ -7,6 +7,48 @@ import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import { useToast } from '../contexts/ToastContext';
 import { mcpService, ServerStatus, LogEntry, ServerConfig, MCPTool } from '../services/mcpService';
 
+/**
+ * MCP Dashboard Page Component
+ * 
+ * This is the main dashboard for managing the MCP (Model Context Protocol) server.
+ * It provides a comprehensive interface for:
+ * 
+ * 1. Server Control:
+ *    - Start/stop the MCP server
+ *    - Monitor server status and uptime
+ *    - Switch between SSE and stdio transports
+ *    - View and copy connection configuration
+ * 
+ * 2. Server Logs:
+ *    - Real-time log streaming via WebSocket
+ *    - Historical log viewing
+ *    - Auto-scroll functionality
+ *    - Log clearing capability
+ * 
+ * 3. Available Tools:
+ *    - Dynamic discovery of MCP tools
+ *    - Tool documentation display
+ *    - Parameter information
+ *    - Refresh capability
+ * 
+ * 4. MCP Test Panel:
+ *    - Interactive tool testing
+ *    - Dynamic parameter input
+ *    - Result visualization
+ *    - Error handling
+ * 
+ * The page uses a two-row layout:
+ * - Top row: Server Control (left) + Server Logs (right)
+ * - Bottom row: Available Tools (2/3 width) + Test Panel (1/3 width)
+ * 
+ * State Management:
+ * - Server status polling every 5 seconds
+ * - WebSocket connection for real-time logs
+ * - Dynamic tool loading when server is running
+ * - Transport selection persisted to database
+ * 
+ * @component
+ */
 export const MCPPage = () => {
   const [serverStatus, setServerStatus] = useState<ServerStatus>({
     status: 'stopped',
@@ -45,7 +87,7 @@ export const MCPPage = () => {
     loadStatus();
     loadConfiguration();
 
-    // Start polling for status updates
+    // Start polling for status updates every 5 seconds
     statusPollInterval.current = setInterval(loadStatus, 5000);
 
     return () => {
@@ -59,12 +101,12 @@ export const MCPPage = () => {
   // Start WebSocket connection when server is running
   useEffect(() => {
     if (serverStatus.status === 'running') {
-      // Fetch historical logs first
+      // Fetch historical logs first (last 100 entries)
       mcpService.getLogs({ limit: 100 }).then(historicalLogs => {
         setLogs(historicalLogs);
       }).catch(console.error);
 
-      // Then start streaming
+      // Then start streaming new logs via WebSocket
       mcpService.streamLogs((log) => {
         setLogs(prev => [...prev, log]);
       }, { autoReconnect: true });
@@ -83,13 +125,17 @@ export const MCPPage = () => {
     }
   }, [serverStatus.status]);
 
-  // Auto-scroll logs to bottom
+  // Auto-scroll logs to bottom when new logs arrive
   useEffect(() => {
     if (logsContainerRef.current && logsEndRef.current) {
       logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
     }
   }, [logs]);
 
+  /**
+   * Load the current MCP server status
+   * Called on mount and every 5 seconds via polling
+   */
   const loadStatus = async () => {
     try {
       const status = await mcpService.getStatus();
@@ -101,6 +147,10 @@ export const MCPPage = () => {
     }
   };
 
+  /**
+   * Load the MCP server configuration
+   * Falls back to default values if database load fails
+   */
   const loadConfiguration = async () => {
     try {
       const cfg = await mcpService.getConfiguration();
@@ -117,6 +167,11 @@ export const MCPPage = () => {
     }
   };
 
+  /**
+   * Load available MCP tools from the server
+   * Only called when server is running
+   * Uses backend API as fallback for tool discovery
+   */
   const loadMCPTools = async () => {
     setIsLoadingTools(true);
     setToolsError(null);
@@ -132,9 +187,14 @@ export const MCPPage = () => {
     }
   };
 
+  /**
+   * Start the MCP server
+   * Updates transport setting before starting if changed
+   */
   const handleStartServer = async () => {
     try {
       setIsStarting(true);
+      // Update transport before starting
       await updateTransport(selectedTransport);
       const response = await mcpService.startServer();
       showToast(response.message, 'success');
