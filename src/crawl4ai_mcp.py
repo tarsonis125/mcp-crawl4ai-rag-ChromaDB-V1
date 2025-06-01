@@ -325,9 +325,16 @@ async def crawl_single_page(ctx: Context, url: str) -> str:
             # Create url_to_full_document mapping
             url_to_full_document = {url: result.markdown}
             
+            # Extract metadata from context if available
+            knowledge_type = "technical"
+            tags = []
+            if hasattr(ctx, 'knowledge_metadata'):
+                knowledge_type = ctx.knowledge_metadata.get('knowledge_type', 'technical')
+                tags = ctx.knowledge_metadata.get('tags', [])
+            
             # Update source information FIRST (before inserting documents)
             source_summary = extract_source_summary(source_id, result.markdown[:5000])  # Use first 5000 chars for summary
-            update_source_info(supabase_client, source_id, source_summary, total_word_count)
+            update_source_info(supabase_client, source_id, source_summary, total_word_count, result.markdown, knowledge_type, tags)
             
             # Add documentation chunks to Supabase (AFTER source exists)
             add_documents_to_supabase(supabase_client, urls, chunk_numbers, contents, metadatas, url_to_full_document)
@@ -518,9 +525,16 @@ async def smart_crawl_url(ctx: Context, url: str, max_depth: int = 3, max_concur
             source_summary_args = [(source_id, content) for source_id, content in source_content_map.items()]
             source_summaries = list(executor.map(lambda args: extract_source_summary(args[0], args[1]), source_summary_args))
         
-        for (source_id, _), summary in zip(source_summary_args, source_summaries):
+        # Extract metadata from context if available
+        knowledge_type = "technical"
+        tags = []
+        if hasattr(ctx, 'knowledge_metadata'):
+            knowledge_type = ctx.knowledge_metadata.get('knowledge_type', 'technical')
+            tags = ctx.knowledge_metadata.get('tags', [])
+        
+        for (source_id, content), summary in zip(source_summary_args, source_summaries):
             word_count = source_word_counts.get(source_id, 0)
-            update_source_info(supabase_client, source_id, summary, word_count)
+            update_source_info(supabase_client, source_id, summary, word_count, content, knowledge_type, tags)
         
         # Add documentation chunks to Supabase (AFTER sources exist)
         batch_size = 20
@@ -528,6 +542,7 @@ async def smart_crawl_url(ctx: Context, url: str, max_depth: int = 3, max_concur
         
         # Extract and process code examples from all documents only if enabled
         extract_code_examples_enabled = os.getenv("USE_AGENTIC_RAG", "false") == "true"
+        code_examples = []  # Initialize empty list
         if extract_code_examples_enabled:
             all_code_blocks = []
             code_urls = []
@@ -590,7 +605,7 @@ async def smart_crawl_url(ctx: Context, url: str, max_depth: int = 3, max_concur
             "crawl_type": crawl_type,
             "pages_crawled": len(crawl_results),
             "chunks_stored": chunk_count,
-            "code_examples_stored": len(code_examples),
+            "code_examples_stored": len(code_examples) if 'code_examples' in locals() else 0,
             "sources_updated": len(source_content_map),
             "urls_crawled": [doc['url'] for doc in crawl_results][:5] + (["..."] if len(crawl_results) > 5 else [])
         }, indent=2)
@@ -635,8 +650,10 @@ async def get_available_sources(ctx: Context) -> str:
             for source in result.data:
                 sources.append({
                     "source_id": source.get("source_id"),
+                    "title": source.get("title", source.get("summary", "Untitled")),
                     "summary": source.get("summary"),
-                    "total_words": source.get("total_words"),
+                    "metadata": source.get("metadata", {}),
+                    "total_words": source.get("total_word_count", 0),
                     "created_at": source.get("created_at"),
                     "updated_at": source.get("updated_at")
                 })

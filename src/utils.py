@@ -679,21 +679,167 @@ def add_code_examples_to_supabase(
         print(f"Inserted batch {i//batch_size + 1} of {(total_items + batch_size - 1)//batch_size} code examples")
 
 
-def update_source_info(client: Client, source_id: str, summary: str, word_count: int):
+def generate_source_title_and_metadata(source_id: str, content: str, knowledge_type: str = "technical", tags: List[str] = None) -> Tuple[str, Dict[str, Any]]:
     """
-    Update or insert source information in the sources table.
+    Generate a descriptive title and metadata for a source using OpenAI.
+    
+    Args:
+        source_id: The source ID (domain)
+        content: The content to analyze
+        knowledge_type: Type of knowledge (technical/business)
+        tags: List of tags to include in metadata
+        
+    Returns:
+        Tuple of (title, metadata_dict)
+    """
+    if tags is None:
+        tags = []
+    
+    # Get the decrypted API key
+    api_key = get_openai_api_key_sync()
+    if not api_key:
+        print(f"Error: No OpenAI API key available for title/metadata generation for {source_id}")
+        return f"Content from {source_id}", {
+            "knowledge_type": knowledge_type,
+            "tags": tags,
+            "auto_generated": False
+        }
+    
+    # Create OpenAI client with the decrypted key
+    client = openai.OpenAI(api_key=api_key)
+    
+    # Get the model choice from environment variables
+    model_choice = os.getenv("MODEL_CHOICE", "gpt-4o-mini")
+    
+    # Limit content length to avoid token limits
+    truncated_content = content[:15000] if len(content) > 15000 else content
+    
+    # Create the prompt for generating title and metadata
+    prompt = f"""<source_content>
+{truncated_content}
+</source_content>
+
+Analyze the above content from '{source_id}' and provide:
+
+1. A concise, descriptive title (max 80 characters) that clearly describes what this resource is about. Examples:
+   - "Pydantic AI API Reference"
+   - "FastAPI Complete Guide" 
+   - "React Component Library Documentation"
+   - "Machine Learning Best Practices"
+
+2. Determine the knowledge type: "technical" or "business"
+
+3. Generate 3-7 relevant tags that categorize this content (e.g., python, ai, framework, documentation, tutorial, api, etc.)
+
+4. Identify the primary category (e.g., documentation, tutorial, reference, guide, blog, paper)
+
+5. If applicable, identify the programming language or technology focus
+
+Respond in this exact JSON format:
+{{
+  "title": "Your generated title here",
+  "knowledge_type": "technical",
+  "tags": ["tag1", "tag2", "tag3"],
+  "category": "documentation",
+  "technology": "python",
+  "difficulty": "beginner|intermediate|advanced"
+}}"""
+    
+    try:
+        # Call the OpenAI API to generate title and metadata
+        response = client.chat.completions.create(
+            model=model_choice,
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that analyzes technical content and generates descriptive titles and metadata. Always respond with valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=300
+        )
+        
+        # Parse the JSON response
+        response_text = response.choices[0].message.content.strip()
+        
+        # Try to extract JSON from the response
+        import json
+        try:
+            # Find JSON in the response (in case there's extra text)
+            start_idx = response_text.find('{')
+            end_idx = response_text.rfind('}') + 1
+            if start_idx != -1 and end_idx != 0:
+                json_str = response_text[start_idx:end_idx]
+                result = json.loads(json_str)
+            else:
+                result = json.loads(response_text)
+            
+            # Extract title and build metadata
+            title = result.get("title", f"Content from {source_id}")
+            metadata = {
+                "knowledge_type": result.get("knowledge_type", knowledge_type),
+                "tags": result.get("tags", tags),
+                "category": result.get("category", "documentation"),
+                "technology": result.get("technology"),
+                "difficulty": result.get("difficulty"),
+                "auto_generated": True,
+                "generated_at": time.strftime("%Y-%m-%d")
+            }
+            
+            # Remove None values
+            metadata = {k: v for k, v in metadata.items() if v is not None}
+            
+            print(f"Generated title for {source_id}: {title}")
+            return title, metadata
+            
+        except json.JSONDecodeError as json_error:
+            print(f"Error parsing JSON response for {source_id}: {json_error}")
+            print(f"Response was: {response_text}")
+            # Fallback to basic title and metadata
+            return f"Content from {source_id}", {
+                "knowledge_type": knowledge_type,
+                "tags": tags,
+                "auto_generated": False
+            }
+    
+    except Exception as e:
+        print(f"Error generating title/metadata with LLM for {source_id}: {e}")
+        return f"Content from {source_id}", {
+            "knowledge_type": knowledge_type,
+            "tags": tags,
+            "auto_generated": False
+        }
+
+
+def update_source_info(client: Client, source_id: str, summary: str, word_count: int, content: str = "", knowledge_type: str = "technical", tags: List[str] = None):
+    """
+    Update or insert source information in the sources table with enhanced title and metadata.
     
     Args:
         client: Supabase client
         source_id: The source ID (domain)
         summary: Summary of the source
         word_count: Total word count for the source
+        content: Full content for title/metadata generation
+        knowledge_type: Type of knowledge (technical/business)
+        tags: List of tags to include in metadata
     """
     try:
+        # Generate title and metadata if content is provided
+        if content:
+            title, metadata = generate_source_title_and_metadata(source_id, content, knowledge_type, tags or [])
+        else:
+            title = f"Content from {source_id}"
+            metadata = {
+                "knowledge_type": knowledge_type,
+                "tags": tags or [],
+                "auto_generated": False
+            }
+        
         # Try to update existing source
         result = client.table('sources').update({
+            'title': title,
             'summary': summary,
             'total_word_count': word_count,
+            'metadata': metadata,
             'updated_at': 'now()'
         }).eq('source_id', source_id).execute()
         
@@ -701,12 +847,14 @@ def update_source_info(client: Client, source_id: str, summary: str, word_count:
         if not result.data:
             client.table('sources').insert({
                 'source_id': source_id,
+                'title': title,
                 'summary': summary,
-                'total_word_count': word_count
+                'total_word_count': word_count,
+                'metadata': metadata
             }).execute()
-            print(f"Created new source: {source_id}")
+            print(f"Created new source: {source_id} with title: {title}")
         else:
-            print(f"Updated source: {source_id}")
+            print(f"Updated source: {source_id} with title: {title}")
             
     except Exception as e:
         print(f"Error updating source {source_id}: {e}")

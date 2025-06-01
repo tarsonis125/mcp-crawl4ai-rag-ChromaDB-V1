@@ -979,38 +979,34 @@ async def get_knowledge_items(
         # Transform the data to match frontend expectations
         items = []
         for source in sources_data.get('sources', []):
-            # Get first crawled page for this source to extract metadata
-            pages_result = await mcp_perform_rag_query(
-                ctx=ctx,
-                query='overview',
-                source=source['source_id'],
-                match_count=1
-            )
+            # Use title and metadata from sources table
+            source_metadata = source.get('metadata', {})
             
-            # Parse the JSON response
-            if isinstance(pages_result, str):
-                pages_data = json.loads(pages_result)
-            else:
-                pages_data = pages_result
+            # Get first page URL if available
+            supabase_client = crawling_context.supabase_client
+            pages_response = supabase_client.from_('crawled_pages')\
+                .select('url')\
+                .eq('source_id', source['source_id'])\
+                .limit(1)\
+                .execute()
             
-            first_page = pages_data.get('results', [{}])[0] if pages_data.get('results') else {}
-            metadata = first_page.get('metadata', {})
+            first_page = pages_response.data[0] if pages_response.data else {}
             
             item = {
                 'id': source['source_id'],
-                'title': metadata.get('title', source.get('summary', 'Untitled')),
+                'title': source.get('title', source.get('summary', 'Untitled')),
                 'url': first_page.get('url', f"source://{source['source_id']}"),
                 'source_id': source['source_id'],
                 'metadata': {
-                    'knowledge_type': metadata.get('knowledge_type', 'technical'),
-                    'tags': metadata.get('tags', []),
-                    'source_type': metadata.get('source_type', 'url'),
+                    'knowledge_type': source_metadata.get('knowledge_type', 'technical'),
+                    'tags': source_metadata.get('tags', []),
+                    'source_type': source_metadata.get('source_type', 'url'),
                     'status': 'active',
-                    'description': metadata.get('description', source.get('summary', '')),
-                    'chunks_count': source.get('total_word_count', 0),
-                    'word_count': source.get('total_word_count', 0),
+                    'description': source_metadata.get('description', source.get('summary', '')),
+                    'chunks_count': source.get('total_words', 0),
+                    'word_count': source.get('total_words', 0),
                     'last_scraped': source.get('updated_at'),
-                    **metadata
+                    **source_metadata
                 },
                 'created_at': source.get('created_at'),
                 'updated_at': source.get('updated_at')
@@ -1056,20 +1052,19 @@ async def get_knowledge_items(
 async def crawl_knowledge_item(request: KnowledgeItemRequest):
     """Crawl a URL and add it to the knowledge base."""
     try:
-        # Use the same logic as the existing smart crawl endpoint
-        params = {
-            'url': str(request.url),
-            'max_depth': 2,
-            'max_concurrent': 5,
-            'chunk_size': 5000
-        }
-        
         # Ensure crawling context is initialized once
         if not crawling_context._initialized:
             await crawling_context.initialize()
         
         # Create context for the MCP function
         ctx = crawling_context.create_context()
+        
+        # Store metadata in context for the crawling functions to access
+        ctx.knowledge_metadata = {
+            'knowledge_type': request.knowledge_type,
+            'tags': request.tags,
+            'update_frequency': request.update_frequency
+        }
         
         # Call the actual function
         result = await mcp_smart_crawl_url(
