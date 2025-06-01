@@ -289,44 +289,46 @@ Your AI assistant gains access to these tools:
 
 ---
 
-## 🌐 Real-time Communication Architecture
+## 🌐 Real-Time Communication
 
-Archon uses WebSocket connections for real-time streaming between the frontend and backend:
+Archon implements real-time WebSocket communication for streaming progress updates, server logs, and live data synchronization between the Python backend and React frontend.
+
+### Key Features
+
+- **🔄 Real-Time Progress Tracking**: Live updates during crawling operations with actual progress percentages
+- **📡 Server Log Streaming**: WebSocket-based log streaming from MCP server to UI dashboard  
+- **🎯 Progress Callback Pattern**: Business logic reports progress via callbacks to WebSocket broadcasts
+- **🔗 Auto-Reconnection**: Robust connection handling with automatic reconnect on failures
+- **📱 Responsive UI Updates**: Instant feedback without polling or page refreshes
 
 ### WebSocket Endpoints
 
-| Endpoint | Purpose | Status |
-|----------|---------|--------|
-| `/api/mcp/logs/stream` | MCP Server logs streaming | ✅ Working |
-| `/api/crawl-progress/{progress_id}` | Crawl progress updates | ✅ Working |
-| `/api/knowledge-items/stream` | Knowledge base updates | ✅ Working |
+| Endpoint | Purpose | Implementation |
+|----------|---------|----------------|
+| `/api/mcp/logs/stream` | MCP Server logs streaming | Server-to-Client Broadcast |
+| `/api/crawl-progress/{progress_id}` | Crawl progress updates | Progress Tracking Pattern |
+| `/api/knowledge-items/stream` | Knowledge base updates | Data Synchronization |
 
-### Network Configuration
+### Example: Real-Time Crawl Progress
 
-The Docker setup creates an isolated network (`mcp-crawl4ai-rag-ui_app-network`) where:
+When you start a crawl operation:
 
-- **Frontend Container**: Runs on port 3737 (Vite dev server)
-- **Backend Container**: Runs on ports 8080 (API) and 8051 (MCP Server)
-- **WebSocket Protocol**: Automatically upgraded from HTTP (`ws://localhost:8080`)
+1. **WebSocket Connection**: UI connects to `/api/crawl-progress/{id}` before starting crawl
+2. **Progress Callbacks**: Backend crawling functions report actual progress (URL analysis, page discovery, content processing)  
+3. **Live Updates**: Progress cards update in real-time showing percentage, current URL, and status messages
+4. **Completion Handling**: Automatic cleanup and success notifications when crawling completes
 
-### Connection Flow
+### For Developers
 
-1. **Frontend** connects to WebSocket endpoints via browser
-2. **Docker Network** routes traffic between containers
-3. **Backend** manages WebSocket connections and broadcasts updates
-4. **Real-time Updates** flow from backend processes → WebSocket → frontend UI
+📋 **[Complete WebSocket Guide](./UIandServerWebSockets.md)** - Comprehensive patterns, examples, and best practices for implementing WebSocket communication in full-stack applications.
 
-### Troubleshooting WebSocket Issues
+The guide covers:
+- Python backend WebSocket patterns (Progress tracking, Broadcasting, Callback integration)
+- React frontend patterns (Service management, Component integration, Progress cards)
+- Best practices and common pitfalls
+- Testing strategies and troubleshooting
 
-If WebSocket connections fail:
-
-1. **Check Docker network**: `docker network ls | grep mcp-crawl4ai`
-2. **Verify container ports**: `docker ps` (should show 8080:8080 mapping)
-3. **Test HTTP connectivity**: `curl http://localhost:8080/api/mcp/status`
-4. **Check browser console** for WebSocket error messages
-5. **Restart containers**: `docker-compose restart`
-
-The system automatically handles reconnection with exponential backoff (5-second delay).
+Perfect for developers implementing real-time features in Python + React applications.
 
 ---
 
