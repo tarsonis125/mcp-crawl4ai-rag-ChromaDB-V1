@@ -1,6 +1,45 @@
 """
-Backend API wrapper that provides REST endpoints for the React app.
-This server manages the MCP server process and forwards requests.
+FastAPI Backend for Archon Knowledge Engine
+
+This module provides the REST API and WebSocket endpoints for the Archon UI.
+It acts as a wrapper around the MCP server and provides additional functionality
+for web-based interactions.
+
+Key Responsibilities:
+1. MCP Server Lifecycle Management
+   - Start/stop the MCP server process
+   - Monitor server status and health
+   - Stream server logs via WebSocket
+
+2. Credential Management
+   - Store and retrieve encrypted credentials
+   - Manage API keys and configuration
+   - Support for different credential categories
+
+3. Knowledge Base Operations
+   - Web crawling endpoints
+   - RAG query processing
+   - Source management
+   - Document uploads
+
+4. Real-time Communication
+   - WebSocket endpoints for live updates
+   - Server-sent events for log streaming
+   - Connection management for multiple clients
+
+Architecture:
+- FastAPI for REST endpoints
+- WebSocket support for real-time features
+- Subprocess management for MCP server
+- Integration with Supabase for data persistence
+- Encryption support for sensitive credentials
+
+Environment Variables:
+- SUPABASE_URL: Supabase project URL (required)
+- SUPABASE_SERVICE_KEY: Supabase service key (required)
+- OPENAI_API_KEY: OpenAI API key (can be set via UI)
+- HOST: Backend host (default: 0.0.0.0)
+- PORT: Backend port (default: 8080)
 """
 import asyncio
 import subprocess
@@ -15,9 +54,10 @@ from datetime import datetime
 from collections import deque
 from dataclasses import dataclass
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl
+from pathlib import Path
 import httpx
 
 # Import crawling functions and dependencies from crawl4ai_mcp
@@ -1202,21 +1242,130 @@ async def delete_knowledge_item(source_id: str):
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
 
-@app.post("/api/knowledge-items/upload")
-async def upload_knowledge_document(request: Request):
+@app.post("/api/documents/upload")
+async def upload_document(
+    file: UploadFile = File(...),
+    tags: Optional[str] = Form(None),
+    knowledge_type: Optional[str] = Form("technical")
+):
     """Upload a document and add it to the knowledge base."""
     try:
-        # This would handle file upload functionality
-        # For now, return a placeholder response
-        return {
-            'success': True,
-            'source_id': f'uploaded_{int(time.time())}',
-            'message': 'Document upload functionality coming soon',
-            'filename': 'uploaded_document.pdf'
+        # Validate file size (10MB limit)
+        MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+        
+        # Read file content
+        file_content = await file.read()
+        file_size = len(file_content)
+        
+        if file_size > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=413, 
+                detail={'error': f'File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB'}
+            )
+        
+        if file_size == 0:
+            raise HTTPException(
+                status_code=400,
+                detail={'error': 'Empty file uploaded'}
+            )
+        
+        # Validate file type
+        file_ext = Path(file.filename).suffix.lower()
+        allowed_extensions = {'.pdf', '.doc', '.docx', '.md', '.txt'}
+        
+        if file_ext not in allowed_extensions:
+            raise HTTPException(
+                status_code=400,
+                detail={'error': f'Unsupported file type: {file_ext}. Allowed: {", ".join(allowed_extensions)}'}
+            )
+        
+        # Parse tags if provided
+        parsed_tags = []
+        if tags:
+            try:
+                parsed_tags = json.loads(tags) if tags.startswith('[') else [tags]
+            except:
+                parsed_tags = [tags]  # Treat as single tag if JSON parsing fails
+        
+        # Ensure crawling context is initialized
+        if not crawling_context._initialized:
+            await crawling_context.initialize()
+        
+        # Create context for the MCP function
+        ctx = crawling_context.create_context()
+        
+        # Store metadata in context for the upload function to access
+        ctx.knowledge_metadata = {
+            'knowledge_type': knowledge_type,
+            'tags': parsed_tags
         }
         
+        # Encode file content as base64 for the MCP tool
+        import base64
+        encoded_content = base64.b64encode(file_content).decode('utf-8')
+        
+        # Import the MCP upload function
+        from src.crawl4ai_mcp import upload_document as mcp_upload_document
+        
+        # Call the MCP upload function
+        result = await mcp_upload_document(
+            ctx=ctx,
+            file_content=encoded_content,
+            filename=file.filename,
+            knowledge_type=knowledge_type,
+            tags=parsed_tags,
+            chunk_size=5000
+        )
+        
+        # Parse JSON string response
+        if isinstance(result, str):
+            result = json.loads(result)
+        
+        if result.get('success'):
+            # Broadcast update to WebSocket clients
+            await manager.broadcast({
+                "type": "document_uploaded",
+                "data": {
+                    "filename": file.filename,
+                    "success": True,
+                    "message": f'Document {file.filename} uploaded successfully'
+                }
+            })
+            
+            return {
+                'success': True,
+                'filename': file.filename,
+                'source_id': result.get('source_id'),
+                'title': result.get('title'),
+                'description': result.get('description'),
+                'chunks_created': result.get('chunks_created'),
+                'word_count': result.get('word_count'),
+                'code_examples_extracted': result.get('code_examples_extracted', 0),
+                'knowledge_type': knowledge_type,
+                'tags': parsed_tags,
+                'file_type': file_ext,
+                'message': result.get('message', 'Document uploaded successfully')
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail={'error': result.get('error', 'Upload failed')}
+            )
+        
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"Document upload error: {e}")
         raise HTTPException(status_code=500, detail={'error': str(e)})
+
+
+@app.post("/api/knowledge-items/upload")
+async def upload_knowledge_document(request: Request):
+    """Legacy endpoint - redirects to new upload endpoint."""
+    return {
+        'success': False,
+        'error': 'Please use /api/documents/upload endpoint with multipart form data'
+    }
 
 
 # Error handlers

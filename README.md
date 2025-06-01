@@ -4,32 +4,63 @@
   <em>Build Your AI's Knowledge Base with Web Crawling and Document Management</em>
 </p>
 
-Archon is a powerful knowledge engine that integrates the [Model Context Protocol (MCP)](https://modelcontextprotocol.io) with [Crawl4AI](https://crawl4ai.com) and [Supabase](https://supabase.com/) to create a centralized knowledge base for your AI agents and coding assistants. 
+<p align="center">
+  <a href="#-quick-start">Quick Start</a> •
+  <a href="#-features">Features</a> •
+  <a href="#-usage-guide">Usage</a> •
+  <a href="#-mcp-integration">MCP Integration</a> •
+  <a href="#-contributing">Contributing</a>
+</p>
+
+---
+
+## 📑 Table of Contents
+
+1. [What is Archon?](#-what-is-archon)
+2. [Key Features](#-key-features)
+3. [Quick Start](#-quick-start)
+4. [Usage Guide](#-usage-guide)
+   - [Building Your Knowledge Base](#building-your-knowledge-base)
+   - [Web Crawling](#web-crawling)
+   - [Document Upload](#document-upload)
+   - [Testing with Chat](#testing-with-chat)
+5. [MCP Integration](#-mcp-integration)
+6. [RAG Strategies](#-rag-strategies)
+7. [API Reference](#-api-reference)
+8. [Development](#-development)
+9. [Contributing](#-contributing)
+
+---
+
+## 🎯 What is Archon?
+
+Archon is a powerful knowledge engine that integrates the [Model Context Protocol (MCP)](https://modelcontextprotocol.io) with [Crawl4AI](https://crawl4ai.com) and [Supabase](https://supabase.com/) to create a centralized knowledge base for your AI agents and coding assistants.
 
 **Connect your Cursor or Windsurf agents to Archon** and give them access to:
 - Your technical documentation
 - Your business/project documentation  
 - Any website content you've crawled
+- Uploaded documents (PDFs, Word docs, markdown files)
 - A searchable knowledge base with advanced RAG capabilities
 
 With Archon's web interface, you can **manage all your knowledge in one place** - crawl websites, upload documents, organize by type, and even chat with your knowledge base to test queries before your AI agents use them.
 
-## 🎯 What is Archon?
-
-Archon serves as a bridge between your documentation and your AI coding assistants. Instead of having your AI search the entire internet or work with outdated training data, Archon lets you:
-
-1. **Build a Custom Knowledge Base**: Crawl specific documentation sites, upload your own docs, and organize them by type (technical vs business/project)
-2. **Connect Your AI Tools**: Use the MCP protocol to connect Cursor, Windsurf, or any MCP-compatible AI assistant
-3. **Get Relevant Answers**: Your AI agents query YOUR knowledge base with advanced RAG strategies for precise, contextual answers
-4. **Test and Refine**: Use the built-in chat interface to test queries and see what knowledge your AI agents will access
+---
 
 ## ✨ Key Features
 
 ### 📚 Knowledge Management
 - **Web Crawling**: Intelligently crawl documentation sites, handling sitemaps, recursive crawling, and various content types
-- **Document Upload**: Upload and process your own documentation files
+- **Document Upload**: Upload and process PDFs, Word documents, markdown, and text files
 - **Organization**: Segment knowledge by technical documentation vs business/project documentation
 - **Source Filtering**: RAG queries can filter by specific domains or document sources
+
+### 📄 Document Processing
+- **PDF Support**: Dual-engine extraction (PyPDF2 + pdfplumber) for reliable text extraction
+- **Word Documents**: Full support for .doc and .docx files via python-docx
+- **Markdown & Text**: Direct processing of .md and .txt files
+- **Smart Chunking**: Context-aware content chunking preserving structure
+- **AI-Generated Metadata**: Automatic title and description generation for uploaded documents
 
 ### 🤖 Advanced RAG Capabilities
 - **Smart URL Detection**: Automatically detects and handles different URL types (regular webpages, sitemaps, text files)
@@ -40,6 +71,7 @@ Archon serves as a bridge between your documentation and your AI coding assistan
 
 ### 🔌 MCP Integration
 - **Universal Compatibility**: Works with any MCP-compatible client (Cursor, Windsurf, Claude Desktop, etc.)
+- **Dual Transport**: SSE for web clients, stdio for standard MCP clients
 - **Easy Connection**: Get connection details directly from the web UI
 - **Real-time Access**: Your AI agents get immediate access to newly added knowledge
 
@@ -48,9 +80,11 @@ Archon serves as a bridge between your documentation and your AI coding assistan
 - **Server Management**: Start/stop the MCP server with one click, see uptime and status
 - **Settings Page**: Configure credentials (OpenAI API key) and RAG strategies through an intuitive UI
 - **Crawling Dashboard**: Initiate and monitor web crawling operations
-- **Document Management**: Upload and organize your documentation
+- **Document Management**: Upload and organize your documentation with drag-and-drop interface
 - **Knowledge Chat**: Test RAG queries through an interactive chat interface
 - **Real-time Log Streaming**: Watch server logs in real-time as operations execute
+
+---
 
 ## 🚀 Quick Start
 
@@ -100,181 +134,93 @@ Archon serves as a bridge between your documentation and your AI coding assistan
    - Add to your Cursor/Windsurf settings (usually `~/.cursor/mcp.json` or equivalent)
    - Your AI now has access to your knowledge base!
 
-## 🎓 Using Archon
+---
+
+## 📖 Usage Guide
 
 ### Building Your Knowledge Base
 
-1. **Crawl Documentation Sites**:
-   - Navigate to the Knowledge Base page
-   - Enter a documentation URL (e.g., `https://docs.example.com`)
-   - Archon will intelligently crawl the site, following links and building your knowledge base
+Archon provides multiple ways to build and manage your knowledge base:
 
-2. **Upload Your Documents**:
-   - Use the upload feature to add your own documentation
-   - Organize by type (technical vs business/project)
-   - Documents are processed and indexed automatically
+### Web Crawling
 
-3. **Test with Chat**:
-   - Use the built-in chat to query your knowledge base
-   - See exactly what results your AI agents will get
-   - Refine your content organization based on results
+1. **Navigate to Knowledge Base**: Go to the Knowledge Base page in the web UI
+2. **Enter URL**: Input a documentation URL (e.g., `https://docs.example.com`)
+3. **Configure Options**:
+   - **Knowledge Type**: Technical or Business/Project
+   - **Tags**: Add relevant tags for organization
+   - **Crawl Depth**: Set maximum recursion depth (default: 3)
+   - **Concurrent Limit**: Control crawling speed (default: 10)
 
-### Connecting AI Assistants
+4. **Smart Detection**: Archon automatically detects and handles:
+   - **Regular webpages**: Recursive crawling following internal links
+   - **Sitemaps**: Extracts and processes all URLs from sitemap.xml
+   - **Text files**: Direct content processing for .txt files
 
-Once your MCP server is running, add it to your AI assistant's configuration:
+### Document Upload
 
-**For Cursor/Windsurf**:
-```json
-{
-  "mcpServers": {
-    "archon": {
-      "transport": "sse",
-      "url": "http://localhost:8051/sse"
-    }
-  }
-}
-```
+Upload and process your own documentation files:
 
-Your AI assistant can now use these tools:
-- `crawl_single_page`: Process a specific page
-- `smart_crawl_url`: Intelligently crawl an entire site
-- `perform_rag_query`: Search the knowledge base
-- `get_available_sources`: List indexed sources
-- `search_code_examples`: Find code snippets (when enabled)
+#### Supported Formats
 
-## 🧪 RAG Strategies
+| Format | Extensions | Processing Method |
+|--------|------------|------------------|
+| **PDF** | `.pdf` | PyPDF2 + pdfplumber (dual-engine for reliability) |
+| **Word** | `.doc`, `.docx` | python-docx library |
+| **Markdown** | `.md` | Direct text processing |
+| **Text** | `.txt` | Direct text processing |
 
-Archon includes several advanced RAG strategies you can enable through the Settings page:
+#### Upload Process
 
-### 1. **Contextual Embeddings** 
-Enhances each chunk's embedding with document context for better semantic understanding.
-- **Best for**: Technical docs where context is crucial
-- **Trade-off**: Slower indexing, much better accuracy
+1. **Access Upload**: Go to Knowledge Base → Add Knowledge → Upload File
+2. **Select File**: Choose your document (max 10MB)
+3. **Set Metadata**:
+   - **Knowledge Type**: Technical or Business/Project
+   - **Tags**: Add relevant tags for categorization
+4. **Upload & Process**: Files are automatically:
+   - Text extracted using appropriate libraries
+   - Content chunked preserving structure
+   - AI-generated title and description created
+   - Indexed with embeddings for search
+   - Code examples extracted (if Agentic RAG enabled)
 
-### 2. **Hybrid Search**
-Combines vector similarity with keyword matching.
-- **Best for**: Technical content with specific terms/functions
-- **Trade-off**: Slightly slower, more comprehensive results
+#### Upload Features
 
-### 3. **Agentic RAG** 
-Extracts and indexes code examples separately with summaries.
-- **Best for**: Developer documentation with code samples
-- **Trade-off**: Slower crawling, enables specialized code search
+- **File Validation**: Size limits, format checking, content verification
+- **AI-Generated Metadata**: Automatic title and description generation from content
+- **Smart Chunking**: Preserves document structure (headings, paragraphs, code blocks)
+- **Progress Tracking**: Real-time upload and processing status
+- **Error Handling**: Clear feedback for unsupported files or processing errors
 
-### 4. **Reranking**
-Re-scores results using a cross-encoder model for better relevance.
-- **Best for**: Complex queries requiring precision
-- **Trade-off**: +100-200ms latency, significantly better ranking
-
-### Recommended Configurations
-
-Configure these in the Settings page based on your use case:
-
-**For General Documentation**:
-- Contextual Embeddings: OFF
-- Hybrid Search: ON
-- Agentic RAG: OFF
-- Reranking: ON
-
-**For Technical/Code Documentation**:
-- Contextual Embeddings: ON
-- Hybrid Search: ON
-- Agentic RAG: ON
-- Reranking: ON
-
-## 🔮 Vision & Roadmap
-
-Archon is evolving to become the ultimate knowledge engine for AI coding assistants:
-
-1. **Multi-Model Support**: Beyond OpenAI - support for Ollama and local models
-2. **Advanced Chunking**: Context-aware chunking strategies for better retrieval
-3. **Knowledge Graphs**: Visual representation of your knowledge connections
-4. **Team Collaboration**: Shared knowledge bases for development teams
-5. **Performance Optimization**: Faster crawling and real-time indexing
-
-## 🛠️ Development
-
-### Running for Development
+#### Example Upload Flow
 
 ```bash
-# Backend API (with hot reload)
-python -m uvicorn src.api_wrapper:app --host 0.0.0.0 --port 8080 --reload
-
-# Frontend (with hot reload)
-cd archon-ui-main
-npm run dev
-
-# MCP Server (for testing)
-python src/crawl4ai_mcp.py
+# Test upload via API (for development/testing)
+curl -X POST "http://localhost:8080/api/documents/upload" \
+  -F "file=@your_document.pdf" \
+  -F "knowledge_type=technical" \
+  -F "tags=[\"documentation\", \"api\"]"
 ```
 
-### Architecture
+### Testing with Chat
 
-- **Frontend**: React + Vite (port 3737)
-- **Backend API**: FastAPI wrapper (port 8080)
-- **MCP Server**: Python implementation (port 8051)
-- **Database**: Supabase (pgvector for embeddings)
+1. **Built-in Chat Interface**: Use the knowledge chat to test queries
+2. **Query Testing**: See exactly what results your AI agents will receive
+3. **Source Filtering**: Test queries against specific sources
+4. **Result Analysis**: Review relevance scores and content chunks
+5. **Refinement**: Adjust content organization based on test results
 
-## 📚 Advanced Usage
+---
 
-### Direct MCP Integration
-
-While the UI is the recommended way to use Archon, you can also integrate directly:
-
-```json
-{
-  "mcpServers": {
-    "archon": {
-      "command": "python",
-      "args": ["path/to/archon/src/crawl4ai_mcp.py"],
-      "env": {
-        "TRANSPORT": "stdio",
-        "OPENAI_API_KEY": "your_key",
-        "SUPABASE_URL": "your_url",
-        "SUPABASE_SERVICE_KEY": "your_key"
-      }
-    }
-  }
-}
-```
-
-### API Access
-
-The Backend API is available at http://localhost:8080/docs for programmatic access to:
-- Crawling operations
-- RAG queries
-- Knowledge base management
-- Server control
-
-## 🤝 Contributing
-
-Archon is designed to grow with the community's needs. We welcome contributions for:
-- Additional document processors
-- New embedding models
-- Enhanced UI features
-- Performance optimizations
-- Integration improvements
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Integration with MCP Clients
-
-The Archon MCP server supports both **SSE** and **stdio** transports, making it compatible with various MCP clients:
+## 🔌 MCP Integration
 
 ### Transport Selection
 
-You can choose the transport method through the MCP Dashboard:
-1. Open the MCP Dashboard at `http://localhost:3737`
-2. Navigate to the MCP Control page  
-3. In the "Transport Configuration" section, select:
-   - **SSE (Web)**: For web-based integrations and dashboard control
-   - **Stdio (Cursor/Claude)**: For standard MCP clients like Cursor, Claude Desktop, etc.
+Choose the appropriate transport method for your MCP client:
 
-### SSE Configuration
+#### SSE Transport (Recommended for Web Clients)
 
-Use SSE transport for web-based clients and dashboard integration:
+Best for web-based integrations and dashboard control:
 
 ```json
 {
@@ -287,7 +233,7 @@ Use SSE transport for web-based clients and dashboard integration:
 }
 ```
 
-**Note for Windsurf users**: Use `serverUrl` instead of `url`:
+**Note for Windsurf**: Use `serverUrl` instead of `url`:
 ```json
 {
   "mcpServers": {
@@ -299,9 +245,9 @@ Use SSE transport for web-based clients and dashboard integration:
 }
 ```
 
-### Stdio Configuration
+#### Stdio Transport (For Standard MCP Clients)
 
-Use stdio transport for Cursor, Claude Desktop, and other standard MCP clients:
+Best for Cursor, Claude Desktop, and other standard MCP clients:
 
 ```json
 {
@@ -327,36 +273,204 @@ Use stdio transport for Cursor, Claude Desktop, and other standard MCP clients:
 }
 ```
 
-Add this to your MCP client configuration file:
-- **Cursor**: `~/.cursor/mcp.json`
-- **Claude Desktop**: Platform-specific MCP configuration file
+### Available MCP Tools
 
-### Alternative Stdio Setup (Python)
+Your AI assistant gains access to these tools:
 
-For development or direct Python execution:
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `crawl_single_page` | Process a specific webpage | `url` |
+| `smart_crawl_url` | Intelligently crawl an entire site | `url`, `max_depth`, `max_concurrent`, `chunk_size` |
+| `upload_document` | Upload and process documents | `file_content`, `filename`, `knowledge_type`, `tags` |
+| `perform_rag_query` | Search the knowledge base | `query`, `source`, `match_count` |
+| `get_available_sources` | List all indexed sources | None |
+| `search_code_examples` | Find code snippets | `query`, `source_id`, `match_count` |
+| `delete_source` | Remove a source and its content | `source_id` |
 
-```json
-{
-  "mcpServers": {
-    "archon": {
-      "command": "python",
-      "args": ["path/to/archon/src/crawl4ai_mcp.py"],
-      "env": {
-        "TRANSPORT": "stdio",
-        "OPENAI_API_KEY": "your_openai_api_key",
-        "SUPABASE_URL": "your_supabase_url",
-        "SUPABASE_SERVICE_KEY": "your_supabase_service_key"
-      }
-    }
-  }
-}
+---
+
+## 🧪 RAG Strategies
+
+Configure advanced RAG strategies through the Settings page:
+
+### Strategy Options
+
+#### 1. **Contextual Embeddings** 
+Enhances each chunk's embedding with document context for better semantic understanding.
+- **Best for**: Technical docs where context is crucial
+- **Trade-off**: Slower indexing, much better accuracy
+
+#### 2. **Hybrid Search**
+Combines vector similarity with keyword matching.
+- **Best for**: Technical content with specific terms/functions
+- **Trade-off**: Slightly slower, more comprehensive results
+
+#### 3. **Agentic RAG** 
+Extracts and indexes code examples separately with summaries.
+- **Best for**: Developer documentation with code samples
+- **Trade-off**: Slower crawling, enables specialized code search
+
+#### 4. **Reranking**
+Re-scores results using a cross-encoder model for better relevance.
+- **Best for**: Complex queries requiring precision
+- **Trade-off**: +100-200ms latency, significantly better ranking
+
+### Recommended Configurations
+
+**For General Documentation**:
+- Contextual Embeddings: OFF
+- Hybrid Search: ON
+- Agentic RAG: OFF
+- Reranking: ON
+
+**For Technical/Code Documentation**:
+- Contextual Embeddings: ON
+- Hybrid Search: ON
+- Agentic RAG: ON
+- Reranking: ON
+
+---
+
+## 📚 API Reference
+
+### REST API Endpoints
+
+The Backend API is available at `http://localhost:8080/docs` for programmatic access:
+
+#### Knowledge Management
+- `POST /api/knowledge-items/crawl` - Crawl a URL
+- `POST /api/documents/upload` - Upload a document
+- `GET /api/knowledge-items` - List knowledge items
+- `DELETE /api/knowledge-items/{source_id}` - Delete a source
+
+#### RAG Operations
+- `POST /api/rag/query` - Perform RAG search
+- `GET /api/rag/sources` - Get available sources
+
+#### Server Management
+- `POST /api/mcp/start` - Start MCP server
+- `POST /api/mcp/stop` - Stop MCP server
+- `GET /api/mcp/status` - Get server status
+
+---
+
+## 🛠️ Development
+
+### Running for Development
+
+```bash
+# Backend API (with hot reload)
+python -m uvicorn src.api_wrapper:app --host 0.0.0.0 --port 8080 --reload
+
+# Frontend (with hot reload)
+cd archon-ui-main
+npm run dev
+
+# MCP Server (for testing)
+python src/crawl4ai_mcp.py
 ```
 
-### Transport Switching
+### Architecture
 
-To switch between transports:
-1. **Via UI**: Use the transport selection radio buttons in the MCP Dashboard
-2. **Via Environment**: Set the `TRANSPORT` environment variable to `sse` or `stdio`
-3. **Via API**: Update the transport credential through the credentials API
+- **Frontend**: React + Vite (port 3737)
+- **Backend API**: FastAPI wrapper (port 8080)
+- **MCP Server**: Python implementation (port 8051)
+- **Database**: Supabase (pgvector for embeddings)
 
-The server will use the selected transport on the next restart.
+### Testing Document Upload
+
+```bash
+# Test markdown upload
+curl -X POST "http://localhost:8080/api/documents/upload" \
+  -F "file=@test.md" \
+  -F "knowledge_type=technical" \
+  -F "tags=[\"test\"]"
+
+# Test PDF upload
+curl -X POST "http://localhost:8080/api/documents/upload" \
+  -F "file=@document.pdf" \
+  -F "knowledge_type=business" \
+  -F "tags=[\"manual\", \"guide\"]"
+```
+
+---
+
+## 🔮 Future Enhancements
+
+### Potential Docusaurus Migration
+
+For enhanced documentation experience, we're considering migrating to [Docusaurus](https://docusaurus.io/):
+
+#### Benefits of Docusaurus
+- **Interactive Documentation**: Live React components and examples
+- **Better Navigation**: Automatic sidebar generation and search
+- **Versioning**: Support for multiple documentation versions
+- **Community Features**: Easy contribution workflow with GitHub integration
+- **Mobile Responsive**: Better mobile experience than static README
+
+#### Quick Setup (If We Migrate)
+```bash
+npx create-docusaurus@latest archon-docs classic
+cd archon-docs && npm start
+```
+
+#### Pros & Cons
+
+**Pros**:
+- Professional documentation site
+- Better organization and navigation
+- Enhanced search capabilities
+- Community contribution friendly
+- Mobile responsive design
+
+**Cons**:
+- Additional maintenance overhead
+- More complex deployment pipeline
+- Overkill for simple project documentation
+
+### Other Roadmap Items
+
+1. **Multi-Model Support**: Beyond OpenAI - support for Ollama and local models
+2. **Advanced Chunking**: Context-aware chunking strategies for better retrieval
+3. **Knowledge Graphs**: Visual representation of your knowledge connections
+4. **Team Collaboration**: Shared knowledge bases for development teams
+5. **Performance Optimization**: Faster crawling and real-time indexing
+
+---
+
+## 🤝 Contributing
+
+Archon is designed to grow with the community's needs. We welcome contributions for:
+
+### Areas for Contribution
+- **Document Processors**: Additional file format support (EPUB, RTF, etc.)
+- **Embedding Models**: Support for local models and alternatives to OpenAI
+- **UI Enhancements**: Better visualization and user experience
+- **Performance**: Optimization for large-scale knowledge bases
+- **Integration**: New MCP client integrations
+
+### Getting Started
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+### Development Guidelines
+- Follow existing code style and patterns
+- Add documentation for new features
+- Test your changes thoroughly
+- Update README if needed
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+<p align="center">
+  <strong>Transform your AI coding experience with Archon</strong><br>
+  <em>Build once, query everywhere</em>
+</p>

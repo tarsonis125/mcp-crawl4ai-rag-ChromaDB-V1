@@ -1,8 +1,34 @@
 """
-MCP server for web crawling with Crawl4AI.
+MCP (Model Context Protocol) server for web crawling with Crawl4AI.
 
 This server provides tools to crawl websites using Crawl4AI, automatically detecting
 the appropriate crawl method based on URL type (sitemap, txt file, or regular webpage).
+
+The server supports two transport modes:
+- SSE (Server-Sent Events): For web-based integrations and dashboard control
+- stdio: For standard MCP clients like Cursor, Claude Desktop, etc.
+
+Key Features:
+- Intelligent URL detection (sitemaps, text files, regular pages)
+- Recursive crawling with depth control
+- Smart content chunking preserving code blocks and paragraphs
+- Vector database storage with Supabase pgvector
+- Advanced RAG strategies (contextual embeddings, hybrid search, reranking)
+- Code example extraction and summarization (when enabled)
+- Source management and organization
+
+Environment Variables:
+- TRANSPORT: Transport mode ('sse' or 'stdio'), defaults to 'sse'
+- HOST: Server host address, defaults to 'localhost'
+- PORT: Server port number, defaults to 8051
+- OPENAI_API_KEY: OpenAI API key for embeddings
+- SUPABASE_URL: Supabase project URL
+- SUPABASE_SERVICE_KEY: Supabase service key
+- MODEL_CHOICE: OpenAI model for embeddings, defaults to 'gpt-4o-mini'
+- USE_CONTEXTUAL_EMBEDDINGS: Enable contextual embeddings (true/false)
+- USE_HYBRID_SEARCH: Enable hybrid search combining vector and keyword (true/false)
+- USE_AGENTIC_RAG: Enable code example extraction (true/false)
+- USE_RERANKING: Enable result reranking with cross-encoder (true/false)
 """
 from mcp.server.fastmcp import FastMCP, Context
 from sentence_transformers import CrossEncoder
@@ -50,7 +76,16 @@ load_dotenv(dotenv_path, override=True)
 # Create a dataclass for our application context
 @dataclass
 class Crawl4AIContext:
-    """Context for the Crawl4AI MCP server."""
+    """
+    Context for the Crawl4AI MCP server.
+    
+    This context holds all the necessary resources for the MCP server to operate:
+    - AsyncWebCrawler instance for web crawling operations
+    - Supabase client for database operations
+    - Optional reranking model for improving search results
+    
+    The context is managed by the FastMCP lifespan and is available to all MCP tools.
+    """
     crawler: AsyncWebCrawler
     supabase_client: Client
     reranking_model: Optional[CrossEncoder] = None
@@ -60,11 +95,24 @@ async def crawl4ai_lifespan(server: FastMCP) -> AsyncIterator[Crawl4AIContext]:
     """
     Manages the Crawl4AI client lifecycle.
     
+    This context manager handles the initialization and cleanup of resources:
+    1. Creates and initializes the AsyncWebCrawler with headless browser
+    2. Establishes connection to Supabase database
+    3. Optionally loads the cross-encoder model for reranking
+    4. Ensures proper cleanup when the server shuts down
+    
+    The resources are made available to all MCP tools through the context.
+    
     Args:
         server: The FastMCP server instance
         
     Yields:
         Crawl4AIContext: The context containing the Crawl4AI crawler and Supabase client
+        
+    Environment Dependencies:
+        - SUPABASE_URL: Must be set for database connection
+        - SUPABASE_SERVICE_KEY: Must be set for database authentication
+        - USE_RERANKING: If 'true', loads the cross-encoder model
     """
     # Create browser configuration
     browser_config = BrowserConfig(
@@ -109,16 +157,28 @@ mcp = FastMCP(
 
 def rerank_results(model: CrossEncoder, query: str, results: List[Dict[str, Any]], content_key: str = "content") -> List[Dict[str, Any]]:
     """
-    Rerank search results using a cross-encoder model.
+    Rerank search results using a cross-encoder model for improved relevance.
+    
+    This function takes search results from vector/keyword search and re-scores them
+    using a cross-encoder model that directly compares the query with each result.
+    Cross-encoders typically provide better relevance scoring than bi-encoders used
+    in vector search, at the cost of higher computational requirements.
+    
+    The function adds a 'rerank_score' field to each result and sorts by this score.
     
     Args:
-        model: The cross-encoder model to use for reranking
-        query: The search query
-        results: List of search results
+        model: The cross-encoder model to use for reranking (e.g., ms-marco-MiniLM)
+        query: The search query to compare against
+        results: List of search results, each containing at least the content_key field
         content_key: The key in each result dict that contains the text content
         
     Returns:
-        Reranked list of results
+        Reranked list of results sorted by relevance (highest score first)
+        
+    Note:
+        - Falls back gracefully to original results if reranking fails
+        - Preserves all original fields in results
+        - Adds 'rerank_score' field with float values
     """
     if not model or not results:
         return results
@@ -192,7 +252,41 @@ def parse_sitemap(sitemap_url: str) -> List[str]:
     return urls
 
 def smart_chunk_markdown(text: str, chunk_size: int = 5000) -> List[str]:
-    """Split text into chunks, respecting code blocks and paragraphs."""
+    """
+    Split text into chunks intelligently, respecting code blocks and paragraphs.
+    
+    This function implements a context-aware chunking strategy that:
+    1. Preserves code blocks (```) as complete units when possible
+    2. Prefers to break at paragraph boundaries (\\n\\n)
+    3. Falls back to sentence boundaries (. ) if needed
+    4. Only splits mid-content when absolutely necessary
+    
+    The algorithm ensures that important semantic units like code examples
+    remain intact, improving the quality of RAG retrieval.
+    
+    Args:
+        text: The markdown text to chunk
+        chunk_size: Maximum size of each chunk in characters (default: 5000)
+        
+    Returns:
+        List of text chunks, each no larger than chunk_size
+        
+    Algorithm:
+        1. Start from position 0
+        2. Look ahead chunk_size characters
+        3. Search backwards for the best split point:
+           - First priority: Code block boundary (```)
+           - Second priority: Paragraph break (\\n\\n)
+           - Third priority: Sentence end (. )
+        4. Only use the split point if it's after 30% of chunk_size
+        5. Clean up and store the chunk
+        6. Move to the next position and repeat
+        
+    Example:
+        >>> text = "# Title\\n\\nParagraph 1.\\n\\n```python\\ncode\\n```\\n\\nParagraph 2."
+        >>> chunks = smart_chunk_markdown(text, chunk_size=50)
+        >>> len(chunks) == 2  # Split preserves code block
+    """
     chunks = []
     start = 0
     text_length = len(text)
@@ -277,12 +371,51 @@ async def crawl_single_page(ctx: Context, url: str) -> str:
     This tool is ideal for quickly retrieving content from a specific URL without following links.
     The content is stored in Supabase for later retrieval and querying.
     
+    The tool performs the following operations:
+    1. Crawls the specified URL using a headless browser
+    2. Extracts and converts content to markdown format
+    3. Chunks the content intelligently preserving structure
+    4. Generates embeddings for each chunk (using OpenAI)
+    5. Stores chunks in Supabase with vector embeddings
+    6. Updates source metadata with title and summary
+    7. Optionally extracts and processes code examples
+    
     Args:
-        ctx: The MCP server provided context
-        url: URL of the web page to crawl
+        ctx: The MCP server provided context containing crawler and database clients
+        url: URL of the web page to crawl (must be a valid HTTP/HTTPS URL)
     
     Returns:
-        Summary of the crawling operation and storage in Supabase
+        JSON string with the operation results including:
+        - success: Boolean indicating if crawl succeeded
+        - url: The crawled URL
+        - chunks_stored: Number of content chunks created
+        - code_examples_stored: Number of code examples extracted (if enabled)
+        - content_length: Total characters in the crawled content
+        - total_word_count: Total word count across all chunks
+        - source_id: The domain/source identifier
+        - links_count: Count of internal and external links found
+        - error: Error message if crawl failed
+        
+    Example Response:
+        {
+            "success": true,
+            "url": "https://docs.example.com/guide",
+            "chunks_stored": 5,
+            "code_examples_stored": 3,
+            "content_length": 15000,
+            "total_word_count": 2500,
+            "source_id": "docs.example.com",
+            "links_count": {
+                "internal": 10,
+                "external": 5
+            }
+        }
+        
+    Notes:
+        - Uses CacheMode.BYPASS to always fetch fresh content
+        - Automatically extracts source_id from URL domain
+        - Respects USE_AGENTIC_RAG env var for code extraction
+        - All database operations are transactional
     """
     try:
         # Get the crawler from the context
@@ -1008,6 +1141,332 @@ async def search_code_examples(ctx: Context, query: str, source_id: str = None, 
         return json.dumps({
             "success": False,
             "query": query,
+            "error": str(e)
+        }, indent=2)
+
+@mcp.tool()
+async def upload_document(
+    ctx: Context, 
+    file_content: str, 
+    filename: str, 
+    knowledge_type: str = "technical", 
+    tags: List[str] = [], 
+    chunk_size: int = 5000
+) -> str:
+    """
+    Upload and process a document to add it to the knowledge base.
+    
+    This tool processes uploaded documents (PDF, DOC, MD, TXT) and adds them to the knowledge base.
+    It extracts text content, chunks it appropriately, generates embeddings, and stores everything
+    in the Supabase database with proper metadata and AI-generated titles/descriptions.
+    
+    Supported formats:
+    - PDF (.pdf): Extracted using PyPDF2 and pdfplumber
+    - Word Documents (.doc, .docx): Extracted using python-docx 
+    - Markdown (.md): Processed directly
+    - Text (.txt): Processed directly
+    
+    The document is processed similar to web crawling:
+    - Text is chunked preserving structure (paragraphs, code blocks)
+    - Embeddings are generated for each chunk
+    - AI-generated title and description are created
+    - Code examples are extracted if Agentic RAG is enabled
+    - All chunks are stored with proper metadata
+    
+    Args:
+        ctx: The MCP server provided context
+        file_content: Base64 encoded file content or raw text content  
+        filename: Original filename with extension
+        knowledge_type: Type of knowledge ("technical" or "business")
+        tags: List of tags to associate with the document
+        chunk_size: Size of each text chunk (default: 5000)
+    
+    Returns:
+        JSON string with upload results including success status, chunks created, and metadata
+    """
+    try:
+        import base64
+        import tempfile
+        import os
+        from pathlib import Path
+        
+        # Import document processing libraries
+        try:
+            import PyPDF2
+            import pdfplumber
+            from docx import Document as DocxDocument
+        except ImportError as e:
+            return json.dumps({
+                "success": False,
+                "error": f"Missing document processing library: {e}. Please install required dependencies."
+            }, indent=2)
+        
+        # Get the Supabase client from the context
+        supabase_client = ctx.request_context.lifespan_context.supabase_client
+        
+        # Determine file type from extension
+        file_ext = Path(filename).suffix.lower()
+        supported_extensions = {'.pdf', '.doc', '.docx', '.md', '.txt'}
+        
+        if file_ext not in supported_extensions:
+            return json.dumps({
+                "success": False,
+                "error": f"Unsupported file type: {file_ext}. Supported: {', '.join(supported_extensions)}"
+            }, indent=2)
+        
+        # Extract text content based on file type
+        text_content = ""
+        
+        if file_ext in ['.md', '.txt']:
+            # For text files, assume file_content is already text
+            if file_content.startswith('data:') or len(file_content) % 4 == 0:
+                try:
+                    # Try to decode as base64 first
+                    decoded_content = base64.b64decode(file_content)
+                    text_content = decoded_content.decode('utf-8')
+                except:
+                    # Fallback to treating as raw text
+                    text_content = file_content
+            else:
+                text_content = file_content
+                
+        else:
+            # For binary files, decode base64 and process with appropriate library
+            try:
+                file_data = base64.b64decode(file_content)
+            except Exception as e:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Failed to decode file content: {e}"
+                }, indent=2)
+            
+            # Create temporary file for processing
+            with tempfile.NamedTemporaryFile(suffix=file_ext, delete=False) as temp_file:
+                temp_file.write(file_data)
+                temp_file_path = temp_file.name
+            
+            try:
+                if file_ext == '.pdf':
+                    # Extract text from PDF using both PyPDF2 and pdfplumber for best results
+                    text_parts = []
+                    
+                    # Try pdfplumber first (better for complex layouts)
+                    try:
+                        with pdfplumber.open(temp_file_path) as pdf:
+                            for page in pdf.pages:
+                                text = page.extract_text()
+                                if text:
+                                    text_parts.append(text)
+                    except Exception as plumber_error:
+                        print(f"pdfplumber failed: {plumber_error}, trying PyPDF2")
+                        
+                        # Fallback to PyPDF2
+                        with open(temp_file_path, 'rb') as pdf_file:
+                            pdf_reader = PyPDF2.PdfReader(pdf_file)
+                            for page in pdf_reader.pages:
+                                text = page.extract_text()
+                                if text:
+                                    text_parts.append(text)
+                    
+                    text_content = '\n\n'.join(text_parts)
+                    
+                elif file_ext in ['.doc', '.docx']:
+                    # Extract text from Word document
+                    doc = DocxDocument(temp_file_path)
+                    text_parts = []
+                    for paragraph in doc.paragraphs:
+                        if paragraph.text.strip():
+                            text_parts.append(paragraph.text)
+                    text_content = '\n\n'.join(text_parts)
+                    
+            finally:
+                # Clean up temporary file
+                os.unlink(temp_file_path)
+        
+        # Validate extracted content
+        if not text_content.strip():
+            return json.dumps({
+                "success": False,
+                "error": "No text content could be extracted from the document"
+            }, indent=2)
+        
+        # Generate document URL (use file:// scheme for uploaded documents)
+        document_url = f"file://{filename}"
+        
+        # Generate AI title and description for the document
+        try:
+            # Get credentials from database for OpenAI API
+            from src.credential_service import get_credential_value
+            
+            openai_api_key = await get_credential_value("OPENAI_API_KEY", decrypt=True)
+            if not openai_api_key:
+                raise Exception("OpenAI API key not found in credentials")
+            
+            # Generate title and description using OpenAI
+            from openai import OpenAI
+            client = OpenAI(api_key=openai_api_key)
+            
+            # Prepare content sample for AI analysis (first 2000 chars)
+            content_sample = text_content[:2000] + ("..." if len(text_content) > 2000 else "")
+            
+            title_prompt = f"""Based on this document content, generate a clear, descriptive title (max 100 characters):
+
+{content_sample}
+
+Title:"""
+            
+            title_response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": title_prompt}],
+                max_tokens=50,
+                temperature=0.3
+            )
+            
+            ai_title = title_response.choices[0].message.content.strip()
+            if len(ai_title) > 100:
+                ai_title = ai_title[:97] + "..."
+            
+            description_prompt = f"""Based on this document content, generate a helpful 2-3 sentence description:
+
+{content_sample}
+
+Description:"""
+            
+            description_response = client.chat.completions.create(
+                model="gpt-4o-mini", 
+                messages=[{"role": "user", "content": description_prompt}],
+                max_tokens=150,
+                temperature=0.3
+            )
+            
+            ai_description = description_response.choices[0].message.content.strip()
+            
+        except Exception as e:
+            print(f"Failed to generate AI title/description: {e}")
+            # Fallback to filename-based title
+            ai_title = Path(filename).stem.replace('_', ' ').replace('-', ' ').title()
+            ai_description = f"Uploaded document: {filename}"
+        
+        # Chunk the text content
+        chunks = smart_chunk_markdown(text_content, chunk_size)
+        
+        # Calculate document stats
+        word_count = len(text_content.split())
+        chunk_count = len(chunks)
+        
+        # Prepare metadata for storage
+        base_metadata = {
+            'knowledge_type': knowledge_type,
+            'tags': tags,
+            'source_type': 'file',
+            'file_name': filename,
+            'file_type': file_ext,
+            'word_count': word_count,
+            'chunks_count': chunk_count,
+            'upload_date': None,  # Will be set by database
+            'title': ai_title,
+            'description': ai_description
+        }
+        
+        # Get metadata from context if available
+        context_metadata = getattr(ctx, 'knowledge_metadata', {})
+        base_metadata.update(context_metadata)
+        
+        # Prepare data for batch insertion
+        urls = [document_url] * len(chunks)
+        chunk_numbers = list(range(1, len(chunks) + 1))
+        contents = chunks
+        metadatas = [base_metadata.copy() for _ in chunks]
+        
+        # Add chunk-specific metadata
+        for i, metadata in enumerate(metadatas):
+            chunk_content = contents[i]
+            section_info = extract_section_info(chunk_content)
+            metadata.update(section_info)
+            metadata['chunk_index'] = i + 1
+            metadata['total_chunks'] = len(chunks)
+        
+        # Create URL to full document mapping for contextual embeddings
+        url_to_full_document = {document_url: text_content}
+        
+        # First, create/update source information to ensure it exists
+        source_id = urlparse(document_url).netloc or Path(filename).stem
+        try:
+            update_source_info(
+                client=supabase_client,
+                source_id=source_id,
+                summary=ai_description,
+                word_count=word_count,
+                content=text_content[:500],  # First 500 chars as preview
+                knowledge_type=knowledge_type,
+                tags=tags
+            )
+        except Exception as e:
+            print(f"Failed to update source info: {e}")
+            return json.dumps({
+                "success": False,
+                "filename": filename,
+                "error": f"Failed to create source entry: {e}"
+            }, indent=2)
+        
+        # Store document chunks in Supabase
+        add_documents_to_supabase(
+            client=supabase_client,
+            urls=urls,
+            chunk_numbers=chunk_numbers,
+            contents=contents,
+            metadatas=metadatas,
+            url_to_full_document=url_to_full_document
+        )
+        
+        # Extract and store code examples if Agentic RAG is enabled
+        code_examples_count = 0
+        if os.getenv("USE_AGENTIC_RAG", "false") == "true":
+            try:
+                all_code_examples = []
+                
+                # Process code examples in parallel
+                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                    future_to_chunk = {
+                        executor.submit(process_code_example, (document_url, chunk, i + 1)): i 
+                        for i, chunk in enumerate(chunks)
+                    }
+                    
+                    for future in concurrent.futures.as_completed(future_to_chunk):
+                        try:
+                            code_examples = future.result()
+                            if code_examples:
+                                all_code_examples.extend(code_examples)
+                        except Exception as e:
+                            print(f"Error processing code examples: {e}")
+                
+                # Store code examples if any were found
+                if all_code_examples:
+                    add_code_examples_to_supabase(supabase_client, all_code_examples)
+                    code_examples_count = len(all_code_examples)
+                    
+            except Exception as e:
+                print(f"Error in code example extraction: {e}")
+        
+        return json.dumps({
+            "success": True,
+            "filename": filename,
+            "title": ai_title,
+            "description": ai_description,
+            "source_id": source_id,
+            "chunks_created": chunk_count,
+            "word_count": word_count,
+            "code_examples_extracted": code_examples_count,
+            "knowledge_type": knowledge_type,
+            "tags": tags,
+            "file_type": file_ext,
+            "message": f"Successfully uploaded and processed {filename}"
+        }, indent=2)
+        
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "filename": filename,
             "error": str(e)
         }, indent=2)
 
