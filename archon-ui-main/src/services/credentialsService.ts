@@ -19,7 +19,14 @@ export interface RagSettings {
 }
 
 class CredentialsService {
-  private baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
+  private baseUrl = (import.meta as any).env?.VITE_API_URL || this.getApiBaseUrl();
+
+  private getApiBaseUrl() {
+    const protocol = window.location.protocol;
+    const host = window.location.hostname;
+    const port = '8080'; // Backend API port
+    return `${protocol}//${host}:${port}`;
+  }
 
   async getAllCredentials(): Promise<Credential[]> {
     const response = await fetch(`${this.baseUrl}/api/credentials`);

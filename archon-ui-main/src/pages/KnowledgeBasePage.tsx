@@ -182,6 +182,8 @@ export const KnowledgeBasePage = () => {
   };
 
   const handleStartCrawl = (progressId: string, initialData: Partial<CrawlProgressData>) => {
+    console.log(`Starting crawl tracking for: ${progressId}`);
+    
     const newProgressItem: CrawlProgressData = {
       progressId,
       status: 'starting',
@@ -192,7 +194,37 @@ export const KnowledgeBasePage = () => {
     
     setProgressItems(prev => [...prev, newProgressItem]);
     
-    // Connect to progress stream
+    // Set up callbacks BEFORE connecting to ensure we don't miss any messages
+    const progressCallback = (data: CrawlProgressData) => {
+      console.log(`🎯 Progress update for ${progressId}:`, data);
+      if (data.progressId === progressId) {
+        console.log(`✅ Progress ID matches, updating UI state`);
+        handleProgressUpdate(data);
+      } else {
+        console.log(`❌ Progress ID mismatch: expected ${progressId}, got ${data.progressId}`);
+      }
+    };
+    
+    const completedCallback = (data: CrawlProgressData) => {
+      console.log(`Crawl completed for ${progressId}:`, data);
+      if (data.progressId === progressId) {
+        handleProgressComplete(data);
+      }
+    };
+    
+    const errorCallback = (error: Error) => {
+      console.error(`Progress error for ${progressId}:`, error);
+      handleProgressError(error.message);
+    };
+    
+    // Register callbacks first
+    console.log(`📝 Registering callbacks for ${progressId}`);
+    crawlProgressService.onProgress(progressCallback);
+    crawlProgressService.onCompleted(completedCallback);
+    crawlProgressService.onError(errorCallback);
+    console.log(`✅ Callbacks registered, now connecting...`);
+    
+    // Connect to progress stream after registering callbacks
     crawlProgressService.connect(progressId);
   };
 

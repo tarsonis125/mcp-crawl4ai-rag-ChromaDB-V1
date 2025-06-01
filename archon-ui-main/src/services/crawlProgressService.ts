@@ -34,10 +34,19 @@ class CrawlProgressService {
    */
   connect(progressId: string): void {
     this.progressId = progressId;
-    const wsUrl = `ws://localhost:8080/api/crawl-progress/${progressId}`;
     
+    // Use the current host but with the backend port
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.hostname;
+    const port = '8080'; // Backend WebSocket port
+    const wsUrl = `${protocol}//${host}:${port}/api/crawl-progress/${progressId}`;
+    
+    console.log(`Connecting to crawl progress WebSocket: ${wsUrl}`);
+    
+    // Close existing WebSocket without clearing callbacks
     if (this.ws) {
-      this.disconnect();
+      this.ws.close();
+      this.ws = null;
     }
 
     this.ws = new WebSocket(wsUrl);
@@ -48,11 +57,13 @@ class CrawlProgressService {
     };
     
     this.ws.onmessage = (event) => {
+      console.log(`🔥 RAW WebSocket message received for ${progressId}:`, event.data);
       try {
         const message = JSON.parse(event.data);
+        console.log(`🔥 PARSED WebSocket message for ${progressId}:`, message);
         this.handleMessage(message);
       } catch (error) {
-        console.error('Failed to parse progress message:', error);
+        console.error('❌ Failed to parse progress message:', error, 'Raw data:', event.data);
       }
     };
     
@@ -78,14 +89,18 @@ class CrawlProgressService {
    */
   private handleMessage(message: any): void {
     const { type, data } = message;
+    console.log(`📨 WebSocket message received - Type: ${type}, Progress ID: ${data?.progressId}`, message);
+    console.log(`📊 Available callbacks: Progress(${this.progressCallbacks.length}), Completed(${this.completedCallbacks.length}), Error(${this.errorCallbacks.length})`);
     
     switch (type) {
       case 'crawl_progress':
-        this.progressCallbacks.forEach(callback => {
+        console.log(`🚀 Calling ${this.progressCallbacks.length} progress callbacks`);
+        this.progressCallbacks.forEach((callback, index) => {
           try {
+            console.log(`📤 Calling progress callback ${index + 1}`);
             callback(data);
           } catch (error) {
-            console.error('Error in progress callback:', error);
+            console.error('❌ Error in progress callback:', error);
           }
         });
         break;

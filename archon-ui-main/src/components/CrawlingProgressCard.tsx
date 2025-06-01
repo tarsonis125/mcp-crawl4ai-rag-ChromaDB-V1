@@ -38,40 +38,12 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
     setProgressData(initialData);
   }, [initialData]);
 
-  // Set up WebSocket listeners for real-time updates
+  // React to progress data changes from parent component (no WebSocket setup here)
+  // The KnowledgeBasePage handles WebSocket connections and passes updated data via props
   useEffect(() => {
-    const handleProgress = (data: CrawlProgressData) => {
-      setProgressData(data);
-      if (onProgress) {
-        onProgress(data);
-      }
-    };
-
-    const handleComplete = (data: CrawlProgressData) => {
-      setProgressData(prev => ({ ...prev, ...data, status: 'completed' }));
-      onComplete(data);
-    };
-
-    const handleError = (error: Error) => {
-      setProgressData(prev => ({ 
-        ...prev, 
-        status: 'error', 
-        error: error.message 
-      }));
-      onError(error.message);
-    };
-
-    // Register listeners
-    crawlProgressService.onProgress(handleProgress);
-    crawlProgressService.onCompleted(handleComplete);
-    crawlProgressService.onError(handleError);
-
-    // Cleanup on unmount
-    return () => {
-      crawlProgressService.removeProgressCallback(handleProgress);
-      // Note: We don't remove global error/complete callbacks as they might be shared
-    };
-  }, [onComplete, onError, onProgress]);
+    // Simply update local state when props change - WebSocket handled by parent
+    setProgressData(initialData);
+  }, [initialData]);
 
   const getStatusDisplay = () => {
     switch (progressData.status) {

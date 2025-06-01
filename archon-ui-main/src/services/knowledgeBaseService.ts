@@ -69,7 +69,15 @@ export interface SearchOptions {
   limit?: number
 }
 
-const API_BASE_URL = 'http://localhost:8080/api'
+// Dynamic API base URL that works with different hosts
+const getApiBaseUrl = () => {
+  const protocol = window.location.protocol;
+  const host = window.location.hostname;
+  const port = '8080'; // Backend API port
+  return `${protocol}//${host}:${port}/api`;
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 // Helper function for API requests
 async function apiRequest<T>(
