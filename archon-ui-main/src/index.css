@@ -1,0 +1,168 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@layer base {
+  :root {
+    /* Light mode variables */
+    --background: 0 0% 98%;
+    --foreground: 240 10% 3.9%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --primary: 271 91% 65%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --accent: 271 91% 65%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --ring: 240 5.9% 10%;
+    --radius: 0.5rem;
+    --purple-accent: 271 91% 65%;
+    --green-accent: 160 84% 39%;
+    --pink-accent: 330 90% 65%;
+    --blue-accent: 217 91% 60%;
+  }
+  .dark {
+    /* Dark mode variables - keep exactly as they were */
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
+    --muted: 240 4% 16%;
+    --muted-foreground: 240 5% 65%;
+    --popover: 0 0% 0%;
+    --popover-foreground: 0 0% 100%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --card: 0 0% 0%;
+    --card-foreground: 0 0% 100%;
+    --primary: 271 91% 65%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --accent: 271 91% 65%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --ring: 240 3.7% 15.9%;
+    --radius: 0.5rem;
+    --purple-accent: 271 91% 65%;
+    --green-accent: 160 84% 39%;
+    --pink-accent: 330 90% 65%;
+    --blue-accent: 217 91% 60%;
+  }
+}
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+@layer components {
+  .neon-grid {
+    @apply bg-[linear-gradient(to_right,#a855f720_1px,transparent_1px),linear-gradient(to_bottom,#a855f720_1px,transparent_1px)] bg-[size:40px_40px];
+    @apply dark:bg-[linear-gradient(to_right,#a855f730_1px,transparent_1px),linear-gradient(to_bottom,#a855f730_1px,transparent_1px)];
+  }
+  .neon-divider-h {
+    @apply h-[1px] w-full;
+  }
+  .neon-divider-h.purple {
+    @apply bg-purple-500;
+  }
+  .neon-divider-h.green {
+    @apply bg-emerald-500;
+  }
+  .neon-divider-h.pink {
+    @apply bg-pink-500;
+  }
+  .neon-divider-h.blue {
+    @apply bg-blue-500;
+  }
+  .neon-divider-v {
+    @apply w-[1px] h-full;
+  }
+  .neon-divider-v.purple {
+    @apply bg-purple-500;
+  }
+  .neon-divider-v.green {
+    @apply bg-emerald-500;
+  }
+  .neon-divider-v.pink {
+    @apply bg-pink-500;
+  }
+  .neon-divider-v.blue {
+    @apply bg-blue-500;
+  }
+  .knowledge-item-card {
+    @apply relative backdrop-blur-md bg-gradient-to-b from-white/10 to-black/30 border border-purple-500/30 rounded-md p-4 transition-all duration-300;
+    @apply before:content-[""] before:absolute before:top-0 before:left-0 before:w-full before:h-[2px] before:bg-purple-500 before:shadow-[0_0_20px_5px_rgba(168,85,247,0.7)];
+    @apply after:content-[""] after:absolute after:top-0 after:left-0 after:right-0 after:h-16 after:bg-gradient-to-b after:from-purple-500/20 after:to-purple-500/5 after:rounded-t-md after:pointer-events-none;
+    @apply shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)];
+  }
+  .knowledge-item-card:hover {
+    @apply border-purple-500/70 shadow-[0_15px_40px_-15px_rgba(0,0,0,0.9)] before:shadow-[0_0_25px_8px_rgba(168,85,247,0.8)];
+    @apply translate-y-[-2px];
+  }
+  /* Glassmorphism utility classes */
+  .glass {
+    /* Light mode (base) styles */
+    @apply backdrop-blur-md bg-gradient-to-b from-white/80 to-white/60 border border-gray-200 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)];
+    /* Dark mode overrides */
+    @apply dark:bg-gradient-to-b dark:from-white/10 dark:to-black/30 dark:border-zinc-800/50 dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)];
+  }
+  .glass-purple {
+    /* Light mode (base) styles */
+    @apply backdrop-blur-md bg-gradient-to-b from-white/80 to-white/60 border border-purple-300 shadow-[0_10px_30px_-15px_rgba(168,85,247,0.15)];
+    @apply before:content-[""] before:absolute before:top-0 before:left-0 before:w-full before:h-[2px] before:bg-purple-500 before:shadow-[0_0_10px_2px_rgba(168,85,247,0.4)];
+    @apply after:content-[""] after:absolute after:top-0 after:left-0 after:right-0 after:h-16 after:bg-gradient-to-b after:from-purple-100 after:to-white after:rounded-t-md after:pointer-events-none;
+    /* Dark mode overrides */
+    @apply dark:from-white/10 dark:to-black/30 dark:border-purple-500/30 dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)];
+    @apply dark:before:shadow-[0_0_20px_5px_rgba(168,85,247,0.7)];
+    @apply dark:after:from-purple-500/20 dark:after:to-purple-500/5;
+  }
+  .glass-green {
+    /* Light mode (base) styles */
+    @apply backdrop-blur-md bg-gradient-to-b from-white/80 to-white/60 border border-emerald-300 shadow-[0_10px_30px_-15px_rgba(16,185,129,0.15)];
+    @apply before:content-[""] before:absolute before:top-0 before:left-0 before:w-full before:h-[2px] before:bg-emerald-500 before:shadow-[0_0_10px_2px_rgba(16,185,129,0.4)];
+    @apply after:content-[""] after:absolute after:top-0 after:left-0 after:right-0 after:h-16 after:bg-gradient-to-b after:from-emerald-100 after:to-white after:rounded-t-md after:pointer-events-none;
+    /* Dark mode overrides */
+    @apply dark:from-white/10 dark:to-black/30 dark:border-emerald-500/30 dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)];
+    @apply dark:before:shadow-[0_0_20px_5px_rgba(16,185,129,0.7)];
+    @apply dark:after:from-emerald-500/20 dark:after:to-emerald-500/5;
+  }
+  .glass-pink {
+    /* Light mode (base) styles */
+    @apply backdrop-blur-md bg-gradient-to-b from-white/80 to-white/60 border border-pink-300 shadow-[0_10px_30px_-15px_rgba(236,72,153,0.15)];
+    @apply before:content-[""] before:absolute before:top-0 before:left-0 before:w-full before:h-[2px] before:bg-pink-500 before:shadow-[0_0_10px_2px_rgba(236,72,153,0.4)];
+    @apply after:content-[""] after:absolute after:top-0 after:left-0 after:right-0 after:h-16 after:bg-gradient-to-b after:from-pink-100 after:to-white after:rounded-t-md after:pointer-events-none;
+    /* Dark mode overrides */
+    @apply dark:from-white/10 dark:to-black/30 dark:border-pink-500/30 dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)];
+    @apply dark:before:shadow-[0_0_20px_5px_rgba(236,72,153,0.7)];
+    @apply dark:after:from-pink-500/20 dark:after:to-pink-500/5;
+  }
+  .glass-blue {
+    /* Light mode (base) styles */
+    @apply backdrop-blur-md bg-gradient-to-b from-white/80 to-white/60 border border-blue-300 shadow-[0_10px_30px_-15px_rgba(59,130,246,0.15)];
+    @apply before:content-[""] before:absolute before:top-0 before:left-0 before:w-full before:h-[2px] before:bg-blue-500 before:shadow-[0_0_10px_2px_rgba(59,130,246,0.4)];
+    @apply after:content-[""] after:absolute after:top-0 after:left-0 after:right-0 after:h-16 after:bg-gradient-to-b after:from-blue-100 after:to-white after:rounded-t-md after:pointer-events-none;
+    /* Dark mode overrides */
+    @apply dark:from-white/10 dark:to-black/30 dark:border-blue-500/30 dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)];
+    @apply dark:before:shadow-[0_0_20px_5px_rgba(59,130,246,0.7)];
+    @apply dark:after:from-blue-500/20 dark:after:to-blue-500/5;
+  }
+}
+/* Animation delays */
+.animation-delay-150 {
+  animation-delay: 150ms;
+}
+.animation-delay-300 {
+  animation-delay: 300ms;
+}
