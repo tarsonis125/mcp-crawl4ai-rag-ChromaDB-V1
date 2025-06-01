@@ -125,7 +125,7 @@ async def start_services():
     print()
     print("🚀 Starting services...")
     print("   Backend API will run on http://localhost:8080")
-    print("   Frontend UI will run on http://localhost:3000")
+    print("   Frontend UI will run on http://localhost:3737")
     print()
     print("💡 Tip: You can now configure all other settings via the Settings page!")
     print("   - Add your OpenAI API key (encrypted)")
@@ -158,7 +158,7 @@ async def start_services():
         
         print("✅ Services started!")
         print("   Backend: http://localhost:8080")
-        print("   Frontend: http://localhost:3000")
+        print("   Frontend: http://localhost:3737")
         print("   Press Ctrl+C to stop")
         
         try:
