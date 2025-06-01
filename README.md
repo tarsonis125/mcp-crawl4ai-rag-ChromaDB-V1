@@ -43,12 +43,14 @@ Archon serves as a bridge between your documentation and your AI coding assistan
 - **Easy Connection**: Get connection details directly from the web UI
 - **Real-time Access**: Your AI agents get immediate access to newly added knowledge
 
-### 💻 Web Interface
-- **Server Management**: Start/stop the MCP server with one click
+### �� Web Interface
+- **MCP Dashboard**: Monitor server status, view real-time logs, and get connection configuration
+- **Server Management**: Start/stop the MCP server with one click, see uptime and status
+- **Settings Page**: Configure credentials (OpenAI API key) and RAG strategies through an intuitive UI
 - **Crawling Dashboard**: Initiate and monitor web crawling operations
 - **Document Management**: Upload and organize your documentation
 - **Knowledge Chat**: Test RAG queries through an interactive chat interface
-- **Settings Management**: Configure all options through the UI (no config files needed!)
+- **Real-time Log Streaming**: Watch server logs in real-time as operations execute
 
 ## 🚀 Quick Start
 
@@ -88,12 +90,14 @@ Archon serves as a bridge between your documentation and your AI coding assistan
 5. **Access the Web UI**:
    - Open http://localhost:3737
    - Go to Settings and add your OpenAI API key
-   - Configure any other settings (model choice, RAG strategies)
-   - Start the MCP server from the dashboard
+   - Configure RAG strategies (Contextual Embeddings, Hybrid Search, Agentic RAG, Reranking)
+   - Start the MCP server from the MCP Dashboard
+   - Monitor server logs and status in real-time
 
 6. **Connect Your AI Assistant**:
-   - Get the connection details from the MCP page in the UI
-   - Add to your Cursor/Windsurf settings
+   - Go to the MCP Dashboard when server is running
+   - Click "Copy Configuration" to get the connection details
+   - Add to your Cursor/Windsurf settings (usually `~/.cursor/mcp.json` or equivalent)
    - Your AI now has access to your knowledge base!
 
 ## 🎓 Using Archon
