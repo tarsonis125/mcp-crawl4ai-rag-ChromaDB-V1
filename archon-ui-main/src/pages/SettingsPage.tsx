@@ -7,6 +7,7 @@ import { Select } from '../components/ui/Select';
 import { Button } from '../components/ui/Button';
 import { ThemeToggle } from '../components/ui/ThemeToggle';
 import { useTheme } from '../contexts/ThemeContext';
+import { useToast } from '../contexts/ToastContext';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import { credentialsService, Credential, RagSettings } from '../services/credentialsService';
 
@@ -32,6 +33,7 @@ export const SettingsPage = () => {
   const [error, setError] = useState<string | null>(null);
 
   const { theme } = useTheme();
+  const { showToast } = useToast();
   
   // Use staggered entrance animation
   const { isVisible, containerVariants, itemVariants, titleVariants } = useStaggeredEntrance(
@@ -69,6 +71,7 @@ export const SettingsPage = () => {
     } catch (err) {
       setError('Failed to load settings');
       console.error(err);
+      showToast('Failed to load settings', 'error');
     } finally {
       setLoading(false);
     }
@@ -98,11 +101,12 @@ export const SettingsPage = () => {
       // Reload settings to confirm
       await loadSettings();
       
-      // Show success (you might want to add a toast notification here)
-      alert('Settings saved successfully!');
+      // Show success toast
+      showToast('Settings saved successfully!', 'success');
     } catch (err) {
       setError('Failed to save settings');
       console.error(err);
+      showToast('Failed to save settings', 'error');
     } finally {
       setSaving(false);
     }
@@ -122,9 +126,11 @@ export const SettingsPage = () => {
       
       setCustomCredentials([...customCredentials, newCredential]);
       setNewCredential({ key: '', value: '', description: '' });
+      showToast(`Credential ${newCredential.key} added successfully!`, 'success');
     } catch (err) {
       setError('Failed to add credential');
       console.error(err);
+      showToast('Failed to add credential', 'error');
     }
   };
 
@@ -132,9 +138,11 @@ export const SettingsPage = () => {
     try {
       await credentialsService.deleteCredential(key);
       setCustomCredentials(customCredentials.filter(cred => cred.key !== key));
+      showToast(`Credential ${key} deleted successfully!`, 'success');
     } catch (err) {
       setError('Failed to delete credential');
       console.error(err);
+      showToast('Failed to delete credential', 'error');
     }
   };
 
@@ -164,12 +172,6 @@ export const SettingsPage = () => {
       >
         Settings
       </motion.h1>
-
-      {error && (
-        <div className="mb-6 p-4 bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg">
-          {error}
-        </div>
-      )}
 
       {/* Appearance Settings */}
       <motion.div className="mb-8" variants={itemVariants}>
