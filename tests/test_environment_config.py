@@ -14,7 +14,7 @@ def test_load_environment_config_success():
     from src.config import load_environment_config
     
     with patch.dict(os.environ, {
-        'OPENAI_API_KEY': 'test-key',
+        'OPENAI_API_KEY': 'sk-test123',
         'SUPABASE_URL': 'https://test.supabase.co',
         'SUPABASE_SERVICE_KEY': 'test-service-key',
         'HOST': '0.0.0.0',
@@ -22,7 +22,7 @@ def test_load_environment_config_success():
     }):
         config = load_environment_config()
         
-        assert config.openai_api_key == 'test-key'
+        assert config.openai_api_key == 'sk-test123'
         assert config.supabase_url == 'https://test.supabase.co'
         assert config.supabase_service_key == 'test-service-key'
         assert config.host == '0.0.0.0'
@@ -47,7 +47,7 @@ def test_load_environment_config_invalid_port():
     from src.config import load_environment_config, ConfigurationError
     
     with patch.dict(os.environ, {
-        'OPENAI_API_KEY': 'test-key',
+        'OPENAI_API_KEY': 'sk-test123',
         'SUPABASE_URL': 'https://test.supabase.co',
         'SUPABASE_SERVICE_KEY': 'test-service-key',
         'PORT': 'invalid-port'
