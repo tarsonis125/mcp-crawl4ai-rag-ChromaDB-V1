@@ -9,7 +9,7 @@ RUN pip install uv
 COPY pyproject.toml uv.lock ./
 
 # Install dependencies
-RUN uv pip install --system -e ".[api]"
+RUN pip install --system -e "[api,test]"
 
 # Copy source code
 COPY src/ ./src/
