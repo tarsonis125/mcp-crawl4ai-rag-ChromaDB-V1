@@ -190,8 +190,11 @@ class CredentialService:
                 # Update cache with plain value
                 self._cache[key] = value
             
-            # Upsert to database
-            result = supabase.table("app_credentials").upsert(data).execute()
+            # Upsert to database with proper conflict handling
+            result = supabase.table("app_credentials").upsert(
+                data, 
+                on_conflict="key"  # Specify the unique column for conflict resolution
+            ).execute()
             
             logger.info(f"Successfully {'encrypted and ' if is_encrypted else ''}stored credential: {key}")
             return True

@@ -400,23 +400,26 @@ async def database_metrics():
 
 # Credential Management Endpoints
 @app.get("/api/credentials")
-async def list_credentials():
+async def list_credentials(category: Optional[str] = None):
     """List all credentials and their categories."""
     try:
         credentials = await credential_service.list_all_credentials()
-        return {
-            'credentials': [
-                {
-                    'key': cred.key,
-                    'value': cred.value,
-                    'encrypted_value': cred.encrypted_value,
-                    'is_encrypted': cred.is_encrypted,
-                    'category': cred.category,
-                    'description': cred.description
-                }
-                for cred in credentials
-            ]
-        }
+        
+        # Filter by category if specified
+        if category:
+            credentials = [cred for cred in credentials if cred.category == category]
+        
+        return [
+            {
+                'key': cred.key,
+                'value': cred.value,
+                'encrypted_value': cred.encrypted_value,
+                'is_encrypted': cred.is_encrypted,
+                'category': cred.category,
+                'description': cred.description
+            }
+            for cred in credentials
+        ]
     except Exception as e:
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
@@ -485,28 +488,44 @@ async def get_credential(key: str, decrypt: bool = True):
 
 
 @app.put("/api/credentials/{key}")
-async def update_credential(key: str, request: CredentialUpdateRequest):
+async def update_credential(key: str, request: Dict[str, Any]):
     """Update an existing credential."""
     try:
+        # Handle both CredentialUpdateRequest and full Credential object formats
+        if isinstance(request, dict):
+            # If the request contains a 'value' field directly, use it
+            value = request.get('value', '')
+            is_encrypted = request.get('is_encrypted')
+            category = request.get('category')
+            description = request.get('description')
+        else:
+            value = request.value
+            is_encrypted = request.is_encrypted
+            category = request.category
+            description = request.description
+            
         # Get existing credential to preserve metadata if not provided
-        existing = await credential_service.get_credential(key, decrypt=False)
-        if existing is None:
-            raise HTTPException(status_code=404, detail={'error': f'Credential {key} not found'})
+        existing_creds = await credential_service.list_all_credentials()
+        existing = next((c for c in existing_creds if c.key == key), None)
         
-        # Determine if encrypted from request or existing data
-        is_encrypted = request.is_encrypted
-        if is_encrypted is None:
-            if isinstance(existing, dict):
-                is_encrypted = existing.get('is_encrypted', False)
-            else:
-                is_encrypted = False
+        if existing is None:
+            # If credential doesn't exist, create it
+            is_encrypted = is_encrypted if is_encrypted is not None else False
+        else:
+            # Preserve existing values if not provided
+            if is_encrypted is None:
+                is_encrypted = existing.is_encrypted
+            if category is None:
+                category = existing.category
+            if description is None:
+                description = existing.description
         
         success = await credential_service.set_credential(
             key=key,
-            value=request.value,
+            value=value,
             is_encrypted=is_encrypted,
-            category=request.category,
-            description=request.description
+            category=category,
+            description=description
         )
         
         if success:
