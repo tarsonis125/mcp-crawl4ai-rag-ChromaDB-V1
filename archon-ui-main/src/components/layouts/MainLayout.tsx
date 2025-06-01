@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { SideNavigation } from './SideNavigation';
 import { KnowledgeChatPanel } from './KnowledgeChatPanel';
 import { X } from 'lucide-react';
+import { useToast } from '../../contexts/ToastContext';
+import { credentialsService } from '../../services/credentialsService';
 /**
  * Props for the MainLayout component
  */
@@ -21,6 +24,40 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
 }) => {
   // State to track if chat panel is open
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const { showToast } = useToast();
+  const navigate = useNavigate();
+  const [hasShownApiKeyToast, setHasShownApiKeyToast] = useState(false);
+
+  // Check for OpenAI API key on component mount
+  useEffect(() => {
+    if (hasShownApiKeyToast) return; // Don't show multiple times per session
+    
+    const checkOpenAIKey = async () => {
+      try {
+        const credentials = await credentialsService.getCredentialsByCategory('llm_config');
+        const openaiKey = credentials.find(cred => cred.key === 'OPENAI_API_KEY');
+        
+        if (!openaiKey || !openaiKey.value || openaiKey.value.trim() === '') {
+          showToast('OpenAI API Key missing! Click here to go to Settings and configure it.', 'warning', 8000);
+          setHasShownApiKeyToast(true);
+          
+          // Add click handler to the document to navigate to settings when toast is clicked
+          const handleToastClick = (e: any) => {
+            if (e.target.closest('.fixed.top-4.right-4')) {
+              navigate('/settings');
+              document.removeEventListener('click', handleToastClick);
+            }
+          };
+          document.addEventListener('click', handleToastClick);
+        }
+      } catch (error) {
+        console.error('Error checking OpenAI API key:', error);
+      }
+    };
+
+    checkOpenAIKey();
+  }, [showToast, navigate, hasShownApiKeyToast]);
+
   return <div className="relative min-h-screen bg-white dark:bg-black overflow-hidden">
       {/* Full-page background grid */}
       <div className="absolute inset-0 neon-grid pointer-events-none z-0"></div>
