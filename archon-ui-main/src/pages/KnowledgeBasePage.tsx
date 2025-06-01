@@ -1,5 +1,5 @@
-import React, { useEffect, useState, Component } from 'react';
-import { Search, Grid, List, Plus, Upload, Link as LinkIcon, Share2, Brain, Filter, BoxIcon } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { Search, Grid, List, Plus, Upload, Link as LinkIcon, Share2, Brain, Filter, BoxIcon, Trash2, TestTube } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MindMapView } from '../components/MindMapView';
 import { Card } from '../components/ui/Card';
@@ -8,94 +8,81 @@ import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { Badge } from '../components/ui/Badge';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
-import { KnowledgeItem } from '../types/knowledge';
-interface KnowledgeItem {
-  id: string;
-  title: string;
-  description: string;
-  source: string;
-  sourceType: 'url' | 'file';
-  sourceUrl?: string;
-  fileName?: string;
-  fileType?: string;
-  tags: string[];
-  lastUpdated: string;
-  nextUpdate?: string;
-  status: 'active' | 'processing' | 'error';
-  metadata: {
-    size: string;
-    pageCount?: number;
-    wordCount?: number;
-    lastScraped?: string;
-  };
-  knowledgeType: 'technical' | 'business';
-}
+import { useToast } from '../contexts/ToastContext';
+import { knowledgeBaseService, KnowledgeItem } from '../services/knowledgeBaseService';
+import { performRAGQuery } from '../services/api';
+import { KnowledgeItem as LegacyKnowledgeItem } from '../types/knowledge';
+
 export const KnowledgeBasePage = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'mind-map'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [forceReanimate, setForceReanimate] = useState(0);
   const [typeFilter, setTypeFilter] = useState<'all' | 'technical' | 'business'>('all');
-  // Sample data - would come from API
-  const [knowledgeItems] = useState<KnowledgeItem[]>([{
-    id: '1',
-    title: 'React Component Design Patterns',
-    description: 'A comprehensive guide to React component patterns and best practices for scalable applications.',
-    source: 'https://docs.example.com/react-patterns',
-    sourceType: 'url',
-    sourceUrl: 'https://docs.example.com/react-patterns',
-    knowledgeType: 'technical',
-    tags: ['react', 'patterns', 'frontend'],
-    lastUpdated: '2024-01-20',
-    nextUpdate: '2024-02-20',
-    status: 'active',
-    metadata: {
-      size: '1.2 MB',
-      wordCount: 5000,
-      lastScraped: '2024-01-20'
+  const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [totalItems, setTotalItems] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const searchTimeoutRef = useRef<NodeJS.Timeout>();
+  
+  const { showToast } = useToast();
+
+  // Load knowledge items
+  const loadKnowledgeItems = async (options = {}) => {
+    try {
+      setLoading(true);
+      const response = await knowledgeBaseService.getKnowledgeItems({
+        knowledge_type: typeFilter === 'all' ? undefined : typeFilter,
+        search: searchQuery || undefined,
+        page: currentPage,
+        per_page: 20,
+        ...options
+      });
+      
+      setKnowledgeItems(response.items);
+      setTotalItems(response.total);
+    } catch (error) {
+      console.error('Failed to load knowledge items:', error);
+      showToast('Failed to load knowledge items', 'error');
+      setKnowledgeItems([]);
+    } finally {
+      setLoading(false);
     }
-  }, {
-    id: '2',
-    title: 'System Architecture Guidelines',
-    description: 'Internal documentation for system architecture and design principles.',
-    source: 'architecture.pdf',
-    sourceType: 'file',
-    fileName: 'architecture.pdf',
-    fileType: 'pdf',
-    knowledgeType: 'technical',
-    tags: ['architecture', 'system-design', 'internal'],
-    lastUpdated: '2024-01-15',
-    status: 'active',
-    metadata: {
-      size: '2.4 MB',
-      pageCount: 45,
-      wordCount: 12000
-    }
-  }, {
-    id: '3',
-    title: 'Project Management Framework',
-    description: 'Business guidelines for managing complex projects and team coordination.',
-    source: 'project-framework.pdf',
-    sourceType: 'file',
-    fileName: 'project-framework.pdf',
-    fileType: 'pdf',
-    knowledgeType: 'business',
-    tags: ['project', 'management', 'business'],
-    lastUpdated: '2024-01-18',
-    status: 'active',
-    metadata: {
-      size: '1.8 MB',
-      pageCount: 32,
-      wordCount: 8500
-    }
-  }]);
-  // Filter items based on selected type
-  const filteredItems = knowledgeItems.filter(item => typeFilter === 'all' || item.knowledgeType === typeFilter);
-  // Trigger reanimation when view mode changes
+  };
+
+  // Initial load
   useEffect(() => {
+    loadKnowledgeItems();
+  }, []);
+
+  // Reload when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+    loadKnowledgeItems({ page: 1 });
     setForceReanimate(prev => prev + 1);
-  }, [viewMode, typeFilter]);
+  }, [typeFilter]);
+
+  // Handle search with debounce
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
+    searchTimeoutRef.current = setTimeout(() => {
+      setCurrentPage(1);
+      loadKnowledgeItems({ page: 1 });
+    }, 500);
+    
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchQuery]);
+
+  // Filter items based on selected type
+  const filteredItems = knowledgeItems;
+
   // Use our custom staggered entrance hook for the page header
   const {
     isVisible: headerVisible,
@@ -103,12 +90,54 @@ export const KnowledgeBasePage = () => {
     itemVariants: headerItemVariants,
     titleVariants
   } = useStaggeredEntrance([1, 2], 0.15);
+
   // Separate staggered entrance for the content that will reanimate on view changes
   const {
     isVisible: contentVisible,
     containerVariants: contentContainerVariants,
     itemVariants: contentItemVariants
   } = useStaggeredEntrance(filteredItems, 0.15, forceReanimate);
+
+  const handleAddKnowledge = () => {
+    setIsAddModalOpen(true);
+  };
+
+  const handleDeleteItem = async (sourceId: string) => {
+    try {
+      const result = await knowledgeBaseService.deleteKnowledgeItem(sourceId);
+      showToast((result as any).message || 'Item deleted', 'success');
+      loadKnowledgeItems(); // Reload items
+    } catch (error) {
+      console.error('Failed to delete item:', error);
+      showToast('Failed to delete item', 'error');
+    }
+  };
+
+  // Transform new KnowledgeItem format to legacy format for MindMapView
+  const transformItemsForMindMap = (items: KnowledgeItem[]): LegacyKnowledgeItem[] => {
+    return items.map(item => ({
+      id: item.id,
+      title: item.title,
+      description: item.metadata.description || 'No description available',
+      source: item.url,
+      sourceType: item.metadata.source_type || 'url',
+      sourceUrl: item.metadata.source_type === 'url' ? item.url : undefined,
+      fileName: item.metadata.file_name,
+      fileType: item.metadata.file_type,
+      knowledgeType: item.metadata.knowledge_type || 'technical',
+      tags: item.metadata.tags || [],
+      lastUpdated: new Date(item.updated_at).toLocaleDateString(),
+      nextUpdate: item.metadata.next_update,
+      status: item.metadata.status || 'active',
+      metadata: {
+        size: `${item.metadata.chunks_count || 0} chunks`,
+        pageCount: item.metadata.page_count,
+        wordCount: item.metadata.word_count,
+        lastScraped: item.metadata.last_scraped
+      }
+    }));
+  };
+
   return <div>
       {/* Header with animation - stays static when changing views */}
       <motion.div className="flex justify-between items-center mb-8" initial="hidden" animate="visible" variants={headerContainerVariants}>
@@ -145,7 +174,7 @@ export const KnowledgeBasePage = () => {
             </button>
           </div>
           {/* Add Button */}
-          <Button onClick={() => setIsAddModalOpen(true)} variant="primary" accentColor="purple" className="shadow-lg shadow-purple-500/20">
+          <Button onClick={handleAddKnowledge} variant="primary" accentColor="purple" className="shadow-lg shadow-purple-500/20">
             <Plus className="w-4 h-4 mr-2 inline" />
             <span>Knowledge</span>
           </Button>
@@ -153,12 +182,16 @@ export const KnowledgeBasePage = () => {
       </motion.div>
       {/* Main Content */}
       <div className="relative">
-        {viewMode === 'mind-map' ? <MindMapView items={filteredItems} /> : <>
+        {loading ? (
+          <div className="flex justify-center items-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500"></div>
+          </div>
+        ) : viewMode === 'mind-map' ? <MindMapView items={transformItemsForMindMap(filteredItems)} /> : <>
             {/* Knowledge Items Grid/List with staggered animation that reanimates on view change */}
             <AnimatePresence mode="wait">
               <motion.div key={`view-${viewMode}-filter-${typeFilter}`} initial="hidden" animate="visible" variants={contentContainerVariants} className={`grid ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' : 'grid-cols-1 gap-3'}`}>
                 {filteredItems.length > 0 ? filteredItems.map(item => <motion.div key={item.id} variants={contentItemVariants}>
-                      <KnowledgeItemCard item={item} viewMode={viewMode} />
+                      <KnowledgeItemCard item={item} viewMode={viewMode} onDelete={handleDeleteItem} />
                     </motion.div>) : <motion.div variants={contentItemVariants} className="col-span-full py-10 text-center text-gray-500 dark:text-zinc-400">
                     No knowledge items found for the selected filter.
                   </motion.div>}
@@ -167,32 +200,49 @@ export const KnowledgeBasePage = () => {
           </>}
       </div>
       {/* Add Knowledge Modal */}
-      {isAddModalOpen && <AddKnowledgeModal onClose={() => setIsAddModalOpen(false)} />}
+      {isAddModalOpen && <AddKnowledgeModal onClose={() => setIsAddModalOpen(false)} onSuccess={() => {
+        loadKnowledgeItems();
+        setIsAddModalOpen(false);
+      }} />}
     </div>;
 };
+
 interface KnowledgeItemCardProps {
   item: KnowledgeItem;
   viewMode: 'grid' | 'list';
+  onDelete: (sourceId: string) => void;
 }
+
 const KnowledgeItemCard = ({
   item,
-  viewMode
+  viewMode,
+  onDelete
 }: KnowledgeItemCardProps) => {
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showTestModal, setShowTestModal] = useState(false);
+
   const statusColorMap = {
     active: 'green',
     processing: 'blue',
     error: 'pink'
   };
-  const accentColor = item.sourceType === 'url' ? 'blue' : 'pink';
+  const accentColor = item.metadata.source_type === 'url' ? 'blue' : 'pink';
+  
   // Get the type icon
-  const TypeIcon = item.knowledgeType === 'technical' ? BoxIcon : Brain;
-  const typeIconColor = item.knowledgeType === 'technical' ? 'text-blue-500' : 'text-purple-500';
+  const TypeIcon = item.metadata.knowledge_type === 'technical' ? BoxIcon : Brain;
+  const typeIconColor = item.metadata.knowledge_type === 'technical' ? 'text-blue-500' : 'text-purple-500';
+
+  const handleDelete = () => {
+    onDelete(item.source_id);
+    setShowDeleteConfirm(false);
+  };
+
   if (viewMode === 'list') {
     return <Card accentColor={accentColor} className="flex items-center gap-4">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-2">
             {/* Source type icon */}
-            {item.sourceType === 'url' ? <LinkIcon className="w-4 h-4 text-blue-500" /> : <Upload className="w-4 h-4 text-pink-500" />}
+            {item.metadata.source_type === 'url' ? <LinkIcon className="w-4 h-4 text-blue-500" /> : <Upload className="w-4 h-4 text-pink-500" />}
             {/* Knowledge type icon */}
             <TypeIcon className={`w-4 h-4 ${typeIconColor}`} />
             <h3 className="text-gray-800 dark:text-white font-medium">
@@ -200,54 +250,179 @@ const KnowledgeItemCard = ({
             </h3>
           </div>
           <p className="text-gray-600 dark:text-zinc-400 text-sm mb-2">
-            {item.description}
+            {item.metadata.description || 'No description available'}
           </p>
           <div className="flex flex-wrap gap-2 mb-2">
-            {item.tags.map(tag => <Badge key={tag} color="purple" variant="outline">
+            {item.metadata.tags?.map(tag => <Badge key={tag} color="purple" variant="outline">
                 {tag}
-              </Badge>)}
+              </Badge>) || null}
           </div>
           <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-zinc-500">
-            <span>Last updated: {item.lastUpdated}</span>
-            <span>Size: {item.metadata.size}</span>
-            <Badge color={statusColorMap[item.status] as any}>
-              {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+            <span>Last updated: {new Date(item.updated_at).toLocaleDateString()}</span>
+            <span>Chunks: {item.metadata.chunks_count || 0}</span>
+            <Badge color={statusColorMap[item.metadata.status || 'active'] as any}>
+              {(item.metadata.status || 'active').charAt(0).toUpperCase() + (item.metadata.status || 'active').slice(1)}
             </Badge>
           </div>
         </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowTestModal(true)} className="p-2 text-gray-500 hover:text-blue-500" title="Test with Query">
+            <TestTube className="w-4 h-4" />
+          </button>
+          <button onClick={() => setShowDeleteConfirm(true)} className="p-2 text-gray-500 hover:text-red-500" title="Delete">
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+        {showDeleteConfirm && <DeleteConfirmModal onConfirm={handleDelete} onCancel={() => setShowDeleteConfirm(false)} />}
+        {showTestModal && <TestKnowledgeModal item={item} onClose={() => setShowTestModal(false)} />}
       </Card>;
   }
+
   return <Card accentColor={accentColor}>
       <div className="flex items-center gap-2 mb-3">
         {/* Source type icon */}
-        {item.sourceType === 'url' ? <LinkIcon className="w-4 h-4 text-blue-500" /> : <Upload className="w-4 h-4 text-pink-500" />}
+        {item.metadata.source_type === 'url' ? <LinkIcon className="w-4 h-4 text-blue-500" /> : <Upload className="w-4 h-4 text-pink-500" />}
         {/* Knowledge type icon */}
         <TypeIcon className={`w-4 h-4 ${typeIconColor}`} />
-        <h3 className="text-gray-800 dark:text-white font-medium">
+        <h3 className="text-gray-800 dark:text-white font-medium flex-1">
           {item.title}
         </h3>
+        <div className="flex items-center gap-1">
+          <button onClick={() => setShowTestModal(true)} className="p-1 text-gray-500 hover:text-blue-500" title="Test with Query">
+            <TestTube className="w-3 h-3" />
+          </button>
+          <button onClick={() => setShowDeleteConfirm(true)} className="p-1 text-gray-500 hover:text-red-500" title="Delete">
+            <Trash2 className="w-3 h-3" />
+          </button>
+        </div>
       </div>
       <p className="text-gray-600 dark:text-zinc-400 text-sm mb-4 line-clamp-2">
-        {item.description}
+        {item.metadata.description || 'No description available'}
       </p>
       <div className="flex flex-wrap gap-2 mb-4">
-        {item.tags.map(tag => <Badge key={tag} color="purple" variant="outline">
+        {item.metadata.tags?.map(tag => <Badge key={tag} color="purple" variant="outline">
             {tag}
-          </Badge>)}
+          </Badge>) || null}
       </div>
       <div className="flex items-center justify-between text-xs text-gray-500 dark:text-zinc-500">
-        <span>Updated: {item.lastUpdated}</span>
-        <Badge color={statusColorMap[item.status] as any}>
-          {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+        <span>Updated: {new Date(item.updated_at).toLocaleDateString()}</span>
+        <Badge color={statusColorMap[item.metadata.status || 'active'] as any}>
+          {(item.metadata.status || 'active').charAt(0).toUpperCase() + (item.metadata.status || 'active').slice(1)}
         </Badge>
       </div>
+      {showDeleteConfirm && <DeleteConfirmModal onConfirm={handleDelete} onCancel={() => setShowDeleteConfirm(false)} />}
+      {showTestModal && <TestKnowledgeModal item={item} onClose={() => setShowTestModal(false)} />}
     </Card>;
 };
-interface AddKnowledgeModalProps {
+
+interface DeleteConfirmModalProps {
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+const DeleteConfirmModal = ({ onConfirm, onCancel }: DeleteConfirmModalProps) => {
+  return <div className="fixed inset-0 bg-gray-500/50 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+    <Card className="w-full max-w-md">
+      <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">
+        Delete Knowledge Item
+      </h3>
+      <p className="text-gray-600 dark:text-zinc-400 mb-6">
+        Are you sure you want to delete this knowledge item? This action cannot be undone.
+      </p>
+      <div className="flex justify-end gap-4">
+        <Button onClick={onCancel} variant="ghost">
+          Cancel
+        </Button>
+        <Button onClick={onConfirm} variant="primary" accentColor="pink">
+          Delete
+        </Button>
+      </div>
+    </Card>
+  </div>;
+};
+
+interface TestKnowledgeModalProps {
+  item: KnowledgeItem;
   onClose: () => void;
 }
+
+const TestKnowledgeModal = ({ item, onClose }: TestKnowledgeModalProps) => {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const { showToast } = useToast();
+
+  const handleSearch = async () => {
+    if (!query.trim()) return;
+    
+    try {
+      setLoading(true);
+      const response = await performRAGQuery(query, {
+        source: item.source_id
+      });
+      setResults(response.results || []);
+    } catch (error) {
+      console.error('Failed to test query:', error);
+      showToast('Failed to test query', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return <div className="fixed inset-0 bg-gray-500/50 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+    <Card className="w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+      <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">
+        Test Knowledge Source
+      </h3>
+      <p className="text-gray-600 dark:text-zinc-400 mb-4">
+        Testing: {item.title}
+      </p>
+      
+      <div className="flex gap-2 mb-4">
+        <Input
+          type="text"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Enter a test query..."
+          className="flex-1"
+          onKeyDown={e => e.key === 'Enter' && handleSearch()}
+        />
+        <Button onClick={handleSearch} disabled={loading || !query.trim()}>
+          {loading ? 'Searching...' : 'Search'}
+        </Button>
+      </div>
+      
+      {results.length > 0 && (
+        <div className="space-y-3 mb-4">
+          <h4 className="font-medium text-gray-800 dark:text-white">Results:</h4>
+          {results.map((result, index) => (
+            <div key={index} className="p-3 bg-gray-50 dark:bg-zinc-900 rounded-md">
+              <p className="text-sm text-gray-700 dark:text-zinc-300">{result.content}</p>
+              <div className="mt-2 text-xs text-gray-500 dark:text-zinc-500">
+                Score: {(result.score * 100).toFixed(1)}%
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      
+      <div className="flex justify-end">
+        <Button onClick={onClose} variant="ghost">
+          Close
+        </Button>
+      </div>
+    </Card>
+  </div>;
+};
+
+interface AddKnowledgeModalProps {
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
 const AddKnowledgeModal = ({
-  onClose
+  onClose,
+  onSuccess
 }: AddKnowledgeModalProps) => {
   const [method, setMethod] = useState<'url' | 'file'>('url');
   const [url, setUrl] = useState('');
@@ -255,6 +430,51 @@ const AddKnowledgeModal = ({
   const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
   const [knowledgeType, setKnowledgeType] = useState<'technical' | 'business'>('technical');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const { showToast } = useToast();
+
+  const handleSubmit = async () => {
+    try {
+      setLoading(true);
+      
+      if (method === 'url') {
+        if (!url.trim()) {
+          showToast('Please enter a URL', 'error');
+          return;
+        }
+        
+        const result = await knowledgeBaseService.crawlUrl({
+          url: url.trim(),
+          knowledge_type: knowledgeType,
+          tags,
+          update_frequency: parseInt(updateFrequency)
+        });
+        
+        showToast((result as any).message || 'Crawling started', 'success');
+      } else {
+        if (!selectedFile) {
+          showToast('Please select a file', 'error');
+          return;
+        }
+        
+        const result = await knowledgeBaseService.uploadDocument(selectedFile, {
+          knowledge_type: knowledgeType,
+          tags
+        });
+        
+        showToast((result as any).message || 'Document uploaded successfully', 'success');
+      }
+      
+      onSuccess();
+    } catch (error) {
+      console.error('Failed to add knowledge:', error);
+      showToast('Failed to add knowledge source', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return <div className="fixed inset-0 bg-gray-500/50 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
       <Card className="w-full max-w-2xl relative before:content-[''] before:absolute before:top-0 before:left-0 before:w-full before:h-[1px] before:bg-green-500">
         <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-6">
@@ -300,20 +520,20 @@ const AddKnowledgeModal = ({
             <Input label="URL to Scrape" type="url" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://..." accentColor="blue" />
           </div>}
         {/* File Upload */}
-        {method === 'file' && <div className="mb-6">
-            <label className="block text-gray-600 dark:text-zinc-400 text-sm mb-2">
+        {method === 'file' &&           <div className="mb-6">
+            <label htmlFor="file-upload" className="block text-gray-600 dark:text-zinc-400 text-sm mb-2">
               Upload Document
             </label>
-            <div className="border border-dashed border-gray-300 dark:border-zinc-800 rounded-md p-8 text-center hover:border-pink-300 dark:hover:border-pink-500/50 transition-colors bg-gray-50 dark:bg-black/30">
-              <Upload className="w-8 h-8 text-gray-400 dark:text-zinc-700 mx-auto mb-2" />
-              <p className="text-gray-600 dark:text-zinc-400">
-                Drag and drop your file here, or{' '}
-                <span className="text-pink-600 dark:text-pink-500">browse</span>
-              </p>
-              <p className="text-gray-500 dark:text-zinc-600 text-sm mt-1">
-                Supports PDF, MD, DOC up to 10MB
-              </p>
-            </div>
+            <input 
+              id="file-upload"
+              type="file"
+              accept=".pdf,.md,.doc,.docx,.txt"
+              onChange={e => setSelectedFile(e.target.files?.[0] || null)}
+              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100"
+            />
+            <p className="text-gray-500 dark:text-zinc-600 text-sm mt-1">
+              Supports PDF, MD, DOC up to 10MB
+            </p>
           </div>}
         {/* Update Frequency */}
         {method === 'url' && <div className="mb-6">
@@ -342,19 +562,19 @@ const AddKnowledgeModal = ({
               </Badge>)}
           </div>
           <Input type="text" value={newTag} onChange={e => setNewTag(e.target.value)} onKeyDown={e => {
-          if (e.key === 'Enter' && newTag) {
-            setTags([...tags, newTag]);
+          if (e.key === 'Enter' && newTag.trim()) {
+            setTags([...tags, newTag.trim()]);
             setNewTag('');
           }
         }} placeholder="Add tags..." accentColor="purple" />
         </div>
         {/* Action Buttons */}
         <div className="flex justify-end gap-4">
-          <Button onClick={onClose} variant="ghost">
+          <Button onClick={onClose} variant="ghost" disabled={loading}>
             Cancel
           </Button>
-          <Button variant="primary" accentColor={method === 'url' ? 'blue' : 'pink'}>
-            Add Source
+          <Button onClick={handleSubmit} variant="primary" accentColor={method === 'url' ? 'blue' : 'pink'} disabled={loading}>
+            {loading ? 'Adding...' : 'Add Source'}
           </Button>
         </div>
       </Card>
