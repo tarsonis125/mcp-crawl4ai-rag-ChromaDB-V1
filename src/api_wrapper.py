@@ -8,10 +8,13 @@ import time
 import json
 import os
 import signal
-from typing import Dict, Any, Optional, List
+import re
+from typing import Dict, Any, Optional, List, Tuple
 from contextlib import asynccontextmanager
+from datetime import datetime
+from collections import deque
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl
 import httpx
@@ -54,6 +57,32 @@ class CredentialUpdateRequest(BaseModel):
     description: Optional[str] = None
 
 
+# Log parsing utility
+def parse_log_line(line: str) -> Tuple[str, str]:
+    """Parse a log line to extract level and message."""
+    # Match common log formats like [INFO], [ERROR], etc.
+    match = re.match(r'^\[(\w+)\]\s*(.*)$', line)
+    if match:
+        return match.group(1), match.group(2)
+    
+    # Check for common log patterns
+    if line.startswith(('INFO:', 'INFO ')):
+        return 'INFO', line
+    elif line.startswith(('ERROR:', 'ERROR ', 'CRITICAL:', 'CRITICAL ')):
+        return 'ERROR', line
+    elif line.startswith(('WARNING:', 'WARNING ', 'WARN:', 'WARN ')):
+        return 'WARNING', line
+    elif line.startswith(('DEBUG:', 'DEBUG ')):
+        return 'DEBUG', line
+    
+    # UV package manager outputs
+    if any(keyword in line.lower() for keyword in ['downloading', 'building', 'built', 'installed', 'creating virtual environment', 'using cpython']):
+        return 'INFO', line
+    
+    # Default to INFO level for unparsed lines
+    return 'INFO', line
+
+
 class MCPServerManager:
     """Manages the MCP server process lifecycle."""
     
@@ -61,7 +90,9 @@ class MCPServerManager:
         self.process: Optional[subprocess.Popen] = None
         self.status: str = 'stopped'
         self.start_time: Optional[float] = None
-        self.logs: List[str] = []
+        self.logs: deque = deque(maxlen=1000)  # Keep last 1000 log entries
+        self.log_websockets: List[WebSocket] = []
+        self.log_reader_task: Optional[asyncio.Task] = None
     
     async def start_server(self) -> Dict[str, Any]:
         """Start the MCP server process."""
@@ -105,11 +136,11 @@ class MCPServerManager:
                     'USE_RERANKING': str(use_reranking).lower(),
                 })
                 
-                self.logs.append(f'[{time.strftime("%H:%M:%S")}] Using database configuration')
+                self._add_log('INFO', 'Using database configuration')
                 
             except Exception as e:
                 # Fallback to environment variables
-                self.logs.append(f'[{time.strftime("%H:%M:%S")}] Database config failed, using env vars: {e}')
+                self._add_log('WARNING', f'Database config failed, using env vars: {e}')
                 config = load_environment_config()
                 rag_config = get_rag_strategy_config()
                 
@@ -134,12 +165,18 @@ class MCPServerManager:
                 env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                bufsize=1  # Line buffered
             )
             
             self.status = 'starting'
             self.start_time = time.time()
-            self.logs.append(f'[{time.strftime("%H:%M:%S")}] MCP server process started')
+            self._add_log('INFO', 'MCP server process started')
+            
+            # Start log reader task
+            if self.log_reader_task:
+                self.log_reader_task.cancel()
+            self.log_reader_task = asyncio.create_task(self._read_process_logs())
             
             return {
                 'success': True,
@@ -148,7 +185,7 @@ class MCPServerManager:
             }
             
         except Exception as e:
-            self.logs.append(f'[{time.strftime("%H:%M:%S")}] Error starting server: {str(e)}')
+            self._add_log('ERROR', f'Error starting server: {str(e)}')
             raise Exception(f"Server start failed: {str(e)}")
     
     def stop_server(self) -> Dict[str, Any]:
@@ -162,6 +199,11 @@ class MCPServerManager:
             }
         
         try:
+            # Cancel log reader task
+            if self.log_reader_task:
+                self.log_reader_task.cancel()
+                self.log_reader_task = None
+            
             self.process.terminate()
             
             # Wait for graceful shutdown
@@ -173,7 +215,7 @@ class MCPServerManager:
             
             self.process = None
             self.status = 'stopped'
-            self.logs.append(f'[{time.strftime("%H:%M:%S")}] MCP server stopped')
+            self._add_log('INFO', 'MCP server stopped')
             
             return {
                 'success': True,
@@ -182,7 +224,7 @@ class MCPServerManager:
             }
             
         except Exception as e:
-            self.logs.append(f'[{time.strftime("%H:%M:%S")}] Error stopping server: {str(e)}')
+            self._add_log('ERROR', f'Error stopping server: {str(e)}')
             raise Exception(f"Server stop failed: {str(e)}")
     
     def get_status(self) -> Dict[str, Any]:
@@ -198,11 +240,116 @@ class MCPServerManager:
         if self.status == 'running' and self.start_time:
             uptime = int(time.time() - self.start_time)
         
+        # Convert log entries to strings for backward compatibility
+        recent_logs = []
+        for log in list(self.logs)[-10:]:
+            if isinstance(log, dict):
+                recent_logs.append(f"[{log['level']}] {log['message']}")
+            else:
+                recent_logs.append(str(log))
+        
         return {
             'status': self.status,
             'uptime': uptime,
-            'logs': self.logs[-10:]  # Return last 10 log entries
+            'logs': recent_logs
         }
+    
+    def _add_log(self, level: str, message: str):
+        """Add a log entry and broadcast to connected WebSockets."""
+        log_entry = {
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'level': level,
+            'message': message
+        }
+        self.logs.append(log_entry)
+        
+        # Broadcast to all connected WebSockets
+        asyncio.create_task(self._broadcast_log(log_entry))
+    
+    async def _broadcast_log(self, log_entry: Dict[str, Any]):
+        """Broadcast log entry to all connected WebSockets."""
+        disconnected = []
+        for ws in self.log_websockets:
+            try:
+                await ws.send_json(log_entry)
+            except Exception:
+                disconnected.append(ws)
+        
+        # Remove disconnected WebSockets
+        for ws in disconnected:
+            self.log_websockets.remove(ws)
+    
+    async def _read_process_logs(self):
+        """Read logs from process stdout/stderr."""
+        if not self.process:
+            return
+        
+        async def read_stream(stream, is_stderr=False):
+            while True:
+                try:
+                    line = await asyncio.get_event_loop().run_in_executor(
+                        None, stream.readline
+                    )
+                    if not line:
+                        break
+                    
+                    line = line.strip()
+                    if line:
+                        level, message = parse_log_line(line)
+                        # Only mark stderr as ERROR if it's not already parsed as something else
+                        if is_stderr and level == 'INFO' and not any(
+                            keyword in line.lower() for keyword in 
+                            ['info:', 'downloading', 'building', 'installed', 'creating', 'using cpython', 'uvicorn running']
+                        ):
+                            # Check if it looks like an actual error
+                            if any(err in line.lower() for err in ['error', 'exception', 'failed', 'critical']):
+                                level = 'ERROR'
+                        self._add_log(level, message)
+                except Exception as e:
+                    self._add_log('ERROR', f'Log reading error: {str(e)}')
+                    break
+        
+        # Read both stdout and stderr concurrently
+        try:
+            await asyncio.gather(
+                read_stream(self.process.stdout),
+                read_stream(self.process.stderr, is_stderr=True)
+            )
+        except asyncio.CancelledError:
+            pass
+        finally:
+            # Process has ended
+            if self.process and self.process.poll() is not None:
+                self._add_log('INFO', f'MCP server process terminated with code {self.process.returncode}')
+    
+    def get_logs(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get historical logs."""
+        logs = list(self.logs)
+        if limit > 0:
+            logs = logs[-limit:]
+        return logs
+    
+    def clear_logs(self):
+        """Clear the log buffer."""
+        self.logs.clear()
+        self._add_log('INFO', 'Logs cleared')
+    
+    async def add_websocket(self, websocket: WebSocket):
+        """Add a WebSocket connection for log streaming."""
+        await websocket.accept()
+        self.log_websockets.append(websocket)
+        
+        # Send recent logs to new connection
+        for log in list(self.logs)[-50:]:  # Send last 50 logs
+            try:
+                await websocket.send_json(log)
+            except Exception:
+                break
+    
+    def remove_websocket(self, websocket: WebSocket):
+        """Remove a WebSocket connection."""
+        if websocket in self.log_websockets:
+            self.log_websockets.remove(websocket)
 
 
 class MCPClient:
@@ -315,6 +462,47 @@ async def get_mcp_server_status():
         return mcp_manager.get_status()
     except Exception as e:
         raise HTTPException(status_code=500, detail={'error': str(e)})
+
+
+# Log Management Endpoints
+@app.get("/api/mcp/logs")
+async def get_mcp_logs(limit: int = 100):
+    """Get historical MCP server logs."""
+    try:
+        logs = mcp_manager.get_logs(limit=limit)
+        return logs
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
+
+@app.delete("/api/mcp/logs")
+async def clear_mcp_logs():
+    """Clear MCP server logs."""
+    try:
+        mcp_manager.clear_logs()
+        return {'success': True, 'message': 'Logs cleared'}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
+
+@app.websocket("/api/mcp/logs/stream")
+async def websocket_log_stream(websocket: WebSocket):
+    """WebSocket endpoint for streaming MCP server logs."""
+    await mcp_manager.add_websocket(websocket)
+    try:
+        while True:
+            # Keep connection alive
+            await asyncio.sleep(1)
+            # Check if WebSocket is still connected
+            await websocket.send_json({"type": "ping"})
+    except WebSocketDisconnect:
+        mcp_manager.remove_websocket(websocket)
+    except Exception:
+        mcp_manager.remove_websocket(websocket)
+        try:
+            await websocket.close()
+        except:
+            pass
 
 
 # Crawling Endpoints
