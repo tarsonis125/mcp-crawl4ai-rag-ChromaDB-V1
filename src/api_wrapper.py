@@ -262,7 +262,7 @@ class MCPServerManager:
                 })
             
             # Start the MCP server process
-            cmd = ['python', '-m', 'uv', 'run', 'src/crawl4ai_mcp.py']
+            cmd = ['uv', 'run', 'python', 'src/crawl4ai_mcp.py']
             self.process = subprocess.Popen(
                 cmd,
                 env=env,
@@ -567,6 +567,79 @@ async def get_mcp_server_status():
     """Get MCP server status."""
     try:
         return mcp_manager.get_status()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
+
+# Removed hardcoded tools endpoint - frontend now queries MCP server directly
+
+@app.get("/api/mcp/tools")
+async def get_mcp_tools():
+    """Get available MCP tools - either from running server or known tools list."""
+    try:
+        # Known tools that should be available from our MCP server
+        known_tools = [
+            {
+                "name": "crawl_single_page",
+                "description": "Crawl a single web page and store its content in Supabase. Ideal for quickly retrieving content from a specific URL without following links.",
+                "parameters": [
+                    {"name": "url", "type": "string", "required": True, "description": "URL of the web page to crawl"}
+                ]
+            },
+            {
+                "name": "smart_crawl_url", 
+                "description": "Intelligently crawl a URL based on its type. Automatically detects sitemaps, text files, or regular webpages and applies appropriate crawling method.",
+                "parameters": [
+                    {"name": "url", "type": "string", "required": True, "description": "URL to crawl (webpage, sitemap.xml, or .txt file)"},
+                    {"name": "max_depth", "type": "integer", "required": False, "description": "Maximum recursion depth for regular URLs (default: 3)"},
+                    {"name": "max_concurrent", "type": "integer", "required": False, "description": "Maximum concurrent browser sessions (default: 10)"},
+                    {"name": "chunk_size", "type": "integer", "required": False, "description": "Maximum size of each content chunk (default: 5000)"}
+                ]
+            },
+            {
+                "name": "get_available_sources",
+                "description": "Get all available sources from the sources table. Returns a list of all unique sources that have been crawled and stored in the database.",
+                "parameters": []
+            },
+            {
+                "name": "perform_rag_query",
+                "description": "Perform a RAG (Retrieval Augmented Generation) query on stored content. Searches the vector database for content relevant to the query.",
+                "parameters": [
+                    {"name": "query", "type": "string", "required": True, "description": "The search query"},
+                    {"name": "source", "type": "string", "required": False, "description": "Optional source domain to filter results"},
+                    {"name": "match_count", "type": "integer", "required": False, "description": "Maximum number of results to return (default: 5)"}
+                ]
+            },
+            {
+                "name": "delete_source",
+                "description": "Delete a source and all associated crawled pages and code examples from the database.",
+                "parameters": [
+                    {"name": "source_id", "type": "string", "required": True, "description": "The source ID to delete"}
+                ]
+            },
+            {
+                "name": "search_code_examples",
+                "description": "Search for code examples relevant to the query. Searches the vector database for code examples with their summaries.",
+                "parameters": [
+                    {"name": "query", "type": "string", "required": True, "description": "The search query"},
+                    {"name": "source_id", "type": "string", "required": False, "description": "Optional source ID to filter results"},
+                    {"name": "match_count", "type": "integer", "required": False, "description": "Maximum number of results to return (default: 5)"}
+                ]
+            }
+        ]
+        
+        # Check if server is running to determine availability
+        server_status = mcp_manager.get_status()
+        is_running = server_status.get('status') == 'running'
+        
+        return {
+            'tools': known_tools,
+            'count': len(known_tools),
+            'server_running': is_running,
+            'source': 'known_tools' if is_running else 'server_not_running',
+            'message': 'Known tools list (server running)' if is_running else 'Known tools list (server not running)'
+        }
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail={'error': str(e)})
 

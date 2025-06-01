@@ -20,9 +20,13 @@ import asyncio
 import json
 import os
 import re
+import sys
 import concurrent.futures
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, MemoryAdaptiveDispatcher
+
+# Add the project root to Python path for imports
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.utils import (
     get_supabase_client, 

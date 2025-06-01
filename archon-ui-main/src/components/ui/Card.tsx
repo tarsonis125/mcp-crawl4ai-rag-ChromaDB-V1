@@ -1,7 +1,7 @@
 import React from 'react';
 interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
-  accentColor?: 'purple' | 'green' | 'pink' | 'blue' | 'none';
+  accentColor?: 'purple' | 'green' | 'pink' | 'blue' | 'orange' | 'none';
   variant?: 'default' | 'bordered';
 }
 export const Card: React.FC<CardProps> = ({
@@ -39,6 +39,13 @@ export const Card: React.FC<CardProps> = ({
       border: 'border-blue-300 dark:border-blue-500/30',
       gradientFrom: 'from-blue-100 dark:from-blue-500/20',
       gradientTo: 'to-white dark:to-blue-500/5'
+    },
+    orange: {
+      glow: 'before:shadow-[0_0_10px_2px_rgba(249,115,22,0.4)] dark:before:shadow-[0_0_20px_5px_rgba(249,115,22,0.7)]',
+      line: 'before:bg-orange-500',
+      border: 'border-orange-300 dark:border-orange-500/30',
+      gradientFrom: 'from-orange-100 dark:from-orange-500/20',
+      gradientTo: 'to-white dark:to-orange-500/5'
     },
     none: {
       glow: '',

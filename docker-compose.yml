@@ -5,6 +5,7 @@ services:
     build: .
     ports:
       - "8080:8080"
+      - "8051:8051"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - SUPABASE_URL=${SUPABASE_URL}

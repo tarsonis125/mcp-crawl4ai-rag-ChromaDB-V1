@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 export interface ServerStatus {
   status: 'running' | 'starting' | 'stopped' | 'stopping';
   uptime: number | null;
@@ -27,6 +29,42 @@ interface StreamLogOptions {
   autoReconnect?: boolean;
   reconnectDelay?: number;
 }
+
+// Zod schemas for MCP protocol
+const MCPParameterSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  required: z.boolean().optional(),
+  type: z.string().optional(),
+});
+
+const MCPToolSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  inputSchema: z.object({
+    type: z.literal('object'),
+    properties: z.record(z.any()).optional(),
+    required: z.array(z.string()).optional(),
+  }).optional(),
+});
+
+const MCPToolsListResponseSchema = z.object({
+  tools: z.array(MCPToolSchema),
+});
+
+const MCPResponseSchema = z.object({
+  jsonrpc: z.literal('2.0'),
+  id: z.union([z.string(), z.number()]),
+  result: z.any().optional(),
+  error: z.object({
+    code: z.number(),
+    message: z.string(),
+    data: z.any().optional(),
+  }).optional(),
+});
+
+export type MCPTool = z.infer<typeof MCPToolSchema>;
+export type MCPParameter = z.infer<typeof MCPParameterSchema>;
 
 class MCPService {
   private baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
@@ -193,6 +231,122 @@ class MCPService {
       this.logWebSocket = null;
     }
   }
+
+  /**
+   * Make an MCP call to the running server via SSE
+   */
+  private async makeMCPCall(method: string, params?: any): Promise<any> {
+    const status = await this.getStatus();
+    if (status.status !== 'running') {
+      throw new Error('MCP server is not running');
+    }
+
+    const config = await this.getConfiguration();
+    const mcpUrl = `http://${config.host}:${config.port}/${config.transport}`;
+    
+    // Generate unique request ID
+    const id = Math.random().toString(36).substring(2);
+    
+    const mcpRequest = {
+      jsonrpc: '2.0',
+      id,
+      method,
+      params: params || {}
+    };
+
+    try {
+      const response = await fetch(mcpUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(mcpRequest)
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const mcpResponse = await response.json();
+      
+      // Validate MCP response format
+      const validatedResponse = MCPResponseSchema.parse(mcpResponse);
+      
+      if (validatedResponse.error) {
+        throw new Error(`MCP Error: ${validatedResponse.error.message}`);
+      }
+
+      return validatedResponse.result;
+    } catch (error) {
+      console.error('MCP call failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get available tools from the running MCP server
+   */
+  async getAvailableTools(): Promise<MCPTool[]> {
+    try {
+      // First try the backend endpoint which has the known tools list
+      const baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${baseUrl}/api/mcp/tools`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        // Convert the backend format to MCP tool format
+        const tools: MCPTool[] = data.tools.map((tool: any) => ({
+          name: tool.name,
+          description: tool.description,
+          inputSchema: {
+            type: 'object' as const,
+            properties: tool.parameters.reduce((props: any, param: any) => {
+              props[param.name] = {
+                type: param.type,
+                description: param.description
+              };
+              return props;
+            }, {}),
+            required: tool.parameters.filter((p: any) => p.required).map((p: any) => p.name)
+          }
+        }));
+        return tools;
+      }
+      
+      // If backend fails, try direct MCP call (though this likely won't work with SSE)
+      const result = await this.makeMCPCall('tools/list');
+      const validatedResult = MCPToolsListResponseSchema.parse(result);
+      return validatedResult.tools;
+    } catch (error) {
+      console.error('Failed to get MCP tools:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Call a specific MCP tool
+   */
+  async callTool(name: string, arguments_: Record<string, any>): Promise<any> {
+    try {
+      const result = await this.makeMCPCall('tools/call', {
+        name,
+        arguments: arguments_
+      });
+      return result;
+    } catch (error) {
+      console.error(`Failed to call MCP tool ${name}:`, error);
+      throw error;
+    }
+  }
 }
 
-export const mcpService = new MCPService(); 
+export const mcpService = new MCPService();
+
+/**
+ * Legacy function - replaced by mcpService.getAvailableTools()
+ * @deprecated Use mcpService.getAvailableTools() instead
+ */
+export const getMCPTools = async () => {
+  console.warn('getMCPTools is deprecated. Use mcpService.getAvailableTools() instead.');
+  return mcpService.getAvailableTools();
+}; 
