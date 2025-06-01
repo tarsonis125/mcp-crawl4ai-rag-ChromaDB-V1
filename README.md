@@ -10,6 +10,17 @@ With this MCP server, you can <b>scrape anything</b> and then <b>use that knowle
 
 The primary goal is to bring this MCP server into [Archon](https://github.com/coleam00/Archon) as I evolve it to be more of a knowledge engine for AI coding assistants to build AI agents. This first version of the Crawl4AI/RAG MCP server will be improved upon greatly soon, especially making it more configurable so you can use different embedding models and run everything locally with Ollama.
 
+## 🆕 New: Web UI and Enhanced Setup
+
+This project now includes a **React web interface** and **database-based credential management** that makes it easier to:
+- Configure and manage all settings through a web UI
+- Start/stop the MCP server with a click
+- Monitor crawling progress in real-time
+- Search your knowledge base interactively
+- Securely store API keys and configuration in the database
+
+You can now get started with just your Supabase connection details - all other configuration can be done through the web interface!
+
 ## Overview
 
 This MCP server provides tools that enable AI agents to crawl websites, store content in a vector database (Supabase), and perform RAG over the crawled content. It follows the best practices for building MCP servers based on the [Mem0 MCP server template](https://github.com/coleam00/mcp-mem0/) I provided on my channel previously.
@@ -64,10 +75,67 @@ The server provides essential web crawling and search tools:
 
 - [Docker/Docker Desktop](https://www.docker.com/products/docker-desktop/) if running the MCP server as a container (recommended)
 - [Python 3.12+](https://www.python.org/downloads/) if running the MCP server directly through uv
+- [Node.js 18+](https://nodejs.org/) if using the web UI
 - [Supabase](https://supabase.com/) (database for RAG)
 - [OpenAI API key](https://platform.openai.com/api-keys) (for generating embeddings)
 
 ## Installation
+
+### Option 1: Quick Start with Web UI (Recommended)
+
+The easiest way to get started is using the integrated web UI with the startup script:
+
+1. Clone this repository:
+   ```bash
+   git clone https://github.com/coleam00/mcp-crawl4ai-rag.git
+   cd mcp-crawl4ai-rag
+   ```
+
+2. Create a minimal `.env` file with just your Supabase connection:
+   ```bash
+   cp .env-doc.md .env
+   # Edit .env to add only:
+   # SUPABASE_URL=your_supabase_project_url
+   # SUPABASE_SERVICE_KEY=your_supabase_service_key
+   ```
+
+3. Run the startup script:
+   ```bash
+   ./startup.py
+   ```
+
+   This will:
+   - Check your environment setup
+   - Install all dependencies
+   - Guide you through database setup
+   - Start both the backend API and web UI
+   - Launch the web interface at http://localhost:3000
+
+4. Configure everything else through the Settings page in the web UI!
+
+### Option 2: Using Docker Compose (Full Stack)
+
+1. Clone this repository and set up minimal `.env`:
+   ```bash
+   git clone https://github.com/coleam00/mcp-crawl4ai-rag.git
+   cd mcp-crawl4ai-rag
+   cp .env-doc.md .env
+   # Edit .env with your Supabase credentials
+   ```
+
+2. Start the full stack:
+   ```bash
+   docker-compose up --build
+   ```
+
+   This starts:
+   - Backend API at http://localhost:8080
+   - Web UI at http://localhost:3000
+   - API documentation at http://localhost:8080/docs
+
+### Option 3: Traditional MCP Server Setup
+
+If you prefer to use the MCP server directly without the UI:
 
 ### Using Docker (Recommended)
 
@@ -114,15 +182,36 @@ The server provides essential web crawling and search tools:
 
 ## Database Setup
 
-Before running the server, you need to set up the database with the pgvector extension:
+Before running the server, you need to set up the database:
 
 1. Go to the SQL Editor in your Supabase dashboard (create a new project first if necessary)
 
-2. Create a new query and paste the contents of `crawled_pages.sql`
+2. **For Web UI setup**: Run BOTH SQL files:
+   - First run `credentials_setup.sql` to create the credentials table
+   - Then run `crawled_pages.sql` to create the vector database tables
 
-3. Run the query to create the necessary tables and functions
+3. **For traditional setup**: Just run `crawled_pages.sql`
 
 ## Configuration
+
+### Configuration with Web UI (Recommended)
+
+When using the web UI, you only need minimal environment variables:
+
+```bash
+# .env file - minimal setup
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_SERVICE_KEY=your_supabase_service_key
+
+# Optional overrides
+HOST=localhost
+PORT=8080
+LOG_LEVEL=INFO
+```
+
+All other settings (API keys, model choices, RAG strategies) are configured through the Settings page in the web UI and stored securely in the database with encryption for sensitive values.
+
+### Traditional Configuration (Direct MCP Server)
 
 Create a `.env` file in the project root with the following variables:
 
@@ -211,6 +300,25 @@ USE_RERANKING=false
 
 ## Running the Server
 
+### With Web UI
+
+```bash
+# Quick start
+./startup.py
+
+# Or using Docker Compose
+docker-compose up --build
+```
+
+Access the web UI at http://localhost:3000 to:
+- Start/stop the MCP server
+- Configure all settings
+- Initiate crawling operations
+- Search your knowledge base
+- Monitor server logs
+
+### Traditional MCP Server
+
 ### Using Docker
 
 ```bash
@@ -226,6 +334,8 @@ uv run src/crawl4ai_mcp.py
 The server will start and listen on the configured host and port.
 
 ## Integration with MCP Clients
+
+The MCP server can still be integrated directly with MCP clients like Claude Desktop, Windsurf, etc., even when using the web UI setup. The server runs on port 8051 by default.
 
 ### SSE Configuration
 

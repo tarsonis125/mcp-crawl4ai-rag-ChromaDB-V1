@@ -1,21 +1,25 @@
 FROM python:3.12-slim
 
-ARG PORT=8051
-
 WORKDIR /app
 
 # Install uv
 RUN pip install uv
 
-# Copy the MCP server files
-COPY . .
+# Copy project files
+COPY pyproject.toml uv.lock ./
 
-# Install packages directly to the system (no virtual environment)
-# Combining commands to reduce Docker layers
-RUN uv pip install --system -e . && \
-    crawl4ai-setup
+# Install dependencies
+RUN uv pip install --system -e ".[api]"
 
-EXPOSE ${PORT}
+# Copy source code
+COPY src/ ./src/
+COPY tests/ ./tests/
 
-# Command to run the MCP server
-CMD ["uv", "run", "src/crawl4ai_mcp.py"]
+# Install the MCP crawl4ai setup
+RUN crawl4ai-setup
+
+# Expose port 8080 for the API wrapper
+EXPOSE 8080
+
+# Command to run the API wrapper
+CMD ["python", "-m", "uvicorn", "src.api_wrapper:app", "--host", "0.0.0.0", "--port", "8080"]
