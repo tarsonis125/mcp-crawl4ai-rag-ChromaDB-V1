@@ -6,8 +6,13 @@ class WebSocketService {
   private listeners: Map<string, Function[]> = new Map();
 
   connect(endpoint: string) {
-    const wsUrl = `ws://localhost:8080${endpoint}`;
+    // Use the current host but with the backend port
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.hostname;
+    const port = '8080'; // Backend WebSocket port
+    const wsUrl = `${protocol}//${host}:${port}${endpoint}`;
     
+    console.log(`Connecting to WebSocket: ${wsUrl}`);
     this.ws = new WebSocket(wsUrl);
     
     this.ws.onopen = () => {

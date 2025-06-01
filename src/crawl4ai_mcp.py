@@ -576,36 +576,66 @@ async def smart_crawl_url(ctx: Context, url: str, max_depth: int = 3, max_concur
         crawler = ctx.request_context.lifespan_context.crawler
         supabase_client = ctx.request_context.lifespan_context.supabase_client
         
+        # Get progress callback if available
+        progress_callback = getattr(ctx, 'progress_callback', None)
+        
+        async def report_progress(status: str, percentage: int, message: str, **kwargs):
+            """Helper to report progress if callback is available"""
+            if progress_callback:
+                await progress_callback(status, percentage, message, **kwargs)
+        
         # Determine the crawl strategy
+        await report_progress('analyzing', 5, f'Analyzing URL type: {url}')
+        
         crawl_results = []
         crawl_type = None
+        total_urls_to_process = 0
         
         if is_txt(url):
             # For text files, use simple crawl
+            await report_progress('crawling', 10, 'Processing text file...')
             crawl_results = await crawl_markdown_file(crawler, url)
             crawl_type = "text_file"
+            total_urls_to_process = 1
         elif is_sitemap(url):
             # For sitemaps, extract URLs and crawl in parallel
+            await report_progress('parsing', 10, 'Parsing sitemap...')
             sitemap_urls = parse_sitemap(url)
             if not sitemap_urls:
+                await report_progress('error', 0, 'No URLs found in sitemap')
                 return json.dumps({
                     "success": False,
                     "url": url,
                     "error": "No URLs found in sitemap"
                 }, indent=2)
-            crawl_results = await crawl_batch(crawler, sitemap_urls, max_concurrent=max_concurrent)
+            
+            total_urls_to_process = len(sitemap_urls)
+            await report_progress('crawling', 15, f'Found {total_urls_to_process} URLs in sitemap, starting batch crawl...', 
+                                totalPages=total_urls_to_process)
+            
+            # Use progress-aware batch crawl
+            crawl_results = await crawl_batch_with_progress(crawler, sitemap_urls, max_concurrent, progress_callback, 15, 60)
             crawl_type = "sitemap"
         else:
             # For regular URLs, use recursive crawl
-            crawl_results = await crawl_recursive_internal_links(crawler, [url], max_depth=max_depth, max_concurrent=max_concurrent)
+            await report_progress('discovering', 10, 'Discovering internal links...')
+            
+            # Use progress-aware recursive crawl
+            crawl_results = await crawl_recursive_with_progress(crawler, [url], max_depth, max_concurrent, progress_callback, 10, 60)
             crawl_type = "webpage"
+            total_urls_to_process = len(crawl_results)
         
         if not crawl_results:
+            await report_progress('error', 0, 'No content found')
             return json.dumps({
                 "success": False,
                 "url": url,
                 "error": "No content found"
             }, indent=2)
+        
+        # Progress: Pages crawled, now processing content
+        await report_progress('processing', 65, f'Processing {len(crawl_results)} pages into chunks...', 
+                            totalPages=total_urls_to_process, processedPages=len(crawl_results))
         
         # Process results and store in Supabase
         urls = []
@@ -618,8 +648,9 @@ async def smart_crawl_url(ctx: Context, url: str, max_depth: int = 3, max_concur
         source_content_map = {}
         source_word_counts = {}
         
-        # Process documentation chunks
-        for doc in crawl_results:
+        # Process documentation chunks with progress
+        total_pages = len(crawl_results)
+        for page_idx, doc in enumerate(crawl_results):
             source_url = doc['url']
             md = doc['markdown']
             chunks = smart_chunk_markdown(md, chunk_size=chunk_size)
@@ -651,6 +682,13 @@ async def smart_crawl_url(ctx: Context, url: str, max_depth: int = 3, max_concur
                 source_word_counts[source_id] += meta.get("word_count", 0)
                 
                 chunk_count += 1
+            
+            # Report chunking progress
+            chunking_progress = 65 + int((page_idx + 1) / total_pages * 15)  # 65-80%
+            await report_progress('processing', chunking_progress, 
+                                f'Processed page {page_idx + 1}/{total_pages} into {len(chunks)} chunks')
+        
+        await report_progress('storing', 80, f'Creating {chunk_count} chunks and updating source information...')
         
         # Create url_to_full_document mapping
         url_to_full_document = {}
@@ -673,6 +711,8 @@ async def smart_crawl_url(ctx: Context, url: str, max_depth: int = 3, max_concur
             word_count = source_word_counts.get(source_id, 0)
             update_source_info(supabase_client, source_id, summary, word_count, content, knowledge_type, tags)
         
+        await report_progress('storing', 85, f'Storing {chunk_count} content chunks in database...')
+        
         # Add documentation chunks to Supabase (AFTER sources exist)
         batch_size = 20
         add_documents_to_supabase(supabase_client, urls, chunk_numbers, contents, metadatas, url_to_full_document, batch_size=batch_size)
@@ -681,6 +721,8 @@ async def smart_crawl_url(ctx: Context, url: str, max_depth: int = 3, max_concur
         extract_code_examples_enabled = os.getenv("USE_AGENTIC_RAG", "false") == "true"
         code_examples = []  # Initialize empty list
         if extract_code_examples_enabled:
+            await report_progress('extracting', 90, 'Extracting and processing code examples...')
+            
             all_code_blocks = []
             code_urls = []
             code_chunk_numbers = []
@@ -736,6 +778,9 @@ async def smart_crawl_url(ctx: Context, url: str, max_depth: int = 3, max_concur
                     batch_size=batch_size
                 )
         
+        # Final completion
+        await report_progress('completed', 100, f'Successfully crawled {len(crawl_results)} pages and stored {chunk_count} chunks')
+        
         return json.dumps({
             "success": True,
             "url": url,
@@ -744,9 +789,12 @@ async def smart_crawl_url(ctx: Context, url: str, max_depth: int = 3, max_concur
             "chunks_stored": chunk_count,
             "code_examples_stored": len(code_examples) if 'code_examples' in locals() else 0,
             "sources_updated": len(source_content_map),
+            "total_word_count": sum(source_word_counts.values()),
             "urls_crawled": [doc['url'] for doc in crawl_results][:5] + (["..."] if len(crawl_results) > 5 else [])
         }, indent=2)
     except Exception as e:
+        if 'progress_callback' in locals():
+            await report_progress('error', 0, f'Crawling failed: {str(e)}')
         return json.dumps({
             "success": False,
             "url": url,
@@ -1490,14 +1538,17 @@ async def crawl_markdown_file(crawler: AsyncWebCrawler, url: str) -> List[Dict[s
         print(f"Failed to crawl {url}: {result.error_message}")
         return []
 
-async def crawl_batch(crawler: AsyncWebCrawler, urls: List[str], max_concurrent: int = 10) -> List[Dict[str, Any]]:
+async def crawl_batch_with_progress(crawler: AsyncWebCrawler, urls: List[str], max_concurrent: int = 10, progress_callback=None, start_progress: int = 15, end_progress: int = 60) -> List[Dict[str, Any]]:
     """
-    Batch crawl multiple URLs in parallel.
+    Batch crawl multiple URLs in parallel with progress reporting.
     
     Args:
         crawler: AsyncWebCrawler instance
         urls: List of URLs to crawl
         max_concurrent: Maximum number of concurrent browser sessions
+        progress_callback: Optional callback for progress updates
+        start_progress: Starting progress percentage
+        end_progress: Ending progress percentage
         
     Returns:
         List of dictionaries with URL and markdown content
@@ -1509,18 +1560,44 @@ async def crawl_batch(crawler: AsyncWebCrawler, urls: List[str], max_concurrent:
         max_session_permit=max_concurrent
     )
 
-    results = await crawler.arun_many(urls=urls, config=crawl_config, dispatcher=dispatcher)
-    return [{'url': r.url, 'markdown': r.markdown} for r in results if r.success and r.markdown]
+    async def report_progress(percentage: int, message: str):
+        """Helper to report progress if callback is available"""
+        if progress_callback:
+            await progress_callback('crawling', percentage, message)
 
-async def crawl_recursive_internal_links(crawler: AsyncWebCrawler, start_urls: List[str], max_depth: int = 3, max_concurrent: int = 10) -> List[Dict[str, Any]]:
+    total_urls = len(urls)
+    await report_progress(start_progress, f'Starting to crawl {total_urls} URLs...')
+    
+    results = await crawler.arun_many(urls=urls, config=crawl_config, dispatcher=dispatcher)
+    
+    # Process results and report progress
+    successful_results = []
+    processed = 0
+    
+    for result in results:
+        processed += 1
+        if result.success and result.markdown:
+            successful_results.append({'url': result.url, 'markdown': result.markdown})
+        
+        # Calculate progress between start_progress and end_progress
+        progress_percentage = start_progress + int((processed / total_urls) * (end_progress - start_progress))
+        await report_progress(progress_percentage, f'Crawled {processed}/{total_urls} pages ({len(successful_results)} successful)')
+    
+    await report_progress(end_progress, f'Batch crawling completed: {len(successful_results)}/{total_urls} pages successful')
+    return successful_results
+
+async def crawl_recursive_with_progress(crawler: AsyncWebCrawler, start_urls: List[str], max_depth: int = 3, max_concurrent: int = 10, progress_callback=None, start_progress: int = 10, end_progress: int = 60) -> List[Dict[str, Any]]:
     """
-    Recursively crawl internal links from start URLs up to a maximum depth.
+    Recursively crawl internal links from start URLs up to a maximum depth with progress reporting.
     
     Args:
         crawler: AsyncWebCrawler instance
         start_urls: List of starting URLs
         max_depth: Maximum recursion depth
         max_concurrent: Maximum number of concurrent browser sessions
+        progress_callback: Optional callback for progress updates
+        start_progress: Starting progress percentage
+        end_progress: Ending progress percentage
         
     Returns:
         List of dictionaries with URL and markdown content
@@ -1532,6 +1609,11 @@ async def crawl_recursive_internal_links(crawler: AsyncWebCrawler, start_urls: L
         max_session_permit=max_concurrent
     )
 
+    async def report_progress(percentage: int, message: str, **kwargs):
+        """Helper to report progress if callback is available"""
+        if progress_callback:
+            await progress_callback('crawling', percentage, message, **kwargs)
+
     visited = set()
 
     def normalize_url(url):
@@ -1539,29 +1621,82 @@ async def crawl_recursive_internal_links(crawler: AsyncWebCrawler, start_urls: L
 
     current_urls = set([normalize_url(u) for u in start_urls])
     results_all = []
+    total_processed = 0
 
     for depth in range(max_depth):
         urls_to_crawl = [normalize_url(url) for url in current_urls if normalize_url(url) not in visited]
         if not urls_to_crawl:
             break
 
+        # Calculate progress for this depth level
+        depth_start = start_progress + int((depth / max_depth) * (end_progress - start_progress) * 0.8)
+        depth_end = start_progress + int(((depth + 1) / max_depth) * (end_progress - start_progress) * 0.8)
+        
+        await report_progress(depth_start, f'Crawling depth {depth + 1}/{max_depth}: {len(urls_to_crawl)} URLs to process')
+
         results = await crawler.arun_many(urls=urls_to_crawl, config=run_config, dispatcher=dispatcher)
         next_level_urls = set()
+        depth_successful = 0
 
-        for result in results:
+        for i, result in enumerate(results):
             norm_url = normalize_url(result.url)
             visited.add(norm_url)
+            total_processed += 1
 
             if result.success and result.markdown:
                 results_all.append({'url': result.url, 'markdown': result.markdown})
+                depth_successful += 1
+                
+                # Find internal links for next depth
                 for link in result.links.get("internal", []):
                     next_url = normalize_url(link["href"])
                     if next_url not in visited:
                         next_level_urls.add(next_url)
 
-        current_urls = next_level_urls
+            # Report progress within this depth level
+            if len(urls_to_crawl) > 0:
+                depth_progress = depth_start + int((i + 1) / len(urls_to_crawl) * (depth_end - depth_start))
+                await report_progress(depth_progress, 
+                                    f'Depth {depth + 1}: processed {i + 1}/{len(urls_to_crawl)} URLs ({depth_successful} successful)',
+                                    totalPages=total_processed, processedPages=len(results_all))
 
+        current_urls = next_level_urls
+        
+        # Report completion of this depth
+        await report_progress(depth_end, 
+                            f'Depth {depth + 1} completed: {depth_successful} pages crawled, {len(next_level_urls)} URLs found for next depth')
+
+    await report_progress(end_progress, f'Recursive crawling completed: {len(results_all)} total pages crawled across {max_depth} depth levels')
     return results_all
+
+async def crawl_batch(crawler: AsyncWebCrawler, urls: List[str], max_concurrent: int = 10) -> List[Dict[str, Any]]:
+    """
+    Batch crawl multiple URLs in parallel (original version without progress).
+    
+    Args:
+        crawler: AsyncWebCrawler instance
+        urls: List of URLs to crawl
+        max_concurrent: Maximum number of concurrent browser sessions
+        
+    Returns:
+        List of dictionaries with URL and markdown content
+    """
+    return await crawl_batch_with_progress(crawler, urls, max_concurrent, None, 0, 100)
+
+async def crawl_recursive_internal_links(crawler: AsyncWebCrawler, start_urls: List[str], max_depth: int = 3, max_concurrent: int = 10) -> List[Dict[str, Any]]:
+    """
+    Recursively crawl internal links from start URLs up to a maximum depth (original version without progress).
+    
+    Args:
+        crawler: AsyncWebCrawler instance
+        start_urls: List of starting URLs
+        max_depth: Maximum recursion depth
+        max_concurrent: Maximum number of concurrent browser sessions
+        
+    Returns:
+        List of dictionaries with URL and markdown content
+    """
+    return await crawl_recursive_with_progress(crawler, start_urls, max_depth, max_concurrent, None, 0, 100)
 
 async def main():
     transport = os.getenv("TRANSPORT", "sse")
