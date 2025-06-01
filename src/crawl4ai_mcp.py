@@ -24,7 +24,7 @@ import concurrent.futures
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, MemoryAdaptiveDispatcher
 
-from utils import (
+from src.utils import (
     get_supabase_client, 
     add_documents_to_supabase, 
     search_documents,
@@ -792,6 +792,48 @@ async def perform_rag_query(ctx: Context, query: str, source: str = None, match_
         }, indent=2)
 
 @mcp.tool()
+async def delete_source(ctx: Context, source_id: str) -> str:
+    """
+    Delete a source and all associated crawled pages and code examples.
+    
+    Args:
+        source_id: The source ID to delete
+        
+    Returns:
+        JSON string with success status and details
+    """
+    try:
+        context = ctx.state
+        supabase = context.supabase_client
+        
+        # Delete all crawled pages for this source
+        pages_result = supabase.table("crawled_pages").delete().eq("source_id", source_id).execute()
+        
+        # Delete all code examples for this source
+        examples_result = supabase.table("code_examples").delete().eq("source_id", source_id).execute()
+        
+        # Delete the source itself
+        source_result = supabase.table("sources").delete().eq("source_id", source_id).execute()
+        
+        return json.dumps({
+            "success": True,
+            "source_id": source_id,
+            "message": f"Source {source_id} and all associated content deleted successfully",
+            "deleted": {
+                "pages": len(pages_result.data) if pages_result.data else 0,
+                "examples": len(examples_result.data) if examples_result.data else 0,
+                "source": len(source_result.data) if source_result.data else 0
+            }
+        })
+        
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "error": f"Failed to delete source: {str(e)}"
+        })
+
+
+@mcp.tool()
 async def search_code_examples(ctx: Context, query: str, source_id: str = None, match_count: int = 5) -> str:
     """
     Search for code examples relevant to the query.
@@ -835,7 +877,7 @@ async def search_code_examples(ctx: Context, query: str, source_id: str = None, 
             # Hybrid search: combine vector and keyword search
             
             # Import the search function from utils
-            from utils import search_code_examples as search_code_examples_impl
+            from src.utils import search_code_examples as search_code_examples_impl
             
             # 1. Get vector search results (get more to account for filtering)
             vector_results = search_code_examples_impl(
@@ -902,7 +944,7 @@ async def search_code_examples(ctx: Context, query: str, source_id: str = None, 
             
         else:
             # Standard vector search only
-            from utils import search_code_examples as search_code_examples_impl
+            from src.utils import search_code_examples as search_code_examples_impl
             
             results = search_code_examples_impl(
                 client=supabase_client,

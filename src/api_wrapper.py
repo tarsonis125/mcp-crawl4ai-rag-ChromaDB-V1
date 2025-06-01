@@ -13,14 +13,117 @@ from typing import Dict, Any, Optional, List, Tuple
 from contextlib import asynccontextmanager
 from datetime import datetime
 from collections import deque
+from dataclasses import dataclass
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl
 import httpx
 
+# Import crawling functions and dependencies from crawl4ai_mcp
+from crawl4ai import AsyncWebCrawler, BrowserConfig
+from sentence_transformers import CrossEncoder
+from supabase import Client
+
+# Import the actual crawling functions
+from src.crawl4ai_mcp import (
+    smart_crawl_url as mcp_smart_crawl_url,
+    crawl_single_page as mcp_crawl_single_page,
+    get_available_sources as mcp_get_available_sources,
+    perform_rag_query as mcp_perform_rag_query,
+    delete_source as mcp_delete_source,
+    search_code_examples as mcp_search_code_examples
+)
+
+# Import utils for Supabase client
+from src.utils import get_supabase_client
+
 from src.config import load_environment_config, get_rag_strategy_config
 from src.credential_service import credential_service, CredentialItem, initialize_credentials
+
+
+# Create a simple context class that matches what the MCP functions expect
+@dataclass
+class MockRequestContext:
+    lifespan_context: Any
+
+@dataclass
+class MockContext:
+    request_context: MockRequestContext
+    state: Any = None
+
+
+class CrawlingContext:
+    """Context for direct crawling function calls."""
+    
+    def __init__(self):
+        self.crawler: Optional[AsyncWebCrawler] = None
+        self.supabase_client: Optional[Client] = None
+        self.reranking_model: Optional[CrossEncoder] = None
+        self._initialized = False
+    
+    async def initialize(self):
+        """Initialize the crawling context."""
+        if self._initialized:
+            return
+        
+        try:
+            # Create browser configuration
+            browser_config = BrowserConfig(
+                headless=True,
+                verbose=False
+            )
+            
+            # Initialize the crawler
+            self.crawler = AsyncWebCrawler(config=browser_config)
+            await self.crawler.__aenter__()
+            
+            # Initialize Supabase client
+            self.supabase_client = get_supabase_client()
+            
+            # Initialize cross-encoder model for reranking if enabled
+            if os.getenv("USE_RERANKING", "false") == "true":
+                try:
+                    self.reranking_model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+                except Exception as e:
+                    print(f"Failed to load reranking model: {e}")
+                    self.reranking_model = None
+            
+            self._initialized = True
+            
+        except Exception as e:
+            print(f"Error initializing crawling context: {e}")
+            raise
+    
+    async def cleanup(self):
+        """Clean up the crawling context."""
+        if self.crawler:
+            try:
+                await self.crawler.__aexit__(None, None, None)
+            except Exception as e:
+                print(f"Error cleaning up crawler: {e}")
+            finally:
+                self.crawler = None
+        
+        self._initialized = False
+    
+    def create_context(self) -> MockContext:
+        """Create a context object that matches what MCP functions expect."""
+        lifespan_context = type('LifespanContext', (), {
+            'crawler': self.crawler,
+            'supabase_client': self.supabase_client,
+            'reranking_model': self.reranking_model
+        })()
+        
+        request_context = MockRequestContext(lifespan_context=lifespan_context)
+        context = MockContext(request_context=request_context)
+        context.state = type('State', (), {'supabase_client': self.supabase_client})()
+        
+        return context
+
+
+# Global crawling context
+crawling_context = CrawlingContext()
 
 
 # Request/Response Models
@@ -352,50 +455,8 @@ class MCPServerManager:
             self.log_websockets.remove(websocket)
 
 
-class MCPClient:
-    """Client to communicate with the MCP server."""
-    
-    def __init__(self, base_url: str = "http://localhost:8051"):
-        self.base_url = base_url
-    
-    async def call_tool(self, tool_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Call a tool on the MCP server."""
-        # This is a simplified version - in reality, we'd use the MCP protocol
-        # For now, we'll simulate the tool calls based on the tool name
-        
-        if tool_name == 'crawl_single_page':
-            return {
-                'success': True,
-                'url': params['url'],
-                'chunks_stored': 5,
-                'content_length': 1500
-            }
-        elif tool_name == 'smart_crawl_url':
-            return {
-                'success': True,
-                'crawl_type': 'webpage',
-                'urls_processed': 10,
-                'total_chunks': 50
-            }
-        elif tool_name == 'perform_rag_query':
-            return {
-                'results': [
-                    {'content': 'Relevant content 1', 'score': 0.95},
-                    {'content': 'Relevant content 2', 'score': 0.87}
-                ],
-                'query': params['query']
-            }
-        elif tool_name == 'get_available_sources':
-            return {
-                'sources': ['example.com', 'docs.example.com', 'blog.example.com']
-            }
-        else:
-            raise ValueError(f"Unknown tool: {tool_name}")
-
-
 # Global instances
 mcp_manager = MCPServerManager()
-mcp_client = MCPClient()
 
 
 # Lifespan manager
@@ -409,11 +470,23 @@ async def lifespan(app: FastAPI):
         print(f"Warning: Could not initialize credentials from database: {e}")
         print("Falling back to environment variables")
     
+    # Initialize crawling context
+    try:
+        await crawling_context.initialize()
+    except Exception as e:
+        print(f"Warning: Could not initialize crawling context: {e}")
+    
     yield
     
     # Shutdown - stop MCP server if running
     if mcp_manager.process and mcp_manager.process.poll() is None:
         mcp_manager.stop_server()
+    
+    # Cleanup crawling context
+    try:
+        await crawling_context.cleanup()
+    except Exception as e:
+        print(f"Warning: Could not cleanup crawling context: {e}")
 
 
 # Create FastAPI app
@@ -510,10 +583,21 @@ async def websocket_log_stream(websocket: WebSocket):
 async def crawl_single_page(request: CrawlSingleRequest):
     """Crawl a single page."""
     try:
-        result = await mcp_client.call_tool('crawl_single_page', {'url': str(request.url)})
+        # Ensure crawling context is initialized
+        if not crawling_context._initialized:
+            await crawling_context.initialize()
+        
+        # Create context for the MCP function
+        ctx = crawling_context.create_context()
+        
+        # Call the actual function
+        result = await mcp_crawl_single_page(ctx, str(request.url))
+        
+        # Parse JSON string response if needed
+        if isinstance(result, str):
+            result = json.loads(result)
+        
         return result
-    except ConnectionError as e:
-        raise HTTPException(status_code=503, detail={'error': f'MCP server not available: {str(e)}'})
     except Exception as e:
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
@@ -522,16 +606,27 @@ async def crawl_single_page(request: CrawlSingleRequest):
 async def smart_crawl_url(request: SmartCrawlRequest):
     """Smart crawl a URL."""
     try:
-        params = {
-            'url': str(request.url),
-            'max_depth': request.max_depth,
-            'max_concurrent': request.max_concurrent,
-            'chunk_size': request.chunk_size
-        }
-        result = await mcp_client.call_tool('smart_crawl_url', params)
+        # Ensure crawling context is initialized
+        if not crawling_context._initialized:
+            await crawling_context.initialize()
+        
+        # Create context for the MCP function
+        ctx = crawling_context.create_context()
+        
+        # Call the actual function
+        result = await mcp_smart_crawl_url(
+            ctx=ctx,
+            url=str(request.url),
+            max_depth=request.max_depth,
+            max_concurrent=request.max_concurrent,
+            chunk_size=request.chunk_size
+        )
+        
+        # Parse JSON string response if needed
+        if isinstance(result, str):
+            result = json.loads(result)
+        
         return result
-    except ConnectionError as e:
-        raise HTTPException(status_code=503, detail={'error': f'MCP server not available: {str(e)}'})
     except Exception as e:
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
@@ -541,15 +636,26 @@ async def smart_crawl_url(request: SmartCrawlRequest):
 async def perform_rag_query(request: RAGQueryRequest):
     """Perform a RAG query."""
     try:
-        params = {
-            'query': request.query,
-            'source': request.source,
-            'match_count': request.match_count
-        }
-        result = await mcp_client.call_tool('perform_rag_query', params)
+        # Ensure crawling context is initialized
+        if not crawling_context._initialized:
+            await crawling_context.initialize()
+        
+        # Create context for the MCP function
+        ctx = crawling_context.create_context()
+        
+        # Call the actual function
+        result = await mcp_perform_rag_query(
+            ctx=ctx,
+            query=request.query,
+            source=request.source,
+            match_count=request.match_count
+        )
+        
+        # Parse JSON string response if needed
+        if isinstance(result, str):
+            result = json.loads(result)
+        
         return result
-    except ConnectionError as e:
-        raise HTTPException(status_code=503, detail={'error': f'MCP server not available: {str(e)}'})
     except Exception as e:
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
@@ -558,10 +664,21 @@ async def perform_rag_query(request: RAGQueryRequest):
 async def get_available_sources():
     """Get available sources."""
     try:
-        result = await mcp_client.call_tool('get_available_sources', {})
+        # Ensure crawling context is initialized
+        if not crawling_context._initialized:
+            await crawling_context.initialize()
+        
+        # Create context for the MCP function
+        ctx = crawling_context.create_context()
+        
+        # Call the actual function
+        result = await mcp_get_available_sources(ctx)
+        
+        # Parse JSON string response if needed
+        if isinstance(result, str):
+            result = json.loads(result)
+        
         return result
-    except ConnectionError as e:
-        raise HTTPException(status_code=503, detail={'error': f'MCP server not available: {str(e)}'})
     except Exception as e:
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
@@ -755,6 +872,245 @@ async def initialize_credentials_endpoint():
             'success': True,
             'message': 'Credentials reloaded from database'
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
+
+# Knowledge Base Endpoints
+
+# Request/Response Models for Knowledge Base
+class KnowledgeItemRequest(BaseModel):
+    url: str
+    knowledge_type: str = 'technical'
+    tags: List[str] = []
+    update_frequency: int = 7
+
+
+class KnowledgeUploadRequest(BaseModel):
+    knowledge_type: str = 'technical'
+    tags: List[str] = []
+
+
+@app.get("/api/mcp/config")
+async def get_mcp_config():
+    """Get MCP server configuration."""
+    try:
+        # Get configuration from database or defaults
+        try:
+            config = {
+                'host': await credential_service.get_credential('HOST', 'localhost'),
+                'port': int(await credential_service.get_credential('PORT', '8051')),
+                'transport': await credential_service.get_credential('TRANSPORT', 'sse'),
+                'model_choice': await credential_service.get_credential('MODEL_CHOICE', 'gpt-4o-mini'),
+                'use_contextual_embeddings': (await credential_service.get_credential('USE_CONTEXTUAL_EMBEDDINGS', 'false')).lower() == 'true',
+                'use_hybrid_search': (await credential_service.get_credential('USE_HYBRID_SEARCH', 'false')).lower() == 'true',
+                'use_agentic_rag': (await credential_service.get_credential('USE_AGENTIC_RAG', 'false')).lower() == 'true',
+                'use_reranking': (await credential_service.get_credential('USE_RERANKING', 'false')).lower() == 'true',
+            }
+        except Exception:
+            # Fallback to environment variables
+            config = {
+                'host': os.getenv('HOST', 'localhost'),
+                'port': int(os.getenv('PORT', '8051')),
+                'transport': os.getenv('TRANSPORT', 'sse'),
+                'model_choice': os.getenv('MODEL_CHOICE', 'gpt-4o-mini'),
+                'use_contextual_embeddings': os.getenv('USE_CONTEXTUAL_EMBEDDINGS', 'false').lower() == 'true',
+                'use_hybrid_search': os.getenv('USE_HYBRID_SEARCH', 'false').lower() == 'true',
+                'use_agentic_rag': os.getenv('USE_AGENTIC_RAG', 'false').lower() == 'true',
+                'use_reranking': os.getenv('USE_RERANKING', 'false').lower() == 'true',
+            }
+        
+        return config
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
+
+@app.get("/api/knowledge-items")
+async def get_knowledge_items(
+    page: int = 1,
+    per_page: int = 20,
+    knowledge_type: Optional[str] = None,
+    search: Optional[str] = None
+):
+    """Get knowledge items with pagination and filtering."""
+    try:
+        # Ensure crawling context is initialized
+        if not crawling_context._initialized:
+            await crawling_context.initialize()
+        
+        # Create context for the MCP function
+        ctx = crawling_context.create_context()
+        
+        # Get all sources using the MCP function
+        sources_result = await mcp_get_available_sources(ctx)
+        
+        # Parse the JSON response
+        if isinstance(sources_result, str):
+            sources_data = json.loads(sources_result)
+        else:
+            sources_data = sources_result
+        
+        # Transform the data to match frontend expectations
+        items = []
+        for source in sources_data.get('sources', []):
+            # Get first crawled page for this source to extract metadata
+            pages_result = await mcp_perform_rag_query(
+                ctx=ctx,
+                query='overview',
+                source=source['source_id'],
+                match_count=1
+            )
+            
+            # Parse the JSON response
+            if isinstance(pages_result, str):
+                pages_data = json.loads(pages_result)
+            else:
+                pages_data = pages_result
+            
+            first_page = pages_data.get('results', [{}])[0] if pages_data.get('results') else {}
+            metadata = first_page.get('metadata', {})
+            
+            item = {
+                'id': source['source_id'],
+                'title': metadata.get('title', source.get('summary', 'Untitled')),
+                'url': first_page.get('url', f"source://{source['source_id']}"),
+                'source_id': source['source_id'],
+                'metadata': {
+                    'knowledge_type': metadata.get('knowledge_type', 'technical'),
+                    'tags': metadata.get('tags', []),
+                    'source_type': metadata.get('source_type', 'url'),
+                    'status': 'active',
+                    'description': metadata.get('description', source.get('summary', '')),
+                    'chunks_count': source.get('total_word_count', 0),
+                    'word_count': source.get('total_word_count', 0),
+                    'last_scraped': source.get('updated_at'),
+                    **metadata
+                },
+                'created_at': source.get('created_at'),
+                'updated_at': source.get('updated_at')
+            }
+            items.append(item)
+        
+        # Filter by search term if provided
+        if search:
+            search_lower = search.lower()
+            items = [
+                item for item in items 
+                if search_lower in item['title'].lower() 
+                or search_lower in item['metadata'].get('description', '').lower()
+                or any(search_lower in tag.lower() for tag in item['metadata'].get('tags', []))
+            ]
+        
+        # Filter by knowledge type if provided
+        if knowledge_type:
+            items = [
+                item for item in items 
+                if item['metadata'].get('knowledge_type') == knowledge_type
+            ]
+        
+        # Apply pagination
+        total = len(items)
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        paginated_items = items[start_idx:end_idx]
+        
+        return {
+            'items': paginated_items,
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'pages': (total + per_page - 1) // per_page
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
+
+@app.post("/api/knowledge-items/crawl")
+async def crawl_knowledge_item(request: KnowledgeItemRequest):
+    """Crawl a URL and add it to the knowledge base."""
+    try:
+        # Use the same logic as the existing smart crawl endpoint
+        params = {
+            'url': str(request.url),
+            'max_depth': 2,
+            'max_concurrent': 5,
+            'chunk_size': 5000
+        }
+        
+        # Ensure crawling context is initialized
+        if not crawling_context._initialized:
+            await crawling_context.initialize()
+        
+        # Create context for the MCP function
+        ctx = crawling_context.create_context()
+        
+        # Call the actual function
+        result = await mcp_smart_crawl_url(
+            ctx=ctx,
+            url=str(request.url),
+            max_depth=2,
+            max_concurrent=5,
+            chunk_size=5000
+        )
+        
+        # Parse JSON string response if needed
+        if isinstance(result, str):
+            result = json.loads(result)
+        
+        return {
+            'success': True,
+            'message': f'Successfully started crawling {request.url}',
+            'crawl_result': result
+        }
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
+
+@app.delete("/api/knowledge-items/{source_id}")
+async def delete_knowledge_item(source_id: str):
+    """Delete a knowledge item from the database."""
+    try:
+        # Ensure crawling context is initialized
+        if not crawling_context._initialized:
+            await crawling_context.initialize()
+        
+        # Create context for the MCP function
+        ctx = crawling_context.create_context()
+        
+        # Call the actual function
+        result = await mcp_delete_source(ctx, source_id)
+        
+        # Parse JSON string response if needed
+        if isinstance(result, str):
+            result = json.loads(result)
+        
+        if result.get('success'):
+            return {
+                'success': True,
+                'message': f'Successfully deleted knowledge item {source_id}'
+            }
+        else:
+            raise HTTPException(status_code=500, detail={'error': result.get('error', 'Deletion failed')})
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
+
+@app.post("/api/knowledge-items/upload")
+async def upload_knowledge_document(request: Request):
+    """Upload a document and add it to the knowledge base."""
+    try:
+        # This would handle file upload functionality
+        # For now, return a placeholder response
+        return {
+            'success': True,
+            'source_id': f'uploaded_{int(time.time())}',
+            'message': 'Document upload functionality coming soon',
+            'filename': 'uploaded_document.pdf'
+        }
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail={'error': str(e)})
 

@@ -1,5 +1,5 @@
 [project]
-name = "crawl4ai-mcp"
+name = "archon"
 version = "0.1.0"
 description = "MCP server for integrating web crawling and RAG into AI agents and AI coding assistants"
 readme = "README.md"
