@@ -283,24 +283,27 @@ class MCPServerManager:
                 self._add_log('INFO', 'Using database configuration')
                 
             except Exception as e:
-                # Fallback to environment variables
-                self._add_log('WARNING', f'Database config failed, using env vars: {e}')
-                config = load_environment_config()
-                rag_config = get_rag_strategy_config()
+                # Log the error but don't fallback to environment variables
+                # All configuration should come from the database
+                self._add_log('ERROR', f'Failed to load credentials from database: {e}')
+                self._add_log('ERROR', 'Please ensure all credentials are set via the Settings page')
                 
+                # Set minimal environment for MCP server with empty values
                 env.update({
-                    'OPENAI_API_KEY': config.openai_api_key,
-                    'SUPABASE_URL': config.supabase_url,
-                    'SUPABASE_SERVICE_KEY': config.supabase_service_key,
-                    'HOST': config.host,
-                    'PORT': str(config.port),
-                    'TRANSPORT': config.transport,
-                    'MODEL_CHOICE': config.model_choice,
-                    'USE_CONTEXTUAL_EMBEDDINGS': str(rag_config.use_contextual_embeddings).lower(),
-                    'USE_HYBRID_SEARCH': str(rag_config.use_hybrid_search).lower(),
-                    'USE_AGENTIC_RAG': str(rag_config.use_agentic_rag).lower(),
-                    'USE_RERANKING': str(rag_config.use_reranking).lower(),
+                    'OPENAI_API_KEY': '',  # Don't override database credentials
+                    'SUPABASE_URL': os.getenv('SUPABASE_URL', ''),  # Still need these for connection
+                    'SUPABASE_SERVICE_KEY': os.getenv('SUPABASE_SERVICE_KEY', ''),
+                    'HOST': 'localhost',
+                    'PORT': '8051',
+                    'TRANSPORT': 'sse',
+                    'MODEL_CHOICE': 'gpt-4o-mini',
+                    'USE_CONTEXTUAL_EMBEDDINGS': 'false',
+                    'USE_HYBRID_SEARCH': 'false',
+                    'USE_AGENTIC_RAG': 'false',
+                    'USE_RERANKING': 'false',
                 })
+                
+                self._add_log('WARNING', 'Started MCP server with default configuration due to database error')
             
             # Start the MCP server process
             cmd = ['uv', 'run', 'python', 'src/crawl4ai_mcp.py']
@@ -1166,14 +1169,23 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
     """Perform the actual crawl operation with progress tracking."""
     try:
         print(f"DEBUG: Starting crawl for progress_id: {progress_id}")
-        # Update progress to crawling state
-        await progress_manager.update_progress(progress_id, {
-            'status': 'crawling',
-            'percentage': 10,
-            'currentUrl': str(request.url),
-            'log': f'Starting crawl of {request.url}'
-        })
-        print(f"DEBUG: Updated progress to crawling state")
+        
+        # Create a progress callback that will be called by the crawling function
+        async def progress_callback(status: str, percentage: int, message: str, **kwargs):
+            """Callback function to receive real-time progress updates from crawling."""
+            await progress_manager.update_progress(progress_id, {
+                'status': status,
+                'percentage': percentage,
+                'currentUrl': kwargs.get('currentUrl', str(request.url)),
+                'totalPages': kwargs.get('totalPages', 0),
+                'processedPages': kwargs.get('processedPages', 0),
+                'log': message,
+                **kwargs
+            })
+            print(f"DEBUG: Progress callback - {status}: {percentage}% - {message}")
+        
+        # Initial progress update
+        await progress_callback('starting', 0, f'Starting crawl of {request.url}')
         
         # Ensure crawling context is initialized
         if not crawling_context._initialized:
@@ -1189,13 +1201,10 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
             'update_frequency': request.update_frequency
         }
         
-        # Update progress during crawling
-        await progress_manager.update_progress(progress_id, {
-            'percentage': 30,
-            'log': 'Discovering pages...'
-        })
+        # IMPORTANT: Add progress callback to context so MCP function can use it
+        ctx.progress_callback = progress_callback
         
-        # Call the actual crawling function
+        # Call the actual crawling function with progress callback support
         result = await mcp_smart_crawl_url(
             ctx=ctx,
             url=str(request.url),
@@ -1208,14 +1217,16 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         if isinstance(result, str):
             result = json.loads(result)
         
-        # Update progress with completion data
-        completion_data = {
-            'chunksStored': result.get('total_chunks_stored', 0),
-            'wordCount': result.get('total_word_count', 0),
-            'log': 'Crawling completed successfully'
-        }
-        
-        await progress_manager.complete_crawl(progress_id, completion_data)
+        # Final completion update (the MCP function should have sent this, but ensure it happens)
+        if result.get('success'):
+            completion_data = {
+                'chunksStored': result.get('chunks_stored', 0),
+                'wordCount': result.get('total_word_count', 0),
+                'log': 'Crawling completed successfully'
+            }
+            await progress_manager.complete_crawl(progress_id, completion_data)
+        else:
+            await progress_manager.error_crawl(progress_id, result.get('error', 'Unknown error'))
         
         # Broadcast final update to general WebSocket clients
         await manager.broadcast({
@@ -1507,7 +1518,7 @@ async def websocket_crawl_progress(websocket: WebSocket, progress_id: str):
     """WebSocket endpoint for tracking specific crawl progress."""
     print(f"DEBUG: WebSocket connection attempt for progress_id: {progress_id}")
     
-    # Add WebSocket to progress manager (match MCP pattern - no manual accept, no await)
+    # Add WebSocket to progress manager (now handles accept internally)
     await progress_manager.add_websocket(progress_id, websocket)
     print(f"DEBUG: WebSocket added to progress manager for progress_id: {progress_id}")
     
@@ -1598,18 +1609,26 @@ class CrawlProgressManager:
     
     async def add_websocket(self, progress_id: str, websocket: WebSocket) -> None:
         """Add a WebSocket connection for progress updates."""
+        # CRITICAL: Accept the WebSocket connection FIRST (match MCP pattern)
+        await websocket.accept()
+        print(f"DEBUG: WebSocket accepted for {progress_id}")
+        
         if progress_id not in self.progress_websockets:
             self.progress_websockets[progress_id] = []
         
         self.progress_websockets[progress_id].append(websocket)
         print(f"DEBUG: Added WebSocket for {progress_id}, total connections: {len(self.progress_websockets[progress_id])}")
         
-        # Send current progress if available
+        # Send current progress if available (now it's safe to send)
         if progress_id in self.active_crawls:
             try:
                 # Ensure progressId is included in the data
                 data = self.active_crawls[progress_id].copy()
                 data['progressId'] = progress_id
+                
+                # Convert datetime objects to strings for JSON serialization
+                if 'start_time' in data and hasattr(data['start_time'], 'isoformat'):
+                    data['start_time'] = data['start_time'].isoformat()
                 
                 message = {
                     "type": "crawl_progress",
@@ -1650,6 +1669,10 @@ class CrawlProgressManager:
         progress_data = self.active_crawls.get(progress_id, {}).copy()
         # Ensure progressId is always included
         progress_data['progressId'] = progress_id
+        
+        # Convert datetime objects to strings for JSON serialization
+        if 'start_time' in progress_data and hasattr(progress_data['start_time'], 'isoformat'):
+            progress_data['start_time'] = progress_data['start_time'].isoformat()
         
         message = {
             "type": "crawl_progress" if progress_data.get('status') != 'completed' else "crawl_completed",

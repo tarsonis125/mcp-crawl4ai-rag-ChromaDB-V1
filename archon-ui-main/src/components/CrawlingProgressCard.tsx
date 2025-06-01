@@ -24,26 +24,16 @@ interface CrawlingProgressCardProps {
 }
 
 export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
-  progressData: initialData,
+  progressData,
   onComplete,
   onError,
   onProgress,
   onRetry
 }) => {
-  const [progressData, setProgressData] = useState<CrawlProgressData>(initialData);
   const [showLogs, setShowLogs] = useState(false);
 
-  // Update local state when props change
-  useEffect(() => {
-    setProgressData(initialData);
-  }, [initialData]);
-
-  // React to progress data changes from parent component (no WebSocket setup here)
-  // The KnowledgeBasePage handles WebSocket connections and passes updated data via props
-  useEffect(() => {
-    // Simply update local state when props change - WebSocket handled by parent
-    setProgressData(initialData);
-  }, [initialData]);
+  // No local state for progress data - just use props directly
+  // The parent (KnowledgeBasePage) handles WebSocket and passes updated data via props
 
   const getStatusDisplay = () => {
     switch (progressData.status) {
