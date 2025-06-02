@@ -1,3 +1,4 @@
+version: '3.8'
 services:
   backend:
     build: .
@@ -48,21 +49,18 @@ services:
       - backend
 
   docs:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: node:18-alpine
+    working_dir: /docs
+    volumes:
+      - ./docs:/docs:cached
     ports:
-      - "3838:80"
+      - "3838:3000"
+    command: sh -c "npm install && npm run start -- --host 0.0.0.0"
     networks:
       - app-network
     depends_on:
       - backend
-      - frontend
 
 networks:
   app-network:
     driver: bridge
-
-volumes:
-  node_modules:
-  python_cache:
