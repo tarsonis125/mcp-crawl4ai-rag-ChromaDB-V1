@@ -1,6 +1,6 @@
 # Getting Started
 
-Welcome to **Crawl4AI RAG**, an advanced Retrieval-Augmented Generation (RAG) system with Modular Control Plane (MCP) integration.
+Welcome to **Crawl4AI RAG**, a powerful Retrieval-Augmented Generation system integrated with a Modular Control Plane (MCP) for task orchestration.
 
 ## Prerequisites
 
@@ -26,10 +26,10 @@ tree -L 2 .
 ```text
 .
 ├── src/                   # Python server source code
-├── archon-ui-main/        # React frontend source
-├── docs/                  # Docusaurus documentation
+├── archon-ui-main/        # React (Vite) frontend
+├── docs/                  # Docusaurus site folder
 │   └── docs/              # Markdown content
-├── docker-compose.yml     # Local development services
+├── docker-compose.yml     # Development services
 └── Dockerfile             # Server Dockerfile
 ```
 
@@ -45,25 +45,23 @@ tree -L 2 .
 
 ## Running Locally
 
-Start backend, frontend, and docs:
-
 ```bash
 docker-compose up --build
 ```
 
-Access:
-
-- Backend API: `http://localhost:8080`
-- Frontend UI: `http://localhost:3737`
-- Docs site : `http://localhost:3838`
+- Backend API: http://localhost:8080
+- Frontend UI: http://localhost:3737
+- Documentation: http://localhost:3838
 
 ## Architecture Diagram
 
 ```mermaid
 graph LR
-  A[Browser] --> B(React UI)
-  B --> C[Backend API]
-  C --> D[MCP Controller]
-  C --> E[Vector Store]
-  E --> F[OpenAI]
+  Browser --> UI[React UI]
+  UI --> API[FastAPI Backend]
+  API --> MCP[MCP Controller]
+  API --> VS[Vector Store]
+  VS --> LLM[LLM Service]
 ```
+
+For details on server setup, see the [Server documentation](server), and for frontend usage, see the [UI documentation](ui).
