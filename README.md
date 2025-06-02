@@ -289,6 +289,49 @@ Your AI assistant gains access to these tools:
 
 ---
 
+## 🌐 Real-Time Communication
+
+Archon implements real-time WebSocket communication for streaming progress updates, server logs, and live data synchronization between the Python backend and React frontend.
+
+### Key Features
+
+- **🔄 Real-Time Progress Tracking**: Live updates during crawling operations with actual progress percentages
+- **📡 Server Log Streaming**: WebSocket-based log streaming from MCP server to UI dashboard  
+- **🎯 Progress Callback Pattern**: Business logic reports progress via callbacks to WebSocket broadcasts
+- **🔗 Auto-Reconnection**: Robust connection handling with automatic reconnect on failures
+- **📱 Responsive UI Updates**: Instant feedback without polling or page refreshes
+
+### WebSocket Endpoints
+
+| Endpoint | Purpose | Implementation |
+|----------|---------|----------------|
+| `/api/mcp/logs/stream` | MCP Server logs streaming | Server-to-Client Broadcast |
+| `/api/crawl-progress/{progress_id}` | Crawl progress updates | Progress Tracking Pattern |
+| `/api/knowledge-items/stream` | Knowledge base updates | Data Synchronization |
+
+### Example: Real-Time Crawl Progress
+
+When you start a crawl operation:
+
+1. **WebSocket Connection**: UI connects to `/api/crawl-progress/{id}` before starting crawl
+2. **Progress Callbacks**: Backend crawling functions report actual progress (URL analysis, page discovery, content processing)  
+3. **Live Updates**: Progress cards update in real-time showing percentage, current URL, and status messages
+4. **Completion Handling**: Automatic cleanup and success notifications when crawling completes
+
+### For Developers
+
+📋 **[Complete WebSocket Guide](./UIandServerWebSockets.md)** - Comprehensive patterns, examples, and best practices for implementing WebSocket communication in full-stack applications.
+
+The guide covers:
+- Python backend WebSocket patterns (Progress tracking, Broadcasting, Callback integration)
+- React frontend patterns (Service management, Component integration, Progress cards)
+- Best practices and common pitfalls
+- Testing strategies and troubleshooting
+
+Perfect for developers implementing real-time features in Python + React applications.
+
+---
+
 ## 🧪 RAG Strategies
 
 Configure advanced RAG strategies through the Settings page:

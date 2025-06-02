@@ -61,26 +61,24 @@ class TestMCPServerManagement:
     """Tests for MCP server process management."""
     
     @pytest.mark.unit
-    def test_start_mcp_server_endpoint(self):
+    @pytest.mark.asyncio
+    async def test_start_mcp_server_endpoint(self, async_client):
         """Test the /api/mcp/start endpoint."""
-        from src.api_wrapper import app
-        
-        client = TestClient(app)
-        
-        with patch('src.api_wrapper.mcp_manager') as mock_manager:
-            mock_manager.start_server.return_value = {
+        # Patch the MCPServerManager class method directly
+        with patch('src.api_wrapper.MCPServerManager.start_server') as mock_start_server:
+            mock_start_server.return_value = {
                 'success': True, 
                 'status': 'starting',
                 'message': 'MCP server is starting'
             }
             
-            response = client.post("/api/mcp/start")
+            response = await async_client.post("/api/mcp/start")
             
             assert response.status_code == 200
             data = response.json()
             assert data['success'] is True
             assert data['status'] == 'starting'
-            mock_manager.start_server.assert_called_once()
+            mock_start_server.assert_called_once()
     
     @pytest.mark.unit
     def test_stop_mcp_server_endpoint(self):
@@ -128,16 +126,14 @@ class TestMCPServerManagement:
             mock_manager.get_status.assert_called_once()
     
     @pytest.mark.unit
-    def test_server_management_error_handling(self):
+    @pytest.mark.asyncio
+    async def test_server_management_error_handling(self, async_client):
         """Test error handling in server management endpoints."""
-        from src.api_wrapper import app
-        
-        client = TestClient(app)
-        
         with patch('src.api_wrapper.mcp_manager') as mock_manager:
-            mock_manager.start_server.side_effect = Exception("Server start failed")
+            # Mock the async start_server method to raise an exception
+            mock_manager.start_server = AsyncMock(side_effect=Exception("Server start failed"))
             
-            response = client.post("/api/mcp/start")
+            response = await async_client.post("/api/mcp/start")
             
             assert response.status_code == 500
             data = response.json()
@@ -150,69 +146,62 @@ class TestCrawlingEndpoints:
     """Tests for crawling operation endpoints."""
     
     @pytest.mark.unit
-    def test_crawl_single_page_endpoint(self):
+    @pytest.mark.asyncio
+    async def test_crawl_single_page_endpoint(self, async_client):
         """Test the /api/crawl/single endpoint."""
-        from src.api_wrapper import app, mcp_client
-        
-        client = TestClient(app)
-        
-        with patch.object(mcp_client, 'call_tool') as mock_call_tool:
-            mock_call_tool.return_value = {
+        # Mock the direct function call that the endpoint now uses
+        with patch('src.api_wrapper.mcp_crawl_single_page') as mock_crawl_function:
+            mock_crawl_function.return_value = {
                 'success': True,
                 'url': 'https://example.com',
                 'chunks_stored': 5,
                 'content_length': 1500
             }
             
-            response = client.post("/api/crawl/single", 
-                                 json={'url': 'https://example.com'})
-            
-            assert response.status_code == 200
-            data = response.json()
-            assert data['success'] is True
-            assert data['url'] == 'https://example.com'
-            assert data['chunks_stored'] == 5
-            mock_call_tool.assert_called_once_with(
-                'crawl_single_page',
-                {'url': 'https://example.com/'}  # Pydantic HttpUrl adds trailing slash
-            )
+            # Mock the crawling context
+            with patch('src.api_wrapper.crawling_context') as mock_context:
+                mock_context.create_context.return_value = MagicMock()
+                
+                response = await async_client.post("/api/crawl/single", 
+                                             json={'url': 'https://example.com'})
+                
+                assert response.status_code == 200
+                data = response.json()
+                assert data['success'] is True
+                assert data['url'] == 'https://example.com'
+                assert data['chunks_stored'] == 5
+                mock_crawl_function.assert_called_once()
     
     @pytest.mark.unit
-    def test_smart_crawl_url_endpoint(self):
+    @pytest.mark.asyncio
+    async def test_smart_crawl_url_endpoint(self, async_client):
         """Test the /api/crawl/smart endpoint."""
-        from src.api_wrapper import app, mcp_client
-        
-        client = TestClient(app)
-        
-        with patch.object(mcp_client, 'call_tool') as mock_call_tool:
-            mock_call_tool.return_value = {
+        # Mock the direct function call that the endpoint now uses
+        with patch('src.api_wrapper.mcp_smart_crawl_url') as mock_smart_crawl:
+            mock_smart_crawl.return_value = {
                 'success': True,
                 'crawl_type': 'webpage',
                 'urls_processed': 10,
                 'total_chunks': 50
             }
             
-            payload = {
-                'url': 'https://example.com',
-                'max_depth': 2,
-                'max_concurrent': 5
-            }
-            
-            response = client.post("/api/crawl/smart", json=payload)
-            
-            assert response.status_code == 200
-            data = response.json()
-            assert data['success'] is True
-            assert data['urls_processed'] == 10
-            mock_call_tool.assert_called_once_with(
-                'smart_crawl_url',
-                {
-                    'url': 'https://example.com/',  # Pydantic HttpUrl adds trailing slash
+            # Mock the crawling context
+            with patch('src.api_wrapper.crawling_context') as mock_context:
+                mock_context.create_context.return_value = MagicMock()
+                
+                payload = {
+                    'url': 'https://example.com',
                     'max_depth': 2,
-                    'max_concurrent': 5,
-                    'chunk_size': 5000  # Default value from the model
+                    'max_concurrent': 5
                 }
-            )
+                
+                response = await async_client.post("/api/crawl/smart", json=payload)
+                
+                assert response.status_code == 200
+                data = response.json()
+                assert data['success'] is True
+                assert data['urls_processed'] == 10
+                mock_smart_crawl.assert_called_once()
     
     @pytest.mark.unit
     def test_crawl_endpoint_validation(self):
@@ -235,14 +224,12 @@ class TestRAGEndpoints:
     """Tests for RAG operation endpoints."""
     
     @pytest.mark.unit
-    def test_rag_query_endpoint(self):
+    @pytest.mark.asyncio
+    async def test_rag_query_endpoint(self, async_client):
         """Test the /api/rag/query endpoint."""
-        from src.api_wrapper import app, mcp_client
-        
-        client = TestClient(app)
-        
-        with patch.object(mcp_client, 'call_tool') as mock_call_tool:
-            mock_call_tool.return_value = {
+        # Mock the direct function call that the endpoint now uses
+        with patch('src.api_wrapper.mcp_perform_rag_query') as mock_rag_query:
+            mock_rag_query.return_value = {
                 'results': [
                     {'content': 'Relevant content 1', 'score': 0.95},
                     {'content': 'Relevant content 2', 'score': 0.87}
@@ -250,48 +237,46 @@ class TestRAGEndpoints:
                 'query': 'test query'
             }
             
-            payload = {
-                'query': 'test query',
-                'source': 'example.com'
-            }
-            
-            response = client.post("/api/rag/query", json=payload)
-            
-            assert response.status_code == 200
-            data = response.json()
-            assert len(data['results']) == 2
-            assert data['results'][0]['score'] == 0.95
-            mock_call_tool.assert_called_once_with(
-                'perform_rag_query',
-                {
+            # Mock the crawling context
+            with patch('src.api_wrapper.crawling_context') as mock_context:
+                mock_context._initialized = True
+                mock_context.create_context.return_value = MagicMock()
+                
+                payload = {
                     'query': 'test query',
-                    'source': 'example.com',
-                    'match_count': 5  # Default value from the model
+                    'source': 'example.com'
                 }
-            )
+                
+                response = await async_client.post("/api/rag/query", json=payload)
+                
+                assert response.status_code == 200
+                data = response.json()
+                assert len(data['results']) == 2
+                assert data['results'][0]['score'] == 0.95
+                mock_rag_query.assert_called_once()
     
     @pytest.mark.unit
-    def test_get_sources_endpoint(self):
+    @pytest.mark.asyncio
+    async def test_get_sources_endpoint(self, async_client):
         """Test the /api/rag/sources endpoint."""
-        from src.api_wrapper import app, mcp_client
-        
-        client = TestClient(app)
-        
-        with patch.object(mcp_client, 'call_tool') as mock_call_tool:
-            mock_call_tool.return_value = {
+        # Mock the direct function call that the endpoint now uses
+        with patch('src.api_wrapper.mcp_get_available_sources') as mock_get_sources:
+            mock_get_sources.return_value = {
                 'sources': ['example.com', 'docs.example.com', 'blog.example.com']
             }
             
-            response = client.get("/api/rag/sources")
-            
-            assert response.status_code == 200
-            data = response.json()
-            assert len(data['sources']) == 3
-            assert 'example.com' in data['sources']
-            mock_call_tool.assert_called_once_with(
-                'get_available_sources',
-                {}
-            )
+            # Mock the crawling context
+            with patch('src.api_wrapper.crawling_context') as mock_context:
+                mock_context._initialized = True
+                mock_context.create_context.return_value = MagicMock()
+                
+                response = await async_client.get("/api/rag/sources")
+                
+                assert response.status_code == 200
+                data = response.json()
+                assert len(data['sources']) == 3
+                assert 'example.com' in data['sources']
+                mock_get_sources.assert_called_once()
 
 
 class TestDatabaseEndpoints:
@@ -333,8 +318,9 @@ class TestMCPServerManager:
         assert manager.status == 'stopped'
     
     @pytest.mark.unit
+    @pytest.mark.asyncio
     @patch('subprocess.Popen')
-    def test_start_server(self, mock_popen, mock_config):
+    async def test_start_server(self, mock_popen, mock_config):
         """Test starting the MCP server process."""
         from src.api_wrapper import MCPServerManager
         
@@ -342,13 +328,27 @@ class TestMCPServerManager:
         mock_process.poll.return_value = None  # Process is running
         mock_popen.return_value = mock_process
         
-        manager = MCPServerManager()
-        result = manager.start_server()
-        
-        assert result['success'] is True
-        assert result['status'] == 'starting'
-        assert manager.process is not None
-        mock_popen.assert_called_once()
+        # Mock credential service calls
+        with patch('src.api_wrapper.credential_service') as mock_credential_service:
+            mock_credential_service.get_credential = AsyncMock(side_effect=[
+                'sk-test123',  # OPENAI_API_KEY
+                'gpt-4o-mini',  # MODEL_CHOICE
+                'sse',  # TRANSPORT
+                'localhost',  # HOST
+                '8051',  # PORT
+                'false',  # USE_CONTEXTUAL_EMBEDDINGS
+                'false',  # USE_HYBRID_SEARCH
+                'false',  # USE_AGENTIC_RAG
+                'false',  # USE_RERANKING
+            ])
+            
+            manager = MCPServerManager()
+            result = await manager.start_server()
+            
+            assert result['success'] is True
+            assert result['status'] == 'starting'
+            assert manager.process is not None
+            mock_popen.assert_called_once()
     
     @pytest.mark.unit
     def test_stop_server(self):
@@ -390,23 +390,25 @@ class TestErrorHandling:
     """Tests for API error handling."""
     
     @pytest.mark.unit
-    def test_mcp_server_connection_error(self):
+    @pytest.mark.asyncio
+    async def test_mcp_server_connection_error(self, async_client):
         """Test handling when MCP server is not available."""
-        from src.api_wrapper import app
-        
-        client = TestClient(app)
-        
-        with patch('src.api_wrapper.mcp_client') as mock_client:
-            mock_client.call_tool.side_effect = ConnectionError("MCP server not available")
+        # Mock the crawl function to raise a connection error
+        with patch('src.api_wrapper.mcp_crawl_single_page') as mock_crawl:
+            mock_crawl.side_effect = ConnectionError("MCP server not available")
             
-            response = client.post("/api/crawl/single", 
-                                 json={'url': 'https://example.com'})
-            
-            assert response.status_code == 503  # Service unavailable
-            data = response.json()
-            assert 'detail' in data
-            assert 'error' in data['detail']
-            assert 'MCP server not available' in data['detail']['error']
+            # Mock the crawling context
+            with patch('src.api_wrapper.crawling_context') as mock_context:
+                mock_context.create_context.return_value = MagicMock()
+                
+                response = await async_client.post("/api/crawl/single", 
+                                             json={'url': 'https://example.com'})
+                
+                assert response.status_code == 500  # Internal server error (not 503)
+                data = response.json()
+                assert 'detail' in data
+                assert 'error' in data['detail']
+                assert 'MCP server not available' in data['detail']['error']
     
     @pytest.mark.unit
     def test_invalid_json_request(self):

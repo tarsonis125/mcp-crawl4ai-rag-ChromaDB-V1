@@ -67,7 +67,14 @@ export type MCPTool = z.infer<typeof MCPToolSchema>;
 export type MCPParameter = z.infer<typeof MCPParameterSchema>;
 
 class MCPService {
-  private baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
+  private baseUrl = (import.meta as any).env?.VITE_API_URL || this.getApiBaseUrl();
+
+  private getApiBaseUrl() {
+    const protocol = window.location.protocol;
+    const host = window.location.hostname;
+    const port = '8080'; // Backend API port
+    return `${protocol}//${host}:${port}`;
+  }
   private wsUrl = this.baseUrl.replace('http', 'ws');
   private logWebSocket: WebSocket | null = null;
   private reconnectTimeout: NodeJS.Timeout | null = null;
@@ -289,7 +296,14 @@ class MCPService {
   async getAvailableTools(): Promise<MCPTool[]> {
     try {
       // First try the backend endpoint which has the known tools list
-      const baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
+      const getApiBaseUrl = () => {
+  const protocol = window.location.protocol;
+  const host = window.location.hostname;
+  const port = '8080'; // Backend API port
+  return `${protocol}//${host}:${port}`;
+};
+
+const baseUrl = (import.meta as any).env?.VITE_API_URL || getApiBaseUrl();
       const response = await fetch(`${baseUrl}/api/mcp/tools`);
       
       if (response.ok) {
