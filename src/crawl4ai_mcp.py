@@ -1717,4 +1717,15 @@ async def main():
         raise ValueError(f"Unsupported transport: {transport}. Use 'sse' or 'stdio'")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    print("⚠️  DEPRECATION NOTICE: This file has been refactored into a modular architecture.")
+    print("   The new modular server is located at: src/mcp_server.py")
+    print("   Please use the new server instead:")
+    print("   python src/mcp_server.py")
+    print()
+    print("   Redirecting to modular server...")
+    
+    # Import and run the new modular server
+    import sys
+    sys.path.append('.')
+    from src.mcp_server import main as modular_main
+    asyncio.run(modular_main())
