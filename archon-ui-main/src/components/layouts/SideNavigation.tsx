@@ -67,12 +67,22 @@ export const SideNavigation: React.FC<SideNavigationProps> = ({
   const logoAlt = 'Knowledge Base Logo';
   // Get current location to determine active route
   const location = useLocation();
+  const isProjectsActive = location.pathname === '/projects';
   return <div data-id={dataId} className={`flex flex-col items-center gap-6 py-6 px-3 rounded-xl backdrop-blur-md bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30 border border-gray-200 dark:border-zinc-800/50 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)] ${className}`}>
-      {/* Logo */}
-      <div className="logo-container p-2 relative">
-        <img src={logoSrc} alt={logoAlt} className="w-8 h-8" />
-        <NavTooltip show={activeTooltip === 'logo'} label="Knowledge Assistant" />
-      </div>
+      {/* Logo - Now acts as a link to Projects page */}
+      <Link to="/projects" className={`
+          logo-container p-2 relative rounded-lg transition-all duration-300
+          ${isProjectsActive ? 'bg-gradient-to-b from-white/20 to-white/5 dark:from-white/10 dark:to-black/20 shadow-[0_5px_15px_-5px_rgba(59,130,246,0.3)] dark:shadow-[0_5px_15px_-5px_rgba(59,130,246,0.5)] transform scale-110' : 'hover:bg-white/10 dark:hover:bg-white/5'}
+        `} onMouseEnter={() => setActiveTooltip('logo')} onMouseLeave={() => setActiveTooltip(null)}>
+        <img src={logoSrc} alt={logoAlt} className={`w-8 h-8 transition-all duration-300 ${isProjectsActive ? 'filter drop-shadow-[0_0_8px_rgba(59,130,246,0.7)]' : ''}`} />
+        {/* Active state decorations */}
+        {isProjectsActive && <>
+            <span className="absolute inset-0 rounded-lg border border-blue-300 dark:border-blue-500/30"></span>
+            {/* Neon line positioned below the button with reduced width to respect curved edges */}
+            <span className="absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[2px] bg-blue-500 shadow-[0_0_10px_2px_rgba(59,130,246,0.4)] dark:shadow-[0_0_20px_5px_rgba(59,130,246,0.7)]"></span>
+          </>}
+        <NavTooltip show={activeTooltip === 'logo'} label="Project Management" />
+      </Link>
       {/* Navigation links */}
       <nav className="flex flex-col gap-4">
         {navigationItems.map(item => {

@@ -76,6 +76,9 @@ export const MCPPage = () => {
   const [isTestingTool, setIsTestingTool] = useState(false);
   const [testError, setTestError] = useState<string | null>(null);
 
+  // Tool filtering state
+  const [toolFilter, setToolFilter] = useState<'all' | 'rag_module' | 'tasks_module'>('all');
+
   // Use staggered entrance animation
   const { isVisible, containerVariants, itemVariants, titleVariants } = useStaggeredEntrance(
     [1, 2, 3, 4],
@@ -185,6 +188,65 @@ export const MCPPage = () => {
     } finally {
       setIsLoadingTools(false);
     }
+  };
+
+  /**
+   * Filter tools based on selected module
+   */
+  const getFilteredTools = () => {
+    if (toolFilter === 'all') {
+      return tools;
+    }
+    
+    // Check if tools have module property (from new API format)
+    const toolsWithModules = tools.filter((tool: any) => tool.module);
+    if (toolsWithModules.length > 0) {
+      return tools.filter((tool: any) => tool.module === toolFilter);
+    }
+    
+    // Fallback: filter by tool name patterns if no module property
+    if (toolFilter === 'rag_module') {
+      return tools.filter(tool => 
+        tool.name.includes('crawl') || 
+        tool.name.includes('rag') || 
+        tool.name.includes('source') || 
+        tool.name.includes('search') ||
+        tool.name.includes('upload')
+      );
+    } else if (toolFilter === 'tasks_module') {
+      return tools.filter(tool =>
+        tool.name.includes('project') ||
+        tool.name.includes('task')
+      );
+    }
+    
+    return tools;
+  };
+
+  /**
+   * Get tool counts by module for filter labels
+   */
+  const getToolCounts = () => {
+    const counts = { all: tools.length, rag_module: 0, tasks_module: 0 };
+    
+    tools.forEach((tool: any) => {
+      if (tool.module === 'rag_module') {
+        counts.rag_module++;
+      } else if (tool.module === 'tasks_module') {
+        counts.tasks_module++;
+      } else {
+        // Fallback counting by name patterns
+        if (tool.name.includes('crawl') || tool.name.includes('rag') || 
+            tool.name.includes('source') || tool.name.includes('search') ||
+            tool.name.includes('upload')) {
+          counts.rag_module++;
+        } else if (tool.name.includes('project') || tool.name.includes('task')) {
+          counts.tasks_module++;
+        }
+      }
+    });
+    
+    return counts;
   };
 
   /**
@@ -666,97 +728,181 @@ export const MCPPage = () => {
         {/* Left 2/3: Available Tools */}
         <div className="xl:col-span-2">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-gray-800 dark:text-white flex items-center">
-              <Wrench className="mr-2 text-orange-500" size={20} />
-              Available Tools
-            </h2>
-            {serverStatus.status === 'running' && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleRefreshTools}
-                disabled={isLoadingTools}
-              >
-                {isLoadingTools ? (
-                  <Loader className="w-4 h-4 mr-1 animate-spin inline" />
-                ) : (
-                  <ExternalLink className="w-4 h-4 mr-1 inline" />
+            <div className="flex items-center gap-4">
+              <div className="flex items-center">
+                <h2 className="text-xl font-semibold text-gray-800 dark:text-white flex items-center">
+                  <Wrench className="mr-2 text-orange-500" size={20} />
+                  Available Tools
+                </h2>
+                {serverStatus.status === 'running' && (
+                  <button
+                    onClick={handleRefreshTools}
+                    disabled={isLoadingTools}
+                    className="ml-2 p-1 text-gray-500 hover:text-gray-700 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
+                    title="Refresh Tools"
+                  >
+                    {isLoadingTools ? (
+                      <Loader className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <ExternalLink className="w-4 h-4" />
+                    )}
+                  </button>
                 )}
-                Refresh Tools
-              </Button>
-            )}
+              </div>
+
+              {/* Filter Controls - Inline with header */}
+              {serverStatus.status === 'running' && tools.length > 0 && (
+                <div className="flex gap-1">
+                  {(() => {
+                    const toolCounts = getToolCounts();
+                    return (
+                      <>
+                        <button
+                          onClick={() => setToolFilter('all')}
+                          className={`px-2 py-1 text-xs rounded transition-colors ${
+                            toolFilter === 'all'
+                              ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800'
+                              : 'bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-400 border border-gray-200 dark:border-zinc-700 hover:bg-gray-200 dark:hover:bg-zinc-700'
+                          }`}
+                        >
+                          All ({toolCounts.all})
+                        </button>
+                        <button
+                          onClick={() => setToolFilter('rag_module')}
+                          className={`px-2 py-1 text-xs rounded transition-colors ${
+                            toolFilter === 'rag_module'
+                              ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                              : 'bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-400 border border-gray-200 dark:border-zinc-700 hover:bg-gray-200 dark:hover:bg-zinc-700'
+                          }`}
+                        >
+                          RAG ({toolCounts.rag_module})
+                        </button>
+                        <button
+                          onClick={() => setToolFilter('tasks_module')}
+                          className={`px-2 py-1 text-xs rounded transition-colors ${
+                            toolFilter === 'tasks_module'
+                              ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800'
+                              : 'bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-400 border border-gray-200 dark:border-zinc-700 hover:bg-gray-200 dark:hover:bg-zinc-700'
+                          }`}
+                        >
+                          Tasks ({toolCounts.tasks_module})
+                        </button>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
           </div>
           
-          <Card accentColor="orange">
-          {serverStatus.status !== 'running' ? (
-            <div className="text-center py-8">
-              <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-500 dark:text-zinc-500">
-                Start the MCP server to see available tools
-              </p>
-            </div>
-          ) : isLoadingTools ? (
-            <div className="text-center py-8">
-              <Loader className="w-8 h-8 text-blue-500 mx-auto mb-4 animate-spin" />
-              <p className="text-gray-500 dark:text-zinc-500">
-                Loading tools from MCP server...
-              </p>
-            </div>
-          ) : toolsError ? (
-            <div className="text-center py-8">
-              <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-              <p className="text-red-600 dark:text-red-400 mb-2">
-                Failed to load tools
-              </p>
-              <p className="text-sm text-gray-500 dark:text-zinc-500">
-                {toolsError}
-              </p>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={handleRefreshTools}
-                className="mt-4"
-              >
-                Try Again
-              </Button>
-            </div>
-          ) : tools.length === 0 ? (
-            <div className="text-center py-8">
-              <Code className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-500 dark:text-zinc-500">
-                No tools available from MCP server
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-200 dark:border-zinc-800">
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700 dark:text-zinc-300">
+                    <div className="h-[28rem] border border-orange-500/50 dark:border-orange-400/60 rounded-lg bg-white dark:bg-zinc-900 flex flex-col shadow-2xl shadow-orange-500/40 dark:shadow-orange-400/50 relative before:absolute before:inset-0 before:rounded-lg before:p-[2px] before:bg-gradient-to-r before:from-orange-500/60 before:via-orange-400/50 before:to-orange-600/60 before:-z-10 ring-1 ring-orange-500/30 dark:ring-orange-400/40">
+            {serverStatus.status !== 'running' ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center">
+                  <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-500 dark:text-zinc-500">
+                    Start the MCP server to see available tools
+                  </p>
+                </div>
+              </div>
+            ) : isLoadingTools ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center">
+                  <Loader className="w-8 h-8 text-blue-500 mx-auto mb-4 animate-spin" />
+                  <p className="text-gray-500 dark:text-zinc-500">
+                    Loading tools from MCP server...
+                  </p>
+                </div>
+              </div>
+            ) : toolsError ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center">
+                  <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+                  <p className="text-red-600 dark:text-red-400 mb-2">
+                    Failed to load tools
+                  </p>
+                  <p className="text-sm text-gray-500 dark:text-zinc-500">
+                    {toolsError}
+                  </p>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleRefreshTools}
+                    className="mt-4"
+                  >
+                    Try Again
+                  </Button>
+                </div>
+              </div>
+            ) : tools.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center">
+                  <Code className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-500 dark:text-zinc-500">
+                    No tools available from MCP server
+                  </p>
+                </div>
+              </div>
+            ) : getFilteredTools().length === 0 ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center">
+                  <Code className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-500 dark:text-zinc-500">
+                    No tools match the selected filter
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setToolFilter('all')}
+                    className="mt-2"
+                  >
+                    Show All Tools
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Fixed Header */}
+                <div className="border-b border-gray-200 dark:border-zinc-800 p-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="font-semibold text-gray-700 dark:text-zinc-300">
                       Tool Name
-                    </th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700 dark:text-zinc-300">
+                    </div>
+                    <div className="font-semibold text-gray-700 dark:text-zinc-300">
                       Description
-                    </th>
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700 dark:text-zinc-300">
+                    </div>
+                    <div className="font-semibold text-gray-700 dark:text-zinc-300">
                       Parameters
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tools.map((tool, index) => {
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Scrollable Content */}
+                <div className="flex-1 overflow-y-auto p-4">
+                  {getFilteredTools().map((tool, index) => {
                     const parameters = extractParametersFromSchema(tool);
                     return (
-                      <tr key={index} className="border-b border-gray-100 dark:border-zinc-900 last:border-0">
-                        <td className="py-3 px-4">
-                          <code className="text-sm bg-gray-100 dark:bg-zinc-800 px-2 py-1 rounded text-blue-600 dark:text-blue-400">
-                            {tool.name}
-                          </code>
-                        </td>
-                        <td className="py-3 px-4 text-sm text-gray-600 dark:text-zinc-400">
+                      <div key={index} className="grid grid-cols-3 gap-4 py-3 border-b border-gray-100 dark:border-zinc-800 last:border-0">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <code className="text-sm bg-gray-100 dark:bg-zinc-800 px-2 py-1 rounded text-blue-600 dark:text-blue-400">
+                              {tool.name}
+                            </code>
+                            {(tool as any).module && (
+                              <span className={`px-2 py-0.5 text-xs rounded-full ${
+                                (tool as any).module === 'rag_module'
+                                  ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                                  : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                              }`}>
+                                {(tool as any).module === 'rag_module' ? 'RAG' : 'Tasks'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-zinc-400">
                           {tool.description || 'No description available'}
-                        </td>
-                        <td className="py-3 px-4">
+                        </div>
+                        <div>
                           {parameters.length === 0 ? (
                             <span className="text-sm text-gray-500 dark:text-zinc-500 italic">
                               No parameters
@@ -781,15 +927,14 @@ export const MCPPage = () => {
                               ))}
                             </div>
                           )}
-                        </td>
-                      </tr>
+                        </div>
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
-          )}
-          </Card>
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Right 1/3: MCP Test Panel */}
@@ -801,16 +946,18 @@ export const MCPPage = () => {
             </h2>
           </div>
           
-          <Card accentColor="blue" className="h-fit">
+          <div className="h-[28rem] border border-blue-500/50 dark:border-blue-400/60 rounded-lg bg-white dark:bg-zinc-900 flex flex-col shadow-2xl shadow-blue-500/40 dark:shadow-blue-400/50 relative before:absolute before:inset-0 before:rounded-lg before:p-[2px] before:bg-gradient-to-r before:from-blue-500/60 before:via-blue-400/50 before:to-blue-600/60 before:-z-10 ring-1 ring-blue-500/30 dark:ring-blue-400/40">
             {tools.length === 0 ? (
-              <div className="text-center py-8">
-                <Terminal className="w-8 h-8 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-500 dark:text-zinc-500 text-sm">
-                  Load tools to start testing
-                </p>
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center">
+                  <Terminal className="w-8 h-8 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-500 dark:text-zinc-500 text-sm">
+                    Load tools to start testing
+                  </p>
+                </div>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {/* Tool Selection */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-zinc-300 mb-2">
@@ -827,7 +974,8 @@ export const MCPPage = () => {
                     <option value="">Choose a tool...</option>
                     {tools.map((tool) => (
                       <option key={tool.name} value={tool.name}>
-                        {tool.name}
+                        {tool.name} 
+                        {(tool as any).module && ` (${(tool as any).module === 'rag_module' ? 'RAG' : 'Tasks'})`}
                       </option>
                     ))}
                   </select>
@@ -884,11 +1032,11 @@ export const MCPPage = () => {
 
                 {/* Results */}
                 {(testResult || testError) && (
-                  <div className="mt-4">
+                  <div>
                     <h4 className="text-sm font-medium text-gray-700 dark:text-zinc-300 mb-2">
                       Result
                     </h4>
-                    <div className="bg-gray-50 dark:bg-black/50 rounded-md p-3 max-h-48 overflow-y-auto">
+                    <div className="bg-gray-50 dark:bg-black/50 rounded-md p-3 max-h-32 overflow-y-auto">
                       {testError ? (
                         <div className="text-red-600 dark:text-red-400 text-xs">
                           Error: {testError}
@@ -903,7 +1051,7 @@ export const MCPPage = () => {
                 )}
               </div>
             )}
-          </Card>
+          </div>
         </div>
       </motion.div>
     </motion.div>
