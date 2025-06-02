@@ -1,0 +1,513 @@
+// Project Management Service Layer
+// Integrates with MCP backend tools via API wrapper
+
+import type { 
+  Project, 
+  Task, 
+  CreateProjectRequest, 
+  UpdateProjectRequest,
+  CreateTaskRequest, 
+  UpdateTaskRequest,
+  DatabaseTaskStatus,
+  UITaskStatus,
+  MCPToolResponse,
+  ProjectManagementEvent,
+  PaginatedResponse
+} from '../types/project';
+
+import { 
+  validateCreateProject, 
+  validateUpdateProject, 
+  validateCreateTask, 
+  validateUpdateTask,
+  validateUpdateTaskStatus,
+  formatValidationErrors
+} from '../lib/projectSchemas';
+
+import { statusMappings, dbTaskToUITask, uiStatusToDBStatus } from '../types/project';
+
+// API configuration
+const API_BASE_URL = process.env.NODE_ENV === 'production' 
+  ? 'http://localhost:8080'  // Production backend port
+  : 'http://localhost:8080'; // Development backend port
+
+// WebSocket connection for real-time updates
+let websocketConnection: WebSocket | null = null;
+let projectUpdateSubscriptions: Map<string, (event: ProjectManagementEvent) => void> = new Map();
+
+// Error classes
+export class ProjectServiceError extends Error {
+  constructor(message: string, public code?: string, public statusCode?: number) {
+    super(message);
+    this.name = 'ProjectServiceError';
+  }
+}
+
+export class ValidationError extends ProjectServiceError {
+  constructor(message: string) {
+    super(message, 'VALIDATION_ERROR', 400);
+    this.name = 'ValidationError';
+  }
+}
+
+export class MCPToolError extends ProjectServiceError {
+  constructor(message: string, public toolName: string) {
+    super(message, 'MCP_TOOL_ERROR', 500);
+    this.name = 'MCPToolError';
+  }
+}
+
+// Helper function to call FastAPI endpoints directly
+async function callAPI<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  try {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+      ...options
+    });
+
+    if (!response.ok) {
+      throw new ProjectServiceError(
+        `HTTP error! status: ${response.status}`, 
+        'HTTP_ERROR', 
+        response.status
+      );
+    }
+
+    const result = await response.json();
+    
+    // Check if response has error field (from FastAPI error format)
+    if (result.error) {
+      throw new ProjectServiceError(
+        result.error, 
+        'API_ERROR',
+        response.status
+      );
+    }
+
+    return result as T;
+  } catch (error) {
+    if (error instanceof ProjectServiceError) {
+      throw error;
+    }
+    
+    throw new ProjectServiceError(
+      `Failed to call API ${endpoint}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      'NETWORK_ERROR',
+      500
+    );
+  }
+}
+
+// WebSocket management for real-time updates
+function initializeWebSocket() {
+  if (websocketConnection?.readyState === WebSocket.OPEN) {
+    return websocketConnection;
+  }
+
+  const wsUrl = API_BASE_URL.replace('http', 'ws') + '/ws/project-updates';
+  websocketConnection = new WebSocket(wsUrl);
+
+  websocketConnection.onopen = () => {
+    console.log('📡 Project management WebSocket connected');
+  };
+
+  websocketConnection.onmessage = (event) => {
+    try {
+      const update: ProjectManagementEvent = JSON.parse(event.data);
+      
+      // Notify all subscribers
+      projectUpdateSubscriptions.forEach((callback, projectId) => {
+        if (update.type.includes('PROJECT') && update.projectId === projectId) {
+          callback(update);
+        } else if (update.type.includes('TASK') && update.projectId === projectId) {
+          callback(update);
+        }
+      });
+    } catch (error) {
+      console.error('Failed to parse WebSocket message:', error);
+    }
+  };
+
+  websocketConnection.onclose = () => {
+    console.log('📡 Project management WebSocket disconnected');
+    // Attempt to reconnect after 3 seconds
+    setTimeout(initializeWebSocket, 3000);
+  };
+
+  websocketConnection.onerror = (error) => {
+    console.error('📡 Project management WebSocket error:', error);
+  };
+
+  return websocketConnection;
+}
+
+// Project Management Service
+export const projectService = {
+  // ==================== PROJECT OPERATIONS ====================
+
+  /**
+   * Get all projects
+   */
+  async listProjects(): Promise<Project[]> {
+    try {
+      const projects = await callAPI<Project[]>('/api/projects');
+      
+      // Add computed UI properties
+      return projects.map((project: Project) => ({
+        ...project,
+        progress: project.progress || 0,
+        updated: project.updated || this.formatRelativeTime(project.updated_at)
+      }));
+    } catch (error) {
+      console.error('Failed to list projects:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get a specific project by ID
+   */
+  async getProject(projectId: string): Promise<Project> {
+    try {
+      const project = await callAPI<Project>(`/api/projects/${projectId}`);
+      
+      return {
+        ...project,
+        progress: project.progress || 0,
+        updated: project.updated || this.formatRelativeTime(project.updated_at)
+      };
+    } catch (error) {
+      console.error(`Failed to get project ${projectId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Create a new project
+   */
+  async createProject(projectData: CreateProjectRequest): Promise<Project> {
+    // Validate input
+    const validation = validateCreateProject(projectData);
+    if (!validation.success) {
+      throw new ValidationError(formatValidationErrors(validation.error));
+    }
+
+    try {
+      const project = await callAPI<Project>('/api/projects', {
+        method: 'POST',
+        body: JSON.stringify(validation.data)
+      });
+      
+      // Broadcast creation event
+      this.broadcastProjectUpdate('PROJECT_CREATED', project.id, project);
+      
+      return {
+        ...project,
+        progress: 0,
+        updated: this.formatRelativeTime(project.created_at)
+      };
+    } catch (error) {
+      console.error('Failed to create project:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Update an existing project
+   */
+  async updateProject(projectId: string, updates: UpdateProjectRequest): Promise<Project> {
+    // Validate input
+    const validation = validateUpdateProject(updates);
+    if (!validation.success) {
+      throw new ValidationError(formatValidationErrors(validation.error));
+    }
+
+    try {
+      const project = await callAPI<Project>(`/api/projects/${projectId}`, {
+        method: 'PUT',
+        body: JSON.stringify(validation.data)
+      });
+      
+      // Broadcast update event
+      this.broadcastProjectUpdate('PROJECT_UPDATED', project.id, updates);
+      
+      return {
+        ...project,
+        progress: project.progress || 0,
+        updated: this.formatRelativeTime(project.updated_at)
+      };
+    } catch (error) {
+      console.error(`Failed to update project ${projectId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Delete a project
+   */
+  async deleteProject(projectId: string): Promise<void> {
+    try {
+      await callAPI(`/api/projects/${projectId}`, {
+        method: 'DELETE'
+      });
+      
+      // Broadcast deletion event
+      this.broadcastProjectUpdate('PROJECT_DELETED', projectId, {});
+    } catch (error) {
+      console.error(`Failed to delete project ${projectId}:`, error);
+      throw error;
+    }
+  },
+
+  // ==================== TASK OPERATIONS ====================
+
+  /**
+   * Get all tasks for a project
+   */
+  async getTasksByProject(projectId: string): Promise<Task[]> {
+    try {
+      const tasks = await callAPI<Task[]>(`/api/projects/${projectId}/tasks`);
+      
+      // Convert database tasks to UI tasks with status mapping
+      return tasks.map((task: Task) => dbTaskToUITask(task));
+    } catch (error) {
+      console.error(`Failed to get tasks for project ${projectId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get a specific task by ID
+   */
+  async getTask(taskId: string): Promise<Task> {
+    try {
+      const task = await callAPI<Task>(`/api/tasks/${taskId}`);
+      return dbTaskToUITask(task);
+    } catch (error) {
+      console.error(`Failed to get task ${taskId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Create a new task
+   */
+  async createTask(taskData: CreateTaskRequest): Promise<Task> {
+    // Validate input
+    const validation = validateCreateTask(taskData);
+    if (!validation.success) {
+      throw new ValidationError(formatValidationErrors(validation.error));
+    }
+
+    try {
+      const task = await callAPI<Task>('/api/tasks', {
+        method: 'POST',
+        body: JSON.stringify(validation.data)
+      });
+      
+      // Broadcast creation event
+      this.broadcastTaskUpdate('TASK_CREATED', task.id, task.project_id, task);
+      
+      return dbTaskToUITask(task);
+    } catch (error) {
+      console.error('Failed to create task:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Update an existing task
+   */
+  async updateTask(taskId: string, updates: UpdateTaskRequest): Promise<Task> {
+    // Validate input
+    const validation = validateUpdateTask(updates);
+    if (!validation.success) {
+      throw new ValidationError(formatValidationErrors(validation.error));
+    }
+
+    try {
+      const task = await callAPI<Task>(`/api/tasks/${taskId}`, {
+        method: 'PUT',
+        body: JSON.stringify(validation.data)
+      });
+      
+      // Broadcast update event
+      this.broadcastTaskUpdate('TASK_UPDATED', task.id, task.project_id, updates);
+      
+      return dbTaskToUITask(task);
+    } catch (error) {
+      console.error(`Failed to update task ${taskId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Update task status (for drag & drop operations)
+   */
+  async updateTaskStatus(taskId: string, uiStatus: UITaskStatus): Promise<Task> {
+    // Convert UI status to database status
+    const dbStatus = uiStatusToDBStatus(uiStatus);
+    
+    // Validate input
+    const validation = validateUpdateTaskStatus({ task_id: taskId, status: dbStatus });
+    if (!validation.success) {
+      throw new ValidationError(formatValidationErrors(validation.error));
+    }
+
+    try {
+      const task = await callAPI<Task>(`/api/tasks/${taskId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: `status=${dbStatus}`
+      });
+      
+      // Broadcast move event
+      this.broadcastTaskUpdate('TASK_MOVED', task.id, task.project_id, { status: dbStatus });
+      
+      return dbTaskToUITask(task);
+    } catch (error) {
+      console.error(`Failed to update task status ${taskId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Delete a task
+   */
+  async deleteTask(taskId: string): Promise<void> {
+    try {
+      // Get task info before deletion for broadcasting
+      const task = await this.getTask(taskId);
+      
+      await callAPI(`/api/tasks/${taskId}`, {
+        method: 'DELETE'
+      });
+      
+      // Broadcast deletion event
+      this.broadcastTaskUpdate('TASK_DELETED', taskId, task.project_id, {});
+    } catch (error) {
+      console.error(`Failed to delete task ${taskId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get tasks by status across all projects
+   */
+  async getTasksByStatus(status: DatabaseTaskStatus): Promise<Task[]> {
+    try {
+      // Note: This endpoint might need to be implemented in the backend
+      // For now, we'll get all projects and filter tasks locally
+      const projects = await this.listProjects();
+      const allTasks: Task[] = [];
+      
+      for (const project of projects) {
+        const projectTasks = await this.getTasksByProject(project.id);
+        // Since tasks from getTasksByProject are already UI tasks, we need to compare properly
+        // The task.status is already a UITaskStatus from dbTaskToUITask conversion
+        allTasks.push(...projectTasks.filter(task => {
+          // Convert UI status back to DB status for comparison
+          const taskDbStatus = uiStatusToDBStatus(task.status);
+          return taskDbStatus === status;
+        }));
+      }
+      
+      return allTasks;
+    } catch (error) {
+      console.error(`Failed to get tasks by status ${status}:`, error);
+      throw error;
+    }
+  },
+
+  // ==================== REAL-TIME SUBSCRIPTIONS ====================
+
+  /**
+   * Subscribe to real-time project updates
+   */
+  subscribeToProjectUpdates(projectId: string, callback: (event: ProjectManagementEvent) => void): () => void {
+    // Initialize WebSocket connection if needed
+    initializeWebSocket();
+    
+    // Add subscription
+    projectUpdateSubscriptions.set(projectId, callback);
+    
+    // Return unsubscribe function
+    return () => {
+      projectUpdateSubscriptions.delete(projectId);
+    };
+  },
+
+  /**
+   * Unsubscribe from all project updates
+   */
+  unsubscribeFromUpdates(): void {
+    projectUpdateSubscriptions.clear();
+    
+    if (websocketConnection?.readyState === WebSocket.OPEN) {
+      websocketConnection.close();
+    }
+  },
+
+  // ==================== UTILITY METHODS ====================
+
+  /**
+   * Format relative time for display
+   */
+  formatRelativeTime(dateString: string): string {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+    if (diffInSeconds < 60) return 'just now';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`;
+    if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)} days ago`;
+    
+    return `${Math.floor(diffInSeconds / 604800)} weeks ago`;
+  },
+
+  /**
+   * Broadcast project update event
+   */
+  broadcastProjectUpdate(type: 'PROJECT_CREATED' | 'PROJECT_UPDATED' | 'PROJECT_DELETED', projectId: string, data: any): void {
+    const event: ProjectManagementEvent = {
+      type,
+      projectId,
+      userId: 'current-user', // TODO: Get from auth context
+      timestamp: new Date().toISOString(),
+      data
+    };
+
+    // Send via WebSocket if connected
+    if (websocketConnection?.readyState === WebSocket.OPEN) {
+      websocketConnection.send(JSON.stringify(event));
+    }
+  },
+
+  /**
+   * Broadcast task update event
+   */
+  broadcastTaskUpdate(type: 'TASK_CREATED' | 'TASK_UPDATED' | 'TASK_MOVED' | 'TASK_DELETED', taskId: string, projectId: string, data: any): void {
+    const event: ProjectManagementEvent = {
+      type,
+      taskId,
+      projectId,
+      userId: 'current-user', // TODO: Get from auth context
+      timestamp: new Date().toISOString(),
+      data
+    };
+
+    // Send via WebSocket if connected
+    if (websocketConnection?.readyState === WebSocket.OPEN) {
+      websocketConnection.send(JSON.stringify(event));
+    }
+  }
+};
+
+// Default export
+export default projectService; 

@@ -61,27 +61,40 @@ from pydantic import BaseModel, HttpUrl
 from pathlib import Path
 import httpx
 
-# Import crawling functions and dependencies from crawl4ai_mcp
-from crawl4ai import AsyncWebCrawler, BrowserConfig
+# Import crawling functions and dependencies 
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, MemoryAdaptiveDispatcher
 from sentence_transformers import CrossEncoder
 from supabase import Client
-
-# Import the actual crawling functions
-from src.crawl4ai_mcp import (
-    smart_crawl_url as mcp_smart_crawl_url,
-    crawl_single_page as mcp_crawl_single_page,
-    get_available_sources as mcp_get_available_sources,
-    perform_rag_query as mcp_perform_rag_query,
-    delete_source as mcp_delete_source,
-    search_code_examples as mcp_search_code_examples
-)
+from urllib.parse import urlparse
 
 # Import utils for Supabase client
 from src.utils import get_supabase_client
 
 from src.config import load_environment_config, get_rag_strategy_config
 from src.credential_service import credential_service, CredentialItem, initialize_credentials
-from src.archon_tasks_mcp import CreateTask, UpdateTaskStatus
+
+# Import the modular RAG functions from the new module
+from src.modules.rag_module import (
+    smart_chunk_markdown,
+    extract_section_info,
+    is_sitemap,
+    is_txt,
+    parse_sitemap,
+    crawl_markdown_file,
+    crawl_batch_with_progress,
+    crawl_recursive_with_progress
+)
+
+from src.utils import (
+    add_documents_to_supabase,
+    search_documents,
+    extract_code_blocks,
+    generate_code_example_summary,
+    add_code_examples_to_supabase,
+    update_source_info,
+    extract_source_summary,
+    search_code_examples
+)
 
 
 # Create a simple context class that matches what the MCP functions expect
@@ -907,8 +920,9 @@ async def crawl_single_page(request: CrawlSingleRequest):
         # Create context for the MCP function
         ctx = crawling_context.create_context()
         
-        # Call the actual function
-        result = await mcp_crawl_single_page(ctx, str(request.url))
+        # Call the actual function from rag_module
+        from src.modules.rag_module import crawl_single_page
+        result = await crawl_single_page(ctx, str(request.url))
         
         # Parse JSON string response if needed
         if isinstance(result, str):
@@ -926,8 +940,9 @@ async def smart_crawl_url(request: SmartCrawlRequest):
         # Create context for the MCP function
         ctx = crawling_context.create_context()
         
-        # Call the actual function
-        result = await mcp_smart_crawl_url(
+        # Call the actual function from rag_module
+        from src.modules.rag_module import smart_crawl_url
+        result = await smart_crawl_url(
             ctx=ctx,
             url=str(request.url),
             max_depth=request.max_depth,
@@ -956,8 +971,9 @@ async def perform_rag_query(request: RAGQueryRequest):
         # Create context for the MCP function
         ctx = crawling_context.create_context()
         
-        # Call the actual function
-        result = await mcp_perform_rag_query(
+        # Call the actual function from rag_module
+        from src.modules.rag_module import perform_rag_query
+        result = await perform_rag_query(
             ctx=ctx,
             query=request.query,
             source=request.source,
@@ -977,20 +993,8 @@ async def perform_rag_query(request: RAGQueryRequest):
 async def get_available_sources():
     """Get available sources."""
     try:
-        # Ensure crawling context is initialized once
-        if not crawling_context._initialized:
-            await crawling_context.initialize()
-        
-        # Create context for the MCP function
-        ctx = crawling_context.create_context()
-        
-        # Call the actual function
-        result = await mcp_get_available_sources(ctx)
-        
-        # Parse JSON string response if needed
-        if isinstance(result, str):
-            result = json.loads(result)
-        
+        # Get all sources directly
+        result = await get_available_sources_direct()
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail={'error': str(e)})
@@ -1189,6 +1193,612 @@ async def initialize_credentials_endpoint():
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
 
+# Project Management Endpoints
+
+# Request/Response Models for Projects
+class CreateProjectRequest(BaseModel):
+    title: str
+    prd: Optional[Dict[str, Any]] = None
+    github_repo: Optional[str] = None
+
+
+class CreateTaskRequest(BaseModel):
+    project_id: str
+    title: str
+    description: Optional[str] = None
+    parent_task_id: Optional[str] = None
+    sources: Optional[List[Dict[str, Any]]] = None
+    code_examples: Optional[List[Dict[str, Any]]] = None
+
+
+class UpdateTaskRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+
+
+@app.get("/api/projects")
+async def list_projects():
+    """List all projects."""
+    try:
+        # Get Supabase client
+        supabase_client = get_supabase_client()
+        
+        # Query projects directly
+        response = supabase_client.table("projects").select("*").order("created_at", desc=True).execute()
+        
+        projects = []
+        for project in response.data:
+            projects.append({
+                "id": project["id"],
+                "title": project["title"],
+                "github_repo": project.get("github_repo"),
+                "created_at": project["created_at"],
+                "updated_at": project["updated_at"],
+                "prd": project.get("prd", {}),
+                "docs": project.get("docs", []),
+                "features": project.get("features", []),
+                "data": project.get("data", [])
+            })
+        
+        return projects
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
+
+@app.post("/api/projects")
+async def create_project(request: CreateProjectRequest):
+    """Create a new project."""
+    try:
+        # Get Supabase client
+        supabase_client = get_supabase_client()
+        
+        project_data = {
+            "title": request.title,
+            "prd": request.prd or {},
+            "docs": [],
+            "features": [],
+            "data": [],
+            "created_at": datetime.now().isoformat(),
+            "updated_at": datetime.now().isoformat()
+        }
+        
+        if request.github_repo:
+            project_data["github_repo"] = request.github_repo
+        
+        response = supabase_client.table("projects").insert(project_data).execute()
+        
+        if response.data:
+            project = response.data[0]
+            return {
+                "id": project["id"],
+                "title": project["title"],
+                "github_repo": project.get("github_repo"),
+                "created_at": project["created_at"],
+                "updated_at": project["updated_at"],
+                "prd": project.get("prd", {}),
+                "docs": project.get("docs", []),
+                "features": project.get("features", []),
+                "data": project.get("data", [])
+            }
+        else:
+            raise HTTPException(status_code=500, detail={'error': 'Failed to create project'})
+                
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
+
+@app.get("/api/projects/{project_id}")
+async def get_project(project_id: str):
+    """Get a specific project."""
+    try:
+        # Get Supabase client
+        supabase_client = get_supabase_client()
+        
+        response = supabase_client.table("projects").select("*").eq("id", project_id).execute()
+        
+        if response.data:
+            project = response.data[0]
+            return {
+                "id": project["id"],
+                "title": project["title"],
+                "github_repo": project.get("github_repo"),
+                "created_at": project["created_at"],
+                "updated_at": project["updated_at"],
+                "prd": project.get("prd", {}),
+                "docs": project.get("docs", []),
+                "features": project.get("features", []),
+                "data": project.get("data", [])
+            }
+        else:
+            raise HTTPException(status_code=404, detail={'error': f'Project with ID {project_id} not found'})
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
+
+@app.get("/api/projects/{project_id}/tasks")
+async def get_project_tasks(project_id: str):
+    """Get all tasks for a specific project."""
+    try:
+        # Get Supabase client
+        supabase_client = get_supabase_client()
+        
+        response = supabase_client.table("tasks").select("*").eq("project_id", project_id).order("created_at", desc=False).execute()
+        
+        tasks = []
+        for task in response.data:
+            tasks.append({
+                "id": task["id"],
+                "project_id": task["project_id"],
+                "parent_task_id": task.get("parent_task_id"),
+                "title": task["title"],
+                "description": task.get("description", ""),
+                "status": task["status"],
+                "sources": task.get("sources", []),
+                "code_examples": task.get("code_examples", []),
+                "created_at": task["created_at"],
+                "updated_at": task["updated_at"]
+            })
+        
+        return tasks
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
+
+@app.post("/api/tasks")
+async def create_task(request: CreateTaskRequest):
+    """Create a new task."""
+    try:
+        # Get Supabase client
+        supabase_client = get_supabase_client()
+        
+        task_data = {
+            "project_id": request.project_id,
+            "title": request.title,
+            "description": request.description or "",
+            "status": "todo",
+            "sources": request.sources or [],
+            "code_examples": request.code_examples or [],
+            "created_at": datetime.now().isoformat(),
+            "updated_at": datetime.now().isoformat()
+        }
+        
+        if request.parent_task_id:
+            task_data["parent_task_id"] = request.parent_task_id
+        
+        response = supabase_client.table("tasks").insert(task_data).execute()
+        
+        if response.data:
+            task = response.data[0]
+            return {
+                "id": task["id"],
+                "project_id": task["project_id"],
+                "parent_task_id": task.get("parent_task_id"),
+                "title": task["title"],
+                "description": task["description"],
+                "status": task["status"],
+                "sources": task.get("sources", []),
+                "code_examples": task.get("code_examples", []),
+                "created_at": task["created_at"],
+                "updated_at": task["updated_at"]
+            }
+        else:
+            raise HTTPException(status_code=500, detail={'error': 'Failed to create task'})
+                
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
+
+@app.get("/api/tasks/{task_id}")
+async def get_task(task_id: str):
+    """Get a specific task."""
+    try:
+        supabase_client = get_supabase_client()
+        
+        response = supabase_client.table("tasks").select("*").eq("id", task_id).execute()
+        
+        if response.data:
+            task = response.data[0]
+            return {
+                "success": True,
+                "task": task
+            }
+        else:
+            return {
+                "success": False,
+                "error": f"Task with ID {task_id} not found"
+            }
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
+
+@app.put("/api/tasks/{task_id}")
+async def update_task(task_id: str, request: UpdateTaskRequest):
+    """Update a task."""
+    try:
+        supabase_client = get_supabase_client()
+        
+        # Build update data
+        update_data = {
+            "updated_at": datetime.now().isoformat()
+        }
+        
+        if request.title is not None:
+            update_data["title"] = request.title
+        
+        if request.description is not None:
+            update_data["description"] = request.description
+            
+        if request.status is not None:
+            valid_statuses = ['todo', 'doing', 'blocked', 'done']
+            if request.status not in valid_statuses:
+                return {
+                    "success": False,
+                    "error": f"Invalid status '{request.status}'. Must be one of: {', '.join(valid_statuses)}"
+                }
+            update_data["status"] = request.status
+        
+        response = supabase_client.table("tasks").update(update_data).eq("id", task_id).execute()
+        
+        if response.data:
+            task = response.data[0]
+            return {
+                "success": True,
+                "task": task
+            }
+        else:
+            return {
+                "success": False,
+                "error": f"Task with ID {task_id} not found"
+            }
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
+
+@app.put("/api/tasks/{task_id}/status")
+async def update_task_status(task_id: str, status: str = Form(...)):
+    """Update task status."""
+    try:
+        # Update task status directly in database
+        supabase_client = get_supabase_client()
+        
+        valid_statuses = ['todo', 'doing', 'blocked', 'done']
+        if status not in valid_statuses:
+            return {
+                "success": False,
+                "error": f"Invalid status '{status}'. Must be one of: {', '.join(valid_statuses)}"
+            }
+        
+        response = supabase_client.table("tasks").update({
+            "status": status,
+            "updated_at": datetime.now().isoformat()
+        }).eq("id", task_id).execute()
+        
+        result = {
+            "success": bool(response.data),
+            "task": response.data[0] if response.data else None
+        }
+        
+        # Parse JSON string response if needed
+        if isinstance(result, str):
+            result = json.loads(result)
+        
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
+
+@app.delete("/api/tasks/{task_id}")
+async def delete_task(task_id: str):
+    """Delete a task."""
+    try:
+        # Delete task directly from database
+        supabase_client = get_supabase_client()
+        
+        response = supabase_client.table("tasks").delete().eq("id", task_id).execute()
+        
+        result = {
+            "success": True,
+            "message": f"Task {task_id} deleted successfully"
+        }
+        
+        # Parse JSON string response if needed
+        if isinstance(result, str):
+            result = json.loads(result)
+        
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
+
+# Helper functions for document processing
+
+async def get_available_sources_direct() -> Dict[str, Any]:
+    """Get all available sources from the sources table directly."""
+    try:
+        supabase_client = get_supabase_client()
+        
+        # Query the sources table directly
+        result = supabase_client.from_('sources')\
+            .select('*')\
+            .order('source_id')\
+            .execute()
+        
+        # Format the sources with their details
+        sources = []
+        if result.data:
+            for source in result.data:
+                sources.append({
+                    "source_id": source.get("source_id"),
+                    "title": source.get("title", source.get("summary", "Untitled")),
+                    "summary": source.get("summary"),
+                    "metadata": source.get("metadata", {}),
+                    "total_word_count": source.get("total_word_count", 0),
+                    "created_at": source.get("created_at"),
+                    "updated_at": source.get("updated_at")
+                })
+        
+        return {
+            "success": True,
+            "sources": sources,
+            "count": len(sources)
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+async def process_uploaded_document(
+    file_content: bytes, 
+    filename: str, 
+    knowledge_type: str = "technical", 
+    tags: List[str] = [], 
+    chunk_size: int = 5000
+) -> Dict[str, Any]:
+    """Process an uploaded document and store it in the knowledge base."""
+    try:
+        import base64
+        import tempfile
+        import os
+        from pathlib import Path
+        
+        # Import document processing libraries
+        try:
+            import PyPDF2
+            import pdfplumber
+            from docx import Document as DocxDocument
+        except ImportError as e:
+            return {
+                "success": False,
+                "error": f"Missing document processing library: {e}. Please install required dependencies."
+            }
+        
+        # Get the Supabase client
+        supabase_client = get_supabase_client()
+        
+        # Determine file type from extension
+        file_ext = Path(filename).suffix.lower()
+        supported_extensions = {'.pdf', '.doc', '.docx', '.md', '.txt'}
+        
+        if file_ext not in supported_extensions:
+            return {
+                "success": False,
+                "error": f"Unsupported file type: {file_ext}. Supported: {', '.join(supported_extensions)}"
+            }
+        
+        # Extract text content based on file type
+        text_content = ""
+        
+        if file_ext in ['.md', '.txt']:
+            # For text files, decode bytes to string
+            text_content = file_content.decode('utf-8')
+                
+        else:
+            # For binary files, process with appropriate library
+            # Create temporary file for processing
+            with tempfile.NamedTemporaryFile(suffix=file_ext, delete=False) as temp_file:
+                temp_file.write(file_content)
+                temp_file_path = temp_file.name
+            
+            try:
+                if file_ext == '.pdf':
+                    # Extract text from PDF using both PyPDF2 and pdfplumber for best results
+                    text_parts = []
+                    
+                    # Try pdfplumber first (better for complex layouts)
+                    try:
+                        with pdfplumber.open(temp_file_path) as pdf:
+                            for page in pdf.pages:
+                                text = page.extract_text()
+                                if text:
+                                    text_parts.append(text)
+                    except Exception as plumber_error:
+                        print(f"pdfplumber failed: {plumber_error}, trying PyPDF2")
+                        
+                        # Fallback to PyPDF2
+                        with open(temp_file_path, 'rb') as pdf_file:
+                            pdf_reader = PyPDF2.PdfReader(pdf_file)
+                            for page in pdf_reader.pages:
+                                text = page.extract_text()
+                                if text:
+                                    text_parts.append(text)
+                    
+                    text_content = '\n\n'.join(text_parts)
+                    
+                elif file_ext in ['.doc', '.docx']:
+                    # Extract text from Word document
+                    doc = DocxDocument(temp_file_path)
+                    text_parts = []
+                    for paragraph in doc.paragraphs:
+                        if paragraph.text.strip():
+                            text_parts.append(paragraph.text)
+                    text_content = '\n\n'.join(text_parts)
+                    
+            finally:
+                # Clean up temporary file
+                os.unlink(temp_file_path)
+        
+        # Validate extracted content
+        if not text_content.strip():
+            return {
+                "success": False,
+                "error": "No text content could be extracted from the document"
+            }
+        
+        # Generate document URL (use file:// scheme for uploaded documents)
+        document_url = f"file://{filename}"
+        
+        # Generate AI title and description for the document
+        try:
+            # Get credentials from database for OpenAI API
+            openai_api_key = await credential_service.get_credential("OPENAI_API_KEY", decrypt=True)
+            if not openai_api_key:
+                raise Exception("OpenAI API key not found in credentials")
+            
+            # Generate title and description using OpenAI
+            from openai import OpenAI
+            client = OpenAI(api_key=openai_api_key)
+            
+            # Prepare content sample for AI analysis (first 2000 chars)
+            content_sample = text_content[:2000] + ("..." if len(text_content) > 2000 else "")
+            
+            title_prompt = f"""Based on this document content, generate a clear, descriptive title (max 100 characters):
+
+{content_sample}
+
+Title:"""
+            
+            title_response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": title_prompt}],
+                max_tokens=50,
+                temperature=0.3
+            )
+            
+            ai_title = title_response.choices[0].message.content.strip()
+            if len(ai_title) > 100:
+                ai_title = ai_title[:97] + "..."
+            
+            description_prompt = f"""Based on this document content, generate a helpful 2-3 sentence description:
+
+{content_sample}
+
+Description:"""
+            
+            description_response = client.chat.completions.create(
+                model="gpt-4o-mini", 
+                messages=[{"role": "user", "content": description_prompt}],
+                max_tokens=150,
+                temperature=0.3
+            )
+            
+            ai_description = description_response.choices[0].message.content.strip()
+            
+        except Exception as e:
+            print(f"Failed to generate AI title/description: {e}")
+            # Fallback to filename-based title
+            ai_title = Path(filename).stem.replace('_', ' ').replace('-', ' ').title()
+            ai_description = f"Uploaded document: {filename}"
+        
+        # Chunk the text content
+        chunks = smart_chunk_markdown(text_content, chunk_size)
+        
+        # Calculate document stats
+        word_count = len(text_content.split())
+        chunk_count = len(chunks)
+        
+        # Create source_id from filename 
+        source_id = f"upload_{Path(filename).stem}"
+        
+        # Prepare data for batch insertion
+        urls = [document_url] * len(chunks)
+        chunk_numbers = list(range(1, len(chunks) + 1))
+        contents = chunks
+        metadatas = []
+        
+        # Add chunk-specific metadata
+        for i, chunk in enumerate(chunks):
+            section_info = extract_section_info(chunk)
+            metadata = {
+                'knowledge_type': knowledge_type,
+                'tags': tags,
+                'source_type': 'file',
+                'file_name': filename,
+                'file_type': file_ext,
+                'chunk_index': i + 1,
+                'total_chunks': len(chunks),
+                'title': ai_title,
+                'description': ai_description,
+                'source': source_id,
+                'url': document_url,
+                **section_info
+            }
+            metadatas.append(metadata)
+        
+        # Create URL to full document mapping
+        url_to_full_document = {document_url: text_content}
+        
+        # First, create/update source information
+        try:
+            update_source_info(
+                client=supabase_client,
+                source_id=source_id,
+                summary=ai_description,
+                word_count=word_count,
+                content=text_content[:500],  # First 500 chars as preview
+                knowledge_type=knowledge_type,
+                tags=tags
+            )
+        except Exception as e:
+            print(f"Failed to update source info: {e}")
+            return {
+                "success": False,
+                "filename": filename,
+                "error": f"Failed to create source entry: {e}"
+            }
+        
+        # Store document chunks in Supabase
+        add_documents_to_supabase(
+            client=supabase_client,
+            urls=urls,
+            chunk_numbers=chunk_numbers,
+            contents=contents,
+            metadatas=metadatas,
+            url_to_full_document=url_to_full_document
+        )
+        
+        return {
+            "success": True,
+            "filename": filename,
+            "title": ai_title,
+            "description": ai_description,
+            "source_id": source_id,
+            "chunks_created": chunk_count,
+            "word_count": word_count,
+            "code_examples_extracted": 0,  # Could add code extraction here if needed
+            "knowledge_type": knowledge_type,
+            "tags": tags,
+            "file_type": file_ext,
+            "message": f"Successfully uploaded and processed {filename}"
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "filename": filename,
+            "error": str(e)
+        }
+
+
 # Knowledge Base Endpoints
 
 # Request/Response Models for Knowledge Base
@@ -1254,8 +1864,8 @@ async def get_knowledge_items(
         # Create context for the MCP function
         ctx = crawling_context.create_context()
         
-        # Get all sources using the MCP function
-        sources_result = await mcp_get_available_sources(ctx)
+        # Get all sources directly 
+        sources_result = await get_available_sources_direct()
         
         # Parse the JSON response
         if isinstance(sources_result, str):
@@ -1386,7 +1996,8 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         ctx.progress_callback = progress_callback
         
         # Call the actual crawling function with progress callback support
-        result = await mcp_smart_crawl_url(
+        from src.modules.rag_module import smart_crawl_url
+        result = await smart_crawl_url(
             ctx=ctx,
             url=str(request.url),
             max_depth=2,
@@ -1466,8 +2077,9 @@ async def delete_knowledge_item(source_id: str):
         # Create context for the MCP function
         ctx = crawling_context.create_context()
         
-        # Call the actual function
-        result = await mcp_delete_source(ctx, source_id)
+        # Call the actual function from rag_module
+        from src.modules.rag_module import delete_source
+        result = await delete_source(ctx, source_id)
         
         # Parse JSON string response if needed
         if isinstance(result, str):
@@ -1547,13 +2159,9 @@ async def upload_document(
         import base64
         encoded_content = base64.b64encode(file_content).decode('utf-8')
         
-        # Import the MCP upload function
-        from src.crawl4ai_mcp import upload_document as mcp_upload_document
-        
-        # Call the MCP upload function
-        result = await mcp_upload_document(
-            ctx=ctx,
-            file_content=encoded_content,
+        # Process document directly
+        result = await process_uploaded_document(
+            file_content=file_content,
             filename=file.filename,
             knowledge_type=knowledge_type,
             tags=parsed_tags,
@@ -1624,8 +2232,7 @@ async def websocket_knowledge_items(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         # Send initial data
-        ctx = crawling_context.create_context()
-        sources_result = await mcp_get_available_sources(ctx)
+        sources_result = await get_available_sources_direct()
         
         if isinstance(sources_result, str):
             sources_data = json.loads(sources_result)

@@ -1,7 +1,22 @@
-import React, { useState, Component } from 'react';
-import { ArrowRight, Plus, X, Search, Upload, Link as LinkIcon, Check, Filter } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ArrowRight, Plus, X, Search, Upload, Link as LinkIcon, Check, Filter, BoxIcon, Brain } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '../ui/Button';
+import { knowledgeBaseService, KnowledgeItem } from '../../services/knowledgeBaseService';
+import { useToast } from '../../contexts/ToastContext';
+import { Input } from '../ui/Input';
+import { Card } from '../ui/Card';
+import { Badge } from '../ui/Badge';
+import { Select } from '../ui/Select';
+import { CrawlProgressData, crawlProgressService } from '../../services/crawlProgressService';
+
+// Define Task interface locally to fix linter errors
+interface Task {
+  id: string;
+  title: string;
+  feature: string;
+  status: 'backlog' | 'in-progress' | 'testing' | 'complete';
+}
 /* ——————————————————————————————————————————— */
 /* Main component                                 */
 /* ——————————————————————————————————————————— */
@@ -16,59 +31,53 @@ export const DocsTab = ({
   const [selectedBusinessSources, setSelectedBusinessSources] = useState<string[]>([]);
   const [showAddSourceModal, setShowAddSourceModal] = useState(false);
   const [sourceType, setSourceType] = useState<'technical' | 'business'>('technical');
-  // Sample knowledge sources
-  const technicalSources = [{
-    id: 't1',
-    title: 'React Component Design Patterns',
-    type: 'url',
-    lastUpdated: '2 days ago'
-  }, {
-    id: 't2',
-    title: 'System Architecture Guidelines',
-    type: 'pdf',
-    lastUpdated: '5 days ago'
-  }, {
-    id: 't3',
-    title: 'API Documentation',
-    type: 'url',
-    lastUpdated: '1 week ago'
-  }, {
-    id: 't4',
-    title: 'Database Schema Reference',
-    type: 'pdf',
-    lastUpdated: '2 weeks ago'
-  }, {
-    id: 't5',
-    title: 'Frontend Testing Framework',
-    type: 'url',
-    lastUpdated: '3 days ago'
-  }];
-  const businessSources = [{
-    id: 'b1',
-    title: 'Project Management Framework',
-    type: 'pdf',
-    lastUpdated: '1 day ago'
-  }, {
-    id: 'b2',
-    title: 'Market Analysis Report',
-    type: 'pdf',
-    lastUpdated: '1 week ago'
-  }, {
-    id: 'b3',
-    title: 'Competitor Research',
-    type: 'url',
-    lastUpdated: '3 days ago'
-  }, {
-    id: 'b4',
-    title: 'User Research Findings',
-    type: 'pdf',
-    lastUpdated: '2 weeks ago'
-  }, {
-    id: 'b5',
-    title: 'Business Requirements Document',
-    type: 'pdf',
-    lastUpdated: '4 days ago'
-  }];
+  const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [progressItems, setProgressItems] = useState<CrawlProgressData[]>([]);
+  const { showToast } = useToast();
+
+  // Load knowledge items from the service
+  const loadKnowledgeItems = async (knowledgeType?: 'technical' | 'business') => {
+    try {
+      setLoading(true);
+      const response = await knowledgeBaseService.getKnowledgeItems({
+        knowledge_type: knowledgeType,
+        page: 1,
+        per_page: 50
+      });
+      setKnowledgeItems(response.items);
+    } catch (error) {
+      console.error('Failed to load knowledge items:', error);
+      showToast('Failed to load knowledge items', 'error');
+      setKnowledgeItems([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load knowledge items on component mount
+  useEffect(() => {
+    loadKnowledgeItems();
+  }, []);
+
+  // Transform KnowledgeItem to legacy format for compatibility
+  const transformToLegacyFormat = (items: KnowledgeItem[]) => {
+    return items.map(item => ({
+      id: item.id,
+      title: item.title,
+      type: item.metadata.source_type || 'url',
+      lastUpdated: new Date(item.updated_at).toLocaleDateString()
+    }));
+  };
+
+  // Filter knowledge items by type
+  const technicalSources = transformToLegacyFormat(
+    knowledgeItems.filter(item => item.metadata.knowledge_type === 'technical')
+  );
+  
+  const businessSources = transformToLegacyFormat(
+    knowledgeItems.filter(item => item.metadata.knowledge_type === 'business')
+  );
   // Toggle selection of a source
   const toggleTechnicalSource = (id: string) => {
     setSelectedTechnicalSources(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
@@ -87,6 +96,60 @@ export const DocsTab = ({
     console.log('Saving business sources:', selectedBusinessSources);
     setShowBusinessModal(false);
   };
+  // Progress handling functions
+  const handleProgressComplete = (data: CrawlProgressData) => {
+    console.log('Crawl completed:', data);
+    setProgressItems(prev => prev.filter(item => item.progressId !== data.progressId));
+    loadKnowledgeItems(); // Reload knowledge items
+    showToast('Crawling completed successfully', 'success');
+  };
+
+  const handleProgressError = (error: string) => {
+    console.error('Crawl error:', error);
+    showToast(`Crawling failed: ${error}`, 'error');
+  };
+
+  const handleProgressUpdate = (data: CrawlProgressData) => {
+    setProgressItems(prev => 
+      prev.map(item => 
+        item.progressId === data.progressId ? data : item
+      )
+    );
+  };
+
+  const handleStartCrawl = (progressId: string, initialData: Partial<CrawlProgressData>) => {
+    console.log(`Starting crawl tracking for: ${progressId}`);
+    
+    const newProgressItem: CrawlProgressData = {
+      progressId,
+      status: 'starting',
+      percentage: 0,
+      logs: ['Starting crawl...'],
+      ...initialData
+    };
+    
+    setProgressItems(prev => [...prev, newProgressItem]);
+    
+    const progressCallback = (data: CrawlProgressData) => {
+      console.log(`📨 Progress callback called for ${progressId}:`, data);
+      
+      if (data.progressId === progressId) {
+        handleProgressUpdate(data);
+        
+        if (data.status === 'completed') {
+          handleProgressComplete(data);
+        } else if (data.status === 'error') {
+          handleProgressError(data.error || 'Crawling failed');
+        }
+      }
+    };
+    
+    crawlProgressService.streamProgress(progressId, progressCallback, {
+      autoReconnect: true,
+      reconnectDelay: 5000
+    });
+  };
+
   // Open add source modal with the correct type
   const openAddSourceModal = (type: 'technical' | 'business') => {
     setSourceType(type);
@@ -223,7 +286,15 @@ export const DocsTab = ({
       {/* Business Sources Modal */}
       {showBusinessModal && <SourceSelectionModal title="Select Business Knowledge Sources" sources={businessSources} selectedSources={selectedBusinessSources} onToggleSource={toggleBusinessSource} onSave={saveBusinessSources} onClose={() => setShowBusinessModal(false)} onAddSource={() => openAddSourceModal('business')} />}
       {/* Add Source Modal */}
-      {showAddSourceModal && <AddSourceModal sourceType={sourceType} onClose={() => setShowAddSourceModal(false)} />}
+      {showAddSourceModal && <AddKnowledgeModal 
+        sourceType={sourceType}
+        onClose={() => setShowAddSourceModal(false)} 
+        onSuccess={() => {
+          loadKnowledgeItems();
+          setShowAddSourceModal(false);
+        }}
+        onStartCrawl={handleStartCrawl}
+      />}
     </div>;
 };
 /* ——————————————————————————————————————————— */
@@ -562,90 +633,168 @@ const SourceSelectionModal: React.FC<{
       </div>
     </div>;
 };
-// Add Source Modal
-const AddSourceModal: React.FC<{
+// Add Knowledge Modal Component (same as KnowledgeBasePage but with sourceType prop)
+interface AddKnowledgeModalProps {
   sourceType: 'technical' | 'business';
   onClose: () => void;
-}> = ({
+  onSuccess: () => void;
+  onStartCrawl: (progressId: string, initialData: Partial<CrawlProgressData>) => void;
+}
+
+const AddKnowledgeModal = ({
   sourceType,
-  onClose
-}) => {
+  onClose,
+  onSuccess,
+  onStartCrawl
+}: AddKnowledgeModalProps) => {
   const [method, setMethod] = useState<'url' | 'file'>('url');
   const [url, setUrl] = useState('');
-  const handleAddSource = () => {
-    // Here you would handle adding the source
-    console.log('Adding source:', {
-      type: sourceType,
-      method,
-      url
-    });
-    onClose();
+  const [updateFrequency, setUpdateFrequency] = useState('7');
+  const [tags, setTags] = useState<string[]>([]);
+  const [newTag, setNewTag] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const { showToast } = useToast();
+
+  const handleSubmit = async () => {
+    try {
+      setLoading(true);
+      
+      if (method === 'url') {
+        if (!url.trim()) {
+          showToast('Please enter a URL', 'error');
+          return;
+        }
+        
+        const result = await knowledgeBaseService.crawlUrl({
+          url: url.trim(),
+          knowledge_type: sourceType,
+          tags,
+          update_frequency: parseInt(updateFrequency)
+        });
+        
+        // Check if result contains a progressId for streaming
+        if ((result as any).progressId) {
+          // Start progress tracking
+          onStartCrawl((result as any).progressId, {
+            currentUrl: url.trim(),
+            totalPages: 0,
+            processedPages: 0
+          });
+          
+          showToast('Crawling started - tracking progress', 'success');
+          onClose(); // Close modal immediately
+        } else {
+          // Fallback for non-streaming response
+          showToast((result as any).message || 'Crawling started', 'success');
+          onSuccess();
+        }
+      } else {
+        if (!selectedFile) {
+          showToast('Please select a file', 'error');
+          return;
+        }
+        
+        const result = await knowledgeBaseService.uploadDocument(selectedFile, {
+          knowledge_type: sourceType,
+          tags
+        });
+        
+        showToast((result as any).message || 'Document uploaded successfully', 'success');
+        onSuccess();
+      }
+    } catch (error) {
+      console.error('Failed to add knowledge:', error);
+      showToast('Failed to add knowledge source', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
+
   return <div className="fixed inset-0 bg-gray-500/50 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="relative p-6 rounded-md backdrop-blur-md w-full max-w-md
-          bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30
-          border border-gray-200 dark:border-zinc-800/50
-          shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)]
-          before:content-[''] before:absolute before:top-0 before:left-0 before:right-0 before:h-[2px] 
-          before:rounded-t-[4px] before:bg-blue-500 
-          before:shadow-[0_0_10px_2px_rgba(59,130,246,0.4)] dark:before:shadow-[0_0_20px_5px_rgba(59,130,246,0.7)]
-          after:content-[''] after:absolute after:top-0 after:left-0 after:right-0 after:h-16
-          after:bg-gradient-to-b after:from-blue-100 after:to-white dark:after:from-blue-500/20 dark:after:to-blue-500/5
-          after:rounded-t-md after:pointer-events-none">
-        <div className="relative z-10">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 text-transparent bg-clip-text">
-              Add {sourceType === 'technical' ? 'Technical' : 'Business'} Source
-            </h3>
-            <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors">
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          {/* Source Type Selection */}
-          <div className="flex gap-3 mb-6">
-            <button onClick={() => setMethod('url')} className={`flex-1 py-3 rounded-md flex items-center justify-center gap-2 transition-all ${method === 'url' ? 'bg-blue-900/30 border border-blue-500/50 text-blue-400' : 'bg-black/30 border border-gray-800 text-gray-400 hover:border-gray-700'}`}>
-              <LinkIcon className="w-4 h-4" />
-              <span>URL / Website</span>
-            </button>
-            <button onClick={() => setMethod('file')} className={`flex-1 py-3 rounded-md flex items-center justify-center gap-2 transition-all ${method === 'file' ? 'bg-pink-900/30 border border-pink-500/50 text-pink-400' : 'bg-black/30 border border-gray-800 text-gray-400 hover:border-gray-700'}`}>
-              <Upload className="w-4 h-4" />
-              <span>Upload File</span>
-            </button>
-          </div>
-          {/* URL Input */}
-          {method === 'url' && <div className="mb-6">
-              <label className="block text-gray-300 mb-2">URL to Crawl</label>
-              <input type="url" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://..." className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-md py-2 px-3 focus:outline-none focus:border-blue-400 focus:shadow-[0_0_10px_rgba(59,130,246,0.2)] transition-all duration-300" />
-              <p className="text-gray-500 text-xs mt-2">
-                The system will crawl this URL and extract relevant knowledge
-              </p>
-            </div>}
-          {/* File Upload */}
-          {method === 'file' && <div className="mb-6">
-              <label className="block text-gray-300 mb-2">
-                Upload Document
-              </label>
-              <div className="border border-dashed border-gray-700 rounded-md p-8 text-center hover:border-pink-500/50 transition-colors bg-black/30">
-                <Upload className="w-8 h-8 text-gray-600 mx-auto mb-2" />
-                <p className="text-gray-400">
-                  Drag and drop your file here, or{' '}
-                  <span className="text-pink-400">browse</span>
-                </p>
-                <p className="text-gray-500 text-xs mt-1">
-                  Supports PDF, DOCX, MD, TXT up to 10MB
-                </p>
-              </div>
-            </div>}
-          {/* Action Buttons */}
-          <div className="flex justify-end gap-3">
-            <Button onClick={onClose} variant="ghost">
-              Cancel
-            </Button>
-            <Button onClick={handleAddSource} variant="primary" accentColor="blue" className="shadow-lg shadow-blue-500/20">
-              Add Source
-            </Button>
-          </div>
+      <Card className="w-full max-w-2xl relative before:content-[''] before:absolute before:top-0 before:left-0 before:w-full before:h-[1px] before:bg-green-500">
+        <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-6">
+          Add {sourceType === 'technical' ? 'Technical' : 'Business'} Knowledge Source
+        </h2>
+        
+        {/* Source Type Selection */}
+        <div className="flex gap-4 mb-6">
+          <button onClick={() => setMethod('url')} className={`flex-1 p-4 rounded-md border ${method === 'url' ? 'border-blue-500 text-blue-600 dark:text-blue-500 bg-blue-50 dark:bg-blue-500/5' : 'border-gray-200 dark:border-zinc-900 text-gray-500 dark:text-zinc-400 hover:border-blue-300 dark:hover:border-blue-500/30'} transition flex items-center justify-center gap-2`}>
+            <LinkIcon className="w-4 h-4" />
+            <span>URL / Website</span>
+          </button>
+          <button onClick={() => setMethod('file')} className={`flex-1 p-4 rounded-md border ${method === 'file' ? 'border-pink-500 text-pink-600 dark:text-pink-500 bg-pink-50 dark:bg-pink-500/5' : 'border-gray-200 dark:border-zinc-900 text-gray-500 dark:text-zinc-400 hover:border-pink-300 dark:hover:border-pink-500/30'} transition flex items-center justify-center gap-2`}>
+            <Upload className="w-4 h-4" />
+            <span>Upload File</span>
+          </button>
         </div>
-      </div>
+        
+        {/* URL Input */}
+        {method === 'url' && <div className="mb-6">
+            <Input label="URL to Scrape" type="url" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://..." accentColor="blue" />
+          </div>}
+          
+        {/* File Upload */}
+        {method === 'file' && <div className="mb-6">
+            <label htmlFor="file-upload" className="block text-gray-600 dark:text-zinc-400 text-sm mb-2">
+              Upload Document
+            </label>
+            <input 
+              id="file-upload"
+              type="file"
+              accept=".pdf,.md,.doc,.docx,.txt"
+              onChange={e => setSelectedFile(e.target.files?.[0] || null)}
+              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100"
+            />
+            <p className="text-gray-500 dark:text-zinc-600 text-sm mt-1">
+              Supports PDF, MD, DOC up to 10MB
+            </p>
+          </div>}
+          
+        {/* Update Frequency */}
+        {method === 'url' && <div className="mb-6">
+            <Select label="Update Frequency" value={updateFrequency} onChange={e => setUpdateFrequency(e.target.value)} options={[{
+          value: '1',
+          label: 'Daily'
+        }, {
+          value: '7',
+          label: 'Weekly'
+        }, {
+          value: '30',
+          label: 'Monthly'
+        }, {
+          value: '0',
+          label: 'Never'
+        }]} accentColor="blue" />
+          </div>}
+          
+        {/* Tags */}
+        <div className="mb-6">
+          <label className="block text-gray-600 dark:text-zinc-400 text-sm mb-2">
+            Tags
+          </label>
+          <div className="flex flex-wrap gap-2 mb-2">
+            {tags.map(tag => <Badge key={tag} color="purple" variant="outline">
+                {tag}
+              </Badge>)}
+          </div>
+          <Input type="text" value={newTag} onChange={e => setNewTag(e.target.value)} onKeyDown={e => {
+          if (e.key === 'Enter' && newTag.trim()) {
+            setTags([...tags, newTag.trim()]);
+            setNewTag('');
+          }
+        }} placeholder="Add tags..." accentColor="purple" />
+        </div>
+        
+        {/* Action Buttons */}
+        <div className="flex justify-end gap-4">
+          <Button onClick={onClose} variant="ghost" disabled={loading}>
+            Cancel
+          </Button>
+          <Button onClick={handleSubmit} variant="primary" accentColor={method === 'url' ? 'blue' : 'pink'} disabled={loading}>
+            {loading ? 'Adding...' : 'Add Source'}
+          </Button>
+        </div>
+      </Card>
     </div>;
 };

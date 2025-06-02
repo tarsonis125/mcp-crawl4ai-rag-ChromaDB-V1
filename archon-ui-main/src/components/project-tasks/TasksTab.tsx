@@ -3,7 +3,7 @@ import { X, Edit, Check, Trash2, User, Tag, Table, LayoutGrid, ChevronDown, Chev
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { Button } from '../ui/Button';
-interface Task {
+export interface Task {
   id: string;
   title: string;
   description: string;

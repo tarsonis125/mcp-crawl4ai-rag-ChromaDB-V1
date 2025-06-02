@@ -1,10 +1,9 @@
-import React, { useCallback, useState, Component } from 'react'
+import { useCallback, useState } from 'react'
 import '@xyflow/react/dist/style.css'
 import {
   ReactFlow,
   Node,
   Edge,
-  Background,
   Controls,
   MarkerType,
   NodeProps,
@@ -17,54 +16,77 @@ import {
   Connection,
   addEdge,
 } from '@xyflow/react'
-import { Layout, Component } from 'lucide-react'
+import { Layout, Component as ComponentIcon } from 'lucide-react'
+
+// Define custom node types following React Flow v12 pattern
+type PageNodeData = {
+  label: string;
+  type: string;
+  route: string;
+  components: number;
+};
+
+type ServiceNodeData = {
+  label: string;
+  type: string;
+};
+
+// Define union type for all custom nodes
+type CustomNodeTypes = Node<PageNodeData, 'page'> | Node<ServiceNodeData, 'service'>;
+
 // Custom node components
-const PageNode = ({ data }: NodeProps) => (
-  <div className="relative group">
-    <Handle
-      type="target"
-      position={Position.Top}
-      className="w-3 h-3 !bg-cyan-400 transition-all duration-300 !opacity-60 group-hover:!opacity-100 group-hover:!shadow-[0_0_8px_rgba(34,211,238,0.6)]"
-    />
-    <div className="p-4 rounded-lg bg-[#1a2c3b]/80 border border-cyan-500/30 min-w-[200px] backdrop-blur-sm transition-all duration-300 group-hover:border-cyan-500/70 group-hover:shadow-[0_5px_15px_rgba(34,211,238,0.15)]">
-      <div className="flex items-center gap-2 mb-2">
-        <Layout className="w-4 h-4 text-cyan-400" />
-        <div className="text-sm font-bold text-cyan-400">{data.label}</div>
+const PageNode = ({ data }: NodeProps) => {
+  const pageData = data as PageNodeData;
+  return (
+    <div className="relative group">
+      <Handle
+        type="target"
+        position={Position.Top}
+        className="w-3 h-3 !bg-cyan-400 transition-all duration-300 !opacity-60 group-hover:!opacity-100 group-hover:!shadow-[0_0_8px_rgba(34,211,238,0.6)]"
+      />
+      <div className="p-4 rounded-lg bg-[#1a2c3b]/80 border border-cyan-500/30 min-w-[200px] backdrop-blur-sm transition-all duration-300 group-hover:border-cyan-500/70 group-hover:shadow-[0_5px_15px_rgba(34,211,238,0.15)]">
+        <div className="flex items-center gap-2 mb-2">
+          <Layout className="w-4 h-4 text-cyan-400" />
+          <div className="text-sm font-bold text-cyan-400">{pageData.label}</div>
+        </div>
+        <div className="text-xs text-gray-400">{pageData.type}</div>
+        <div className="mt-2 text-xs text-gray-500">
+          <div>Route: {pageData.route}</div>
+          <div>Components: {pageData.components}</div>
+        </div>
       </div>
-      <div className="text-xs text-gray-400">{data.type}</div>
-      <div className="mt-2 text-xs text-gray-500">
-        <div>Route: {data.route}</div>
-        <div>Components: {data.components}</div>
-      </div>
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        className="w-3 h-3 !bg-cyan-400 transition-all duration-300 !opacity-60 group-hover:!opacity-100 group-hover:!shadow-[0_0_8px_rgba(34,211,238,0.6)]"
+      />
     </div>
-    <Handle
-      type="source"
-      position={Position.Bottom}
-      className="w-3 h-3 !bg-cyan-400 transition-all duration-300 !opacity-60 group-hover:!opacity-100 group-hover:!shadow-[0_0_8px_rgba(34,211,238,0.6)]"
-    />
-  </div>
-)
-const ServiceNode = ({ data }: NodeProps) => (
-  <div className="relative group">
-    <Handle
-      type="target"
-      position={Position.Top}
-      className="w-3 h-3 !bg-fuchsia-400 transition-all duration-300 !opacity-60 group-hover:!opacity-100 group-hover:!shadow-[0_0_8px_rgba(217,70,239,0.6)]"
-    />
-    <div className="p-4 rounded-lg bg-[#2d1a3b]/80 border border-fuchsia-500/30 min-w-[200px] backdrop-blur-sm transition-all duration-300 group-hover:border-fuchsia-500/70 group-hover:shadow-[0_5px_15px_rgba(217,70,239,0.15)]">
-      <div className="flex items-center gap-2 mb-2">
-        <Component className="w-4 h-4 text-fuchsia-400" />
-        <div className="text-sm font-bold text-fuchsia-400">{data.label}</div>
+  );
+};
+const ServiceNode = ({ data }: NodeProps) => {
+  const serviceData = data as ServiceNodeData;
+  return (
+    <div className="relative group">
+      <Handle
+        type="target"
+        position={Position.Top}
+        className="w-3 h-3 !bg-fuchsia-400 transition-all duration-300 !opacity-60 group-hover:!opacity-100 group-hover:!shadow-[0_0_8px_rgba(217,70,239,0.6)]"
+      />
+      <div className="p-4 rounded-lg bg-[#2d1a3b]/80 border border-fuchsia-500/30 min-w-[200px] backdrop-blur-sm transition-all duration-300 group-hover:border-fuchsia-500/70 group-hover:shadow-[0_5px_15px_rgba(217,70,239,0.15)]">
+        <div className="flex items-center gap-2 mb-2">
+          <ComponentIcon className="w-4 h-4 text-fuchsia-400" />
+          <div className="text-sm font-bold text-fuchsia-400">{serviceData.label}</div>
+        </div>
+        <div className="text-xs text-gray-400">{serviceData.type}</div>
       </div>
-      <div className="text-xs text-gray-400">{data.type}</div>
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        className="w-3 h-3 !bg-fuchsia-400 transition-all duration-300 !opacity-60 group-hover:!opacity-100 group-hover:!shadow-[0_0_8px_rgba(217,70,239,0.6)]"
+      />
     </div>
-    <Handle
-      type="source"
-      position={Position.Bottom}
-      className="w-3 h-3 !bg-fuchsia-400 transition-all duration-300 !opacity-60 group-hover:!opacity-100 group-hover:!shadow-[0_0_8px_rgba(217,70,239,0.6)]"
-    />
-  </div>
-)
+  );
+};
 const nodeTypes = {
   page: PageNode,
   service: ServiceNode,
@@ -478,7 +500,7 @@ export const FeaturesTab = () => {
               className="px-3 py-1.5 rounded-lg bg-fuchsia-900/20 border border-fuchsia-500/30 text-fuchsia-400 hover:bg-fuchsia-900/30 hover:border-fuchsia-500/50 hover:shadow-[0_0_15px_rgba(217,70,239,0.3)] transition-all duration-300 flex items-center gap-2 relative overflow-hidden group"
             >
               <span className="absolute inset-0 bg-fuchsia-500/10 opacity-0 group-hover:opacity-100 transition-opacity"></span>
-              <Component className="w-4 h-4 relative z-10" />
+              <ComponentIcon className="w-4 h-4 relative z-10" />
               <span className="text-xs relative z-10">Add Service</span>
             </button>
           </div>
