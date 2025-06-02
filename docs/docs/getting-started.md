@@ -1,50 +1,69 @@
----
-id: getting-started
-title: Getting Started
-sidebar_label: Getting Started
----
-
 # Getting Started
 
-Welcome to the **mcp-crawl4ai-rag** documentation. This guide will help you install, configure, and run the project.
+Welcome to **Crawl4AI RAG**, an advanced Retrieval-Augmented Generation (RAG) system with Modular Control Plane (MCP) integration.
 
 ## Prerequisites
 
-- Docker & Docker Compose
-- Node.js >=14
-- Python 3.9+
+- Git >= 2.25.0
+- Docker & Docker Compose >= 1.27.0
+- Node.js >= 18.x
+- Python 3.10+
 
-## Installation
+## Clone the Repository
 
 ```bash
 git clone https://github.com/your-org/mcp-crawl4ai-rag.git
 cd mcp-crawl4ai-rag
-npm install --prefix archon-ui-main
-pip install -r requirements.txt
+git checkout feature/docusauraus
 ```
 
-## Running the Project
+## Project Structure
 
 ```bash
-docker compose up -d
-# Services:
-# - backend: FastAPI + MCP
-# - frontend: React WebSocket UI
-# - vector-store: Elasticsearch
+tree -L 2 .
 ```
 
-## Architecture Overview
+```text
+.
+├── src/                   # Python server source code
+├── archon-ui-main/        # React frontend source
+├── docs/                  # Docusaurus documentation
+│   └── docs/              # Markdown content
+├── docker-compose.yml     # Local development services
+└── Dockerfile             # Server Dockerfile
+```
+
+## Environment Variables
+
+| Variable                  | Description                                   | Default                   |
+|---------------------------|-----------------------------------------------|---------------------------|
+| SUPABASE_URL              | Supabase API endpoint                         | –                         |
+| SUPABASE_SERVICE_KEY      | Supabase service role key                     | –                         |
+| HOST                      | Backend host                                  | `localhost`               |
+| PORT                      | Backend port                                  | `8051`                    |
+| VITE_API_URL              | Frontend API URL                              | `http://localhost:8080`   |
+
+## Running Locally
+
+Start backend, frontend, and docs:
+
+```bash
+docker-compose up --build
+```
+
+Access:
+
+- Backend API: `http://localhost:8080`
+- Frontend UI: `http://localhost:3737`
+- Docs site : `http://localhost:3838`
+
+## Architecture Diagram
 
 ```mermaid
-flowchart LR
-  subgraph Backend
-    A[FastAPI Server]
-    B[MCP Task Layer]
-    C[Vector Store]
-  end
-  subgraph Frontend
-    D[React App]
-  end
-  A --> B --> C
-  D <-- WebSockets --> A
+graph LR
+  A[Browser] --> B(React UI)
+  B --> C[Backend API]
+  C --> D[MCP Controller]
+  C --> E[Vector Store]
+  E --> F[OpenAI]
 ```

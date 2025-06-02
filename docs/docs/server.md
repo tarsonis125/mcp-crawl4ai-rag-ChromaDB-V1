@@ -1,34 +1,45 @@
----
-id: server
-title: Server Architecture
-sidebar_label: Server
----
+# Server
 
-# Server Architecture
+The **server** is built with FastAPI, exposing REST endpoints and managing RAG and MCP logic.
 
-The backend is built with **FastAPI** and integrated with the **MCP** task framework.
+## Directory Layout
 
-## Directory Structure
-
+```bash
+tree src -L 2
 ```
+
+```text
 src/
-├── main.py            # entrypoint
-├── crawl4ai_mcp.py    # MCP tool definitions
-├── api/               # REST endpoints
-└── services/          # business logic
+├── startup.py           # Application entrypoint
+├── api/                 # FastAPI routers
+│   └── mcp.py
+├── core/                # Core business logic
+├── services/            # External integrations (vector store, supabase)
+└── mcp/                 # MCP decorators and tools
 ```
 
-## Key Components
+## Key Environment Variables
 
-- **FastAPI App**: Defines REST & WebSocket endpoints
-- **MCP Layer**: Decorators (@mcp.tool) for async task orchestration
+| Variable                  | Description                                 |
+|---------------------------|---------------------------------------------|
+| HOST                      | Host for FastAPI                            |
+| PORT                      | Port for FastAPI                            |
+| MODEL_CHOICE              | Default LLM model choice                    |
 
-```python
-from mcp import MCP
-mcp = MCP()
+## Starting the Server
 
-@mcp.tool()
-def crawl_and_index(params: dict) -> dict:
-    """Crawl pages and index embeddings"""
-    # ... implementation
+```bash
+uvicorn startup:app --host $HOST --port $PORT
 ```
+
+## Request Flow
+
+```mermaid
+sequenceDiagram
+  Browser->>API: HTTP Request
+  API->>MCP: @mcp.tool decorator
+  API->>RAG: retrieve & generate
+  API-->>Browser: JSON Response
+```
+
+For details on endpoints, see the [API Reference](api-reference).

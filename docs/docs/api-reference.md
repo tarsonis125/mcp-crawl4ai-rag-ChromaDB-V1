@@ -1,26 +1,31 @@
----
-id: api-reference
-title: API Reference
-sidebar_label: API Reference
----
-
 # API Reference
 
-## REST Endpoints
+Comprehensive reference of HTTP endpoints.
 
-| Method | Path                 | Description                         |
-| ------ | -------------------- | ----------------------------------- |
-| GET    | /docs/openapi.json   | OpenAPI schema                     |
-| POST   | /api/crawl           | Trigger crawl task                 |
-| GET    | /api/status/{task_id}| Check status of MCP task           |
+## Status
 
-## WebSocket API
-
-**URL**: `ws://localhost:3838/ws`
+- **GET** `/api/mcp/status`
+  - Returns health and version
 
 ```json
-{
-  "action": "start_crawl",
-  "payload": { "seedUrl": "https://example.com" }
-}
+{ "status": "ok", "version": "1.0.0" }
 ```
+
+## RAG Endpoint
+
+- **POST** `/api/mcp/query`
+  - Body: `{ "query": "Your question" }`
+  - Response: `{ "answer": "..." }`
+
+```bash
+curl -X POST http://localhost:8080/api/mcp/query \
+     -H 'Content-Type: application/json' \
+     -d '{"query":"What is MCP?"}'
+```
+
+## Task Management
+
+- **POST** `/api/mcp/task` - Create a new task
+- **GET** `/api/mcp/task/{id}` - Query task status
+
+Refer to [MCP Reference](mcp-reference) for payload schemas.

@@ -1,25 +1,31 @@
----
-id: tasks
-title: Archon Tasks
-sidebar_label: Tasks
----
+# Tasks
 
-# Archon Tasks
+Define and schedule MCP tasks.
 
-Tasks are defined via `@mcp.tool()` decorators.
-
-## Example
+## Creating a Task
 
 ```python
-@mcp.tool(name="summarize_page")
-def summarize(url: str) -> str:
-    """Fetch and summarize page"""
+from mcp import task
+
+@task(name="daily-summary", schedule="0 0 * * *")
+def daily_summary():
     # ...
 ```
 
-## Scheduling
+## Viewing Tasks
 
-Use MCP CLI or REST to schedule periodic tasks.
+- GET `/api/mcp/tasks`
+- GET `/api/mcp/task/{id}`
+
+## Workflow Diagram
+
+```mermaid
+flowchart LR
+  subgraph Scheduler
+    A[Task Registry] --> B[Trigger Engine]
+  end
+  B --> C[Worker]
+  C --> D[API]
 ```
-mcp schedule summarize_page --cron "0 * * * *"
-```
+
+Dive into [MCP Reference](mcp-reference) for decorator usage.

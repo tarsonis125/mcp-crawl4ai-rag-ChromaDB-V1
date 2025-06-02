@@ -1,25 +1,33 @@
----
-id: rag
-title: Retrieval-Augmented Generation (RAG)
-sidebar_label: RAG
----
+# RAG (Retrieval-Augmented Generation)
 
-# RAG Overview
+Combines vector retrieval with LLM generation.
 
-The RAG pipeline enriches LLM responses with real-time retrieved documents.
-
-## Components
-
-1. **Vector Store** (Elasticsearch)
-2. **Embeddings** (OpenAI)
-3. **Retrieval**
-4. **Generation**
+## Pipeline Overview
 
 ```mermaid
-flowchart LR
-  TextInput -->|embed| Embeddings
-  Embeddings -->|store| VectorStore
-  Query -->|search| VectorStore
-  Docs -->|context| LLM
-  LLM -->|response| TextOutput
+sequenceDiagram
+  User->>API: query
+  API->>VectorStore: retrieve docs
+  VectorStore-->>API: embeddings
+  API->>LLM: generate answer
+  LLM-->>API: answer
+  API-->>User: response
+```
+
+## Configuration
+
+| Env Var                   | Purpose                          | Default |
+|---------------------------|----------------------------------|---------|
+| USE_CONTEXTUAL_EMBEDDINGS | Toggle contextual embeddings      | false   |
+| USE_HYBRID_SEARCH         | Hybrid BM25 + vector search      | false   |
+
+## Code Snippet
+
+```python
+from services.vector import retrieve
+from services.llm import generate
+
+def rag_query(query: str) -> str:
+    docs = retrieve(query)
+    return generate(query, docs)
 ```

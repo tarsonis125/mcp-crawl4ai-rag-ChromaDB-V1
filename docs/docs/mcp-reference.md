@@ -1,27 +1,30 @@
----
-id: mcp-reference
-title: MCP Reference
-sidebar_label: MCP Reference
----
-
 # MCP Reference
 
-The **MCP** (Modular Computing Platform) provides decorators and an event-driven task execution model.
+The **Modular Control Plane (MCP)** provides task orchestration via decorators.
 
-## Tool Decorators
+## @mcp.tool Decorator
 
-- `@mcp.tool()` - defines a task
-- `mcp.trigger(task_name, params)` - invoke tasks programmatically
+Wrap functions as callable tools:
 
-## Event Loop
+```python
+from mcp import tool
+
+@tool(name="summarize")
+def summarize_text(text: str) -> str:
+    return text[:100]
+```
+
+## Tool Registration
+
+All decorated functions auto-register on startup.
+
+## Data Flow
 
 ```mermaid
-sequenceDiagram
-    participant API
-    participant MCP
-    participant Worker
-    API->>MCP: trigger('crawl_and_index')
-    MCP->>Worker: schedule task
-    Worker-->>MCP: result
-    MCP-->>API: return result
-```
+graph TD
+  A[Client] --> B[API: tool dispatch]
+  B --> C[Function execution]
+  C --> D[Result]
+``` 
+
+See [Tasks](tasks) for scheduling examples.

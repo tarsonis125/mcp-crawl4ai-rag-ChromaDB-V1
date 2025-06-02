@@ -1,29 +1,42 @@
----
-id: ui
-title: Frontend UI
-sidebar_label: UI
----
+# UI
 
-# Frontend UI
+Built with React and Vite.
 
-Built with **React** and **WebSockets**.
+## Directory Structure
 
-## Structure
-
+```bash
+tree archon-ui-main/src -L 2
 ```
-archon-ui-main/src/
+
+```text
+src/
 ├── components/
+├── pages/
 ├── hooks/
-└── App.tsx
+└── App.jsx
 ```
 
-## WebSocket Flow
+## Environment Variables
+
+| Variable                  | Description                       |
+|---------------------------|-----------------------------------|
+| VITE_API_URL              | Backend API base URL              |
+
+## Running Locally
+
+```bash
+cd archon-ui-main
+npm install
+npm run dev
+```
+
+## Component Communication
 
 ```mermaid
-sequenceDiagram
-  participant React
-  participant Server
-  React->>Server: open ws
-  React->>Server: {action: 'start_crawl'}
-  Server-->>React: {status updates}
+flowchart LR
+  A[User] --> B[React Form]
+  B --> C[API Call]
+  C --> D[Display Answer]
 ```
+
+See [Getting Started](getting-started) for details.
