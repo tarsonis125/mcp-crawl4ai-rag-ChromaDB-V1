@@ -1344,9 +1344,9 @@ async def upload_document(
         # Generate AI title and description for the document
         try:
             # Get credentials from database for OpenAI API
-            from src.credential_service import get_credential_value
+            from src.credential_service import credential_service
             
-            openai_api_key = await get_credential_value("OPENAI_API_KEY", decrypt=True)
+            openai_api_key = await credential_service.get_credential("OPENAI_API_KEY", decrypt=True)
             if not openai_api_key:
                 raise Exception("OpenAI API key not found in credentials")
             
