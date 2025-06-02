@@ -1,25 +1,13 @@
-FROM python:3.12-slim
-
+# Stage 1: build the Docusaurus site
+FROM node:18-alpine AS builder
 WORKDIR /app
+COPY docs/package*.json ./
+RUN npm ci
+COPY docs ./
+RUN npm run build
 
-# Install uv
-RUN pip install uv
-
-# Copy project files
-COPY pyproject.toml uv.lock ./
-
-# Install dependencies
-RUN pip install -e .[api,test]
-
-# Copy source code
-COPY src/ ./src/
-COPY tests/ ./tests/
-
-# Install the MCP crawl4ai setup
-RUN crawl4ai-setup
-
-# Expose port 8080 for the API wrapper
-EXPOSE 8080
-
-# Command to run the API wrapper
-CMD ["python", "-m", "uvicorn", "src.api_wrapper:app", "--host", "0.0.0.0", "--port", "8080"]
+# Stage 2: serve with nginx
+FROM nginx:alpine
+COPY --from=builder /app/build /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
