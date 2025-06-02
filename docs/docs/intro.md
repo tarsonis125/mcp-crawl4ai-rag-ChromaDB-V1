@@ -1,35 +1,23 @@
 ---
-sidebar_position: 1
+id: intro
+title: Introduction
 ---
 
-# Tutorial Intro
+# MCP-Crawl4AI-RAG
 
-Let's discover **Docusaurus in less than 5 minutes**.
+Welcome to the comprehensive documentation for **MCP-Crawl4AI-RAG**. This open-source project provides:
 
-## Getting Started
+- A **FastAPI** backend with task management via **MCP** and **RAG** features
+- A **React** frontend with **WebSocket** integration
+- A Docker-based setup including docs served on port **3838**
 
-Get started by **creating a new site**.
+## Documentation Sections
 
-Or **try Docusaurus immediately** with **[docusaurus.new](https://docusaurus.new)**.
+- [Architecture & Setup](./architecture)
+- [Backend API](./api)
+- [MCP Components](./mcp_components)
+- [Tasks & Scheduling](./tasks)
+- [RAG Features](./rag)
+- [Frontend UI & WebSockets](./ui)
 
-## Generate a new site
-
-Generate a new Docusaurus site using the **classic template**:
-
-```shell
-npx @docusaurus/init@latest init my-website classic
-```
-
-## Start your site
-
-Run the development server:
-
-```shell
-cd my-website
-
-npx docusaurus start
-```
-
-Your site starts at `http://localhost:3000`.
-
-Open `docs/intro.md` and edit some lines: the site **reloads automatically** and display your changes.
+Enjoy exploring the docs!
