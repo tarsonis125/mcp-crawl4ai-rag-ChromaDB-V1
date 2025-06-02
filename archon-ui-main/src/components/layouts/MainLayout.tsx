@@ -28,11 +28,14 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
   const navigate = useNavigate();
   const [hasShownApiKeyToast, setHasShownApiKeyToast] = useState(false);
 
-  // Check for OpenAI API key on component mount
+  // Check for OpenAI API key on component mount with retry logic
   useEffect(() => {
     if (hasShownApiKeyToast) return; // Don't show multiple times per session
     
-    const checkOpenAIKey = async () => {
+    const checkOpenAIKey = async (retryCount = 0) => {
+      const maxRetries = 3;
+      const retryDelay = 1000; // 1 second delay between retries
+      
       try {
         const credentials = await credentialsService.getCredentialsByCategory('llm_config');
         const openaiKey = credentials.find(cred => cred.key === 'OPENAI_API_KEY');
@@ -51,11 +54,23 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
           document.addEventListener('click', handleToastClick);
         }
       } catch (error) {
-        console.error('Error checking OpenAI API key:', error);
+        console.error(`Error checking OpenAI API key (attempt ${retryCount + 1}):`, error);
+        
+        // Retry if we haven't exceeded max retries
+        if (retryCount < maxRetries) {
+          setTimeout(() => {
+            checkOpenAIKey(retryCount + 1);
+          }, retryDelay * (retryCount + 1)); // Exponential backoff
+        } else {
+          console.warn('Failed to check OpenAI API key after maximum retries');
+        }
       }
     };
 
-    checkOpenAIKey();
+    // Wait a short time before first check to allow backend to initialize
+    setTimeout(() => {
+      checkOpenAIKey();
+    }, 500);
   }, [showToast, navigate, hasShownApiKeyToast]);
 
   return <div className="relative min-h-screen bg-white dark:bg-black overflow-hidden">
