@@ -1,21 +1,37 @@
----
-id: testing
-title: Testing
-sidebar_label: Testing
----
-
 # Testing
 
-## Unit Tests
+Leverages **pytest** for unit and integration tests.
 
-- **Backend**: pytest
-- **Frontend**: Jest + React Testing Library
+## Directory Structure
 
 ```bash
-pytest tests/
-npm test --prefix archon-ui-main
+tree tests -L 2
 ```
 
-## Integration Tests
+```text
+tests/
+├── unit/
+├── integration/
+└── conftest.py
+```
 
-Simulate end-to-end via Docker Compose.
+## Running Tests
+
+```bash
+pytest --cov=src
+```
+
+## Sample Test
+
+```python
+def test_status(client):
+    response = client.get('/api/mcp/status')
+    assert response.json()['status'] == 'ok'
+```
+
+```mermaid
+sequenceDiagram
+  Test->>Client: GET /status
+  Client->>API: invokes
+  API-->>Client: returns ok
+```

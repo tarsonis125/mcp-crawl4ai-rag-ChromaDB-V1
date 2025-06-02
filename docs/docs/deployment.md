@@ -1,29 +1,27 @@
----
-id: deployment
-title: Deployment
-sidebar_label: Deployment
----
-
 # Deployment
+
+Instructions for production deployment.
 
 ## Docker Compose
 
-```yaml
-version: '3.8'
-services:
-  server:
-    build: .
-    ports:
-      - 3838:3838
-  ui:
-    build: archon-ui-main
-    ports:
-      - 3000:3000
-  es:
-    image: elasticsearch:7.17.0
+```bash
+docker-compose -f docker-compose.yml up --build -d
 ```
 
 ## Environment Variables
 
-- `OPENAI_API_KEY`
-- `ES_HOST`
+Use `.env.example` as a template.
+
+## CI/CD Pipeline
+
+- Build Docker images
+- Run Tests
+- Push to registry
+- Deploy to Kubernetes or Docker Swarm
+
+```mermaid
+graph LR
+  BuildCI-->Test
+  Test-->PushRegistry
+  PushRegistry-->Deploy
+```
