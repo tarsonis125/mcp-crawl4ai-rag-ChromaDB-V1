@@ -1,20 +1,39 @@
 module.exports = {
   docs: [
-    'intro',
     {
       type: 'category',
-      label: 'Architecture & Setup',
-      items: ['architecture'],
+      label: 'Getting Started',
+      items: ['getting-started'],
     },
     {
       type: 'category',
-      label: 'Backend',
-      items: ['api', 'mcp_components', 'tasks', 'rag'],
+      label: 'Server & API',
+      items: ['server', 'api-reference'],
+    },
+    {
+      type: 'category',
+      label: 'MCP & Tasks',
+      items: ['mcp-reference', 'tasks'],
+    },
+    {
+      type: 'category',
+      label: 'RAG',
+      items: ['rag'],
     },
     {
       type: 'category',
       label: 'Frontend',
       items: ['ui'],
     },
+    {
+      type: 'category',
+      label: 'Testing',
+      items: ['testing'],
+    },
+    {
+      type: 'category',
+      label: 'Deployment',
+      items: ['deployment'],
+    }
   ],
 };
