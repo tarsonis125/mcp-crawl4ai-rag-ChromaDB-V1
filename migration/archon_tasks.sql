@@ -2,7 +2,10 @@
 create extension if not exists "pgcrypto";
 
 -- Task status enumeration
-create type if not exists task_status as enum ('todo','doing','blocked','done');
+-- Drop existing enum if present
+DROP TYPE IF EXISTS task_status;
+-- Create task_status enum
+CREATE TYPE task_status AS ENUM ('todo','doing','blocked','done');
 
 -- Projects table
 create table if not exists projects (
