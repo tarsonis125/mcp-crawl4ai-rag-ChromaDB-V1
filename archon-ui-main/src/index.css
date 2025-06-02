@@ -158,6 +158,26 @@
     @apply dark:before:shadow-[0_0_20px_5px_rgba(59,130,246,0.7)];
     @apply dark:after:from-blue-500/20 dark:after:to-blue-500/5;
   }
+  /* Hide scrollbar but allow scrolling */
+  .hide-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;  /* Chrome, Safari and Opera */
+  }
+  /* Card flip animations */
+  .flip-card .backface-hidden {
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+  .rotate-y-180 {
+    transform: rotateY(180deg);
+  }
+  .transform-style-preserve-3d {
+    transform-style: preserve-3d;
+    -webkit-transform-style: preserve-3d;
+  }
 }
 /* Animation delays */
 .animation-delay-150 {
