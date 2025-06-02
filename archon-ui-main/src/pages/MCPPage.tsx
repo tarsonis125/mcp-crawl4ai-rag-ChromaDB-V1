@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Play, Square, Copy, Clock, Server, AlertCircle, CheckCircle, Loader, Trash2, Wrench, Code, ExternalLink, PlayCircle, Terminal, Radio } from 'lucide-react';
+import { Play, Square, Copy, Clock, Server, AlertCircle, CheckCircle, Loader, Wrench, Code, ExternalLink, PlayCircle, Terminal } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
