@@ -3,3 +3,4 @@
 __pycache__
 crawl4ai_mcp.egg-info
 .DS_Store
+docs/node_modules/
