@@ -265,7 +265,7 @@ Create or edit `~/.cursor/mcp_servers.json`:
   "mcpServers": {
     "archon": {
       "command": "python",
-      "args": ["/path/to/archon/src/mcp_server.py"],
+      "args": ["/path/to/archon/python/src/mcp_server.py"],
       "env": {
         "SUPABASE_URL": "https://your-project.supabase.co",
         "SUPABASE_SERVICE_KEY": "your-service-key"
@@ -297,7 +297,7 @@ Create or edit `~/.cursor/mcp_servers.json`:
 2. **Navigate to Extensions > MCP**
 3. **Add New Server**:
    - **Name**: Archon Knowledge Engine
-   - **Command**: `python /path/to/archon/src/mcp_server.py`
+   - **Command**: `python /path/to/archon/python/src/mcp_server.py`
    - **Environment Variables**:
      ```
      SUPABASE_URL=https://your-project.supabase.co
@@ -314,7 +314,7 @@ Create or edit `~/.cursor/mcp_servers.json`:
 {
   "archon-knowledge": {
     "command": "python",
-    "args": ["/path/to/archon/src/mcp_server.py"],
+    "args": ["/path/to/archon/python/src/mcp_server.py"],
     "env": {
       "SUPABASE_URL": "https://your-project.supabase.co",
       "SUPABASE_SERVICE_KEY": "your-service-key"
@@ -330,7 +330,7 @@ For other MCP-compatible clients:
 #### Standard I/O Transport
 ```bash
 # Start MCP server
-python /path/to/archon/src/mcp_server.py
+python /path/to/archon/python/src/mcp_server.py
 
 # Or via Docker
 docker run -p 8051:8051 archon-mcp-server
@@ -497,7 +497,7 @@ The MCP server provides real-time notifications when:
 
 ```bash
 # Test MCP server directly
-python src/mcp_server.py --test
+python python/src/mcp_server.py --test
 
 # Test with MCP client simulator
 curl -X POST http://localhost:8080/api/mcp/test \

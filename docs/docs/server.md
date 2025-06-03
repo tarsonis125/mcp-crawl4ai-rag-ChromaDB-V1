@@ -52,24 +52,26 @@ graph TB
 
 ```
 mcp-crawl4ai-rag/
-├── src/                          # Main application source
-│   ├── api_wrapper.py           # FastAPI application entry point
-│   ├── mcp_server.py            # MCP server implementation
-│   ├── config.py                # Configuration management
-│   ├── credential_service.py    # API key and settings management
-│   ├── utils.py                 # Utility functions
-│   └── modules/                 # Feature modules
-│       ├── __init__.py
-│       ├── rag_module.py        # RAG functionality
-│       └── tasks_module.py      # Task management
+├── python/                      # Python backend application
+│   ├── src/                     # Main application source
+│   │   ├── api_wrapper.py       # FastAPI application entry point
+│   │   ├── mcp_server.py        # MCP server implementation
+│   │   ├── config.py            # Configuration management
+│   │   ├── credential_service.py# API key and settings management
+│   │   ├── utils.py             # Utility functions
+│   │   └── modules/             # Feature modules
+│   │       ├── __init__.py
+│   │       ├── rag_module.py    # RAG functionality
+│   │       └── tasks_module.py  # Task management
+│   ├── tests/                   # Backend test suite
+│   ├── Dockerfile               # Backend container configuration
+│   ├── requirements.txt         # Python dependencies
+│   ├── startup.py               # Application startup script
+│   └── pyproject.toml           # Python project configuration
 ├── archon-ui-main/              # React frontend application
 ├── docs/                        # Docusaurus documentation
-├── tests/                       # Test suite
 ├── migration/                   # Database migration scripts
 ├── docker-compose.yml           # Container orchestration
-├── Dockerfile                   # Main application container
-├── requirements.txt             # Python dependencies
-├── startup.py                   # Application startup script
 └── .env                         # Environment configuration
 ```
 
@@ -702,7 +704,7 @@ pip install -r requirements-dev.txt
 uvicorn src.api_wrapper:app --host 0.0.0.0 --port 8080 --reload
 
 # Run MCP server separately for testing
-python src/mcp_server.py
+python python/src/mcp_server.py
 ```
 
 ### Debug Configuration

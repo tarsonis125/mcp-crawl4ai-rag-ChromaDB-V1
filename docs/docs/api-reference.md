@@ -562,7 +562,7 @@ Start the MCP server if not running.
   "port": 8051,
   "status": "running",
   "connection_info": {
-    "stdio_command": "python src/mcp_server.py",
+          "stdio_command": "python python/src/mcp_server.py",
     "sse_endpoint": "http://localhost:8080/api/mcp/sse"
   }
 }

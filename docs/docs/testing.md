@@ -30,32 +30,35 @@ graph TB
 ## 📁 Test Directory Structure
 
 ```
-tests/
-├── unit/                    # Unit tests
-│   ├── test_auth.py
-│   ├── test_vector_store.py
-│   ├── test_mcp_client.py
-│   ├── test_rag_pipeline.py
-│   └── test_utils.py
-├── integration/             # Integration tests
-│   ├── test_api_endpoints.py
-│   ├── test_database.py
-│   ├── test_mcp_server.py
-│   └── test_websockets.py
-├── e2e/                     # End-to-end tests
-│   ├── test_user_flows.py
-│   ├── test_document_upload.py
-│   └── test_chat_interface.py
-├── performance/             # Performance tests
-│   ├── test_load.py
-│   └── test_stress.py
-├── fixtures/                # Test data
-│   ├── sample_documents/
-│   ├── mock_responses/
-│   └── test_data.json
-├── conftest.py             # Pytest configuration
-├── pytest.ini             # Pytest settings
-└── requirements-test.txt   # Test dependencies
+python/
+├── tests/                   # Backend test suite
+│   ├── unit/                # Unit tests
+│   │   ├── test_auth.py
+│   │   ├── test_vector_store.py
+│   │   ├── test_mcp_client.py
+│   │   ├── test_rag_pipeline.py
+│   │   └── test_utils.py
+│   ├── integration/         # Integration tests
+│   │   ├── test_api_endpoints.py
+│   │   ├── test_database.py
+│   │   ├── test_mcp_server.py
+│   │   └── test_websockets.py
+│   ├── e2e/                 # End-to-end tests
+│   │   ├── test_user_flows.py
+│   │   ├── test_document_upload.py
+│   │   └── test_chat_interface.py
+│   ├── performance/         # Performance tests
+│   │   ├── test_load.py
+│   │   └── test_stress.py
+│   ├── fixtures/            # Test data
+│   │   ├── sample_documents/
+│   │   ├── mock_responses/
+│   │   └── test_data.json
+│   ├── conftest.py         # Pytest configuration
+│   └── requirements-test.txt # Test dependencies
+│   └── pytest.ini         # Pytest settings
+├── src/                     # Application source code
+└── pyproject.toml          # Python project configuration
 ```
 
 ## 🚀 Quick Start
@@ -63,6 +66,9 @@ tests/
 ### Prerequisites
 
 ```bash
+# Navigate to python directory
+cd python
+
 # Install test dependencies
 pip install -r requirements-test.txt
 
@@ -73,7 +79,7 @@ pip install -e ".[dev]"
 ### Running Tests
 
 ```bash
-# Run all tests
+# Run all tests (from python/ directory)
 pytest
 
 # Run with coverage
@@ -93,7 +99,7 @@ pytest -m "database"       # Run database tests only
 ### Test Configuration
 
 ```ini
-# pytest.ini
+# python/pytest.ini
 [tool:pytest]
 minversion = 6.0
 addopts = 
@@ -122,7 +128,7 @@ markers =
 ### conftest.py
 
 ```python
-# tests/conftest.py
+# python/tests/conftest.py
 import pytest
 import asyncio
 from fastapi.testclient import TestClient
@@ -181,7 +187,8 @@ def client(db_session):
 @pytest.fixture
 def mock_openai():
     """Mock OpenAI API calls."""
-    with patch("openai.Embedding.create") as mock_embed,          patch("openai.ChatCompletion.create") as mock_chat:
+    with patch("openai.Embedding.create") as mock_embed, \
+         patch("openai.ChatCompletion.create") as mock_chat:
 
         mock_embed.return_value = {
             "data": [{"embedding": [0.1] * 1536}]
@@ -227,7 +234,7 @@ def sample_document():
 ### Authentication Tests
 
 ```python
-# tests/unit/test_auth.py
+# python/tests/unit/test_auth.py
 import pytest
 from unittest.mock import patch, Mock
 from src.auth import create_access_token, verify_token, hash_password, verify_password
@@ -252,7 +259,7 @@ class TestAuthentication:
 
     def test_verify_token_invalid(self):
         """Test token verification with invalid token."""
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             verify_token("invalid.token.here")
 
     def test_password_hashing(self):
@@ -261,97 +268,109 @@ class TestAuthentication:
         hashed = hash_password(password)
 
         assert hashed != password
-        assert verify_password(password, hashed)
-        assert not verify_password("wrong_password", hashed)
+        assert verify_password(password, hashed) is True
+        assert verify_password("wrong_password", hashed) is False
 ```
 
 ### Vector Store Tests
 
 ```python
-# tests/unit/test_vector_store.py
+# python/tests/unit/test_vector_store.py
 import pytest
+import numpy as np
 from unittest.mock import Mock, patch
-from src.services.vector_store import VectorStore, embed_text, similarity_search
+from src.vector_store import VectorStore, generate_embedding, search_similar
 
 class TestVectorStore:
 
     @pytest.fixture
     def vector_store(self, mock_supabase):
+        """Create vector store instance with mocked dependencies."""
         return VectorStore(client=mock_supabase)
 
-    @patch("src.services.vector_store.openai")
-    def test_embed_text(self, mock_openai):
-        """Test text embedding generation."""
-        mock_openai.Embedding.create.return_value = {
-            "data": [{"embedding": [0.1, 0.2, 0.3]}]
-        }
-
-        embedding = embed_text("test text")
+    def test_generate_embedding(self, mock_openai):
+        """Test embedding generation."""
+        text = "This is a test document"
+        embedding = generate_embedding(text)
 
         assert isinstance(embedding, list)
-        assert len(embedding) == 3
-        assert embedding == [0.1, 0.2, 0.3]
+        assert len(embedding) == 1536
+        assert all(isinstance(x, float) for x in embedding)
 
-    def test_store_document(self, vector_store, sample_document, mock_openai):
-        """Test document storage in vector store."""
-        result = vector_store.store_document(sample_document)
+    def test_search_similar(self, vector_store, mock_supabase):
+        """Test similarity search."""
+        query_embedding = [0.1] * 1536
+        
+        # Mock database response
+        mock_supabase.rpc.return_value.execute.return_value = {
+            "data": [
+                {
+                    "id": 1,
+                    "content": "Similar document",
+                    "similarity": 0.95
+                }
+            ]
+        }
 
-        assert result["success"] is True
-        assert "id" in result
+        results = vector_store.search_similar(query_embedding, limit=5)
 
-    def test_similarity_search(self, vector_store, mock_openai):
-        """Test similarity search functionality."""
-        query = "test query"
-        results = vector_store.similarity_search(query, limit=5)
-
-        assert isinstance(results, list)
-        assert len(results) <= 5
+        assert len(results) == 1
+        assert results[0]["similarity"] >= 0.9
+        mock_supabase.rpc.assert_called_once()
 ```
 
 ### RAG Pipeline Tests
 
 ```python
-# tests/unit/test_rag_pipeline.py
+# python/tests/unit/test_rag_pipeline.py
 import pytest
 from unittest.mock import Mock, patch
-from src.services.rag import RAGPipeline, generate_response
+from src.rag_pipeline import RAGPipeline, process_query, chunk_document
 
 class TestRAGPipeline:
 
     @pytest.fixture
     def rag_pipeline(self, mock_supabase, mock_openai):
+        """Create RAG pipeline with mocked dependencies."""
         return RAGPipeline(
-            vector_store=mock_supabase,
-            llm_client=mock_openai
+            vector_store=Mock(),
+            llm_client=Mock()
         )
 
-    def test_retrieve_context(self, rag_pipeline):
-        """Test context retrieval for RAG."""
+    def test_chunk_document(self):
+        """Test document chunking."""
+        document = "This is a long document. " * 100
+        chunks = chunk_document(document, chunk_size=200, overlap=50)
+
+        assert len(chunks) > 1
+        assert all(len(chunk) <= 250 for chunk in chunks)  # 200 + overlap
+        assert len(chunks[0]) >= 200
+
+    def test_process_query(self, rag_pipeline):
+        """Test query processing."""
         query = "What is machine learning?"
-        context = rag_pipeline.retrieve_context(query)
+        
+        # Mock vector search results
+        rag_pipeline.vector_store.search_similar.return_value = [
+            {
+                "content": "Machine learning is a subset of AI...",
+                "similarity": 0.9
+            }
+        ]
 
-        assert isinstance(context, list)
-        assert len(context) > 0
+        # Mock LLM response
+        rag_pipeline.llm_client.chat.return_value = {
+            "choices": [{
+                "message": {
+                    "content": "Machine learning is a method of data analysis..."
+                }
+            }]
+        }
 
-    def test_generate_response(self, rag_pipeline):
-        """Test response generation with context."""
-        query = "What is machine learning?"
-        context = ["Machine learning is a subset of AI..."]
+        response = rag_pipeline.process_query(query)
 
-        response = rag_pipeline.generate_response(query, context)
-
-        assert isinstance(response, str)
-        assert len(response) > 0
-
-    def test_full_rag_pipeline(self, rag_pipeline):
-        """Test complete RAG pipeline."""
-        query = "What is machine learning?"
-        result = rag_pipeline.query(query)
-
-        assert "answer" in result
-        assert "sources" in result
-        assert isinstance(result["answer"], str)
-        assert isinstance(result["sources"], list)
+        assert "machine learning" in response.lower()
+        rag_pipeline.vector_store.search_similar.assert_called_once()
 ```
 
 ## 🔗 Integration Tests
@@ -359,118 +378,181 @@ class TestRAGPipeline:
 ### API Endpoint Tests
 
 ```python
-# tests/integration/test_api_endpoints.py
+# python/tests/integration/test_api_endpoints.py
 import pytest
+import json
 from fastapi.testclient import TestClient
 
-class TestAPIEndpoints:
-
-    def test_health_check(self, client):
-        """Test health check endpoint."""
-        response = client.get("/health")
-
-        assert response.status_code == 200
-        assert response.json()["status"] == "healthy"
+class TestKnowledgeAPI:
 
     def test_upload_document(self, client):
         """Test document upload endpoint."""
-        files = {"file": ("test.txt", "Test content", "text/plain")}
-        response = client.post("/api/documents/upload", files=files)
+        test_file = ("test.txt", "This is test content", "text/plain")
+        
+        response = client.post(
+            "/api/documents/upload",
+            files={"file": test_file},
+            data={"knowledge_type": "technical"}
+        )
 
         assert response.status_code == 200
         data = response.json()
+        assert data["filename"] == "test.txt"
         assert "document_id" in data
-        assert data["status"] == "uploaded"
 
-    def test_chat_endpoint(self, client, mock_openai):
-        """Test chat endpoint with RAG."""
-        payload = {
-            "message": "What is machine learning?",
-            "conversation_id": "test-conv-123"
-        }
+    def test_search_knowledge(self, client, sample_document):
+        """Test knowledge search endpoint."""
+        # First upload a document
+        test_file = ("sample.txt", sample_document["content"], "text/plain")
+        upload_response = client.post(
+            "/api/documents/upload",
+            files={"file": test_file},
+            data={"knowledge_type": "technical"}
+        )
+        assert upload_response.status_code == 200
 
-        response = client.post("/api/chat", json=payload)
+        # Then search for it
+        search_response = client.post(
+            "/api/rag/query",
+            json={
+                "query": "test document",
+                "limit": 5
+            }
+        )
+
+        assert search_response.status_code == 200
+        data = search_response.json()
+        assert "results" in data
+        assert len(data["results"]) > 0
+
+    def test_list_documents(self, client):
+        """Test document listing endpoint."""
+        response = client.get("/api/knowledge-items")
 
         assert response.status_code == 200
         data = response.json()
-        assert "response" in data
-        assert "sources" in data
+        assert "items" in data
+        assert "total" in data
 
-    def test_mcp_status(self, client):
-        """Test MCP server status endpoint."""
-        response = client.get("/api/mcp/status")
+    def test_delete_document(self, client):
+        """Test document deletion."""
+        # Upload a document first
+        test_file = ("delete_test.txt", "Content to delete", "text/plain")
+        upload_response = client.post(
+            "/api/documents/upload",
+            files={"file": test_file}
+        )
+        
+        document_id = upload_response.json()["document_id"]
 
-        assert response.status_code == 200
-        data = response.json()
-        assert "status" in data
-        assert "tools" in data
-
-    def test_task_creation(self, client):
-        """Test task creation endpoint."""
-        payload = {
-            "title": "Test Task",
-            "description": "A test task for integration testing",
-            "priority": "medium"
-        }
-
-        response = client.post("/api/tasks", json=payload)
-
-        assert response.status_code == 201
-        data = response.json()
-        assert data["title"] == "Test Task"
-        assert "task_id" in data
+        # Delete the document
+        delete_response = client.delete(f"/api/knowledge-items/{document_id}")
+        
+        assert delete_response.status_code == 200
+        assert "deleted" in delete_response.json()["message"].lower()
 ```
 
-### WebSocket Tests
+### Database Tests
 
 ```python
-# tests/integration/test_websockets.py
+# python/tests/integration/test_database.py
+import pytest
+from src.database import get_supabase_client, create_tables, insert_document
+
+class TestDatabase:
+
+    def test_supabase_connection(self):
+        """Test Supabase connection."""
+        client = get_supabase_client()
+        
+        # Test basic operation
+        response = client.table("crawled_pages").select("*").limit(1).execute()
+        assert "data" in response
+
+    def test_insert_document(self, sample_document):
+        """Test document insertion."""
+        client = get_supabase_client()
+        
+        result = insert_document(
+            client=client,
+            content=sample_document["content"],
+            metadata=sample_document["metadata"],
+            embedding=[0.1] * 1536
+        )
+
+        assert result["success"] is True
+        assert "id" in result
+
+    def test_vector_search(self):
+        """Test vector similarity search."""
+        client = get_supabase_client()
+        
+        query_embedding = [0.1] * 1536
+        
+        response = client.rpc(
+            "match_crawled_pages",
+            {
+                "query_embedding": query_embedding,
+                "match_count": 5,
+                "filter": {}
+            }
+        ).execute()
+
+        assert "data" in response
+        assert isinstance(response["data"], list)
+```
+
+### MCP Server Tests
+
+```python
+# python/tests/integration/test_mcp_server.py
 import pytest
 import asyncio
-from fastapi.testclient import TestClient
-from fastapi import WebSocket
+import json
+from unittest.mock import Mock
+from src.mcp_server import MCPServer
 
-class TestWebSockets:
+class TestMCPServer:
 
-    def test_websocket_connection(self, client):
-        """Test WebSocket connection establishment."""
-        with client.websocket_connect("/ws") as websocket:
-            data = websocket.receive_json()
-            assert data["type"] == "connection_established"
+    @pytest.fixture
+    async def mcp_server(self):
+        """Create MCP server instance."""
+        server = MCPServer()
+        await server.initialize()
+        return server
 
-    def test_websocket_chat(self, client, mock_openai):
-        """Test real-time chat via WebSocket."""
-        with client.websocket_connect("/ws") as websocket:
-            # Send message
-            websocket.send_json({
-                "type": "chat_message",
-                "message": "Hello, AI!"
-            })
+    @pytest.mark.asyncio
+    async def test_search_tool(self, mcp_server):
+        """Test MCP search tool."""
+        request = {
+            "tool": "search_knowledge",
+            "arguments": {
+                "query": "test query",
+                "limit": 5
+            }
+        }
 
-            # Receive response
-            response = websocket.receive_json()
-            assert response["type"] == "chat_response"
-            assert "message" in response
+        response = await mcp_server.call_tool(request)
 
-    def test_websocket_task_updates(self, client):
-        """Test task status updates via WebSocket."""
-        with client.websocket_connect("/ws") as websocket:
-            # Subscribe to task updates
-            websocket.send_json({
-                "type": "subscribe",
-                "channel": "task_updates"
-            })
+        assert response["success"] is True
+        assert "results" in response
 
-            # Create a task (this should trigger an update)
-            task_response = client.post("/api/tasks", json={
-                "title": "WebSocket Test Task",
-                "description": "Testing WebSocket notifications"
-            })
+    @pytest.mark.asyncio
+    async def test_create_task_tool(self, mcp_server):
+        """Test MCP task creation tool."""
+        request = {
+            "tool": "create_task",
+            "arguments": {
+                "title": "Test Task",
+                "description": "This is a test task",
+                "project_id": "test-project"
+            }
+        }
 
-            # Receive task update notification
-            update = websocket.receive_json()
-            assert update["type"] == "task_created"
-            assert "task_id" in update
+        response = await mcp_server.call_tool(request)
+
+        assert response["success"] is True
+        assert response["task"]["title"] == "Test Task"
 ```
 
 ## 🌐 End-to-End Tests
@@ -478,7 +560,7 @@ class TestWebSockets:
 ### User Flow Tests
 
 ```python
-# tests/e2e/test_user_flows.py
+# python/tests/e2e/test_user_flows.py
 import pytest
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -489,78 +571,71 @@ class TestUserFlows:
 
     @pytest.fixture(scope="class")
     def driver(self):
-        """Setup Selenium WebDriver."""
+        """Create web driver instance."""
         options = webdriver.ChromeOptions()
         options.add_argument("--headless")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-
         driver = webdriver.Chrome(options=options)
         driver.implicitly_wait(10)
         yield driver
         driver.quit()
 
     def test_complete_document_workflow(self, driver):
-        """Test complete document upload and query workflow."""
+        """Test complete document upload and search workflow."""
         # Navigate to application
         driver.get("http://localhost:3737")
 
         # Upload document
-        upload_input = driver.find_element(By.CSS_SELECTOR, "input[type='file']")
-        upload_input.send_keys("/path/to/test/document.pdf")
-
-        upload_button = driver.find_element(By.CSS_SELECTOR, "button[data-testid='upload-btn']")
+        upload_button = driver.find_element(By.TEXT, "Upload Document")
         upload_button.click()
 
-        # Wait for upload confirmation
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, ".upload-success"))
+        file_input = driver.find_element(By.CSS_SELECTOR, "input[type='file']")
+        file_input.send_keys("/path/to/test/document.pdf")
+
+        submit_button = driver.find_element(By.TEXT, "Upload")
+        submit_button.click()
+
+        # Wait for upload completion
+        WebDriverWait(driver, 30).until(
+            EC.presence_of_element_located((By.TEXT, "Upload successful"))
         )
 
-        # Navigate to chat
-        chat_link = driver.find_element(By.CSS_SELECTOR, "a[href='/chat']")
-        chat_link.click()
+        # Search for uploaded document
+        search_input = driver.find_element(By.CSS_SELECTOR, "input[placeholder*='Search']")
+        search_input.send_keys("test document content")
+        search_input.submit()
 
-        # Send query
-        chat_input = driver.find_element(By.CSS_SELECTOR, "input[data-testid='chat-input']")
-        chat_input.send_keys("What is the main topic of the uploaded document?")
-
-        send_button = driver.find_element(By.CSS_SELECTOR, "button[data-testid='send-btn']")
-        send_button.click()
-
-        # Wait for response
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, ".chat-response"))
+        # Verify search results
+        results = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CLASS_NAME, "search-results"))
         )
 
-        response = driver.find_element(By.CSS_SELECTOR, ".chat-response")
-        assert len(response.text) > 0
+        assert len(results.find_elements(By.CLASS_NAME, "result-item")) > 0
 
-    def test_task_management_workflow(self, driver):
-        """Test task creation and management workflow."""
-        driver.get("http://localhost:3737/tasks")
+    def test_mcp_connection_workflow(self, driver):
+        """Test MCP connection setup workflow."""
+        driver.get("http://localhost:3737")
 
-        # Create new task
-        new_task_btn = driver.find_element(By.CSS_SELECTOR, "button[data-testid='new-task-btn']")
-        new_task_btn.click()
+        # Navigate to MCP settings
+        settings_link = driver.find_element(By.TEXT, "Settings")
+        settings_link.click()
 
-        # Fill task form
-        title_input = driver.find_element(By.CSS_SELECTOR, "input[name='title']")
-        title_input.send_keys("E2E Test Task")
+        mcp_tab = driver.find_element(By.TEXT, "MCP Server")
+        mcp_tab.click()
 
-        description_input = driver.find_element(By.CSS_SELECTOR, "textarea[name='description']")
-        description_input.send_keys("This is a test task created during E2E testing")
+        # Start MCP server
+        start_button = driver.find_element(By.TEXT, "Start MCP Server")
+        start_button.click()
 
-        create_btn = driver.find_element(By.CSS_SELECTOR, "button[data-testid='create-task-btn']")
-        create_btn.click()
-
-        # Verify task appears in list
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.XPATH, "//div[contains(text(), 'E2E Test Task')]"))
+        # Wait for server to start
+        status_indicator = WebDriverWait(driver, 15).until(
+            EC.text_to_be_present_in_element(
+                (By.CLASS_NAME, "server-status"), "Running"
+            )
         )
 
-        task_element = driver.find_element(By.XPATH, "//div[contains(text(), 'E2E Test Task')]")
-        assert task_element.is_displayed()
+        # Verify connection info is displayed
+        connection_info = driver.find_element(By.CLASS_NAME, "connection-info")
+        assert "stdio" in connection_info.text.lower()
 ```
 
 ## ⚡ Performance Tests
@@ -568,7 +643,7 @@ class TestUserFlows:
 ### Load Testing
 
 ```python
-# tests/performance/test_load.py
+# python/tests/performance/test_load.py
 import pytest
 import asyncio
 import aiohttp
@@ -577,44 +652,34 @@ from concurrent.futures import ThreadPoolExecutor
 
 class TestLoadPerformance:
 
-    @pytest.mark.slow
-    async def test_concurrent_chat_requests(self):
-        """Test system performance under concurrent chat requests."""
-        base_url = "http://localhost:8080"
-        num_requests = 50
-
-        async def make_chat_request(session, request_id):
-            payload = {
-                "message": f"Test message {request_id}",
-                "conversation_id": f"test-conv-{request_id}"
-            }
-
-            start_time = time.time()
-            async with session.post(f"{base_url}/api/chat", json=payload) as response:
-                await response.json()
-                end_time = time.time()
-                return end_time - start_time
+    @pytest.mark.asyncio
+    async def test_api_concurrent_requests(self):
+        """Test API performance under concurrent load."""
+        async def make_request(session, url):
+            async with session.get(url) as response:
+                return await response.json()
 
         async with aiohttp.ClientSession() as session:
-            tasks = [make_chat_request(session, i) for i in range(num_requests)]
-            response_times = await asyncio.gather(*tasks)
+            tasks = []
+            for _ in range(50):  # 50 concurrent requests
+                task = make_request(session, "http://localhost:8080/api/knowledge-items")
+                tasks.append(task)
 
-        # Performance assertions
-        avg_response_time = sum(response_times) / len(response_times)
-        max_response_time = max(response_times)
+            start_time = time.time()
+            responses = await asyncio.gather(*tasks)
+            end_time = time.time()
 
-        assert avg_response_time < 2.0  # Average response under 2 seconds
-        assert max_response_time < 5.0  # No request takes more than 5 seconds
-        assert len(response_times) == num_requests  # All requests completed
+            # All requests should complete within 10 seconds
+            assert end_time - start_time < 10
+            # All responses should be successful
+            assert all("items" in response for response in responses)
 
-    @pytest.mark.slow
     def test_document_upload_performance(self):
-        """Test document upload performance with large files."""
+        """Test document upload performance."""
         import requests
 
-        # Create a large test file (1MB)
-        test_content = "A" * (1024 * 1024)  # 1MB of 'A' characters
-
+        # Create a test document
+        test_content = "This is test content. " * 1000  # ~20KB
         files = {"file": ("large_test.txt", test_content, "text/plain")}
 
         start_time = time.time()
@@ -625,6 +690,38 @@ class TestLoadPerformance:
 
         assert response.status_code == 200
         assert upload_time < 10.0  # Upload should complete within 10 seconds
+
+    @pytest.mark.asyncio
+    async def test_search_performance(self):
+        """Test search performance with multiple queries."""
+        queries = [
+            "machine learning",
+            "artificial intelligence", 
+            "data science",
+            "python programming",
+            "web development"
+        ]
+
+        async def search_query(session, query):
+            payload = {"query": query, "limit": 10}
+            async with session.post(
+                "http://localhost:8080/api/rag/query",
+                json=payload
+            ) as response:
+                return await response.json()
+
+        async with aiohttp.ClientSession() as session:
+            start_time = time.time()
+            
+            tasks = [search_query(session, query) for query in queries]
+            results = await asyncio.gather(*tasks)
+            
+            end_time = time.time()
+
+            # All searches should complete within 5 seconds
+            assert end_time - start_time < 5.0
+            # All searches should return results
+            assert all("results" in result for result in results)
 ```
 
 ## 🔍 Test Coverage & Reporting
@@ -632,13 +729,13 @@ class TestLoadPerformance:
 ### Coverage Configuration
 
 ```ini
-# .coveragerc
+# python/.coveragerc
 [run]
 source = src
 omit = 
-    src/migrations/*
-    src/tests/*
-    src/config.py
+    python/src/migrations/*
+    python/tests/*
+    python/src/config.py
     */venv/*
     */virtualenv/*
 
@@ -649,7 +746,7 @@ exclude_lines =
     raise AssertionError
     raise NotImplementedError
     if __name__ == .__main__.:
-    class .*Protocol\):
+    class .*Protocol\):
     @(abc\.)?abstractmethod
 
 [html]
@@ -659,6 +756,9 @@ directory = htmlcov
 ### Generating Reports
 
 ```bash
+# Navigate to python directory first
+cd python
+
 # Generate coverage report
 pytest --cov=src --cov-report=html --cov-report=term
 
@@ -712,15 +812,18 @@ jobs:
 
     - name: Install dependencies
       run: |
+        cd python
         python -m pip install --upgrade pip
         pip install -r requirements-test.txt
 
     - name: Run unit tests
       run: |
+        cd python
         pytest tests/unit/ --cov=src --cov-report=xml
 
     - name: Run integration tests
       run: |
+        cd python
         pytest tests/integration/ --cov=src --cov-append --cov-report=xml
       env:
         DATABASE_URL: postgresql://postgres:postgres@localhost/test_db
@@ -728,7 +831,7 @@ jobs:
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
       with:
-        file: ./coverage.xml
+        file: ./python/coverage.xml
         flags: unittests
         name: codecov-umbrella
 ```
@@ -782,6 +885,9 @@ def test_text_processing(input_text, expected_length):
 ### Common Issues
 
 ```bash
+# Navigate to python directory first
+cd python
+
 # Run tests with verbose output
 pytest -v
 
@@ -801,10 +907,55 @@ pytest --tb=long
 # Create isolated test environment
 python -m venv test_env
 source test_env/bin/activate
+cd python
 pip install -r requirements-test.txt
 
 # Run tests with environment variables
 TEST_DATABASE_URL=sqlite:///test.db pytest
+```
+
+## 🔧 Docker Testing
+
+### Running Tests in Docker
+
+```bash
+# Build and run tests in Docker
+docker-compose run --rm backend pytest
+
+# Run specific test suite
+docker-compose run --rm backend pytest tests/unit/
+
+# Run with coverage
+docker-compose run --rm backend pytest --cov=src --cov-report=html
+```
+
+### Test Database Setup
+
+```yaml
+# docker-compose.test.yml
+version: '3.8'
+
+services:
+  test-db:
+    image: postgres:13
+    environment:
+      POSTGRES_DB: test_archon
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+    ports:
+      - "5433:5432"
+
+  backend-test:
+    build: ./python
+    depends_on:
+      - test-db
+    environment:
+      - DATABASE_URL=postgresql://test_user:test_password@test-db:5432/test_archon
+      - TESTING=true
+    command: pytest --cov=src --cov-report=xml
+    volumes:
+      - ./python/tests:/app/tests
+      - ./python/src:/app/src
 ```
 
 ---
