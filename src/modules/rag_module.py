@@ -441,26 +441,74 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
         
         await report_progress('storing', 80, 'Storing content in database...')
         
-        # Store documents in Supabase
-        chunks_stored = await add_documents_to_supabase(supabase_client, all_documents)
+        # Prepare data for Supabase insertion
+        urls = [doc['url'] for doc in all_documents]
+        chunk_numbers = [doc['chunk_index'] for doc in all_documents]  # Keep 0-based indexing like original
+        contents = [doc['content'] for doc in all_documents]
+        metadatas = [doc['metadata'] for doc in all_documents]
+        url_to_full_document = {}
+        
+        # Build url_to_full_document mapping from results
+        for page_result in results:
+            url_to_full_document[page_result['url']] = page_result['markdown']
+        
+        # Track sources and their content for source info creation (BEFORE document insertion)
+        source_content_map = {}
+        source_word_counts = {}
+        
+        # Calculate word counts per source
+        for doc in all_documents:
+            source_id = doc['metadata']['source_id']
+            word_count = doc['metadata']['word_count']
+            
+            if source_id not in source_word_counts:
+                source_word_counts[source_id] = 0
+                # Store content for summary generation (first 5000 chars from the first page of this source)
+                for page_result in results:
+                    if urlparse(page_result['url']).netloc == source_id:
+                        source_content_map[source_id] = page_result['markdown'][:5000]
+                        break
+            
+            source_word_counts[source_id] += word_count
+        
+        # Create sources FIRST (before inserting documents to avoid foreign key constraint)
+        for source_id, content in source_content_map.items():
+            word_count = source_word_counts.get(source_id, 0)
+            source_summary = extract_source_summary(source_id, content)
+            update_source_info(supabase_client, source_id, source_summary, word_count, content)
+        
+        # Now store documents in Supabase (AFTER sources exist)
+        add_documents_to_supabase(
+            client=supabase_client,
+            urls=urls,
+            chunk_numbers=chunk_numbers,
+            contents=contents,
+            metadatas=metadatas,
+            url_to_full_document=url_to_full_document
+        )
+        chunks_stored = len(all_documents)
         
         # Store code examples if any
         code_examples_stored = 0
         if all_code_examples:
-            code_examples_stored = await add_code_examples_to_supabase(
-                supabase_client, 
-                [ex['code_block'] for ex in all_code_examples],
-                [ex['summary'] for ex in all_code_examples],
-                url  # Use the original URL as source
+            # Prepare data for code examples insertion
+            code_urls = [ex['url'] for ex in all_code_examples]
+            code_chunk_numbers = [i for i in range(len(all_code_examples))]  # Sequential numbering (0-based)
+            code_blocks = [ex['code_block'] for ex in all_code_examples]
+            code_summaries = [ex['summary'] for ex in all_code_examples]
+            code_metadatas = [{'source_url': ex['url'], 'extraction_method': 'agentic_rag'} for ex in all_code_examples]
+            
+            add_code_examples_to_supabase(
+                client=supabase_client,
+                urls=code_urls,
+                chunk_numbers=code_chunk_numbers,
+                code_examples=code_blocks,
+                summaries=code_summaries,
+                metadatas=code_metadatas
             )
+            code_examples_stored = len(all_code_examples)
         
-        await report_progress('storing', 90, 'Updating source information...')
-        
-        # Update source information
-        source_id = urlparse(url).netloc
-        source_summary = f"Crawled via {crawl_type}: {len(results)} pages processed"
-        
-        await update_source_info(supabase_client, source_id, source_summary)
+        await report_progress('storing', 90, 'Source information updated...')
         
         await report_progress('completed', 100, f'Successfully crawled {len(results)} pages with {chunks_stored} chunks stored')
         
@@ -585,8 +633,30 @@ def register_rag_tools(mcp: FastMCP):
                     }
                 })
             
-            # Store in Supabase
-            chunks_stored = await add_documents_to_supabase(supabase_client, documents)
+            # Calculate total word count for source info
+            total_word_count = sum(doc['metadata']['word_count'] for doc in documents)
+            source_id = urlparse(url).netloc
+            
+            # Create source FIRST (before inserting documents to avoid foreign key constraint)
+            source_summary = extract_source_summary(source_id, markdown_content[:5000])
+            update_source_info(supabase_client, source_id, source_summary, total_word_count, markdown_content[:5000])
+            
+            # Store in Supabase - prepare data for the function
+            urls = [doc['url'] for doc in documents]
+            chunk_numbers = [doc['chunk_index'] for doc in documents]  # Keep 0-based indexing like original
+            contents = [doc['content'] for doc in documents]
+            metadatas = [doc['metadata'] for doc in documents]
+            url_to_full_document = {url: markdown_content}  # Single page mapping
+            
+            add_documents_to_supabase(
+                client=supabase_client,
+                urls=urls,
+                chunk_numbers=chunk_numbers,
+                contents=contents,
+                metadatas=metadatas,
+                url_to_full_document=url_to_full_document
+            )
+            chunks_stored = len(documents)
             
             # Process code examples if enabled
             code_examples_stored = 0
@@ -597,16 +667,22 @@ def register_rag_tools(mcp: FastMCP):
                     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                         code_summaries = list(executor.map(process_code_example, code_blocks))
                     
-                    code_examples_stored = await add_code_examples_to_supabase(
-                        supabase_client, code_blocks, code_summaries, url
+                    # Prepare data for code examples insertion
+                    code_urls = [url for _ in code_blocks]  # All from same URL
+                    code_chunk_numbers = [i for i in range(len(code_blocks))]  # Sequential numbering (0-based)
+                    code_metadatas = [{'source_url': url, 'extraction_method': 'agentic_rag'} for _ in code_blocks]
+                    
+                    add_code_examples_to_supabase(
+                        client=supabase_client,
+                        urls=code_urls,
+                        chunk_numbers=code_chunk_numbers,
+                        code_examples=code_blocks,
+                        summaries=code_summaries,
+                        metadatas=code_metadatas
                     )
+                    code_examples_stored = len(code_blocks)
             
-            # Update source information
-            await update_source_info(
-                supabase_client,
-                urlparse(url).netloc,
-                extract_source_summary(result.title or "Untitled", markdown_content[:500])
-            )
+            # Source information already updated before document insertion
             
             return json.dumps({
                 "success": True,
@@ -846,8 +922,30 @@ def register_rag_tools(mcp: FastMCP):
                     }
                 })
             
-            # Store in Supabase
-            chunks_stored = await add_documents_to_supabase(supabase_client, documents)
+            # Calculate total word count for source info
+            total_word_count = sum(doc['metadata']['word_count'] for doc in documents)
+            source_id = f"upload_{filename}"
+            
+            # Create source FIRST (before inserting documents to avoid foreign key constraint)
+            source_summary = extract_source_summary(source_id, file_content[:5000])
+            update_source_info(supabase_client, source_id, source_summary, total_word_count, file_content[:5000])
+            
+            # Store in Supabase - prepare data for the function
+            urls = [doc['url'] for doc in documents]
+            chunk_numbers = [doc['chunk_index'] for doc in documents]  # Keep 0-based indexing like original
+            contents = [doc['content'] for doc in documents]
+            metadatas = [doc['metadata'] for doc in documents]
+            url_to_full_document = {doc_url: file_content}  # Document upload mapping
+            
+            add_documents_to_supabase(
+                client=supabase_client,
+                urls=urls,
+                chunk_numbers=chunk_numbers,
+                contents=contents,
+                metadatas=metadatas,
+                url_to_full_document=url_to_full_document
+            )
+            chunks_stored = len(documents)
             
             return json.dumps({
                 "success": True,
