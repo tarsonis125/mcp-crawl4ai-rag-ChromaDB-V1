@@ -53,9 +53,8 @@ SUPABASE_SERVICE_KEY=your-service-key-here
 
 1. Create a new [Supabase project](https://supabase.com/dashboard)
 2. In SQL Editor, run these scripts **in order**:
-   - `migration/credentials_setup.sql` (creates settings storage)
-   - `migration/crawled_pages.sql` (creates vector database)
-   - `migration/supabase_archon.sql` (creates task management)
+   - `migration/initial_setup.sql` (creates vector database, credentials, and core tables)
+   - `migration/archon_tasks.sql` (creates project and task management tables)
 
 ### 4. Start Archon
 

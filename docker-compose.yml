@@ -1,6 +1,6 @@
 services:
   backend:
-    build: .
+    build: ./python
     ports:
       - "8080:8080"
       - "8051:8051"
