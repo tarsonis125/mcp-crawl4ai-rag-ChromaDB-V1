@@ -390,7 +390,7 @@ export const SettingsPage = () => {
         >
           {saving ? (
             <>
-              <Loader className="w-4 h-4 mr-2 animate-spin" />
+              <Loader className="w-4 h-4 mr-2 animate-spin inline" />
               <span>Saving...</span>
             </>
           ) : (
