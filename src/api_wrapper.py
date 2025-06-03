@@ -902,6 +902,8 @@ async def clear_mcp_logs():
 
 
 @app.websocket("/api/mcp/logs/stream")
+# TODO: Implement message queuing for offline clients and reconnection logic.
+# TODO: Add exponential backoff for reconnection attempts and fallback to HTTP polling if needed.
 async def websocket_log_stream(websocket: WebSocket):
     """WebSocket endpoint for streaming MCP server logs."""
     await mcp_manager.add_websocket(websocket)
