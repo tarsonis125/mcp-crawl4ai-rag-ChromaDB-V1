@@ -1,12 +1,11 @@
 /**
- * Any CSS included here will be global. The classic template
- * bundles Infima by default. Infima is a CSS framework designed to
- * work well for content-centric websites.
+ * Archon Documentation - Dark Neon Theme
+ * Matching the main app's cyberpunk aesthetic with true black backgrounds and neon accents
  */
 
-/* You can override the default Infima variables here. */
+/* Dark mode only - True Black Theme */
 :root {
-  /* Light mode variables - matching app theme */
+  /* Primary colors */
   --ifm-color-primary: #a855f7;
   --ifm-color-primary-dark: #9333ea;
   --ifm-color-primary-darker: #8b5cf6;
@@ -20,27 +19,44 @@
   --green-accent: #10b981;
   --pink-accent: #ec4899;
   --blue-accent: #3b82f6;
+  --orange-accent: #f59e0b;
 
-  /* Background and foreground */
-  --ifm-background-color: #f8fafc;
-  --ifm-background-surface-color: #ffffff;
-  --ifm-color-content: #1e293b;
-  --ifm-color-content-secondary: #64748b;
+  /* True black backgrounds for better contrast */
+  --ifm-background-color: #000000;
+  --ifm-background-surface-color: #0a0a0a;
+  --ifm-color-content: #ffffff;
+  --ifm-color-content-secondary: #a1a1aa;
   
-  /* Glass effects */
-  --glass-bg: rgba(255, 255, 255, 0.8);
-  --glass-border: rgba(168, 85, 247, 0.3);
-  --glass-shadow: 0 10px 30px -15px rgba(0, 0, 0, 0.1);
+  /* Enhanced dark glass effects */
+  --glass-bg: rgba(255, 255, 255, 0.05);
+  --glass-bg-strong: rgba(255, 255, 255, 0.1);
+  --glass-border: rgba(168, 85, 247, 0.5);
+  --glass-shadow: 0 10px 30px -15px rgba(0, 0, 0, 0.9);
+  --glass-shadow-strong: 0 15px 40px -15px rgba(0, 0, 0, 0.95);
   
-  /* Hero gradient */
-  --ifm-hero-background-color: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  /* Text colors for better contrast */
+  --ifm-font-color-base: #ffffff;
+  --ifm-font-color-secondary: #e5e7eb;
+  --ifm-heading-color: #ffffff;
+  
+  /* Link colors */
+  --ifm-link-color: #a855f7;
+  --ifm-link-hover-color: #c084fc;
+  
+  /* Card backgrounds */
+  --ifm-card-background-color: rgba(0, 0, 0, 0.5);
+  
+  /* Navbar and sidebar */
+  --ifm-navbar-background-color: rgba(0, 0, 0, 0.8);
+  --ifm-sidebar-background-color: rgba(0, 0, 0, 0.5);
+  
+  /* Code block backgrounds */
+  --ifm-code-background: rgba(0, 0, 0, 0.6);
+  --prism-background-color: rgba(0, 0, 0, 0.8);
   
   /* Code block styling */
   --ifm-code-font-size: 95%;
 }
-
-/* Dark mode overrides */
-[data-theme='dark'] {
   --ifm-color-primary: #a855f7;
   --ifm-color-primary-dark: #9333ea;
   --ifm-color-primary-darker: #8b5cf6;
@@ -49,37 +65,70 @@
   --ifm-color-primary-lighter: #d8b4fe;
   --ifm-color-primary-lightest: #e9d5ff;
 
+  /* True black backgrounds for better contrast */
   --ifm-background-color: #000000;
   --ifm-background-surface-color: #0a0a0a;
   --ifm-color-content: #ffffff;
   --ifm-color-content-secondary: #a1a1aa;
   
-  /* Dark glass effects */
-  --glass-bg: rgba(255, 255, 255, 0.1);
+  /* Enhanced dark glass effects */
+  --glass-bg: rgba(255, 255, 255, 0.05);
+  --glass-bg-strong: rgba(255, 255, 255, 0.1);
   --glass-border: rgba(168, 85, 247, 0.5);
-  --glass-shadow: 0 10px 30px -15px rgba(0, 0, 0, 0.7);
+  --glass-shadow: 0 10px 30px -15px rgba(0, 0, 0, 0.9);
+  --glass-shadow-strong: 0 15px 40px -15px rgba(0, 0, 0, 0.95);
+  
+  /* Text colors for better contrast */
+  --ifm-font-color-base: #ffffff;
+  --ifm-font-color-secondary: #e5e7eb;
+  --ifm-heading-color: #ffffff;
+  
+  /* Link colors */
+  --ifm-link-color: #a855f7;
+  --ifm-link-hover-color: #c084fc;
+  
+  /* Card backgrounds */
+  --ifm-card-background-color: rgba(0, 0, 0, 0.5);
+  
+  /* Navbar and sidebar */
+  --ifm-navbar-background-color: rgba(0, 0, 0, 0.8);
+  --ifm-sidebar-background-color: rgba(0, 0, 0, 0.5);
+  
+  /* Code block backgrounds */
+  --ifm-code-background: rgba(0, 0, 0, 0.6);
+  --prism-background-color: rgba(0, 0, 0, 0.8);
 }
 
-/* Global background with neon grid */
+/* Global background with enhanced neon grid */
 html {
   background: var(--ifm-background-color);
 }
 
 [data-theme='dark'] html {
-  background: linear-gradient(to right, #a855f720 1px, transparent 1px),
-              linear-gradient(to bottom, #a855f720 1px, transparent 1px),
-              #000000;
-  background-size: 40px 40px;
+  background: 
+    radial-gradient(circle at 25% 25%, rgba(168, 85, 247, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 75% 75%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
+    linear-gradient(to right, rgba(168, 85, 247, 0.1) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(168, 85, 247, 0.1) 1px, transparent 1px),
+    #000000;
+  background-size: 100% 100%, 100% 100%, 60px 60px, 60px 60px;
+  min-height: 100vh;
 }
 
-/* Glass morphism components */
+[data-theme='dark'] body {
+  background: transparent;
+  color: #ffffff;
+}
+
+/* Enhanced glass morphism components */
 .glass {
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  background: var(--glass-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  background: var(--glass-bg-strong);
   border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow);
+  box-shadow: var(--glass-shadow-strong);
   position: relative;
+  border-radius: 12px;
 }
 
 .glass::before {
@@ -89,9 +138,9 @@ html {
   left: 0;
   right: 0;
   height: 2px;
-  background: var(--purple-accent);
-  box-shadow: 0 0 20px 5px rgba(168, 85, 247, 0.7);
-  border-radius: 2px 2px 0 0;
+  background: linear-gradient(90deg, var(--purple-accent), var(--blue-accent));
+  box-shadow: 0 0 20px 5px rgba(168, 85, 247, 0.8);
+  border-radius: 12px 12px 0 0;
 }
 
 .glass::after {
@@ -100,17 +149,28 @@ html {
   top: 0;
   left: 0;
   right: 0;
-  height: 60px;
-  background: linear-gradient(to bottom, rgba(168, 85, 247, 0.2), rgba(168, 85, 247, 0.05));
-  border-radius: 8px 8px 0 0;
+  height: 80px;
+  background: linear-gradient(to bottom, rgba(168, 85, 247, 0.15), rgba(168, 85, 247, 0.03));
+  border-radius: 12px 12px 0 0;
   pointer-events: none;
 }
 
-/* Hero section styling */
+/* Hero section with cyberpunk aesthetic */
 .hero {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  background: 
+    radial-gradient(ellipse at top, rgba(168, 85, 247, 0.3) 0%, transparent 70%),
+    radial-gradient(ellipse at bottom, rgba(59, 130, 246, 0.2) 0%, transparent 70%),
+    linear-gradient(135deg, #000000 0%, #0a0a0a 100%) !important;
   position: relative;
   overflow: hidden;
+  border-bottom: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+[data-theme='dark'] .hero {
+  background: 
+    radial-gradient(ellipse at top, rgba(168, 85, 247, 0.4) 0%, transparent 70%),
+    radial-gradient(ellipse at bottom, rgba(59, 130, 246, 0.3) 0%, transparent 70%),
+    linear-gradient(135deg, #000000 0%, #0a0a0a 100%) !important;
 }
 
 .hero::before {
@@ -121,29 +181,30 @@ html {
   right: 0;
   bottom: 0;
   background: linear-gradient(45deg, transparent 30%, rgba(168, 85, 247, 0.1) 50%, transparent 70%);
-  animation: shimmer 3s ease-in-out infinite;
+  animation: shimmer 4s ease-in-out infinite;
 }
 
 @keyframes shimmer {
-  0%, 100% { transform: translateX(-100%); }
-  50% { transform: translateX(100%); }
+  0%, 100% { transform: translateX(-150%); opacity: 0; }
+  50% { transform: translateX(150%); opacity: 1; }
 }
 
 .hero__title {
-  color: white !important;
-  text-shadow: 0 0 30px rgba(168, 85, 247, 0.8);
+  color: #ffffff !important;
+  text-shadow: 0 0 40px rgba(168, 85, 247, 0.9), 0 0 80px rgba(168, 85, 247, 0.5);
   font-weight: 700;
   letter-spacing: -0.025em;
+  font-size: 3rem;
 }
 
 .hero__subtitle {
-  color: rgba(255, 255, 255, 0.9) !important;
-  text-shadow: 0 0 20px rgba(168, 85, 247, 0.5);
+  color: rgba(255, 255, 255, 0.95) !important;
+  text-shadow: 0 0 30px rgba(168, 85, 247, 0.6);
   font-size: 1.25rem;
   font-weight: 400;
 }
 
-/* Buttons with neon effect */
+/* Enhanced buttons with stronger neon effect */
 .button {
   border-radius: 8px;
   font-weight: 600;
@@ -153,37 +214,45 @@ html {
 }
 
 .button--secondary {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(168, 85, 247, 0.2);
   backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  color: white;
-  box-shadow: 0 8px 32px rgba(168, 85, 247, 0.3);
+  border: 1px solid rgba(168, 85, 247, 0.5);
+  color: #ffffff;
+  box-shadow: 0 8px 32px rgba(168, 85, 247, 0.4);
 }
 
 .button--secondary:hover {
-  background: rgba(255, 255, 255, 0.3);
-  border-color: rgba(255, 255, 255, 0.5);
+  background: rgba(168, 85, 247, 0.3);
+  border-color: rgba(168, 85, 247, 0.8);
   transform: translateY(-2px);
-  box-shadow: 0 12px 40px rgba(168, 85, 247, 0.5);
+  box-shadow: 0 12px 40px rgba(168, 85, 247, 0.6);
+  color: #ffffff !important;
+  text-shadow: 0 0 10px rgba(168, 85, 247, 0.8);
 }
 
-/* Feature cards with glass effect */
+/* Feature cards with enhanced glass effect - smaller and more compact */
 .row .col {
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
 }
 
-/* Feature cards styling */
 .row .col > div {
   height: 100%;
-  padding: 2rem;
-  border-radius: 12px;
+  padding: 1.25rem;
+  border-radius: 8px;
   transition: all 0.3s ease;
   position: relative;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  background: var(--glass-bg);
+  background: var(--glass-bg-strong);
   border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow);
+  box-shadow: var(--glass-shadow-strong);
+  min-height: 200px;
+}
+
+[data-theme='dark'] .row .col > div {
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.9);
 }
 
 .row .col > div::before {
@@ -193,9 +262,9 @@ html {
   left: 0;
   right: 0;
   height: 2px;
-  background: var(--purple-accent);
-  box-shadow: 0 0 20px 5px rgba(168, 85, 247, 0.7);
-  border-radius: 2px 2px 0 0;
+  background: linear-gradient(90deg, var(--purple-accent), var(--blue-accent), var(--pink-accent));
+  box-shadow: 0 0 20px 5px rgba(168, 85, 247, 0.8);
+  border-radius: 12px 12px 0 0;
 }
 
 .row .col > div::after {
@@ -204,9 +273,9 @@ html {
   top: 0;
   left: 0;
   right: 0;
-  height: 60px;
-  background: linear-gradient(to bottom, rgba(168, 85, 247, 0.2), rgba(168, 85, 247, 0.05));
-  border-radius: 8px 8px 0 0;
+  height: 80px;
+  background: linear-gradient(to bottom, rgba(168, 85, 247, 0.15), rgba(168, 85, 247, 0.03));
+  border-radius: 12px 12px 0 0;
   pointer-events: none;
   z-index: 0;
 }
@@ -217,92 +286,139 @@ html {
 }
 
 .row .col > div:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 20px 50px rgba(168, 85, 247, 0.2);
+  transform: translateY(-6px);
+  box-shadow: 0 25px 60px rgba(168, 85, 247, 0.3);
+  border-color: rgba(168, 85, 247, 0.6);
 }
 
-/* Feature SVGs with neon glow */
+[data-theme='dark'] .row .col > div:hover {
+  box-shadow: 0 25px 60px rgba(168, 85, 247, 0.4);
+}
+
+/* Feature titles and content with enhanced visibility */
+[data-theme='dark'] .row .col h3 {
+  color: #ffffff;
+  text-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  z-index: 10;
+  position: relative;
+}
+
+[data-theme='dark'] .row .col p {
+  color: #f3f4f6;
+  line-height: 1.6;
+  font-size: 0.95rem;
+  z-index: 10;
+  position: relative;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* Enhanced SVGs with smaller size and stronger neon glow */
 .featureSvg {
-  height: 200px;
-  width: 200px;
-  filter: drop-shadow(0 0 20px rgba(168, 85, 247, 0.3));
+  height: 60px;
+  width: 60px;
+  filter: drop-shadow(0 0 15px rgba(168, 85, 247, 0.6));
   transition: all 0.3s ease;
+  margin-bottom: 1rem;
 }
 
 .featureSvg:hover {
-  filter: drop-shadow(0 0 30px rgba(168, 85, 247, 0.6));
-  transform: scale(1.05);
+  filter: drop-shadow(0 0 25px rgba(168, 85, 247, 0.9));
+  transform: scale(1.1);
 }
 
-/* Navigation bar enhancements */
+/* Navigation bar with true dark theme */
 .navbar {
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  background: var(--glass-bg) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  background: var(--ifm-navbar-background-color) !important;
   border-bottom: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
+}
+
+[data-theme='dark'] .navbar {
+  background: rgba(0, 0, 0, 0.8) !important;
+  border-bottom: 1px solid rgba(168, 85, 247, 0.3);
 }
 
 .navbar__brand {
   font-weight: 700;
   font-size: 1.25rem;
   color: var(--purple-accent) !important;
-  text-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+  text-shadow: 0 0 15px rgba(168, 85, 247, 0.8);
 }
 
 .navbar__logo {
-  filter: drop-shadow(0 0 10px rgba(168, 85, 247, 0.5));
+  filter: drop-shadow(0 0 15px rgba(168, 85, 247, 0.8));
   transition: all 0.3s ease;
 }
 
 .navbar__logo:hover {
-  filter: drop-shadow(0 0 20px rgba(168, 85, 247, 0.8));
+  filter: drop-shadow(0 0 25px rgba(168, 85, 247, 1));
   transform: scale(1.1);
 }
 
 .navbar__link {
   font-weight: 500;
   transition: all 0.3s ease;
+  color: #ffffff !important;
 }
 
 .navbar__link:hover {
   color: var(--purple-accent) !important;
-  text-shadow: 0 0 8px rgba(168, 85, 247, 0.5);
+  text-shadow: 0 0 10px rgba(168, 85, 247, 0.8);
 }
 
-/* Sidebar enhancements */
+/* Dark mode toggle */
+[data-theme='dark'] .navbar__toggle {
+  color: #ffffff;
+}
+
+/* Sidebar with enhanced dark theme */
 .menu {
-  background: var(--glass-bg);
-  backdrop-filter: blur(16px);
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(20px);
   border-radius: 12px;
   margin: 1rem;
   border: 1px solid var(--glass-border);
+}
+
+[data-theme='dark'] .menu {
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(168, 85, 247, 0.3);
 }
 
 .menu__link {
   border-radius: 8px;
   margin: 0.25rem;
   transition: all 0.3s ease;
+  color: #ffffff !important;
 }
 
 .menu__link:hover {
-  background: rgba(168, 85, 247, 0.1);
-  color: var(--purple-accent);
-  text-shadow: 0 0 5px rgba(168, 85, 247, 0.5);
+  background: rgba(168, 85, 247, 0.2);
+  color: #ffffff !important;
+  text-shadow: 0 0 8px rgba(168, 85, 247, 0.8);
 }
 
 .menu__link--active {
-  background: rgba(168, 85, 247, 0.2);
-  color: var(--purple-accent);
-  box-shadow: 0 0 20px rgba(168, 85, 247, 0.3);
+  background: rgba(168, 85, 247, 0.3);
+  color: #ffffff !important;
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.5);
+  text-shadow: 0 0 10px rgba(168, 85, 247, 0.8);
 }
 
-/* Content enhancements */
-.markdown h1,
-.markdown h2,
-.markdown h3 {
-  color: var(--ifm-color-content);
-  position: relative;
+/* Content enhancements with better contrast */
+[data-theme='dark'] .markdown h1,
+[data-theme='dark'] .markdown h2,
+[data-theme='dark'] .markdown h3,
+[data-theme='dark'] .markdown h4,
+[data-theme='dark'] .markdown h5,
+[data-theme='dark'] .markdown h6 {
+  color: #ffffff;
+  text-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
 }
 
 .markdown h1::after,
@@ -311,35 +427,57 @@ html {
   position: absolute;
   bottom: -4px;
   left: 0;
-  width: 60px;
+  width: 80px;
   height: 2px;
-  background: linear-gradient(90deg, var(--purple-accent), var(--pink-accent));
+  background: linear-gradient(90deg, var(--purple-accent), var(--pink-accent), var(--blue-accent));
   border-radius: 2px;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
 }
 
-/* Code blocks with neon accent */
+[data-theme='dark'] .markdown p,
+[data-theme='dark'] .markdown li {
+  color: #e5e7eb;
+}
+
+/* Enhanced code blocks with stronger dark theme */
 .prism-code {
-  background: var(--glass-bg) !important;
+  background: rgba(0, 0, 0, 0.8) !important;
   backdrop-filter: blur(16px);
-  border: 1px solid var(--glass-border);
+  border: 1px solid rgba(168, 85, 247, 0.3);
   border-radius: 12px;
-  box-shadow: var(--glass-shadow);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme='dark'] .prism-code {
+  background: rgba(0, 0, 0, 0.9) !important;
+  border: 1px solid rgba(168, 85, 247, 0.4);
 }
 
 .token.keyword {
   color: var(--purple-accent);
-  text-shadow: 0 0 5px rgba(168, 85, 247, 0.5);
+  text-shadow: 0 0 8px rgba(168, 85, 247, 0.6);
 }
 
 .token.string {
   color: var(--green-accent);
+  text-shadow: 0 0 5px rgba(16, 185, 129, 0.5);
 }
 
 .token.function {
   color: var(--blue-accent);
+  text-shadow: 0 0 5px rgba(59, 130, 246, 0.5);
 }
 
-/* Cards and admonitions */
+.token.number {
+  color: var(--orange-accent);
+}
+
+.token.comment {
+  color: #6b7280;
+  font-style: italic;
+}
+
+/* Enhanced cards and admonitions */
 .alert {
   border-radius: 12px;
   backdrop-filter: blur(16px);
@@ -347,32 +485,186 @@ html {
   position: relative;
 }
 
+[data-theme='dark'] .alert {
+  background: rgba(0, 0, 0, 0.6);
+  color: #ffffff;
+}
+
 .alert--info {
-  background: rgba(59, 130, 246, 0.1);
-  border-color: rgba(59, 130, 246, 0.3);
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.4);
 }
 
 .alert--warning {
-  background: rgba(251, 191, 36, 0.1);
-  border-color: rgba(251, 191, 36, 0.3);
+  background: rgba(251, 191, 36, 0.15);
+  border-color: rgba(251, 191, 36, 0.4);
 }
 
 .alert--danger {
-  background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
 }
 
 .alert--success {
-  background: rgba(16, 185, 129, 0.1);
-  border-color: rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.4);
 }
 
-/* Footer enhancements */
+/* Enhanced footer */
 .footer {
-  background: var(--glass-bg);
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(168, 85, 247, 0.3);
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme='dark'] .footer {
+  background: rgba(0, 0, 0, 0.9);
+  color: #ffffff;
+}
+
+[data-theme='dark'] .footer__link-item {
+  color: #e5e7eb;
+}
+
+[data-theme='dark'] .footer__link-item:hover {
+  color: var(--purple-accent);
+  text-shadow: 0 0 5px rgba(168, 85, 247, 0.5);
+}
+
+/* Table of contents - Enhanced positioning and styling */
+.table-of-contents {
+  position: sticky;
+  top: calc(var(--ifm-navbar-height) + 2rem);
+  max-height: calc(100vh - var(--ifm-navbar-height) - 4rem);
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(16px);
-  border-top: 1px solid var(--glass-border);
-  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  padding: 1rem;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme='dark'] .table-of-contents {
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  border-left: 3px solid rgba(168, 85, 247, 0.6);
+}
+
+.table-of-contents__link {
+  color: #e5e7eb;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  transition: all 0.3s ease;
+  display: block;
+  text-decoration: none;
+}
+
+[data-theme='dark'] .table-of-contents__link {
+  color: #f3f4f6;
+}
+
+.table-of-contents__link:hover,
+.table-of-contents__link--active {
+  color: var(--purple-accent);
+  text-shadow: 0 0 5px rgba(168, 85, 247, 0.5);
+  background: rgba(168, 85, 247, 0.1);
+  transform: translateX(4px);
+}
+
+[data-theme='dark'] .table-of-contents__link:hover,
+[data-theme='dark'] .table-of-contents__link--active {
+  color: #ffffff;
+  background: rgba(168, 85, 247, 0.2);
+}
+
+/* Main content area adjustments */
+.theme-doc-markdown {
+  max-width: none;
+}
+
+/* Ensure proper layout for TOC container */
+.col.col--3 {
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+/* Fix main content wrapper */
+.container .row {
+  margin: 0;
+}
+
+.container .row .col {
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+/* Pagination */
+[data-theme='dark'] .pagination-nav {
+  color: #ffffff;
+}
+
+[data-theme='dark'] .pagination-nav__link {
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  background: rgba(0, 0, 0, 0.6);
+  color: #ffffff;
+}
+
+[data-theme='dark'] .pagination-nav__link:hover {
+  border-color: rgba(168, 85, 247, 0.6);
+  background: rgba(168, 85, 247, 0.1);
+  box-shadow: 0 5px 20px rgba(168, 85, 247, 0.3);
+}
+
+/* Breadcrumbs */
+[data-theme='dark'] .breadcrumbs {
+  color: #e5e7eb;
+}
+
+[data-theme='dark'] .breadcrumbs__link {
+  color: #e5e7eb;
+}
+
+[data-theme='dark'] .breadcrumbs__link:hover {
+  color: var(--purple-accent);
+  text-shadow: 0 0 5px rgba(168, 85, 247, 0.5);
+}
+
+/* Enhanced scrollbar styling */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, var(--purple-accent), var(--blue-accent));
+  border-radius: 5px;
+  box-shadow: 0 0 15px rgba(168, 85, 247, 0.6);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, var(--ifm-color-primary-light), var(--blue-accent));
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.8);
+}
+
+/* Enhanced selection styling */
+::selection {
+  background: rgba(168, 85, 247, 0.4);
+  color: #ffffff;
+  text-shadow: 0 0 5px rgba(168, 85, 247, 0.8);
+}
+
+::-moz-selection {
+  background: rgba(168, 85, 247, 0.4);
+  color: #ffffff;
 }
 
 /* Animation utilities */
@@ -387,12 +679,45 @@ html {
   }
 }
 
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
 .animate-fade-in-up {
   animation: fadeInUp 0.6s ease-out;
 }
 
+.animate-pulse {
+  animation: pulse 2s infinite;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
+  .hero__title {
+    font-size: 2.5rem;
+  }
+  
+  .hero__subtitle {
+    font-size: 1.1rem;
+  }
+  
+  .featureSvg {
+    height: 50px;
+    width: 50px;
+  }
+  
+  .row .col > div {
+    padding: 1rem;
+    min-height: 180px;
+  }
+}
+
+@media (max-width: 480px) {
   .hero__title {
     font-size: 2rem;
   }
@@ -402,38 +727,96 @@ html {
   }
   
   .featureSvg {
-    height: 150px;
-    width: 150px;
+    height: 45px;
+    width: 45px;
+  }
+  
+  .row .col > div {
+    padding: 0.875rem;
+    min-height: 160px;
   }
 }
 
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 8px;
+/* Force dark theme on load and improve layout */
+[data-theme='dark'] .main-wrapper {
+  background-color: #000000;
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
+[data-theme='dark'] article {
+  background-color: transparent;
 }
 
-::-webkit-scrollbar-thumb {
-  background: var(--purple-accent);
-  border-radius: 4px;
-  box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+/* Fix doc layout and ensure proper positioning */
+.docMainContainer_node_modules-\@docusaurus-theme-classic-lib-theme-DocPage-Layout-Main-styles-module {
+  max-width: none;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--ifm-color-primary-dark);
-  box-shadow: 0 0 15px rgba(168, 85, 247, 0.8);
+.docItemContainer_node_modules-\@docusaurus-theme-classic-lib-theme-DocItem-Layout-styles-module {
+  max-width: none;
 }
 
-/* Selection styling */
-::selection {
-  background: rgba(168, 85, 247, 0.3);
-  color: white;
+/* Ensure the sidebar is properly positioned */
+.tocCollapsible_node_modules-\@docusaurus-theme-classic-lib-theme-TOC-styles-module {
+  position: sticky;
+  top: calc(var(--ifm-navbar-height) + 1rem);
 }
 
-::-moz-selection {
-  background: rgba(168, 85, 247, 0.3);
-  color: white;
+/* Remove extra spacing and containers */
+.theme-doc-toc-mobile {
+  margin-bottom: 0;
+}
+
+.theme-doc-toc-desktop {
+  padding-left: 0;
+}
+
+/* Adjust main doc content */
+.markdown {
+  max-width: none;
+}
+
+/* Fix any layout issues with the doc page container */
+.docPage__5DB {
+  max-width: none;
+}
+
+.docMainContainer__7XE {
+  max-width: none;
+}
+
+/* General layout fixes for better alignment */
+.theme-doc-sidebar-container {
+  border-right: 1px solid rgba(168, 85, 247, 0.3);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.theme-doc-footer {
+  margin-top: 3rem;
+}
+
+/* Ensure TOC is not in a subcontainer */
+div[class*="tableOfContents"] {
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(16px);
+  border-radius: 8px;
+  padding: 1rem;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  position: sticky;
+  top: calc(var(--ifm-navbar-height) + 1rem);
+}
+
+[data-theme='dark'] div[class*="tableOfContents"] {
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid rgba(168, 85, 247, 0.4);
+}
+
+/* Remove default TOC wrapper padding */
+div[class*="tocCollapsible"] {
+  margin: 0;
+  padding: 0;
+}
+
+/* Better spacing for doc content */
+.theme-doc-markdown > div {
+  max-width: none;
 }

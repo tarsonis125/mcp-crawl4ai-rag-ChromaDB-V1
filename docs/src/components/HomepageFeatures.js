@@ -27,7 +27,7 @@ const FeatureList = [
   },
   {
     title: 'MCP Integration',
-    Svg: require('../../static/img/claude-logo.svg').default,
+    Svg: require('../../static/img/mcp-logo.svg').default,
     description: (
       <>
         Universal compatibility with Cursor, Windsurf, Claude Desktop, and any MCP client. 
