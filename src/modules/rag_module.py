@@ -313,6 +313,48 @@ async def crawl_recursive_with_progress(crawler: AsyncWebCrawler, start_urls: Li
     return results_all
 
 
+# Standalone function for direct import (needed by api_wrapper.py)
+async def delete_source(ctx, source_id: str) -> str:
+    """
+    Delete a source and all associated crawled pages and code examples from the database.
+    
+    Args:
+        ctx: Context with supabase_client accessible via ctx.request_context.lifespan_context.supabase_client
+        source_id: The source ID to delete
+    
+    Returns:
+        JSON string with deletion results
+    """
+    try:
+        supabase_client = ctx.request_context.lifespan_context.supabase_client
+        
+        # Delete from crawled_pages table
+        pages_response = supabase_client.table("crawled_pages").delete().eq("source_id", source_id).execute()
+        pages_deleted = len(pages_response.data) if pages_response.data else 0
+        
+        # Delete from code_examples table
+        code_response = supabase_client.table("code_examples").delete().eq("source_id", source_id).execute()
+        code_deleted = len(code_response.data) if code_response.data else 0
+        
+        # Delete from sources table
+        source_response = supabase_client.table("sources").delete().eq("source_id", source_id).execute()
+        source_deleted = len(source_response.data) if source_response.data else 0
+        
+        return json.dumps({
+            "success": True,
+            "source_id": source_id,
+            "pages_deleted": pages_deleted,
+            "code_examples_deleted": code_deleted,
+            "source_records_deleted": source_deleted
+        })
+        
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "error": f"Error deleting source: {str(e)}"
+        })
+
+
 # MCP Tool Definitions
 def register_rag_tools(mcp: FastMCP):
     """Register all RAG tools with the MCP server."""
@@ -535,7 +577,7 @@ def register_rag_tools(mcp: FastMCP):
             })
     
     @mcp.tool()
-    async def delete_source(ctx: Context, source_id: str) -> str:
+    async def delete_source_tool(ctx: Context, source_id: str) -> str:
         """
         Delete a source and all associated crawled pages and code examples from the database.
         
@@ -546,34 +588,8 @@ def register_rag_tools(mcp: FastMCP):
         Returns:
             JSON string with deletion results
         """
-        try:
-            supabase_client = ctx.request_context.lifespan_context.supabase_client
-            
-            # Delete from crawled_pages table
-            pages_response = supabase_client.table("crawled_pages").delete().eq("source_id", source_id).execute()
-            pages_deleted = len(pages_response.data) if pages_response.data else 0
-            
-            # Delete from code_examples table
-            code_response = supabase_client.table("code_examples").delete().eq("source_id", source_id).execute()
-            code_deleted = len(code_response.data) if code_response.data else 0
-            
-            # Delete from sources table
-            source_response = supabase_client.table("sources").delete().eq("source_id", source_id).execute()
-            source_deleted = len(source_response.data) if source_response.data else 0
-            
-            return json.dumps({
-                "success": True,
-                "source_id": source_id,
-                "pages_deleted": pages_deleted,
-                "code_examples_deleted": code_deleted,
-                "source_records_deleted": source_deleted
-            })
-            
-        except Exception as e:
-            return json.dumps({
-                "success": False,
-                "error": f"Error deleting source: {str(e)}"
-            })
+        # Call the standalone function
+        return await delete_source(ctx, source_id)
     
     @mcp.tool()
     async def search_code_examples(ctx: Context, query: str, source_id: str = None, match_count: int = 5) -> str:

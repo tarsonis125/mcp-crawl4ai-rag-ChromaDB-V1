@@ -181,6 +181,8 @@ class CrawlingContext:
         
         request_context = MockRequestContext(lifespan_context=lifespan_context)
         context = MockContext(request_context=request_context)
+        
+        # Add state as well for compatibility
         context.state = type('State', (), {'supabase_client': self.supabase_client})()
         
         return context
@@ -2081,20 +2083,28 @@ async def crawl_knowledge_item(request: KnowledgeItemRequest):
 async def delete_knowledge_item(source_id: str):
     """Delete a knowledge item from the database."""
     try:
+        print(f"DEBUG: Attempting to delete source_id: {source_id}")
+        
         # Ensure crawling context is initialized once
         if not crawling_context._initialized:
+            print("DEBUG: Initializing crawling context")
             await crawling_context.initialize()
         
         # Create context for the MCP function
         ctx = crawling_context.create_context()
+        print(f"DEBUG: Created context, supabase_client available: {ctx.request_context.lifespan_context.supabase_client is not None}")
         
         # Call the actual function from rag_module
+        print("DEBUG: Calling delete_source function")
         from src.modules.rag_module import delete_source
         result = await delete_source(ctx, source_id)
+        print(f"DEBUG: delete_source returned: {result}")
         
         # Parse JSON string response if needed
         if isinstance(result, str):
             result = json.loads(result)
+        
+        print(f"DEBUG: Parsed result: {result}")
         
         if result.get('success'):
             return {
@@ -2102,9 +2112,13 @@ async def delete_knowledge_item(source_id: str):
                 'message': f'Successfully deleted knowledge item {source_id}'
             }
         else:
+            print(f"DEBUG: Delete failed with error: {result.get('error')}")
             raise HTTPException(status_code=500, detail={'error': result.get('error', 'Deletion failed')})
             
     except Exception as e:
+        print(f"DEBUG: Exception in delete endpoint: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
 
