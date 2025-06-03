@@ -403,7 +403,7 @@ services:
 1. Check Docker is running: `docker --version`
 2. Verify ports aren't in use: `netstat -tulpn | grep :3737`
 3. Check environment variables: `cat .env`
-4. View detailed logs: `docker-compose logs backend`
+4. View detailed logs: `docker-compose logs archon-pyserver`
 
 #### Database Connection Issues
 

@@ -351,19 +351,14 @@ export const MCPPage = () => {
           archon: {
             command: "docker",
             args: [
-              "run", "--rm", "-i",
-              "--network", "mcp-crawl4ai-rag-ui_app-network",
+              "exec", 
+              "-i",
               "-e", "TRANSPORT=stdio",
-              "-e", "OPENAI_API_KEY",
-              "-e", "SUPABASE_URL", 
-              "-e", "SUPABASE_SERVICE_KEY",
-              "mcp-crawl4ai-rag-ui-backend"
-            ],
-            env: {
-              OPENAI_API_KEY: "your_openai_api_key",
-              SUPABASE_URL: "your_supabase_url",
-              SUPABASE_SERVICE_KEY: "your_supabase_service_key"
-            }
+              "-e", "HOST=localhost", 
+              "-e", "PORT=8051",
+              "archon-pyserver",
+              "python", "src/mcp_server.py"
+            ]
           }
         }
       };

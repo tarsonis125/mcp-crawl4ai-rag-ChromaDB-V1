@@ -19,10 +19,10 @@ def test_frontend_dockerfile_exists():
 
 
 @pytest.mark.integration
-def test_backend_dockerfile_exists():
-    """Test that the backend Dockerfile exists."""
-    backend_dockerfile = Path("Dockerfile")
-    assert backend_dockerfile.exists(), "Backend Dockerfile should exist"
+def test_pyserver_dockerfile_exists():
+    """Test that the Python server Dockerfile exists."""
+    pyserver_dockerfile = Path("Dockerfile")
+    assert pyserver_dockerfile.exists(), "Python server Dockerfile should exist"
 
 
 @pytest.mark.integration
@@ -52,11 +52,11 @@ def test_frontend_dockerfile_structure():
 
 
 @pytest.mark.integration
-def test_backend_dockerfile_structure():
-    """Test that the backend Dockerfile has required commands."""
-    backend_dockerfile = Path("Dockerfile")
+def test_pyserver_dockerfile_structure():
+    """Test that the Python server Dockerfile has required commands."""
+    pyserver_dockerfile = Path("Dockerfile")
     
-    with open(backend_dockerfile, 'r') as f:
+    with open(pyserver_dockerfile, 'r') as f:
         content = f.read()
     
     assert "FROM python:" in content, "Should use Python base image"
@@ -80,7 +80,7 @@ def test_docker_compose_structure():
     # Test services
     assert "services:" in content, "Should have services section"
     assert "frontend:" in content, "Should have frontend service"
-    assert "backend:" in content, "Should have backend service"
+    assert "archon-pyserver:" in content, "Should have archon-pyserver service"
     
     # Test networking
     assert "networks:" in content, "Should define networks"
@@ -111,17 +111,17 @@ class TestDockerBuild:
         assert "Successfully tagged archon-frontend:test" in result.stdout
     
     @pytest.mark.slow
-    def test_backend_docker_build(self):
-        """Test that the backend Docker image can be built."""
+    def test_pyserver_docker_build(self):
+        """Test that the Python server Docker image can be built."""
         # This will fail until Dockerfile is created
         result = subprocess.run([
             "docker", "build", 
-            "-t", "archon-backend:test",
+            "-t", "archon-pyserver:test",
             "."
         ], capture_output=True, text=True)
         
-        assert result.returncode == 0, f"Backend build failed: {result.stderr}"
-        assert "Successfully tagged archon-backend:test" in result.stdout
+        assert result.returncode == 0, f"Python server build failed: {result.stderr}"
+        assert "Successfully tagged archon-pyserver:test" in result.stdout
     
     @pytest.mark.slow
     def test_docker_compose_build(self):
@@ -137,17 +137,17 @@ class TestContainerStartup:
     """Tests for container startup and basic functionality."""
     
     @pytest.mark.slow
-    def test_backend_container_starts(self):
-        """Test that the backend container starts successfully."""
+    def test_pyserver_container_starts(self):
+        """Test that the Python server container starts successfully."""
         # Start container
         start_result = subprocess.run([
             "docker", "run", "-d", 
-            "--name", "test-backend",
+            "--name", "test-pyserver",
             "-p", "8080:8080",
             "-e", "OPENAI_API_KEY=sk-test123",
             "-e", "SUPABASE_URL=https://test.supabase.co",
             "-e", "SUPABASE_SERVICE_KEY=test-key",
-            "archon-backend:test"
+            "archon-pyserver:test"
         ], capture_output=True, text=True)
         
         try:
@@ -158,15 +158,15 @@ class TestContainerStartup:
             
             # Check if container is running
             status_result = subprocess.run([
-                "docker", "ps", "--filter", "name=test-backend", "--format", "{{.Status}}"
+                "docker", "ps", "--filter", "name=test-pyserver", "--format", "{{.Status}}"
             ], capture_output=True, text=True)
             
             assert "Up" in status_result.stdout, "Container should be running"
             
         finally:
             # Cleanup
-            subprocess.run(["docker", "stop", "test-backend"], capture_output=True)
-            subprocess.run(["docker", "rm", "test-backend"], capture_output=True)
+            subprocess.run(["docker", "stop", "test-pyserver"], capture_output=True)
+            subprocess.run(["docker", "rm", "test-pyserver"], capture_output=True)
     
     @pytest.mark.slow
     def test_frontend_container_starts(self):
@@ -215,9 +215,9 @@ class TestContainerNetworking:
             # Wait for services to be ready
             time.sleep(10)
             
-            # Test backend health endpoint
-            backend_response = requests.get("http://localhost:8080/api/mcp/status", timeout=5)
-            assert backend_response.status_code in [200, 503], "Backend should be accessible"
+            # Test API health endpoint
+            api_response = requests.get("http://localhost:8080/api/mcp/status", timeout=5)
+            assert api_response.status_code in [200, 503], "API should be accessible"
             
             # Test frontend accessibility
             frontend_response = requests.get("http://localhost:3000", timeout=5)
@@ -228,8 +228,8 @@ class TestContainerNetworking:
             subprocess.run(["docker-compose", "down"], capture_output=True)
     
     @pytest.mark.slow
-    def test_frontend_can_call_backend_api(self):
-        """Test that frontend container can make API calls to backend."""
+    def test_frontend_can_call_api(self):
+        """Test that frontend container can make API calls to the backend."""
         # This test would simulate the frontend making API calls
         # For now, we'll test that the network allows cross-container communication
         
@@ -239,9 +239,9 @@ class TestContainerNetworking:
         try:
             time.sleep(10)
             
-            # Test that backend API is accessible from outside (simulating frontend call)
+            # Test that API is accessible from outside (simulating frontend call)
             response = requests.get("http://localhost:8080/api/mcp/status")
-            assert response.status_code in [200, 503], "Backend API should be accessible"
+            assert response.status_code in [200, 503], "API should be accessible"
             
             # Check CORS headers are present
             assert "access-control-allow-origin" in response.headers.keys() or \
@@ -263,12 +263,12 @@ class TestEnvironmentConfiguration:
         with open(compose_file, 'r') as f:
             content = f.read()
         
-        # Backend environment variables
+        # Python server environment variables
         assert "OPENAI_API_KEY" in content, "Should define OPENAI_API_KEY"
         assert "SUPABASE_URL" in content, "Should define SUPABASE_URL"
         assert "SUPABASE_SERVICE_KEY" in content, "Should define SUPABASE_SERVICE_KEY"
         
-        # Backend API URL for frontend
+        # API URL for frontend
         assert "REACT_APP_API_URL" in content or "VITE_API_URL" in content, \
                "Should define API URL for frontend"
     
@@ -301,7 +301,7 @@ class TestProductionReadiness:
         backend_dockerignore = Path(".dockerignore")
         frontend_dockerignore = Path("archon-ui-main/.dockerignore")
         
-        assert backend_dockerignore.exists(), "Backend .dockerignore should exist"
+        assert backend_dockerignore.exists(), "Python server .dockerignore should exist"
         assert frontend_dockerignore.exists(), "Frontend .dockerignore should exist"
     
     @pytest.mark.integration
@@ -349,11 +349,11 @@ def cleanup_test_containers():
     yield
     
     # Cleanup any remaining test containers
-    test_containers = ["test-backend", "test-frontend"]
+    test_containers = ["test-pyserver", "test-frontend"]
     for container in test_containers:
         subprocess.run(["docker", "stop", container], capture_output=True)
         subprocess.run(["docker", "rm", container], capture_output=True)
     
     # Cleanup test images
     subprocess.run(["docker", "rmi", "archon-frontend:test"], capture_output=True)
-    subprocess.run(["docker", "rmi", "archon-backend:test"], capture_output=True) 
+    subprocess.run(["docker", "rmi", "archon-pyserver:test"], capture_output=True) 

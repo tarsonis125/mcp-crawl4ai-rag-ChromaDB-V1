@@ -258,33 +258,43 @@ Initiate web crawling for a URL.
 2. **Add Archon MCP Server** to your Cursor configuration
 
 #### Configuration File
-Create or edit `~/.cursor/mcp_servers.json`:
+Create or edit `~/.cursor/mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "archon": {
-      "command": "python",
-      "args": ["/path/to/archon/python/src/mcp_server.py"],
-      "env": {
-        "SUPABASE_URL": "https://your-project.supabase.co",
-        "SUPABASE_SERVICE_KEY": "your-service-key"
-      }
+      "command": "docker",
+      "args": [
+        "exec", 
+        "-i",
+        "-e", "TRANSPORT=stdio",
+        "-e", "HOST=localhost", 
+        "-e", "PORT=8051",
+        "archon-pyserver",
+        "python", "src/mcp_server.py"
+      ]
     }
   }
 }
 ```
 
-#### Alternative: Direct Connection
+#### Windsurf Alternative Configuration
+For Windsurf IDE, use this format:
+
 ```json
 {
   "mcpServers": {
     "archon": {
-      "command": "curl",
+      "command": "docker",
       "args": [
-        "-X", "POST",
-        "http://localhost:8080/api/mcp/connect",
-        "-H", "Content-Type: application/json"
+        "exec", 
+        "-i",
+        "-e", "TRANSPORT=stdio",
+        "-e", "HOST=localhost", 
+        "-e", "PORT=8051",
+        "archon-pyserver",
+        "python", "src/mcp_server.py"
       ]
     }
   }
@@ -297,11 +307,10 @@ Create or edit `~/.cursor/mcp_servers.json`:
 2. **Navigate to Extensions > MCP**
 3. **Add New Server**:
    - **Name**: Archon Knowledge Engine
-   - **Command**: `python /path/to/archon/python/src/mcp_server.py`
-   - **Environment Variables**:
+   - **Command**: `docker`
+   - **Arguments**: 
      ```
-     SUPABASE_URL=https://your-project.supabase.co
-     SUPABASE_SERVICE_KEY=your-service-key
+     exec -i -e TRANSPORT=stdio -e HOST=localhost -e PORT=8051 archon-pyserver python src/mcp_server.py
      ```
 
 ### Claude Desktop Setup
@@ -313,12 +322,16 @@ Create or edit `~/.cursor/mcp_servers.json`:
 ```json
 {
   "archon-knowledge": {
-    "command": "python",
-    "args": ["/path/to/archon/python/src/mcp_server.py"],
-    "env": {
-      "SUPABASE_URL": "https://your-project.supabase.co",
-      "SUPABASE_SERVICE_KEY": "your-service-key"
-    }
+    "command": "docker",
+    "args": [
+      "exec", 
+      "-i",
+      "-e", "TRANSPORT=stdio",
+      "-e", "HOST=localhost", 
+      "-e", "PORT=8051",
+      "archon-pyserver",
+      "python", "src/mcp_server.py"
+    ]
   }
 }
 ```
@@ -329,11 +342,11 @@ For other MCP-compatible clients:
 
 #### Standard I/O Transport
 ```bash
-# Start MCP server
-python /path/to/archon/python/src/mcp_server.py
+# Start MCP server via Docker
+docker exec -i -e TRANSPORT=stdio -e HOST=localhost -e PORT=8051 archon-pyserver python src/mcp_server.py
 
-# Or via Docker
-docker run -p 8051:8051 archon-mcp-server
+# Or start the full stack
+docker-compose up -d
 ```
 
 #### Server-Sent Events (SSE) Transport
@@ -370,9 +383,16 @@ curl http://localhost:8080/api/mcp/connection-info
   "server_status": "running",
   "connection_methods": {
     "stdio": {
-      "command": "python",
-      "args": ["/app/src/mcp_server.py"],
-      "working_directory": "/app"
+      "command": "docker",
+      "args": [
+        "exec", 
+        "-i",
+        "-e", "TRANSPORT=stdio",
+        "-e", "HOST=localhost", 
+        "-e", "PORT=8051",
+        "archon-pyserver",
+        "python", "src/mcp_server.py"
+      ]
     },
     "sse": {
       "endpoint": "http://localhost:8080/api/mcp/sse",
@@ -390,8 +410,16 @@ curl http://localhost:8080/api/mcp/connection-info
       "config_file": "~/.cursor/mcp_servers.json",
       "configuration": {
         "archon": {
-          "command": "python",
-          "args": ["/app/src/mcp_server.py"]
+          "command": "docker",
+          "args": [
+            "exec", 
+            "-i",
+            "-e", "TRANSPORT=stdio",
+            "-e", "HOST=localhost", 
+            "-e", "PORT=8051",
+            "archon-pyserver",
+            "python", "src/mcp_server.py"
+          ]
         }
       }
     },
@@ -399,8 +427,16 @@ curl http://localhost:8080/api/mcp/connection-info
       "config_file": "~/Library/Application Support/Claude/claude_desktop_config.json",
       "configuration": {
         "archon-knowledge": {
-          "command": "python",
-          "args": ["/app/src/mcp_server.py"]
+          "command": "docker",
+          "args": [
+            "exec", 
+            "-i",
+            "-e", "TRANSPORT=stdio",
+            "-e", "HOST=localhost", 
+            "-e", "PORT=8051",
+            "archon-pyserver",
+            "python", "src/mcp_server.py"
+          ]
         }
       }
     }

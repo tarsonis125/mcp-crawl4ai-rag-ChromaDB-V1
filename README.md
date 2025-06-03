@@ -112,13 +112,40 @@ Once everything is running:
 2. **Test Web Crawling**: Knowledge Base → "Crawl Website" → Enter a docs URL
 3. **Test AI Integration**: MCP Dashboard → Copy connection config for your AI client
 
+## 🔌 Connecting to Cursor IDE
+
+To connect Cursor to your Archon MCP server, add this configuration to your Cursor settings:
+
+**File**: `~/.cursor/mcp.json`
+
+```json
+{
+  "mcpServers": {
+    "archon": {
+      "command": "docker",
+      "args": [
+        "exec", 
+        "-i",
+        "-e", "TRANSPORT=stdio",
+        "-e", "HOST=localhost", 
+        "-e", "PORT=8051",
+        "archon-pyserver",
+        "python", "src/mcp_server.py"
+      ]
+    }
+  }
+}
+```
+
+This configuration allows Cursor to access your knowledge base and task management directly through the MCP protocol.
+
 ## 🔧 Development
 
 For development with hot reload:
 
 ```bash
 # Backend (with auto-reload)
-docker-compose up backend --build
+docker-compose up archon-pyserver --build
 
 # Frontend (with hot reload) 
 cd archon-ui-main && npm run dev

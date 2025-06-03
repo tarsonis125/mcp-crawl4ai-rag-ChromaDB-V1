@@ -271,9 +271,9 @@ docker-compose -f docker-compose.prod.yml up -d
 docker-compose ps
 
 # Check logs
-docker-compose logs -f backend
+docker-compose logs -f archon-pyserver
 docker-compose logs -f frontend
-docker-compose logs -f mcp-server
+docker-compose logs -f docs
 
 # Test health endpoints
 curl http://localhost:8080/health
@@ -300,9 +300,9 @@ docker stats
 
 ```bash
 # View logs
-docker-compose logs -f backend
-docker-compose logs -f mcp-server
+docker-compose logs -f archon-pyserver
 docker-compose logs -f frontend
+docker-compose logs -f docs
 
 # Log rotation (add to crontab)
 0 2 * * * docker system prune -f
@@ -346,7 +346,7 @@ sudo apt update && sudo apt upgrade -y
 **Container won't start:**
 ```bash
 # Check logs for errors
-docker-compose logs backend
+docker-compose logs archon-pyserver
 
 # Verify environment variables
 docker-compose config
@@ -415,7 +415,7 @@ docker-compose up -d
 
 ```bash
 # Run security scan
-docker scan archon-backend:latest
+docker scan archon-pyserver:latest
 
 # Update base images regularly
 docker pull python:3.11-slim

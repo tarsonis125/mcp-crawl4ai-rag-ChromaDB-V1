@@ -1,6 +1,7 @@
 services:
-  backend:
+  archon-pyserver:
     build: ./python
+    container_name: archon-pyserver
     ports:
       - "8080:8080"
       - "8051:8051"
@@ -45,7 +46,7 @@ services:
       - ./archon-ui-main/src:/app/src
       - ./archon-ui-main/public:/app/public
     depends_on:
-      - backend
+      - archon-pyserver
 
   docs:
     build:
@@ -56,7 +57,7 @@ services:
     networks:
       - app-network
     depends_on:
-      - backend
+      - archon-pyserver
       - frontend
 
 networks:

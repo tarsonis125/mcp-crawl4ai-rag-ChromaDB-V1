@@ -920,13 +920,13 @@ TEST_DATABASE_URL=sqlite:///test.db pytest
 
 ```bash
 # Build and run tests in Docker
-docker-compose run --rm backend pytest
+docker-compose run --rm archon-pyserver pytest
 
 # Run specific test suite
-docker-compose run --rm backend pytest tests/unit/
+docker-compose run --rm archon-pyserver pytest tests/unit/
 
 # Run with coverage
-docker-compose run --rm backend pytest --cov=src --cov-report=html
+docker-compose run --rm archon-pyserver pytest --cov=src --cov-report=html
 ```
 
 ### Test Database Setup
@@ -945,7 +945,7 @@ services:
     ports:
       - "5433:5432"
 
-  backend-test:
+  archon-pyserver-test:
     build: ./python
     depends_on:
       - test-db

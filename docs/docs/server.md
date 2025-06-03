@@ -64,7 +64,7 @@ mcp-crawl4ai-rag/
 │   │       ├── rag_module.py    # RAG functionality
 │   │       └── tasks_module.py  # Task management
 │   ├── tests/                   # Backend test suite
-│   ├── Dockerfile               # Backend container configuration
+│   ├── Dockerfile               # Python server container configuration
 │   ├── requirements.txt         # Python dependencies
 │   ├── startup.py               # Application startup script
 │   └── pyproject.toml           # Python project configuration
