@@ -57,54 +57,9 @@
   /* Code block styling */
   --ifm-code-font-size: 95%;
 }
-  --ifm-color-primary: #a855f7;
-  --ifm-color-primary-dark: #9333ea;
-  --ifm-color-primary-darker: #8b5cf6;
-  --ifm-color-primary-darkest: #7c3aed;
-  --ifm-color-primary-light: #c084fc;
-  --ifm-color-primary-lighter: #d8b4fe;
-  --ifm-color-primary-lightest: #e9d5ff;
-
-  /* True black backgrounds for better contrast */
-  --ifm-background-color: #000000;
-  --ifm-background-surface-color: #0a0a0a;
-  --ifm-color-content: #ffffff;
-  --ifm-color-content-secondary: #a1a1aa;
-  
-  /* Enhanced dark glass effects */
-  --glass-bg: rgba(255, 255, 255, 0.05);
-  --glass-bg-strong: rgba(255, 255, 255, 0.1);
-  --glass-border: rgba(168, 85, 247, 0.5);
-  --glass-shadow: 0 10px 30px -15px rgba(0, 0, 0, 0.9);
-  --glass-shadow-strong: 0 15px 40px -15px rgba(0, 0, 0, 0.95);
-  
-  /* Text colors for better contrast */
-  --ifm-font-color-base: #ffffff;
-  --ifm-font-color-secondary: #e5e7eb;
-  --ifm-heading-color: #ffffff;
-  
-  /* Link colors */
-  --ifm-link-color: #a855f7;
-  --ifm-link-hover-color: #c084fc;
-  
-  /* Card backgrounds */
-  --ifm-card-background-color: rgba(0, 0, 0, 0.5);
-  
-  /* Navbar and sidebar */
-  --ifm-navbar-background-color: rgba(0, 0, 0, 0.8);
-  --ifm-sidebar-background-color: rgba(0, 0, 0, 0.5);
-  
-  /* Code block backgrounds */
-  --ifm-code-background: rgba(0, 0, 0, 0.6);
-  --prism-background-color: rgba(0, 0, 0, 0.8);
-}
 
 /* Global background with enhanced neon grid */
 html {
-  background: var(--ifm-background-color);
-}
-
-[data-theme='dark'] html {
   background: 
     radial-gradient(circle at 25% 25%, rgba(168, 85, 247, 0.1) 0%, transparent 50%),
     radial-gradient(circle at 75% 75%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
@@ -115,7 +70,7 @@ html {
   min-height: 100vh;
 }
 
-[data-theme='dark'] body {
+body {
   background: transparent;
   color: #ffffff;
 }
