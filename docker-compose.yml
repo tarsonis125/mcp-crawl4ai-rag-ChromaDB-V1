@@ -16,6 +16,9 @@ services:
       - USE_AGENTIC_RAG=${USE_AGENTIC_RAG:-false}
       - USE_RERANKING=${USE_RERANKING:-false}
     networks:
+volumes:
+  node_modules:
+  python_cache:
       - app-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/mcp/status"]
@@ -34,6 +37,9 @@ services:
     environment:
       - VITE_API_URL=http://localhost:8080
     networks:
+volumes:
+  node_modules:
+  python_cache:
       - app-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5173"]
@@ -48,18 +54,23 @@ services:
       - backend
 
   docs:
-    image: node:18-alpine
-    working_dir: /site
-    volumes:
-      - .:/site
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
-      - "3838:3000"
-    command: sh -c "npm install && npm run start -- --host 0.0.0.0 --port 3000"
+      - "3838:80"
     networks:
+volumes:
+  node_modules:
+  python_cache:
       - app-network
     depends_on:
       - backend
+      - backend
 
 networks:
+volumes:
+  node_modules:
+  python_cache:
   app-network:
     driver: bridge
