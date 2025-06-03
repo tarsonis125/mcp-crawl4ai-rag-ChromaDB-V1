@@ -282,7 +282,7 @@ class MCPServerManager:
                 openai_key = await credential_service.get_credential('OPENAI_API_KEY', decrypt=True)
                 model_choice = await credential_service.get_credential('MODEL_CHOICE', 'gpt-4o-mini')
                 transport = await credential_service.get_credential('TRANSPORT', 'sse')
-                host = await credential_service.get_credential('HOST', 'localhost')
+                host = await credential_service.get_credential('HOST', '0.0.0.0')
                 port = await credential_service.get_credential('PORT', '8051')
                 
                 # RAG strategy flags
@@ -318,7 +318,7 @@ class MCPServerManager:
                     'OPENAI_API_KEY': '',  # Don't override database credentials
                     'SUPABASE_URL': os.getenv('SUPABASE_URL', ''),  # Still need these for connection
                     'SUPABASE_SERVICE_KEY': os.getenv('SUPABASE_SERVICE_KEY', ''),
-                    'HOST': 'localhost',
+                    'HOST': '0.0.0.0',
                     'PORT': '8051',
                     'TRANSPORT': 'sse',
                     'MODEL_CHOICE': 'gpt-4o-mini',

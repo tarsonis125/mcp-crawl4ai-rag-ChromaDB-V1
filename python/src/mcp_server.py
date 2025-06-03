@@ -101,23 +101,29 @@ mcp = FastMCP(
 # Import and register all modules
 def register_modules():
     """Register all MCP tool modules with the main server."""
-    print("Registering MCP tool modules...")
+    # Only print when not using stdio to avoid contaminating JSON-RPC stream
+    if os.getenv("TRANSPORT", "sse") != "stdio":
+        print("Registering MCP tool modules...")
     
     # Import and register RAG module
     try:
         from src.modules.rag_module import register_rag_tools
         register_rag_tools(mcp)
-        print("✓ RAG module registered")
+        if os.getenv("TRANSPORT", "sse") != "stdio":
+            print("✓ RAG module registered")
     except ImportError as e:
-        print(f"⚠ RAG module not available: {e}")
+        if os.getenv("TRANSPORT", "sse") != "stdio":
+            print(f"⚠ RAG module not available: {e}")
     
     # Import and register Tasks module  
     try:
         from src.modules.tasks_module import register_task_tools
         register_task_tools(mcp)
-        print("✓ Tasks module registered")
+        if os.getenv("TRANSPORT", "sse") != "stdio":
+            print("✓ Tasks module registered")
     except ImportError as e:
-        print(f"⚠ Tasks module not available: {e}")
+        if os.getenv("TRANSPORT", "sse") != "stdio":
+            print(f"⚠ Tasks module not available: {e}")
     
     # Future UI module will be added here
     # try:
@@ -136,13 +142,16 @@ async def main():
     host = os.getenv("HOST", "localhost")
     port = int(os.getenv("PORT", "8051"))
     
-    print(f"Starting Archon MCP server with transport: {transport}")
+    # Only print when not using stdio to avoid contaminating JSON-RPC stream
+    if transport != "stdio":
+        print(f"Starting Archon MCP server with transport: {transport}")
     
     if transport == 'sse':
-        print(f"SSE server will be available at: http://{host}:{port}/sse")
+        if transport != "stdio":
+            print(f"SSE server will be available at: http://{host}:{port}/sse")
         await mcp.run_sse_async()
     elif transport == 'stdio':
-        print("Stdio server ready for MCP client connections")
+        # No prints in stdio mode - client expects pure JSON-RPC
         await mcp.run_stdio_async()
     else:
         raise ValueError(f"Unsupported transport: {transport}. Use 'sse' or 'stdio'")

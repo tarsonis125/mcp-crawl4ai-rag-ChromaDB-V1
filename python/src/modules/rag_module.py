@@ -83,7 +83,10 @@ def rerank_results(model: CrossEncoder, query: str, results: List[Dict[str, Any]
         
         return reranked
     except Exception as e:
-        print(f"Error during reranking: {e}")
+        # Only print when not using stdio to avoid contaminating JSON-RPC stream
+        import os
+        if os.getenv("TRANSPORT", "sse") != "stdio":
+            print(f"Error during reranking: {e}")
         return results
 
 
@@ -107,7 +110,10 @@ def parse_sitemap(sitemap_url: str) -> List[str]:
             tree = ElementTree.fromstring(resp.content)
             urls = [loc.text for loc in tree.findall('.//{*}loc')]
         except Exception as e:
-            print(f"Error parsing sitemap XML: {e}")
+            # Only print when not using stdio to avoid contaminating JSON-RPC stream
+            import os
+            if os.getenv("TRANSPORT", "sse") != "stdio":
+                print(f"Error parsing sitemap XML: {e}")
 
     return urls
 
@@ -203,7 +209,10 @@ async def crawl_markdown_file(crawler: AsyncWebCrawler, url: str) -> List[Dict[s
     if result.success and result.markdown:
         return [{'url': url, 'markdown': result.markdown}]
     else:
-        print(f"Failed to crawl {url}: {result.error_message}")
+        # Only print when not using stdio to avoid contaminating JSON-RPC stream
+        import os
+        if os.getenv("TRANSPORT", "sse") != "stdio":
+            print(f"Failed to crawl {url}: {result.error_message}")
         return []
 
 
