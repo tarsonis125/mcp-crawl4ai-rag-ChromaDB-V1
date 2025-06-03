@@ -4,3 +4,12 @@ __pycache__
 crawl4ai_mcp.egg-info
 .DS_Store
 docs/node_modules/
+
+# Claude Taskmaster (AI project mgmt)
+.cursor/
+.roo/
+.roomodes
+.taskmasterconfig
+.windsurfrules
+scripts/
+tasks/
