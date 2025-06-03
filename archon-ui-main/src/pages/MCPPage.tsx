@@ -446,6 +446,7 @@ export const MCPPage = () => {
 
       // Map tool names to backend endpoints
       switch (selectedTool.name) {
+        // RAG Module Tools
         case 'crawl_single_page':
           endpoint = '/api/crawl/single';
           body = { url: testParams.url };
@@ -470,14 +471,77 @@ export const MCPPage = () => {
         case 'get_available_sources':
           endpoint = '/api/rag/sources';
           break;
+        
+        // Task Management Tools
+        case 'list_projects':
+          endpoint = '/api/projects';
+          break;
+        case 'create_project':
+          endpoint = '/api/projects';
+          body = {
+            title: testParams.title,
+            prd: testParams.prd ? JSON.parse(testParams.prd) : undefined,
+            github_repo: testParams.github_repo
+          };
+          break;
+        case 'get_project':
+          endpoint = `/api/projects/${testParams.project_id}`;
+          break;
+        case 'create_task':
+          endpoint = '/api/tasks';
+          body = {
+            project_id: testParams.project_id,
+            title: testParams.title,
+            description: testParams.description || '',
+            parent_task_id: testParams.parent_task_id,
+            sources: testParams.sources ? JSON.parse(testParams.sources) : undefined,
+            code_examples: testParams.code_examples ? JSON.parse(testParams.code_examples) : undefined
+          };
+          break;
+        case 'list_tasks_by_project':
+          endpoint = `/api/projects/${testParams.project_id}/tasks`;
+          break;
+        case 'get_task':
+          endpoint = `/api/tasks/${testParams.task_id}`;
+          break;
+        case 'update_task_status':
+          endpoint = `/api/tasks/${testParams.task_id}/status`;
+          body = { status: testParams.status };
+          break;
+        case 'update_task':
+          endpoint = `/api/tasks/${testParams.task_id}`;
+          body = {
+            title: testParams.title,
+            description: testParams.description,
+            status: testParams.status
+          };
+          break;
+        case 'delete_task':
+          endpoint = `/api/tasks/${testParams.task_id}`;
+          break;
         default:
           throw new Error(`Tool "${selectedTool.name}" is not supported for testing yet`);
       }
 
+      // Determine HTTP method based on tool
+      let method = 'POST'; // Default
+      if (selectedTool.name === 'get_available_sources' || 
+          selectedTool.name === 'list_projects' || 
+          selectedTool.name === 'get_project' ||
+          selectedTool.name === 'list_tasks_by_project' ||
+          selectedTool.name === 'get_task') {
+        method = 'GET';
+      } else if (selectedTool.name === 'update_task_status' || 
+                 selectedTool.name === 'update_task') {
+        method = 'PUT';
+      } else if (selectedTool.name === 'delete_task') {
+        method = 'DELETE';
+      }
+
       const response = await fetch(`${baseUrl}${endpoint}`, {
-        method: endpoint === '/api/rag/sources' ? 'GET' : 'POST',
+        method,
         headers: { 'Content-Type': 'application/json' },
-        body: endpoint === '/api/rag/sources' ? undefined : JSON.stringify(body)
+        body: method === 'GET' ? undefined : JSON.stringify(body)
       });
 
       if (!response.ok) {
@@ -952,98 +1016,100 @@ export const MCPPage = () => {
                 </div>
               </div>
             ) : (
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {/* Tool Selection */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-zinc-300 mb-2">
-                    Select Tool
-                  </label>
-                  <select
-                    value={selectedTool?.name || ''}
-                    onChange={(e) => {
-                      const tool = tools.find(t => t.name === e.target.value);
-                      if (tool) handleToolSelect(tool);
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 text-sm"
-                  >
-                    <option value="">Choose a tool...</option>
-                    {tools.map((tool) => (
-                      <option key={tool.name} value={tool.name}>
-                        {tool.name} 
-                        {(tool as any).module && ` (${(tool as any).module === 'rag_module' ? 'RAG' : 'Tasks'})`}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Parameters */}
-                {selectedTool && (
-                  <div className="space-y-3">
-                    <h4 className="text-sm font-medium text-gray-700 dark:text-zinc-300">
-                      Parameters
-                    </h4>
-                    {extractParametersFromSchema(selectedTool).map((param) => (
-                      <div key={param.name}>
-                        <label className="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">
-                          {param.name}
-                          {param.required && <span className="text-red-500 ml-1">*</span>}
-                        </label>
-                        <input
-                          type={param.type === 'integer' ? 'number' : 'text'}
-                          value={testParams[param.name] || ''}
-                          onChange={(e) => handleParamChange(param.name, 
-                            param.type === 'integer' ? parseInt(e.target.value) || 0 : e.target.value
-                          )}
-                          placeholder={param.description}
-                          className="w-full px-2 py-1 border border-gray-300 dark:border-zinc-700 rounded text-xs bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Execute Button */}
-                {selectedTool && (
-                  <Button
-                    onClick={handleTestTool}
-                    disabled={isTestingTool}
-                    variant="primary"
-                    accentColor="blue"
-                    className="w-full"
-                  >
-                    {isTestingTool ? (
-                      <>
-                        <Loader className="w-4 h-4 mr-2 animate-spin inline" />
-                        Testing...
-                      </>
-                    ) : (
-                      <>
-                        <PlayCircle className="w-4 h-4 mr-2 inline" />
-                        Test Tool
-                      </>
-                    )}
-                  </Button>
-                )}
-
-                {/* Results */}
-                {(testResult || testError) && (
+              <div className="flex-1 overflow-y-auto p-4">
+                <div className="space-y-4">
+                  {/* Tool Selection */}
                   <div>
-                    <h4 className="text-sm font-medium text-gray-700 dark:text-zinc-300 mb-2">
-                      Result
-                    </h4>
-                    <div className="bg-gray-50 dark:bg-black/50 rounded-md p-3 max-h-32 overflow-y-auto">
-                      {testError ? (
-                        <div className="text-red-600 dark:text-red-400 text-xs">
-                          Error: {testError}
-                        </div>
-                      ) : (
-                        <pre className="text-xs text-gray-600 dark:text-zinc-400 whitespace-pre-wrap">
-                          {JSON.stringify(testResult, null, 2)}
-                        </pre>
-                      )}
-                    </div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-zinc-300 mb-2">
+                      Select Tool
+                    </label>
+                    <select
+                      value={selectedTool?.name || ''}
+                      onChange={(e) => {
+                        const tool = tools.find(t => t.name === e.target.value);
+                        if (tool) handleToolSelect(tool);
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 text-sm"
+                    >
+                      <option value="">Choose a tool...</option>
+                      {tools.map((tool) => (
+                        <option key={tool.name} value={tool.name}>
+                          {tool.name} 
+                          {(tool as any).module && ` (${(tool as any).module === 'rag_module' ? 'RAG' : 'Tasks'})`}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                )}
+
+                  {/* Parameters */}
+                  {selectedTool && (
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-medium text-gray-700 dark:text-zinc-300">
+                        Parameters
+                      </h4>
+                      {extractParametersFromSchema(selectedTool).map((param) => (
+                        <div key={param.name}>
+                          <label className="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">
+                            {param.name}
+                            {param.required && <span className="text-red-500 ml-1">*</span>}
+                          </label>
+                          <input
+                            type={param.type === 'integer' ? 'number' : 'text'}
+                            value={testParams[param.name] || ''}
+                            onChange={(e) => handleParamChange(param.name, 
+                              param.type === 'integer' ? parseInt(e.target.value) || 0 : e.target.value
+                            )}
+                            placeholder={param.description}
+                            className="w-full px-2 py-1 border border-gray-300 dark:border-zinc-700 rounded text-xs bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Execute Button */}
+                  {selectedTool && (
+                    <Button
+                      onClick={handleTestTool}
+                      disabled={isTestingTool}
+                      variant="primary"
+                      accentColor="blue"
+                      className="w-full"
+                    >
+                      {isTestingTool ? (
+                        <>
+                          <Loader className="w-4 h-4 mr-2 animate-spin inline" />
+                          Testing...
+                        </>
+                      ) : (
+                        <>
+                          <PlayCircle className="w-4 h-4 mr-2 inline" />
+                          Test Tool
+                        </>
+                      )}
+                    </Button>
+                  )}
+
+                  {/* Results */}
+                  {(testResult || testError) && (
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-700 dark:text-zinc-300 mb-2">
+                        Result
+                      </h4>
+                      <div className="bg-gray-50 dark:bg-black/50 rounded-md p-3 max-h-64 overflow-y-auto">
+                        {testError ? (
+                          <div className="text-red-600 dark:text-red-400 text-xs">
+                            Error: {testError}
+                          </div>
+                        ) : (
+                          <pre className="text-xs text-gray-600 dark:text-zinc-400 whitespace-pre-wrap">
+                            {JSON.stringify(testResult, null, 2)}
+                          </pre>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
