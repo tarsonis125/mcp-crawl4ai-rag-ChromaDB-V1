@@ -36,7 +36,7 @@ git clone https://github.com/coleam00/archon.git
 cd archon
 
 # Create environment file
-cp .env-doc.md .env
+cp .env.example .env
 ```
 
 ### 2. Configure Environment
