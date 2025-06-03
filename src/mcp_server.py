@@ -1,4 +1,6 @@
 """
+# TODO: Add robust error handling, connection pooling for external services, health check endpoints, circuit breaker pattern, and resource optimization.
+# Example: Use tenacity for retries, implement /health endpoint, and wrap external calls with circuit breaker logic.
 Modular MCP Server for Archon
 
 This is the main MCP server that coordinates multiple tool modules:
