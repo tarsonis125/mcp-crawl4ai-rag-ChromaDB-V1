@@ -75,6 +75,22 @@ const API_BASE_URL = '/api'
  * Generic API request handler with error handling
  */
 async function apiRequest<T>(
+// Retry wrapper for transient errors
+async function retry<T>(fn: () => Promise<T>, retries = 3, delay = 500): Promise<T> {
+  let lastError;
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (i < retries - 1) {
+        await new Promise(res => setTimeout(res, delay * Math.pow(2, i)));
+      }
+    }
+  }
+  throw lastError;
+}
+
   endpoint: string, 
   options: RequestInit = {}
 ): Promise<T> {
