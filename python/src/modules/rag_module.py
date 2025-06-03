@@ -793,12 +793,17 @@ def register_rag_tools(mcp: FastMCP):
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             reranking_model = ctx.request_context.lifespan_context.reranking_model
             
-            # Perform the search
-            results = await search_documents(
+            # Build filter_metadata if source is provided
+            filter_metadata = None
+            if source:
+                filter_metadata = {"source_id": source}
+            
+            # Perform the search (search_documents is not async)
+            results = search_documents(
                 supabase_client, 
                 query, 
-                source_filter=source, 
-                match_count=match_count
+                match_count=match_count,
+                filter_metadata=filter_metadata
             )
             
             # Apply reranking if available
@@ -853,7 +858,8 @@ def register_rag_tools(mcp: FastMCP):
         try:
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             
-            results = await search_code_examples(
+            # search_code_examples is not async
+            results = search_code_examples(
                 supabase_client,
                 query,
                 source_id=source_id,

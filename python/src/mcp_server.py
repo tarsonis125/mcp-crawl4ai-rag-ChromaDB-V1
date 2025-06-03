@@ -115,15 +115,15 @@ def register_modules():
         if os.getenv("TRANSPORT", "sse") != "stdio":
             print(f"⚠ RAG module not available: {e}")
     
-    # Import and register Tasks module  
+    # Import and register Project module  
     try:
-        from src.modules.tasks_module import register_task_tools
-        register_task_tools(mcp)
+        from src.modules.project_module import register_project_tools
+        register_project_tools(mcp)
         if os.getenv("TRANSPORT", "sse") != "stdio":
-            print("✓ Tasks module registered")
+            print("✓ Project module registered")
     except ImportError as e:
         if os.getenv("TRANSPORT", "sse") != "stdio":
-            print(f"⚠ Tasks module not available: {e}")
+            print(f"⚠ Project module not available: {e}")
     
     # Future UI module will be added here
     # try:

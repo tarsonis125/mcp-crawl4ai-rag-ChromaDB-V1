@@ -1,8 +1,8 @@
 """
-Tasks Module for Archon MCP Server
+Project Module for Archon MCP Server
 
 This module provides tools for:
-- Project management (create, list, get projects)
+- Project management (create, list, get, delete projects)
 - Task management (create, list, update, delete tasks)
 - Task status workflow (todo → doing → blocked → done)
 - Task hierarchy (subtasks with parent relationships)
@@ -16,8 +16,8 @@ import uuid
 from datetime import datetime
 
 
-def register_task_tools(mcp: FastMCP):
-    """Register all task management tools with the MCP server."""
+def register_project_tools(mcp: FastMCP):
+    """Register all project and task management tools with the MCP server."""
     
     @mcp.tool()
     async def create_project(ctx: Context, title: str, prd: Dict[str, Any] = None, github_repo: str = None) -> str:
@@ -145,6 +145,46 @@ def register_task_tools(mcp: FastMCP):
             return json.dumps({
                 "success": False,
                 "error": f"Error getting project: {str(e)}"
+            })
+    
+    @mcp.tool()
+    async def delete_project(ctx: Context, project_id: str) -> str:
+        """
+        Delete a project and all its associated tasks.
+        
+        Args:
+            ctx: The MCP server provided context
+            project_id: UUID of the project to delete
+        
+        Returns:
+            JSON string with deletion results
+        """
+        try:
+            supabase_client = ctx.request_context.lifespan_context.supabase_client
+            
+            # First, get task count for reporting
+            tasks_response = supabase_client.table("tasks").select("id").eq("project_id", project_id).execute()
+            tasks_count = len(tasks_response.data) if tasks_response.data else 0
+            
+            # Delete the project (tasks will be deleted by cascade)
+            response = supabase_client.table("projects").delete().eq("id", project_id).execute()
+            
+            if response.data:
+                return json.dumps({
+                    "success": True,
+                    "project_id": project_id,
+                    "deleted_tasks": tasks_count
+                })
+            else:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Project with ID {project_id} not found"
+                })
+                
+        except Exception as e:
+            return json.dumps({
+                "success": False,
+                "error": f"Error deleting project: {str(e)}"
             })
     
     @mcp.tool()
