@@ -120,11 +120,16 @@ curl -X DELETE "http://localhost:8080/api/knowledge-items/https%3A%2F%2Fdocs.pyt
 }
 ```
 
-### Crawl Website
+### Smart Crawl Website
 
 **POST** `/api/knowledge-items/crawl`
 
-Initiate web crawling for a URL with real-time progress tracking.
+Initiate intelligent web crawling for a URL with automatic content type detection and real-time progress tracking.
+
+Archon automatically detects the content type and applies the appropriate crawling strategy:
+- **Sitemap URLs** (ending in `sitemap.xml`): Extracts and crawls all URLs from the sitemap
+- **Text Files** (`.txt` files): Downloads and processes the file directly  
+- **Regular Webpages**: Performs recursive crawling following internal links
 
 #### Request Body
 
@@ -133,15 +138,7 @@ Initiate web crawling for a URL with real-time progress tracking.
   "url": "https://docs.python.org/3/tutorial/",
   "knowledge_type": "technical",
   "tags": ["python", "tutorial"],
-  "options": {
-    "max_pages": 50,
-    "max_depth": 3,
-    "follow_links": true,
-    "respect_robots_txt": true,
-    "delay_between_requests": 1.0,
-    "include_patterns": ["*/tutorial/*"],
-    "exclude_patterns": ["*/download/*", "*/bugs/*"]
-  }
+  "update_frequency": 7
 }
 ```
 
@@ -149,16 +146,16 @@ Initiate web crawling for a URL with real-time progress tracking.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `url` | string | ✅ | Target URL to crawl |
+| `url` | string | ✅ | Target URL to crawl (webpage, sitemap.xml, or .txt file) |
 | `knowledge_type` | string | ✅ | Knowledge classification (`technical`, `business`, `general`) |
 | `tags` | string[] | ❌ | Tags for categorization |
-| `options.max_pages` | integer | ❌ | Maximum pages to crawl (default: 100) |
-| `options.max_depth` | integer | ❌ | Maximum crawl depth (default: 2) |
-| `options.follow_links` | boolean | ❌ | Follow internal links (default: true) |
-| `options.respect_robots_txt` | boolean | ❌ | Respect robots.txt (default: true) |
-| `options.delay_between_requests` | float | ❌ | Delay in seconds (default: 1.0) |
-| `options.include_patterns` | string[] | ❌ | URL patterns to include |
-| `options.exclude_patterns` | string[] | ❌ | URL patterns to exclude |
+| `update_frequency` | integer | ❌ | How often to refresh content (days, default: 7) |
+
+**Smart Crawling Behavior:**
+- **Max Depth**: 3 levels for recursive webpage crawling
+- **Max Concurrent**: 10 simultaneous browser sessions  
+- **Chunk Size**: 5000 characters per knowledge chunk
+- **Automatic Detection**: Content type determined by URL pattern
 
 #### Example Request
 
@@ -169,10 +166,27 @@ curl -X POST "http://localhost:8080/api/knowledge-items/crawl" \
     "url": "https://docs.python.org/3/tutorial/",
     "knowledge_type": "technical",
     "tags": ["python", "tutorial"],
-    "options": {
-      "max_pages": 20,
-      "max_depth": 2
-    }
+    "update_frequency": 7
+  }'
+```
+
+#### Additional Example URLs
+
+```bash
+# Crawl a sitemap (automatically detected)
+curl -X POST "http://localhost:8080/api/knowledge-items/crawl" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com/sitemap.xml",
+    "knowledge_type": "technical"
+  }'
+
+# Process a text file (automatically detected)  
+curl -X POST "http://localhost:8080/api/knowledge-items/crawl" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://raw.githubusercontent.com/user/repo/main/README.txt",
+    "knowledge_type": "technical"
   }'
 ```
 
@@ -180,11 +194,10 @@ curl -X POST "http://localhost:8080/api/knowledge-items/crawl" \
 
 ```json
 {
-  "message": "Crawling started successfully",
-  "progress_id": "crawl_20240115_103045_abc123",
-  "websocket_url": "ws://localhost:8080/api/crawl-progress/crawl_20240115_103045_abc123",
-  "estimated_pages": 15,
-  "status": "started"
+  "success": true,
+  "progressId": "183e2615-fca4-4a71-a051-ab5a0292f9ff",
+  "message": "Crawling started",
+  "estimatedDuration": "3-5 minutes"
 }
 ```
 
@@ -192,16 +205,20 @@ curl -X POST "http://localhost:8080/api/knowledge-items/crawl" \
 
 **WebSocket** `/api/crawl-progress/{progress_id}`
 
-Real-time progress updates for crawling operations.
+Real-time progress updates for crawling operations with detailed status information.
 
 #### Connection Example
 
 ```javascript
-const ws = new WebSocket('ws://localhost:8080/api/crawl-progress/crawl_20240115_103045_abc123');
+const ws = new WebSocket('ws://localhost:8080/api/crawl-progress/183e2615-fca4-4a71-a051-ab5a0292f9ff');
 
 ws.onmessage = function(event) {
-  const progress = JSON.parse(event.data);
-  console.log('Progress:', progress);
+  const data = JSON.parse(event.data);
+  if (data.type === 'crawl_progress') {
+    console.log('Progress:', data.data.percentage + '%');
+    console.log('Status:', data.data.status);
+    console.log('Current URL:', data.data.currentUrl);
+  }
 };
 ```
 
@@ -209,23 +226,40 @@ ws.onmessage = function(event) {
 
 ```json
 {
-  "progress_id": "crawl_20240115_103045_abc123",
-  "status": "running",
-  "current_page": 5,
-  "total_pages": 15,
-  "percentage": 33.3,
-  "current_url": "https://docs.python.org/3/tutorial/classes.html",
-  "pages_processed": 5,
-  "pages_successful": 4,
-  "pages_failed": 1,
-  "errors": [
-    {
-      "url": "https://docs.python.org/3/tutorial/broken-link.html",
-      "error": "404 Not Found",
-      "timestamp": "2024-01-15T10:32:15Z"
-    }
-  ],
-  "estimated_completion": "2024-01-15T10:35:00Z"
+  "type": "crawl_progress",
+  "data": {
+    "progressId": "183e2615-fca4-4a71-a051-ab5a0292f9ff",
+    "status": "crawling",
+    "percentage": 45,
+    "start_time": "2024-01-15T10:30:00Z",
+    "currentUrl": "https://docs.python.org/3/tutorial/classes.html",
+    "totalPages": 12,
+    "processedPages": 5,
+    "log": "Crawling depth 2: processed 5/12 pages",
+    "logs": [
+      "Starting crawl...",
+      "Starting crawl of https://docs.python.org/3/tutorial/",
+      "Detected webpage, starting recursive crawl...",
+      "Crawling depth 1: 8 URLs to process",
+      "Crawling depth 2: processed 5/12 pages"
+    ]
+  }
+}
+```
+
+#### Crawl Completion Message
+
+```json
+{
+  "type": "crawl_completed", 
+  "data": {
+    "progressId": "183e2615-fca4-4a71-a051-ab5a0292f9ff",
+    "status": "completed",
+    "percentage": 100,
+    "chunksStored": 89,
+    "wordCount": 25000,
+    "log": "Successfully crawled 12 pages with 89 chunks stored"
+  }
 }
 ```
 
@@ -971,12 +1005,13 @@ class ArchonClient:
         response.raise_for_status()
         return response.json()
     
-    def start_crawl(self, url: str, knowledge_type: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
-        """Start crawling a website"""
+    def start_crawl(self, url: str, knowledge_type: str, tags: List[str] = None, update_frequency: int = 7) -> Dict[str, Any]:
+        """Start smart crawling a website with automatic content type detection"""
         payload = {
             "url": url,
             "knowledge_type": knowledge_type,
-            "options": options or {}
+            "tags": tags or [],
+            "update_frequency": update_frequency
         }
         response = self.session.post(f"{self.base_url}/api/knowledge-items/crawl", json=payload)
         response.raise_for_status()
@@ -992,6 +1027,15 @@ result = client.upload_document(
     tags=["python", "programming"]
 )
 print(f"Document uploaded: {result['document']['id']}")
+
+# Start smart crawling (automatically detects sitemap, text file, or webpage)
+crawl_result = client.start_crawl(
+    url="https://docs.python.org/3/tutorial/",
+    knowledge_type="technical", 
+    tags=["python", "tutorial"],
+    update_frequency=7
+)
+print(f"Crawling started with progress ID: {crawl_result['progressId']}")
 
 # Query knowledge
 results = client.query_knowledge(
@@ -1054,11 +1098,12 @@ class ArchonClient {
     return response.json();
   }
 
-  async startCrawl(url, knowledgeType, options = {}) {
+  async startCrawl(url, knowledgeType, tags = [], updateFrequency = 7) {
     const payload = {
       url,
       knowledge_type: knowledgeType,
-      options
+      tags,
+      update_frequency: updateFrequency
     };
 
     const response = await fetch(`${this.baseUrl}/api/knowledge-items/crawl`, {
@@ -1082,7 +1127,9 @@ class ArchonClient {
     
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      onMessage(data);
+      if (data.type === 'crawl_progress' || data.type === 'crawl_completed') {
+        onMessage(data.data);
+      }
     };
 
     ws.onerror = (error) => {
@@ -1096,23 +1143,26 @@ class ArchonClient {
 // Usage example
 const client = new ArchonClient();
 
-// Start a crawl with progress tracking
-client.startCrawl('https://docs.python.org/3/tutorial/', 'technical', {
-  max_pages: 20,
-  max_depth: 2
-}).then(result => {
-  console.log('Crawl started:', result.progress_id);
-  
-  // Connect to progress updates
-  const ws = client.connectToProgress(result.progress_id, (progress) => {
-    console.log(`Progress: ${progress.percentage}% - ${progress.current_url}`);
+// Start smart crawling (automatically detects content type)
+client.startCrawl('https://docs.python.org/3/tutorial/', 'technical', ['python', 'tutorial'], 7)
+  .then(result => {
+    console.log('Crawl started:', result.progressId);
     
-    if (progress.status === 'completed') {
-      console.log('Crawl completed!');
-      ws.close();
-    }
+    // Connect to progress updates
+    const ws = client.connectToProgress(result.progressId, (progress) => {
+      console.log(`Progress: ${progress.percentage}% - ${progress.currentUrl}`);
+      console.log(`Status: ${progress.status} - ${progress.log}`);
+      
+      if (progress.status === 'completed') {
+        console.log(`Crawl completed! Stored ${progress.chunksStored} chunks`);
+        ws.close();
+      }
+    });
   });
-});
+
+// Examples of different URL types
+client.startCrawl('https://example.com/sitemap.xml', 'technical', ['docs']);  // Sitemap
+client.startCrawl('https://raw.githubusercontent.com/user/repo/main/README.txt', 'technical', ['readme']);  // Text file
 ```
 
 ---

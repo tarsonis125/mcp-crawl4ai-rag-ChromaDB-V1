@@ -313,7 +313,180 @@ async def crawl_recursive_with_progress(crawler: AsyncWebCrawler, start_urls: Li
     return results_all
 
 
-# Standalone function for direct import (needed by api_wrapper.py)
+# Standalone functions for direct import (needed by api_wrapper.py)
+async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurrent: int = 10, chunk_size: int = 5000) -> str:
+    """
+    Standalone function for smart crawling that can be imported directly.
+    
+    Intelligently crawl a URL based on its type (sitemap, text file, or webpage).
+    """
+    try:
+        crawler = ctx.request_context.lifespan_context.crawler
+        supabase_client = ctx.request_context.lifespan_context.supabase_client
+        reranking_model = getattr(ctx.request_context.lifespan_context, 'reranking_model', None)
+        
+        # Get progress callback if available
+        progress_callback = getattr(ctx, 'progress_callback', None)
+        
+        async def report_progress(status: str, percentage: int, message: str, **kwargs):
+            """Helper to report progress if callback available"""
+            if progress_callback:
+                await progress_callback(status, percentage, message, **kwargs)
+        
+        await report_progress('analyzing', 5, f'Analyzing URL type: {url}')
+        
+        # Determine crawl strategy based on URL type
+        if is_sitemap(url):
+            await report_progress('sitemap', 10, 'Detected sitemap, extracting URLs...')
+            
+            # Parse sitemap and get URLs
+            urls = parse_sitemap(url)
+            if not urls:
+                return json.dumps({
+                    "success": False,
+                    "error": "Failed to extract URLs from sitemap"
+                })
+            
+            await report_progress('sitemap', 15, f'Found {len(urls)} URLs in sitemap')
+            
+            # Batch crawl the sitemap URLs
+            results = await crawl_batch_with_progress(
+                crawler, urls, max_concurrent, progress_callback, 15, 60
+            )
+            crawl_type = "sitemap"
+            
+        elif is_txt(url):
+            await report_progress('text_file', 10, 'Detected text file, downloading...')
+            
+            # Crawl the text file directly
+            results = await crawl_markdown_file(crawler, url)
+            crawl_type = "text_file"
+            
+            await report_progress('text_file', 60, f'Downloaded text file: {len(results)} file processed')
+            
+        else:
+            await report_progress('webpage', 10, 'Detected webpage, starting recursive crawl...')
+            
+            # Recursive crawling for regular webpages
+            results = await crawl_recursive_with_progress(
+                crawler, [url], max_depth, max_concurrent, progress_callback, 10, 60
+            )
+            crawl_type = "webpage"
+        
+        if not results:
+            return json.dumps({
+                "success": False,
+                "error": "No content retrieved from crawling"
+            })
+        
+        await report_progress('processing', 65, f'Processing {len(results)} pages into chunks...')
+        
+        # Process all crawled content
+        all_documents = []
+        all_code_examples = []
+        total_chunks = 0
+        total_word_count = 0
+        
+        for i, page_result in enumerate(results):
+            page_url = page_result['url']
+            markdown_content = page_result['markdown']
+            
+            # Create chunks from the content
+            chunks = smart_chunk_markdown(markdown_content, chunk_size)
+            
+            # Process each chunk
+            for j, chunk in enumerate(chunks):
+                section_info = extract_section_info(chunk)
+                total_word_count += section_info["word_count"]
+                
+                # Get knowledge metadata from context if available
+                knowledge_metadata = getattr(ctx, 'knowledge_metadata', {})
+                
+                document_metadata = {
+                    "source_id": urlparse(page_url).netloc,
+                    "title": f"Page {i+1} from {crawl_type}",
+                    "headers": section_info["headers"],
+                    "char_count": section_info["char_count"],
+                    "word_count": section_info["word_count"],
+                    "crawl_type": crawl_type,
+                    "source_type": "url",
+                    **knowledge_metadata  # Add any additional metadata from context
+                }
+                
+                all_documents.append({
+                    "content": chunk,
+                    "url": page_url,
+                    "chunk_index": j,
+                    "metadata": document_metadata
+                })
+            
+            # Extract code examples if enabled
+            if os.getenv("USE_AGENTIC_RAG", "false") == "true":
+                code_blocks = extract_code_blocks(markdown_content)
+                if code_blocks:
+                    # Process code examples in parallel
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                        code_summaries = list(executor.map(process_code_example, code_blocks))
+                    
+                    for code_block, summary in zip(code_blocks, code_summaries):
+                        all_code_examples.append({
+                            'code_block': code_block,
+                            'summary': summary,
+                            'url': page_url
+                        })
+            
+            # Report progress during processing
+            progress_pct = 65 + int((i + 1) / len(results) * 15)  # 65-80%
+            await report_progress('processing', progress_pct, f'Processed {i + 1}/{len(results)} pages')
+        
+        await report_progress('storing', 80, 'Storing content in database...')
+        
+        # Store documents in Supabase
+        chunks_stored = await add_documents_to_supabase(supabase_client, all_documents)
+        
+        # Store code examples if any
+        code_examples_stored = 0
+        if all_code_examples:
+            code_examples_stored = await add_code_examples_to_supabase(
+                supabase_client, 
+                [ex['code_block'] for ex in all_code_examples],
+                [ex['summary'] for ex in all_code_examples],
+                url  # Use the original URL as source
+            )
+        
+        await report_progress('storing', 90, 'Updating source information...')
+        
+        # Update source information
+        source_id = urlparse(url).netloc
+        source_summary = f"Crawled via {crawl_type}: {len(results)} pages processed"
+        
+        await update_source_info(supabase_client, source_id, source_summary)
+        
+        await report_progress('completed', 100, f'Successfully crawled {len(results)} pages with {chunks_stored} chunks stored')
+        
+        return json.dumps({
+            "success": True,
+            "crawl_type": crawl_type,
+            "url": url,
+            "urls_processed": len(results),
+            "chunks_stored": chunks_stored,
+            "code_examples_stored": code_examples_stored,
+            "total_chunks": chunks_stored,
+            "content_length": sum(len(r['markdown']) for r in results),
+            "total_word_count": total_word_count,
+            "source_id": source_id
+        })
+        
+    except Exception as e:
+        error_msg = f"Error in smart crawl: {str(e)}"
+        if 'progress_callback' in locals():
+            await report_progress('error', 0, error_msg)
+        return json.dumps({
+            "success": False,
+            "error": error_msg
+        })
+
+
 async def delete_source(ctx, source_id: str) -> str:
     """
     Delete a source and all associated crawled pages and code examples from the database.
@@ -472,23 +645,8 @@ def register_rag_tools(mcp: FastMCP):
         Returns:
             JSON string with crawling results and statistics
         """
-        try:
-            crawler = ctx.request_context.lifespan_context.crawler
-            supabase_client = ctx.request_context.lifespan_context.supabase_client
-            
-            # ... (implementation continues with the smart crawling logic)
-            # For brevity, I'll add a placeholder here and continue with other tools
-            
-            return json.dumps({
-                "success": True,
-                "message": "Smart crawl functionality - implementation pending full extraction"
-            })
-            
-        except Exception as e:
-            return json.dumps({
-                "success": False,
-                "error": f"Error in smart crawl: {str(e)}"
-            })
+        # Call the standalone function
+        return await smart_crawl_url_direct(ctx, url, max_depth, max_concurrent, chunk_size)
     
     @mcp.tool()
     async def get_available_sources(ctx: Context) -> str:

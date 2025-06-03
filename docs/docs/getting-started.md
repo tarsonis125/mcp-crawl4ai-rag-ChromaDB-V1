@@ -260,17 +260,65 @@ Check that all services are accessible:
 5. Click **Upload**
 6. Verify the document appears in the list
 
-**Test Web Crawling:**
-1. Go to **Crawl** tab
-2. Enter a documentation URL (e.g., `https://docs.python.org/3/tutorial/`)
-3. Select crawling options
-4. Click **Start Crawling**
-5. Monitor progress in real-time
+**Test Smart Web Crawling:**
+1. Go to **Knowledge Base** tab
+2. Click **"Crawl Website"** button
+3. Enter a URL - Archon automatically detects the content type:
+   - **Documentation URLs**: `https://docs.python.org/3/tutorial/`
+   - **Sitemap URLs**: `https://example.com/sitemap.xml`
+   - **Text Files**: `https://raw.githubusercontent.com/user/repo/main/README.txt`
+4. Select knowledge type (Technical/Business/General)
+5. Add tags for categorization (optional)
+6. Click **Start Crawling**
+7. Monitor real-time progress with detailed logs
+8. View results in the Knowledge Base when complete
 
 **Test Knowledge Chat:**
 1. Go to **Chat** tab
 2. Ask a question about your uploaded content
 3. Verify you get relevant responses
+
+## 🕷️ Smart Crawling Features
+
+Archon includes intelligent web crawling that automatically adapts to different content types:
+
+### Automatic Content Type Detection
+
+| URL Pattern | Crawling Strategy | Description |
+|-------------|------------------|-------------|
+| `*.xml` or `*sitemap*` | **Sitemap Crawling** | Extracts all URLs from XML sitemap and crawls each page |
+| `*.txt` | **Direct Download** | Downloads and processes text files directly |
+| Regular URLs | **Recursive Crawling** | Follows internal links up to 3 levels deep |
+
+### Crawling Configuration
+
+- **Max Depth**: 3 levels for recursive webpage crawling
+- **Concurrent Sessions**: Up to 10 simultaneous browser sessions
+- **Chunk Size**: 5000 characters per knowledge chunk
+- **Progress Tracking**: Real-time WebSocket updates with detailed logs
+
+### Best Practices
+
+**For Documentation Sites:**
+```
+✅ Use the main documentation URL (e.g., https://docs.python.org/3/)
+✅ Let Archon recursively discover all pages
+✅ Use "technical" knowledge type for code documentation
+```
+
+**For Large Sites:**
+```
+✅ Look for sitemap.xml first (e.g., https://site.com/sitemap.xml)  
+✅ Use specific tags to categorize content
+✅ Monitor progress via real-time updates
+```
+
+**For Text Content:**
+```
+✅ Direct links to .txt files work automatically
+✅ GitHub raw URLs are supported
+✅ README files and documentation in text format
+```
 
 ## 🔧 Advanced Configuration
 

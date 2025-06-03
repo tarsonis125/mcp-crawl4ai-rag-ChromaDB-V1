@@ -954,8 +954,8 @@ async def smart_crawl_url(request: SmartCrawlRequest):
         ctx = crawling_context.create_context()
         
         # Call the actual function from rag_module
-        from src.modules.rag_module import smart_crawl_url
-        result = await smart_crawl_url(
+        from src.modules.rag_module import smart_crawl_url_direct
+        result = await smart_crawl_url_direct(
             ctx=ctx,
             url=str(request.url),
             max_depth=request.max_depth,
@@ -2009,8 +2009,8 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         ctx.progress_callback = progress_callback
         
         # Call the actual crawling function with progress callback support
-        from src.modules.rag_module import smart_crawl_url
-        result = await smart_crawl_url(
+        from src.modules.rag_module import smart_crawl_url_direct
+        result = await smart_crawl_url_direct(
             ctx=ctx,
             url=str(request.url),
             max_depth=2,
