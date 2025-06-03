@@ -595,7 +595,13 @@ export const MCPPage = () => {
           <Card accentColor="blue" className="space-y-6">
             {/* Status Display */}
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
+              <div 
+                className="flex items-center gap-3 cursor-help" 
+                title={process.env.NODE_ENV === 'development' ? 
+                  `Debug Info:\nStatus: ${serverStatus.status}\nConfig: ${config ? 'loaded' : 'null'}\n${config ? `Details: ${JSON.stringify(config, null, 2)}` : ''}` : 
+                  undefined
+                }
+              >
                 {getStatusIcon()}
                 <div>
                   <p className={`font-semibold ${getStatusColor()}`}>
@@ -658,9 +664,20 @@ export const MCPPage = () => {
             {/* Connection Details */}
             {serverStatus.status === 'running' && config && (
               <div className="border-t border-gray-200 dark:border-zinc-800 pt-4">
-                <h3 className="text-sm font-medium text-gray-700 dark:text-zinc-300 mb-3">
-                  Transport Configuration
-                </h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-medium text-gray-700 dark:text-zinc-300">
+                    Transport Configuration
+                  </h3>
+                  <Button
+                    variant="secondary"
+                    accentColor="blue"
+                    size="sm"
+                    onClick={handleCopyConfig}
+                  >
+                    <Copy className="w-3 h-3 mr-1 inline" />
+                    Copy
+                  </Button>
+                </div>
                 
                 {/* Transport Selection */}
                 <div className="mb-4">
@@ -700,23 +717,6 @@ export const MCPPage = () => {
                       : 'Add this to your MCP client configuration (e.g., ~/.cursor/mcp.json)'}
                   </p>
                 </div>
-                <Button
-                  variant="secondary"
-                  accentColor="blue"
-                  onClick={handleCopyConfig}
-                  className="mt-3"
-                >
-                  <Copy className="w-4 h-4 mr-2 inline" />
-                  Copy Configuration
-                </Button>
-              </div>
-            )}
-            
-            {/* Debug info - remove this after testing */}
-            {process.env.NODE_ENV === 'development' && (
-              <div className="mt-4 p-2 bg-yellow-100 dark:bg-yellow-900/20 rounded text-xs">
-                <p>Debug - Status: {serverStatus.status}, Config: {config ? 'loaded' : 'null'}</p>
-                {config && <p>Config details: {JSON.stringify(config, null, 2)}</p>}
               </div>
             )}
           </Card>
