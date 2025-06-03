@@ -1,3 +1,4 @@
+
 services:
   backend:
     build: .
@@ -16,8 +17,6 @@ services:
       - USE_AGENTIC_RAG=${USE_AGENTIC_RAG:-false}
       - USE_RERANKING=${USE_RERANKING:-false}
     networks:
-  node_modules:
-  python_cache:
       - app-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/mcp/status"]
@@ -34,10 +33,8 @@ services:
     ports:
       - "3737:5173"
     environment:
-      - VITE_API_URL=http://localhost:8080
+      - VITE_API_URL=http://backend:8080
     networks:
-  node_modules:
-  python_cache:
       - app-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5173"]
@@ -58,22 +55,14 @@ services:
     ports:
       - "3838:80"
     networks:
-  node_modules:
-  python_cache:
       - app-network
     depends_on:
       - backend
-      - backend
-
-  node_modules:
-  python_cache:
-  app-network:
-    driver: bridge
 
 networks:
   app-network:
     driver: bridge
+
 volumes:
   node_modules:
   python_cache:
-
