@@ -16,7 +16,6 @@ services:
       - USE_AGENTIC_RAG=${USE_AGENTIC_RAG:-false}
       - USE_RERANKING=${USE_RERANKING:-false}
     networks:
-volumes:
   node_modules:
   python_cache:
       - app-network
@@ -37,7 +36,6 @@ volumes:
     environment:
       - VITE_API_URL=http://localhost:8080
     networks:
-volumes:
   node_modules:
   python_cache:
       - app-network
@@ -60,7 +58,6 @@ volumes:
     ports:
       - "3838:80"
     networks:
-volumes:
   node_modules:
   python_cache:
       - app-network
@@ -68,9 +65,15 @@ volumes:
       - backend
       - backend
 
-networks:
-volumes:
   node_modules:
   python_cache:
   app-network:
     driver: bridge
+
+networks:
+  app-network:
+    driver: bridge
+volumes:
+  node_modules:
+  python_cache:
+
