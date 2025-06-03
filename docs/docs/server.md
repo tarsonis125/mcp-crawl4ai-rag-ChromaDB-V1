@@ -734,6 +734,267 @@ curl -X POST "http://localhost:8080/api/rag/query" \
   -d '{"query": "How to install Python?", "limit": 5}'
 ```
 
+## 🌐 WebSocket Communication
+
+Archon implements real-time WebSocket communication for streaming progress updates, server logs, and live data synchronization between the Python backend and React frontend.
+
+### Key Features
+
+- **🔄 Real-Time Progress Tracking**: Live updates during crawling operations with actual progress percentages
+- **📡 Server Log Streaming**: WebSocket-based log streaming from MCP server to UI dashboard  
+- **🎯 Progress Callback Pattern**: Business logic reports progress via callbacks to WebSocket broadcasts
+- **🔗 Auto-Reconnection**: Robust connection handling with automatic reconnect on failures
+- **📱 Responsive UI Updates**: Instant feedback without polling or page refreshes
+
+### WebSocket Endpoints
+
+| Endpoint | Purpose | Status | Pattern |
+|----------|---------|--------|---------|
+| `/api/mcp/logs/stream` | MCP Server logs streaming | ✅ Working | Server-to-Client Broadcast |
+| `/api/crawl-progress/{progress_id}` | Crawl progress updates | ✅ Working | Progress Tracking Pattern |
+| `/api/knowledge-items/stream` | Knowledge base updates | ✅ Working | Data Synchronization |
+
+### Python Backend WebSocket Patterns
+
+#### Pattern 1: Progress Tracking with Callbacks
+
+**Use Case**: Real-time progress updates during long-running operations (crawling, processing)
+
+```python
+class CrawlProgressManager:
+    def __init__(self):
+        self.active_crawls: Dict[str, Dict[str, Any]] = {}
+        self.progress_websockets: Dict[str, List[WebSocket]] = {}
+    
+    async def add_websocket(self, progress_id: str, websocket: WebSocket) -> None:
+        """Add WebSocket connection for progress updates"""
+        # CRITICAL: Accept WebSocket connection FIRST
+        await websocket.accept()
+        
+        if progress_id not in self.progress_websockets:
+            self.progress_websockets[progress_id] = []
+        
+        self.progress_websockets[progress_id].append(websocket)
+        
+        # Send current progress if available
+        if progress_id in self.active_crawls:
+            data = self.active_crawls[progress_id].copy()
+            data['progressId'] = progress_id
+            
+            # Convert datetime objects for JSON serialization
+            if 'start_time' in data and hasattr(data['start_time'], 'isoformat'):
+                data['start_time'] = data['start_time'].isoformat()
+            
+            await websocket.send_json({
+                "type": "crawl_progress",
+                "data": data
+            })
+    
+    async def update_progress(self, progress_id: str, update_data: Dict[str, Any]) -> None:
+        """Update progress and broadcast to connected clients"""
+        if progress_id not in self.active_crawls:
+            return
+        
+        self.active_crawls[progress_id].update(update_data)
+        await self._broadcast_progress(progress_id)
+    
+    async def _broadcast_progress(self, progress_id: str) -> None:
+        """Broadcast progress to all connected WebSocket clients"""
+        if progress_id not in self.progress_websockets:
+            return
+        
+        progress_data = self.active_crawls.get(progress_id, {}).copy()
+        progress_data['progressId'] = progress_id
+        
+        # Serialize datetime objects
+        if 'start_time' in progress_data and hasattr(progress_data['start_time'], 'isoformat'):
+            progress_data['start_time'] = progress_data['start_time'].isoformat()
+        
+        message = {
+            "type": "crawl_progress" if progress_data.get('status') != 'completed' else "crawl_completed",
+            "data": progress_data
+        }
+        
+        # Send to all connected clients with error handling
+        disconnected = []
+        for websocket in self.progress_websockets[progress_id]:
+            try:
+                await websocket.send_json(message)
+            except Exception as e:
+                disconnected.append(websocket)
+        
+        # Clean up disconnected WebSockets
+        for ws in disconnected:
+            self.remove_websocket(progress_id, ws)
+```
+
+#### Pattern 2: Server-to-Client Broadcasting
+
+**Use Case**: Server logs, system status updates, general notifications
+
+```python
+class MCPServerManager:
+    def __init__(self):
+        self.log_websockets: List[WebSocket] = []
+        self.logs: deque = deque(maxlen=1000)
+    
+    def _add_log(self, level: str, message: str):
+        """Add log entry and broadcast to connected WebSockets"""
+        log_entry = {
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'level': level,
+            'message': message
+        }
+        self.logs.append(log_entry)
+        
+        # Broadcast asynchronously
+        asyncio.create_task(self._broadcast_log(log_entry))
+    
+    async def _broadcast_log(self, log_entry: Dict[str, Any]):
+        """Broadcast log entry to all connected WebSockets"""
+        disconnected = []
+        for ws in self.log_websockets:
+            try:
+                await ws.send_json(log_entry)
+            except Exception:
+                disconnected.append(ws)
+        
+        # Remove disconnected WebSockets
+        for ws in disconnected:
+            self.log_websockets.remove(ws)
+    
+    async def add_websocket(self, websocket: WebSocket):
+        """Add WebSocket for log streaming"""
+        await websocket.accept()
+        self.log_websockets.append(websocket)
+        
+        # Send recent logs to new connection
+        for log in list(self.logs)[-50:]:
+            try:
+                await websocket.send_json(log)
+            except Exception:
+                break
+```
+
+#### Pattern 3: Progress Callback Integration
+
+**Use Case**: Integrating progress callbacks with long-running MCP functions
+
+```python
+# In API wrapper
+async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemRequest):
+    """Perform crawl with real-time progress tracking"""
+    
+    # Create progress callback
+    async def progress_callback(status: str, percentage: int, message: str, **kwargs):
+        """Callback for real-time progress updates from crawling functions"""
+        await progress_manager.update_progress(progress_id, {
+            'status': status,
+            'percentage': percentage,
+            'currentUrl': kwargs.get('currentUrl', str(request.url)),
+            'totalPages': kwargs.get('totalPages', 0),
+            'processedPages': kwargs.get('processedPages', 0),
+            'log': message,
+            **kwargs
+        })
+    
+    # Pass callback to MCP function
+    ctx.progress_callback = progress_callback
+    
+    # Call crawling function with progress support
+    result = await mcp_smart_crawl_url(ctx=ctx, url=str(request.url))
+```
+
+### Frontend Integration Patterns
+
+#### WebSocket Service Management
+
+```typescript
+interface CrawlProgressData {
+  progressId: string;
+  status: string;
+  percentage: number;
+  currentUrl?: string;
+  totalPages?: number;
+  processedPages?: number;
+  log?: string;
+}
+
+class CrawlProgressService {
+  private connections: Map<string, WebSocket> = new Map();
+  
+  streamProgress(
+    progressId: string, 
+    onProgress: (data: CrawlProgressData) => void,
+    options: { autoReconnect?: boolean; reconnectDelay?: number } = {}
+  ): void {
+    const wsUrl = `ws://localhost:8080/api/crawl-progress/${progressId}`;
+    
+    const connect = () => {
+      const ws = new WebSocket(wsUrl);
+      this.connections.set(progressId, ws);
+      
+      ws.onopen = () => {
+        console.log(`🚀 WebSocket connected for progress: ${progressId}`);
+      };
+      
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          
+          // Handle different message types
+          if (message.type === 'crawl_progress' || message.type === 'crawl_completed') {
+            onProgress(message.data);
+          }
+        } catch (error) {
+          console.error('Failed to parse WebSocket message:', error);
+        }
+      };
+      
+      ws.onclose = (event) => {
+        this.connections.delete(progressId);
+        
+        // Auto-reconnect for non-normal closures
+        if (options.autoReconnect && event.code !== 1000) {
+          setTimeout(connect, options.reconnectDelay || 5000);
+        }
+      };
+    };
+    
+    connect();
+  }
+}
+```
+
+### Best Practices & Common Pitfalls
+
+#### ✅ Do's
+
+1. **Always Accept WebSocket First**: Call `await websocket.accept()` before any send operations
+2. **Handle Datetime Serialization**: Convert datetime objects to ISO strings for JSON
+3. **Implement Reconnection Logic**: Auto-reconnect on non-normal closures (code !== 1000)
+4. **Use Progress IDs**: Unique identifiers for tracking multiple concurrent operations  
+5. **Clean Up Connections**: Remove disconnected WebSockets from collections
+6. **Send Initial State**: When client connects, send current progress if available
+
+#### ❌ Don'ts
+
+1. **Don't Ignore Connection Errors**: Always handle `onclose` and `onerror` events
+2. **Don't Hardcode Progress**: Base percentages on actual work completed
+3. **Don't Mix Local and Prop State**: Use either props OR local state, not both
+4. **Don't Block WebSocket Sends**: Use try-catch around WebSocket operations
+5. **Don't Forget Cleanup**: Always disconnect WebSockets on component unmount
+
+### Testing WebSocket Connections
+
+```bash
+# Test WebSocket endpoint directly
+wscat -c ws://localhost:8080/api/crawl-progress/test-id
+
+# Expected response:
+# {"type": "connection_established", "data": {"progressId": "test-id", "status": "waiting"}}
+```
+
 ---
 
 **Next Steps**: Explore the [API Reference](./api-reference) for detailed endpoint documentation or learn about [MCP Integration](./mcp-reference) for connecting AI clients.
