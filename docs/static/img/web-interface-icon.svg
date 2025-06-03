@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="webGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#10b981;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#3b82f6;stop-opacity:0.8" />
+    </linearGradient>
+    <filter id="webGlow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge> 
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <circle cx="100" cy="100" r="95" fill="url(#webGradient)" opacity="0.1"/>
+  
+  <!-- Web Interface icon -->
+  <g filter="url(#webGlow)">
+    <!-- Browser window -->
+    <rect x="30" y="50" width="140" height="100" fill="#ffffff" stroke="#10b981" stroke-width="3" rx="8"/>
+    
+    <!-- Browser top bar -->
+    <rect x="30" y="50" width="140" height="20" fill="#10b981" opacity="0.8" rx="8 8 0 0"/>
+    
+    <!-- Browser controls -->
+    <circle cx="45" cy="60" r="3" fill="#ffffff"/>
+    <circle cx="55" cy="60" r="3" fill="#ffffff"/>
+    <circle cx="65" cy="60" r="3" fill="#ffffff"/>
+    
+    <!-- Address bar -->
+    <rect x="80" y="55" width="80" height="10" fill="#ffffff" opacity="0.8" rx="5"/>
+    
+    <!-- Dashboard content -->
+    <!-- Top cards row -->
+    <rect x="40" y="80" width="35" height="20" fill="#10b981" opacity="0.6" rx="3"/>
+    <rect x="80" y="80" width="35" height="20" fill="#3b82f6" opacity="0.6" rx="3"/>
+    <rect x="120" y="80" width="35" height="20" fill="#a855f7" opacity="0.6" rx="3"/>
+    
+    <!-- Main content area -->
+    <rect x="40" y="105" width="75" height="35" fill="#3b82f6" opacity="0.3" rx="4"/>
+    
+    <!-- Sidebar -->
+    <rect x="120" y="105" width="35" height="35" fill="#10b981" opacity="0.3" rx="4"/>
+    
+    <!-- Content lines -->
+    <line x1="45" y1="115" x2="105" y2="115" stroke="#3b82f6" stroke-width="2" opacity="0.7"/>
+    <line x1="45" y1="125" x2="100" y2="125" stroke="#3b82f6" stroke-width="2" opacity="0.7"/>
+    <line x1="45" y1="135" x2="110" y2="135" stroke="#3b82f6" stroke-width="2" opacity="0.7"/>
+    
+    <!-- Sidebar elements -->
+    <rect x="125" y="110" width="25" height="3" fill="#10b981" opacity="0.8" rx="1"/>
+    <rect x="125" y="118" width="20" height="3" fill="#10b981" opacity="0.8" rx="1"/>
+    <rect x="125" y="126" width="25" height="3" fill="#10b981" opacity="0.8" rx="1"/>
+    <rect x="125" y="134" width="18" height="3" fill="#10b981" opacity="0.8" rx="1"/>
+    
+    <!-- Live data indicators -->
+    <circle cx="160" cy="40" r="4" fill="#10b981">
+      <animate attributeName="opacity" values="0.3;1;0.3" dur="2s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="150" cy="35" r="3" fill="#10b981">
+      <animate attributeName="opacity" values="0.3;1;0.3" dur="2s" begin="0.5s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="170" cy="35" r="3" fill="#10b981">
+      <animate attributeName="opacity" values="0.3;1;0.3" dur="2s" begin="1s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+</svg> 

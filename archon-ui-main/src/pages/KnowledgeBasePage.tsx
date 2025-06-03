@@ -27,11 +27,13 @@ export const KnowledgeBasePage = () => {
   const [loading, setLoading] = useState(true);
   const [totalItems, setTotalItems] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
+  const [loadingStrategy, setLoadingStrategy] = useState<'websocket' | 'rest' | 'complete'>('websocket');
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
+  const loadTimeoutRef = useRef<NodeJS.Timeout>();
   
   const { showToast } = useToast();
 
-  // Load knowledge items
+  // Single consolidated loading function
   const loadKnowledgeItems = async (options = {}) => {
     try {
       setLoading(true);
@@ -45,74 +47,107 @@ export const KnowledgeBasePage = () => {
       
       setKnowledgeItems(response.items);
       setTotalItems(response.total);
+      setLoadingStrategy('complete');
     } catch (error) {
       console.error('Failed to load knowledge items:', error);
       showToast('Failed to load knowledge items', 'error');
       setKnowledgeItems([]);
+      setLoadingStrategy('complete');
     } finally {
       setLoading(false);
     }
   };
 
-  // WebSocket connection for real-time updates
+  // Consolidated initialization effect - handles both WebSocket and fallback loading
   useEffect(() => {
-    // Connect to WebSocket
-    knowledgeWebSocket.connect('/api/knowledge-items/stream');
-    
-    // Listen for knowledge items updates
-    const handleKnowledgeUpdate = (data: any) => {
-      if (data.type === 'knowledge_items_update') {
-        setKnowledgeItems(data.data.items);
-        setTotalItems(data.data.total);
-        setLoading(false);
-      }
+    let isComponentMounted = true;
+    let wsConnected = false;
+    let fallbackExecuted = false;
+
+    console.log('🚀 KnowledgeBasePage: Initializing data loading strategy');
+
+    // Clear any existing timeouts
+    if (loadTimeoutRef.current) {
+      clearTimeout(loadTimeoutRef.current);
+    }
+
+    // Try WebSocket connection first
+    const connectWebSocket = () => {
+      console.log('📡 Attempting WebSocket connection for real-time updates');
+      knowledgeWebSocket.connect('/api/knowledge-items/stream');
+      
+      const handleKnowledgeUpdate = (data: any) => {
+        if (!isComponentMounted) return;
+        
+        if (data.type === 'knowledge_items_update') {
+          console.log('✅ WebSocket: Received knowledge items update');
+          setKnowledgeItems(data.data.items);
+          setTotalItems(data.data.total);
+          setLoading(false);
+          setLoadingStrategy('websocket');
+          wsConnected = true;
+        }
+      };
+      
+      knowledgeWebSocket.addEventListener('knowledge_items_update', handleKnowledgeUpdate);
+      
+      // Set fallback timeout - only execute if WebSocket hasn't connected and component is still mounted
+      loadTimeoutRef.current = setTimeout(() => {
+        if (isComponentMounted && !wsConnected && !fallbackExecuted) {
+          console.log('⏰ WebSocket fallback: Loading via REST API after timeout');
+          fallbackExecuted = true;
+          loadKnowledgeItems();
+        }
+      }, 2000); // Reduced from 3000ms to 2000ms for better UX
+      
+      return () => {
+        knowledgeWebSocket.removeEventListener('knowledge_items_update', handleKnowledgeUpdate);
+      };
     };
+
+    const cleanup = connectWebSocket();
     
-    knowledgeWebSocket.addEventListener('knowledge_items_update', handleKnowledgeUpdate);
-    
-    // Cleanup on unmount
     return () => {
-      knowledgeWebSocket.removeEventListener('knowledge_items_update', handleKnowledgeUpdate);
+      console.log('🧹 KnowledgeBasePage: Cleaning up data loading');
+      isComponentMounted = false;
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
+      }
+      cleanup();
       knowledgeWebSocket.disconnect();
     };
-  }, []);
-  
-  // Fallback REST API load if WebSocket fails
-  useEffect(() => {
-    // Set a timeout to load via REST if WebSocket doesn't provide data quickly
-    const fallbackTimeout = setTimeout(() => {
-      if (knowledgeItems.length === 0 && loading) {
-        loadKnowledgeItems();
-      }
-    }, 3000);
-    
-    return () => clearTimeout(fallbackTimeout);
-  }, []);
+  }, []); // Only run once on mount
 
-  // Reload when filters change
+  // Handle filter changes
   useEffect(() => {
-    setCurrentPage(1);
-    loadKnowledgeItems({ page: 1 });
-    setForceReanimate(prev => prev + 1);
-  }, [typeFilter]);
+    if (loadingStrategy === 'complete') {
+      console.log('🔍 Filter changed, reloading knowledge items');
+      setCurrentPage(1);
+      loadKnowledgeItems({ page: 1 });
+      setForceReanimate(prev => prev + 1);
+    }
+  }, [typeFilter, loadingStrategy]);
 
   // Handle search with debounce
   useEffect(() => {
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-    
-    searchTimeoutRef.current = setTimeout(() => {
-      setCurrentPage(1);
-      loadKnowledgeItems({ page: 1 });
-    }, 500);
-    
-    return () => {
+    if (loadingStrategy === 'complete') {
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current);
       }
-    };
-  }, [searchQuery]);
+      
+      searchTimeoutRef.current = setTimeout(() => {
+        console.log('🔎 Search query changed, reloading knowledge items');
+        setCurrentPage(1);
+        loadKnowledgeItems({ page: 1 });
+      }, 500);
+      
+      return () => {
+        if (searchTimeoutRef.current) {
+          clearTimeout(searchTimeoutRef.current);
+        }
+      };
+    }
+  }, [searchQuery, loadingStrategy]);
 
   // Filter items based on selected type
   const filteredItems = knowledgeItems;
@@ -291,8 +326,11 @@ export const KnowledgeBasePage = () => {
       {/* Main Content */}
       <div className="relative">
         {loading ? (
-          <div className="flex justify-center items-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500"></div>
+          <div className="flex flex-col justify-center items-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500 mb-3"></div>
+            <p className="text-sm text-gray-500 dark:text-zinc-400">
+              {loadingStrategy === 'websocket' ? 'Connecting to live updates...' : 'Loading knowledge items...'}
+            </p>
           </div>
         ) : viewMode === 'mind-map' ? <MindMapView items={transformItemsForMindMap(filteredItems)} /> : <>
             {/* Knowledge Items Grid/List with staggered animation that reanimates on view change */}

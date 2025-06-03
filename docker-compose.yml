@@ -49,7 +49,7 @@ services:
 
   docs:
     build:
-      context: .
+      context: ./docs
       dockerfile: Dockerfile
     ports:
       - "3838:80"

@@ -313,6 +313,269 @@ async def crawl_recursive_with_progress(crawler: AsyncWebCrawler, start_urls: Li
     return results_all
 
 
+# Standalone functions for direct import (needed by api_wrapper.py)
+async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurrent: int = 10, chunk_size: int = 5000) -> str:
+    """
+    Standalone function for smart crawling that can be imported directly.
+    
+    Intelligently crawl a URL based on its type (sitemap, text file, or webpage).
+    """
+    try:
+        crawler = ctx.request_context.lifespan_context.crawler
+        supabase_client = ctx.request_context.lifespan_context.supabase_client
+        reranking_model = getattr(ctx.request_context.lifespan_context, 'reranking_model', None)
+        
+        # Get progress callback if available
+        progress_callback = getattr(ctx, 'progress_callback', None)
+        
+        async def report_progress(status: str, percentage: int, message: str, **kwargs):
+            """Helper to report progress if callback available"""
+            if progress_callback:
+                await progress_callback(status, percentage, message, **kwargs)
+        
+        await report_progress('analyzing', 5, f'Analyzing URL type: {url}')
+        
+        # Determine crawl strategy based on URL type
+        if is_sitemap(url):
+            await report_progress('sitemap', 10, 'Detected sitemap, extracting URLs...')
+            
+            # Parse sitemap and get URLs
+            urls = parse_sitemap(url)
+            if not urls:
+                return json.dumps({
+                    "success": False,
+                    "error": "Failed to extract URLs from sitemap"
+                })
+            
+            await report_progress('sitemap', 15, f'Found {len(urls)} URLs in sitemap')
+            
+            # Batch crawl the sitemap URLs
+            results = await crawl_batch_with_progress(
+                crawler, urls, max_concurrent, progress_callback, 15, 60
+            )
+            crawl_type = "sitemap"
+            
+        elif is_txt(url):
+            await report_progress('text_file', 10, 'Detected text file, downloading...')
+            
+            # Crawl the text file directly
+            results = await crawl_markdown_file(crawler, url)
+            crawl_type = "text_file"
+            
+            await report_progress('text_file', 60, f'Downloaded text file: {len(results)} file processed')
+            
+        else:
+            await report_progress('webpage', 10, 'Detected webpage, starting recursive crawl...')
+            
+            # Recursive crawling for regular webpages
+            results = await crawl_recursive_with_progress(
+                crawler, [url], max_depth, max_concurrent, progress_callback, 10, 60
+            )
+            crawl_type = "webpage"
+        
+        if not results:
+            return json.dumps({
+                "success": False,
+                "error": "No content retrieved from crawling"
+            })
+        
+        await report_progress('processing', 65, f'Processing {len(results)} pages into chunks...')
+        
+        # Process all crawled content
+        all_documents = []
+        all_code_examples = []
+        total_chunks = 0
+        total_word_count = 0
+        
+        for i, page_result in enumerate(results):
+            page_url = page_result['url']
+            markdown_content = page_result['markdown']
+            
+            # Create chunks from the content
+            chunks = smart_chunk_markdown(markdown_content, chunk_size)
+            
+            # Process each chunk
+            for j, chunk in enumerate(chunks):
+                section_info = extract_section_info(chunk)
+                total_word_count += section_info["word_count"]
+                
+                # Get knowledge metadata from context if available
+                knowledge_metadata = getattr(ctx, 'knowledge_metadata', {})
+                
+                document_metadata = {
+                    "source_id": urlparse(page_url).netloc,
+                    "title": f"Page {i+1} from {crawl_type}",
+                    "headers": section_info["headers"],
+                    "char_count": section_info["char_count"],
+                    "word_count": section_info["word_count"],
+                    "crawl_type": crawl_type,
+                    "source_type": "url",
+                    **knowledge_metadata  # Add any additional metadata from context
+                }
+                
+                all_documents.append({
+                    "content": chunk,
+                    "url": page_url,
+                    "chunk_index": j,
+                    "metadata": document_metadata
+                })
+            
+            # Extract code examples if enabled
+            if os.getenv("USE_AGENTIC_RAG", "false") == "true":
+                code_blocks = extract_code_blocks(markdown_content)
+                if code_blocks:
+                    # Process code examples in parallel
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                        code_summaries = list(executor.map(process_code_example, code_blocks))
+                    
+                    for code_block, summary in zip(code_blocks, code_summaries):
+                        all_code_examples.append({
+                            'code_block': code_block,
+                            'summary': summary,
+                            'url': page_url
+                        })
+            
+            # Report progress during processing
+            progress_pct = 65 + int((i + 1) / len(results) * 15)  # 65-80%
+            await report_progress('processing', progress_pct, f'Processed {i + 1}/{len(results)} pages')
+        
+        await report_progress('storing', 80, 'Storing content in database...')
+        
+        # Prepare data for Supabase insertion
+        urls = [doc['url'] for doc in all_documents]
+        chunk_numbers = [doc['chunk_index'] for doc in all_documents]  # Keep 0-based indexing like original
+        contents = [doc['content'] for doc in all_documents]
+        metadatas = [doc['metadata'] for doc in all_documents]
+        url_to_full_document = {}
+        
+        # Build url_to_full_document mapping from results
+        for page_result in results:
+            url_to_full_document[page_result['url']] = page_result['markdown']
+        
+        # Track sources and their content for source info creation (BEFORE document insertion)
+        source_content_map = {}
+        source_word_counts = {}
+        
+        # Calculate word counts per source
+        for doc in all_documents:
+            source_id = doc['metadata']['source_id']
+            word_count = doc['metadata']['word_count']
+            
+            if source_id not in source_word_counts:
+                source_word_counts[source_id] = 0
+                # Store content for summary generation (first 5000 chars from the first page of this source)
+                for page_result in results:
+                    if urlparse(page_result['url']).netloc == source_id:
+                        source_content_map[source_id] = page_result['markdown'][:5000]
+                        break
+            
+            source_word_counts[source_id] += word_count
+        
+        # Create sources FIRST (before inserting documents to avoid foreign key constraint)
+        for source_id, content in source_content_map.items():
+            word_count = source_word_counts.get(source_id, 0)
+            source_summary = extract_source_summary(source_id, content)
+            update_source_info(supabase_client, source_id, source_summary, word_count, content)
+        
+        # Now store documents in Supabase (AFTER sources exist)
+        add_documents_to_supabase(
+            client=supabase_client,
+            urls=urls,
+            chunk_numbers=chunk_numbers,
+            contents=contents,
+            metadatas=metadatas,
+            url_to_full_document=url_to_full_document
+        )
+        chunks_stored = len(all_documents)
+        
+        # Store code examples if any
+        code_examples_stored = 0
+        if all_code_examples:
+            # Prepare data for code examples insertion
+            code_urls = [ex['url'] for ex in all_code_examples]
+            code_chunk_numbers = [i for i in range(len(all_code_examples))]  # Sequential numbering (0-based)
+            code_blocks = [ex['code_block'] for ex in all_code_examples]
+            code_summaries = [ex['summary'] for ex in all_code_examples]
+            code_metadatas = [{'source_url': ex['url'], 'extraction_method': 'agentic_rag'} for ex in all_code_examples]
+            
+            add_code_examples_to_supabase(
+                client=supabase_client,
+                urls=code_urls,
+                chunk_numbers=code_chunk_numbers,
+                code_examples=code_blocks,
+                summaries=code_summaries,
+                metadatas=code_metadatas
+            )
+            code_examples_stored = len(all_code_examples)
+        
+        await report_progress('storing', 90, 'Source information updated...')
+        
+        await report_progress('completed', 100, f'Successfully crawled {len(results)} pages with {chunks_stored} chunks stored')
+        
+        return json.dumps({
+            "success": True,
+            "crawl_type": crawl_type,
+            "url": url,
+            "urls_processed": len(results),
+            "chunks_stored": chunks_stored,
+            "code_examples_stored": code_examples_stored,
+            "total_chunks": chunks_stored,
+            "content_length": sum(len(r['markdown']) for r in results),
+            "total_word_count": total_word_count,
+            "source_id": source_id
+        })
+        
+    except Exception as e:
+        error_msg = f"Error in smart crawl: {str(e)}"
+        if 'progress_callback' in locals():
+            await report_progress('error', 0, error_msg)
+        return json.dumps({
+            "success": False,
+            "error": error_msg
+        })
+
+
+async def delete_source(ctx, source_id: str) -> str:
+    """
+    Delete a source and all associated crawled pages and code examples from the database.
+    
+    Args:
+        ctx: Context with supabase_client accessible via ctx.request_context.lifespan_context.supabase_client
+        source_id: The source ID to delete
+    
+    Returns:
+        JSON string with deletion results
+    """
+    try:
+        supabase_client = ctx.request_context.lifespan_context.supabase_client
+        
+        # Delete from crawled_pages table
+        pages_response = supabase_client.table("crawled_pages").delete().eq("source_id", source_id).execute()
+        pages_deleted = len(pages_response.data) if pages_response.data else 0
+        
+        # Delete from code_examples table
+        code_response = supabase_client.table("code_examples").delete().eq("source_id", source_id).execute()
+        code_deleted = len(code_response.data) if code_response.data else 0
+        
+        # Delete from sources table
+        source_response = supabase_client.table("sources").delete().eq("source_id", source_id).execute()
+        source_deleted = len(source_response.data) if source_response.data else 0
+        
+        return json.dumps({
+            "success": True,
+            "source_id": source_id,
+            "pages_deleted": pages_deleted,
+            "code_examples_deleted": code_deleted,
+            "source_records_deleted": source_deleted
+        })
+        
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "error": f"Error deleting source: {str(e)}"
+        })
+
+
 # MCP Tool Definitions
 def register_rag_tools(mcp: FastMCP):
     """Register all RAG tools with the MCP server."""
@@ -370,8 +633,30 @@ def register_rag_tools(mcp: FastMCP):
                     }
                 })
             
-            # Store in Supabase
-            chunks_stored = await add_documents_to_supabase(supabase_client, documents)
+            # Calculate total word count for source info
+            total_word_count = sum(doc['metadata']['word_count'] for doc in documents)
+            source_id = urlparse(url).netloc
+            
+            # Create source FIRST (before inserting documents to avoid foreign key constraint)
+            source_summary = extract_source_summary(source_id, markdown_content[:5000])
+            update_source_info(supabase_client, source_id, source_summary, total_word_count, markdown_content[:5000])
+            
+            # Store in Supabase - prepare data for the function
+            urls = [doc['url'] for doc in documents]
+            chunk_numbers = [doc['chunk_index'] for doc in documents]  # Keep 0-based indexing like original
+            contents = [doc['content'] for doc in documents]
+            metadatas = [doc['metadata'] for doc in documents]
+            url_to_full_document = {url: markdown_content}  # Single page mapping
+            
+            add_documents_to_supabase(
+                client=supabase_client,
+                urls=urls,
+                chunk_numbers=chunk_numbers,
+                contents=contents,
+                metadatas=metadatas,
+                url_to_full_document=url_to_full_document
+            )
+            chunks_stored = len(documents)
             
             # Process code examples if enabled
             code_examples_stored = 0
@@ -382,16 +667,22 @@ def register_rag_tools(mcp: FastMCP):
                     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                         code_summaries = list(executor.map(process_code_example, code_blocks))
                     
-                    code_examples_stored = await add_code_examples_to_supabase(
-                        supabase_client, code_blocks, code_summaries, url
+                    # Prepare data for code examples insertion
+                    code_urls = [url for _ in code_blocks]  # All from same URL
+                    code_chunk_numbers = [i for i in range(len(code_blocks))]  # Sequential numbering (0-based)
+                    code_metadatas = [{'source_url': url, 'extraction_method': 'agentic_rag'} for _ in code_blocks]
+                    
+                    add_code_examples_to_supabase(
+                        client=supabase_client,
+                        urls=code_urls,
+                        chunk_numbers=code_chunk_numbers,
+                        code_examples=code_blocks,
+                        summaries=code_summaries,
+                        metadatas=code_metadatas
                     )
+                    code_examples_stored = len(code_blocks)
             
-            # Update source information
-            await update_source_info(
-                supabase_client,
-                urlparse(url).netloc,
-                extract_source_summary(result.title or "Untitled", markdown_content[:500])
-            )
+            # Source information already updated before document insertion
             
             return json.dumps({
                 "success": True,
@@ -430,23 +721,8 @@ def register_rag_tools(mcp: FastMCP):
         Returns:
             JSON string with crawling results and statistics
         """
-        try:
-            crawler = ctx.request_context.lifespan_context.crawler
-            supabase_client = ctx.request_context.lifespan_context.supabase_client
-            
-            # ... (implementation continues with the smart crawling logic)
-            # For brevity, I'll add a placeholder here and continue with other tools
-            
-            return json.dumps({
-                "success": True,
-                "message": "Smart crawl functionality - implementation pending full extraction"
-            })
-            
-        except Exception as e:
-            return json.dumps({
-                "success": False,
-                "error": f"Error in smart crawl: {str(e)}"
-            })
+        # Call the standalone function
+        return await smart_crawl_url_direct(ctx, url, max_depth, max_concurrent, chunk_size)
     
     @mcp.tool()
     async def get_available_sources(ctx: Context) -> str:
@@ -535,7 +811,7 @@ def register_rag_tools(mcp: FastMCP):
             })
     
     @mcp.tool()
-    async def delete_source(ctx: Context, source_id: str) -> str:
+    async def delete_source_tool(ctx: Context, source_id: str) -> str:
         """
         Delete a source and all associated crawled pages and code examples from the database.
         
@@ -546,34 +822,8 @@ def register_rag_tools(mcp: FastMCP):
         Returns:
             JSON string with deletion results
         """
-        try:
-            supabase_client = ctx.request_context.lifespan_context.supabase_client
-            
-            # Delete from crawled_pages table
-            pages_response = supabase_client.table("crawled_pages").delete().eq("source_id", source_id).execute()
-            pages_deleted = len(pages_response.data) if pages_response.data else 0
-            
-            # Delete from code_examples table
-            code_response = supabase_client.table("code_examples").delete().eq("source_id", source_id).execute()
-            code_deleted = len(code_response.data) if code_response.data else 0
-            
-            # Delete from sources table
-            source_response = supabase_client.table("sources").delete().eq("source_id", source_id).execute()
-            source_deleted = len(source_response.data) if source_response.data else 0
-            
-            return json.dumps({
-                "success": True,
-                "source_id": source_id,
-                "pages_deleted": pages_deleted,
-                "code_examples_deleted": code_deleted,
-                "source_records_deleted": source_deleted
-            })
-            
-        except Exception as e:
-            return json.dumps({
-                "success": False,
-                "error": f"Error deleting source: {str(e)}"
-            })
+        # Call the standalone function
+        return await delete_source(ctx, source_id)
     
     @mcp.tool()
     async def search_code_examples(ctx: Context, query: str, source_id: str = None, match_count: int = 5) -> str:
@@ -672,8 +922,30 @@ def register_rag_tools(mcp: FastMCP):
                     }
                 })
             
-            # Store in Supabase
-            chunks_stored = await add_documents_to_supabase(supabase_client, documents)
+            # Calculate total word count for source info
+            total_word_count = sum(doc['metadata']['word_count'] for doc in documents)
+            source_id = f"upload_{filename}"
+            
+            # Create source FIRST (before inserting documents to avoid foreign key constraint)
+            source_summary = extract_source_summary(source_id, file_content[:5000])
+            update_source_info(supabase_client, source_id, source_summary, total_word_count, file_content[:5000])
+            
+            # Store in Supabase - prepare data for the function
+            urls = [doc['url'] for doc in documents]
+            chunk_numbers = [doc['chunk_index'] for doc in documents]  # Keep 0-based indexing like original
+            contents = [doc['content'] for doc in documents]
+            metadatas = [doc['metadata'] for doc in documents]
+            url_to_full_document = {doc_url: file_content}  # Document upload mapping
+            
+            add_documents_to_supabase(
+                client=supabase_client,
+                urls=urls,
+                chunk_numbers=chunk_numbers,
+                contents=contents,
+                metadatas=metadatas,
+                url_to_full_document=url_to_full_document
+            )
+            chunks_stored = len(documents)
             
             return json.dumps({
                 "success": True,

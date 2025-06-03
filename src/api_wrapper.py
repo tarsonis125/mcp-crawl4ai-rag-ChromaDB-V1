@@ -57,6 +57,15 @@ from dataclasses import dataclass
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer
+from fastapi import Depends
+from jose import JWTError, jwt
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
+import logging
+import secrets
 from pydantic import BaseModel, HttpUrl
 from pathlib import Path
 import httpx
@@ -172,6 +181,8 @@ class CrawlingContext:
         
         request_context = MockRequestContext(lifespan_context=lifespan_context)
         context = MockContext(request_context=request_context)
+        
+        # Add state as well for compatibility
         context.state = type('State', (), {'supabase_client': self.supabase_client})()
         
         return context
@@ -893,6 +904,8 @@ async def clear_mcp_logs():
 
 
 @app.websocket("/api/mcp/logs/stream")
+# TODO: Implement message queuing for offline clients and reconnection logic.
+# TODO: Add exponential backoff for reconnection attempts and fallback to HTTP polling if needed.
 async def websocket_log_stream(websocket: WebSocket):
     """WebSocket endpoint for streaming MCP server logs."""
     await mcp_manager.add_websocket(websocket)
@@ -941,8 +954,8 @@ async def smart_crawl_url(request: SmartCrawlRequest):
         ctx = crawling_context.create_context()
         
         # Call the actual function from rag_module
-        from src.modules.rag_module import smart_crawl_url
-        result = await smart_crawl_url(
+        from src.modules.rag_module import smart_crawl_url_direct
+        result = await smart_crawl_url_direct(
             ctx=ctx,
             url=str(request.url),
             max_depth=request.max_depth,
@@ -1996,8 +2009,8 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         ctx.progress_callback = progress_callback
         
         # Call the actual crawling function with progress callback support
-        from src.modules.rag_module import smart_crawl_url
-        result = await smart_crawl_url(
+        from src.modules.rag_module import smart_crawl_url_direct
+        result = await smart_crawl_url_direct(
             ctx=ctx,
             url=str(request.url),
             max_depth=2,
@@ -2070,20 +2083,28 @@ async def crawl_knowledge_item(request: KnowledgeItemRequest):
 async def delete_knowledge_item(source_id: str):
     """Delete a knowledge item from the database."""
     try:
+        print(f"DEBUG: Attempting to delete source_id: {source_id}")
+        
         # Ensure crawling context is initialized once
         if not crawling_context._initialized:
+            print("DEBUG: Initializing crawling context")
             await crawling_context.initialize()
         
         # Create context for the MCP function
         ctx = crawling_context.create_context()
+        print(f"DEBUG: Created context, supabase_client available: {ctx.request_context.lifespan_context.supabase_client is not None}")
         
         # Call the actual function from rag_module
+        print("DEBUG: Calling delete_source function")
         from src.modules.rag_module import delete_source
         result = await delete_source(ctx, source_id)
+        print(f"DEBUG: delete_source returned: {result}")
         
         # Parse JSON string response if needed
         if isinstance(result, str):
             result = json.loads(result)
+        
+        print(f"DEBUG: Parsed result: {result}")
         
         if result.get('success'):
             return {
@@ -2091,9 +2112,13 @@ async def delete_knowledge_item(source_id: str):
                 'message': f'Successfully deleted knowledge item {source_id}'
             }
         else:
+            print(f"DEBUG: Delete failed with error: {result.get('error')}")
             raise HTTPException(status_code=500, detail={'error': result.get('error', 'Deletion failed')})
             
     except Exception as e:
+        print(f"DEBUG: Exception in delete endpoint: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
 
@@ -2239,23 +2264,48 @@ async def websocket_knowledge_items(websocket: WebSocket):
         else:
             sources_data = sources_result
         
-        # Transform data for frontend
+        # Transform data for frontend (use same mapping as REST API)
         items = []
         for source in sources_data.get('sources', []):
+            # Use metadata from sources table
+            source_metadata = source.get('metadata', {})
+            
+            # Get first page URL if available
+            supabase_client = crawling_context.supabase_client
+            pages_response = supabase_client.from_('crawled_pages')\
+                .select('url')\
+                .eq('source_id', source['source_id'])\
+                .limit(1)\
+                .execute()
+            
+            first_page = pages_response.data[0] if pages_response.data else {}
+            
+            # Determine source type - if metadata has source_type='file', use it; otherwise check URL pattern
+            stored_source_type = source_metadata.get('source_type')
+            if stored_source_type:
+                source_type = stored_source_type
+            else:
+                # Legacy fallback - check URL pattern
+                first_page_url = first_page.get('url', f"source://{source['source_id']}")
+                source_type = 'file' if first_page_url.startswith('file://') else 'url'
+            
             item = {
                 'id': source['source_id'],
-                'title': source.get('summary', 'Untitled'),
-                'url': f"source://{source['source_id']}",
+                'title': source.get('title', source.get('summary', 'Untitled')),
+                'url': first_page.get('url', f"source://{source['source_id']}"),
                 'source_id': source['source_id'],
                 'metadata': {
-                    'knowledge_type': 'technical',
-                    'tags': [],
-                    'source_type': 'url',
+                    'knowledge_type': source_metadata.get('knowledge_type', 'technical'),
+                    'tags': source_metadata.get('tags', []),
+                    'source_type': source_type,
                     'status': 'active',
-                    'description': source.get('summary', ''),
-                    'chunks_count': source.get('total_word_count', 0),
-                    'word_count': source.get('total_word_count', 0),
+                    'description': source_metadata.get('description', source.get('summary', '')),
+                    'chunks_count': source.get('total_words', 0),
+                    'word_count': source.get('total_words', 0),
                     'last_scraped': source.get('updated_at'),
+                    'file_name': source_metadata.get('file_name'),
+                    'file_type': source_metadata.get('file_type'),
+                    **source_metadata
                 },
                 'created_at': source.get('created_at'),
                 'updated_at': source.get('updated_at')

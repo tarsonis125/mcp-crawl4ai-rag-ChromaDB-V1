@@ -4,32 +4,68 @@ import styles from './HomepageFeatures.module.css';
 
 const FeatureList = [
   {
-    title: 'Easy to Use',
-    Svg: require('../../static/img/undraw_docusaurus_mountain.svg').default,
+    title: 'Knowledge Management',
+    Svg: require('../../static/img/knowledge-icon.svg').default,
     description: (
       <>
-        Docusaurus was designed from the ground up to be easily installed and
-        used to get your website up and running quickly.
+        Intelligently crawl documentation sites, upload PDFs and documents, and organize knowledge 
+        by type (technical vs business). Advanced source filtering enables precise RAG queries 
+        across your entire knowledge base.
       </>
     ),
   },
   {
-    title: 'Focus on What Matters',
-    Svg: require('../../static/img/undraw_docusaurus_tree.svg').default,
+    title: 'Advanced RAG Capabilities',
+    Svg: require('../../static/img/rag-icon.svg').default,
     description: (
       <>
-        Docusaurus lets you focus on your docs, and we&apos;ll do the chores. Go
-        ahead and move your docs into the <code>docs</code> directory.
+        Smart URL detection, contextual embeddings, hybrid search, and reranking deliver 
+        superior search results. Special handling for code snippets and technical documentation 
+        with AI-powered content understanding.
       </>
     ),
   },
   {
-    title: 'Powered by React',
-    Svg: require('../../static/img/undraw_docusaurus_react.svg').default,
+    title: 'MCP Integration',
+    Svg: require('../../static/img/mcp-logo.svg').default,
     description: (
       <>
-        Extend or customize your website layout by reusing React. Docusaurus can
-        be extended while reusing the same header and footer.
+        Universal compatibility with Cursor, Windsurf, Claude Desktop, and any MCP client. 
+        Dual transport support (SSE/stdio) with real-time access to your knowledge base 
+        directly from your AI coding assistants.
+      </>
+    ),
+  },
+  {
+    title: 'Document Processing',
+    Svg: require('../../static/img/document-processing-icon.svg').default,
+    description: (
+      <>
+        Dual-engine PDF extraction, Word document support, markdown processing, and 
+        smart chunking. AI-generated metadata and automatic code example extraction 
+        for comprehensive document understanding.
+      </>
+    ),
+  },
+  {
+    title: 'Web Interface',
+    Svg: require('../../static/img/web-interface-icon.svg').default,
+    description: (
+      <>
+        Complete web dashboard for MCP server management, document upload, crawling operations, 
+        and interactive knowledge chat. Real-time log streaming and progress tracking 
+        for all operations.
+      </>
+    ),
+  },
+  {
+    title: 'Task Management',
+    Svg: require('../../static/img/task-management-icon.svg').default,
+    description: (
+      <>
+        Integrated project and task management with AI assistant integration. 
+        Create, track, and organize development tasks with automatic linking to 
+        relevant documentation and code examples.
       </>
     ),
   },
@@ -38,10 +74,8 @@ const FeatureList = [
 function Feature({Svg, title, description}) {
   return (
     <div className={clsx('col col--4')}>
-      <div className="text--center">
-        <Svg className={styles.featureSvg} alt={title} />
-      </div>
       <div className="text--center padding-horiz--md">
+        <Svg className={styles.featureSvg} alt={title} />
         <h3>{title}</h3>
         <p>{description}</p>
       </div>

@@ -1,28 +1,932 @@
 /**
- * Any CSS included here will be global. The classic template
- * bundles Infima by default. Infima is a CSS framework designed to
- * work well for content-centric websites.
+ * Archon Documentation - Dark Neon Theme
+ * Matching the main app's cyberpunk aesthetic with true black backgrounds and neon accents
  */
 
-/* You can override the default Infima variables here. */
+/* Dark mode only - True Black Theme */
 :root {
-  --ifm-color-primary: #25c2a0;
-  --ifm-color-primary-dark: rgb(33, 175, 144);
-  --ifm-color-primary-darker: rgb(31, 165, 136);
-  --ifm-color-primary-darkest: rgb(26, 136, 112);
-  --ifm-color-primary-light: rgb(70, 203, 174);
-  --ifm-color-primary-lighter: rgb(102, 212, 189);
-  --ifm-color-primary-lightest: rgb(146, 224, 208);
+  /* Primary colors */
+  --ifm-color-primary: #a855f7;
+  --ifm-color-primary-dark: #9333ea;
+  --ifm-color-primary-darker: #8b5cf6;
+  --ifm-color-primary-darkest: #7c3aed;
+  --ifm-color-primary-light: #c084fc;
+  --ifm-color-primary-lighter: #d8b4fe;
+  --ifm-color-primary-lightest: #e9d5ff;
+
+  /* Neon accent colors */
+  --purple-accent: #a855f7;
+  --green-accent: #10b981;
+  --pink-accent: #ec4899;
+  --blue-accent: #3b82f6;
+  --orange-accent: #f59e0b;
+
+  /* True black backgrounds for better contrast */
+  --ifm-background-color: #000000;
+  --ifm-background-surface-color: #0a0a0a;
+  --ifm-color-content: #ffffff;
+  --ifm-color-content-secondary: #a1a1aa;
+  
+  /* Enhanced dark glass effects */
+  --glass-bg: rgba(255, 255, 255, 0.05);
+  --glass-bg-strong: rgba(255, 255, 255, 0.1);
+  --glass-border: rgba(168, 85, 247, 0.5);
+  --glass-shadow: 0 10px 30px -15px rgba(0, 0, 0, 0.9);
+  --glass-shadow-strong: 0 15px 40px -15px rgba(0, 0, 0, 0.95);
+  
+  /* Text colors for better contrast */
+  --ifm-font-color-base: #ffffff;
+  --ifm-font-color-secondary: #e5e7eb;
+  --ifm-heading-color: #ffffff;
+  
+  /* Link colors */
+  --ifm-link-color: #a855f7;
+  --ifm-link-hover-color: #c084fc;
+  
+  /* Card backgrounds */
+  --ifm-card-background-color: rgba(0, 0, 0, 0.5);
+  
+  /* Navbar and sidebar */
+  --ifm-navbar-background-color: rgba(0, 0, 0, 0.8);
+  --ifm-sidebar-background-color: rgba(0, 0, 0, 0.5);
+  
+  /* Code block backgrounds */
+  --ifm-code-background: rgba(0, 0, 0, 0.6);
+  --prism-background-color: rgba(0, 0, 0, 0.8);
+  
+  /* Code block styling */
   --ifm-code-font-size: 95%;
 }
 
-.docusaurus-highlight-code-line {
-  background-color: rgba(0, 0, 0, 0.1);
-  display: block;
-  margin: 0 calc(-1 * var(--ifm-pre-padding));
-  padding: 0 var(--ifm-pre-padding);
+/* Global background with enhanced neon grid */
+html {
+  background: 
+    radial-gradient(circle at 25% 25%, rgba(168, 85, 247, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 75% 75%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
+    linear-gradient(to right, rgba(168, 85, 247, 0.1) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(168, 85, 247, 0.1) 1px, transparent 1px),
+    #000000;
+  background-size: 100% 100%, 100% 100%, 60px 60px, 60px 60px;
+  min-height: 100vh;
 }
 
-html[data-theme='dark'] .docusaurus-highlight-code-line {
-  background-color: rgba(0, 0, 0, 0.3);
+body {
+  background: transparent;
+  color: #ffffff;
+}
+
+/* Enhanced glass morphism components */
+.glass {
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow-strong);
+  position: relative;
+  border-radius: 12px;
+}
+
+.glass::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--purple-accent), var(--blue-accent));
+  box-shadow: 0 0 20px 5px rgba(168, 85, 247, 0.8);
+  border-radius: 12px 12px 0 0;
+}
+
+.glass::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 80px;
+  background: linear-gradient(to bottom, rgba(168, 85, 247, 0.15), rgba(168, 85, 247, 0.03));
+  border-radius: 12px 12px 0 0;
+  pointer-events: none;
+}
+
+/* Hero section with cyberpunk aesthetic */
+.hero {
+  background: 
+    radial-gradient(ellipse at top, rgba(168, 85, 247, 0.3) 0%, transparent 70%),
+    radial-gradient(ellipse at bottom, rgba(59, 130, 246, 0.2) 0%, transparent 70%),
+    linear-gradient(135deg, #000000 0%, #0a0a0a 100%) !important;
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+[data-theme='dark'] .hero {
+  background: 
+    radial-gradient(ellipse at top, rgba(168, 85, 247, 0.4) 0%, transparent 70%),
+    radial-gradient(ellipse at bottom, rgba(59, 130, 246, 0.3) 0%, transparent 70%),
+    linear-gradient(135deg, #000000 0%, #0a0a0a 100%) !important;
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(45deg, transparent 30%, rgba(168, 85, 247, 0.1) 50%, transparent 70%);
+  animation: shimmer 4s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0%, 100% { transform: translateX(-150%); opacity: 0; }
+  50% { transform: translateX(150%); opacity: 1; }
+}
+
+.hero__title {
+  color: #ffffff !important;
+  text-shadow: 0 0 40px rgba(168, 85, 247, 0.9), 0 0 80px rgba(168, 85, 247, 0.5);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  font-size: 3rem;
+}
+
+.hero__subtitle {
+  color: rgba(255, 255, 255, 0.95) !important;
+  text-shadow: 0 0 30px rgba(168, 85, 247, 0.6);
+  font-size: 1.25rem;
+  font-weight: 400;
+}
+
+/* Enhanced buttons with stronger neon effect */
+.button {
+  border-radius: 8px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.button--secondary {
+  background: rgba(168, 85, 247, 0.2);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(168, 85, 247, 0.5);
+  color: #ffffff;
+  box-shadow: 0 8px 32px rgba(168, 85, 247, 0.4);
+}
+
+.button--secondary:hover {
+  background: rgba(168, 85, 247, 0.3);
+  border-color: rgba(168, 85, 247, 0.8);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px rgba(168, 85, 247, 0.6);
+  color: #ffffff !important;
+  text-shadow: 0 0 10px rgba(168, 85, 247, 0.8);
+}
+
+/* Feature cards with enhanced glass effect - smaller and more compact */
+.row .col {
+  margin-bottom: 1.5rem;
+}
+
+.row .col > div {
+  height: 100%;
+  padding: 0.75rem;
+  border-radius: 6px;
+  transition: all 0.3s ease;
+  position: relative;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow-strong);
+  min-height: 120px;
+}
+
+[data-theme='dark'] .row .col > div {
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.9);
+}
+
+.row .col > div::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--purple-accent), var(--blue-accent), var(--pink-accent));
+  box-shadow: 0 0 20px 5px rgba(168, 85, 247, 0.8);
+  border-radius: 12px 12px 0 0;
+}
+
+.row .col > div::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 80px;
+  background: linear-gradient(to bottom, rgba(168, 85, 247, 0.15), rgba(168, 85, 247, 0.03));
+  border-radius: 12px 12px 0 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.row .col > div > * {
+  position: relative;
+  z-index: 1;
+}
+
+.row .col > div:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 25px 60px rgba(168, 85, 247, 0.3);
+  border-color: rgba(168, 85, 247, 0.6);
+}
+
+[data-theme='dark'] .row .col > div:hover {
+  box-shadow: 0 25px 60px rgba(168, 85, 247, 0.4);
+}
+
+/* Feature titles and content with enhanced visibility */
+.row .col h3 {
+  color: #ffffff;
+  text-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  z-index: 10;
+  position: relative;
+}
+
+.row .col p {
+  color: #f3f4f6;
+  line-height: 1.4;
+  font-size: 0.8rem;
+  z-index: 10;
+  position: relative;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* Enhanced SVGs with smaller size and stronger neon glow */
+.featureSvg {
+  height: 40px;
+  width: 40px;
+  filter: drop-shadow(0 0 10px rgba(168, 85, 247, 0.6));
+  transition: all 0.3s ease;
+  margin-bottom: 0.5rem;
+}
+
+.featureSvg:hover {
+  filter: drop-shadow(0 0 25px rgba(168, 85, 247, 0.9));
+  transform: scale(1.1);
+}
+
+/* Navigation bar with true dark theme */
+.navbar {
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  background: var(--ifm-navbar-background-color) !important;
+  border-bottom: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
+[data-theme='dark'] .navbar {
+  background: rgba(0, 0, 0, 0.8) !important;
+  border-bottom: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.navbar__brand {
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: var(--purple-accent) !important;
+  text-shadow: 0 0 15px rgba(168, 85, 247, 0.8);
+}
+
+.navbar__logo {
+  filter: drop-shadow(0 0 15px rgba(168, 85, 247, 0.8));
+  transition: all 0.3s ease;
+}
+
+.navbar__logo:hover {
+  filter: drop-shadow(0 0 25px rgba(168, 85, 247, 1));
+  transform: scale(1.1);
+}
+
+.navbar__link {
+  font-weight: 500;
+  transition: all 0.3s ease;
+  color: #ffffff !important;
+}
+
+.navbar__link:hover {
+  color: var(--purple-accent) !important;
+  text-shadow: 0 0 10px rgba(168, 85, 247, 0.8);
+}
+
+/* Dark mode toggle */
+[data-theme='dark'] .navbar__toggle {
+  color: #ffffff;
+}
+
+/* Clean floating sidebar with neon underlines only */
+.menu {
+  background: transparent !important;
+  border: none !important;
+  margin: 1rem;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+.menu__link {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+  padding: 0.75rem 1rem !important;
+  transition: all 0.3s ease;
+  color: #f3f4f6 !important;
+  position: relative;
+  display: block;
+  text-decoration: none;
+  border-bottom: 2px solid transparent !important;
+  box-shadow: none !important;
+}
+
+.menu__link:hover {
+  background: transparent !important;
+  color: #ffffff !important;
+  text-shadow: 0 0 8px rgba(168, 85, 247, 0.6);
+  border-bottom: 2px solid rgba(168, 85, 247, 0.8) !important;
+  box-shadow: 0 2px 10px rgba(168, 85, 247, 0.4) !important;
+}
+
+.menu__link--active {
+  background: transparent !important;
+  color: #ffffff !important;
+  text-shadow: 0 0 12px rgba(168, 85, 247, 0.8);
+  border-bottom: 2px solid var(--purple-accent) !important;
+  box-shadow: 0 2px 15px rgba(168, 85, 247, 0.8) !important;
+}
+
+/* Remove ALL sidebar container backgrounds */
+.theme-doc-sidebar-container {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+div[class*="sidebar"] {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Force remove any menu containers */
+.menu__list {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.menu__list-item {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Category styling for floating sidebar - no containers */
+.menu__list-item-collapsible {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.menu__caret {
+  color: #e5e7eb;
+  transition: color 0.3s ease;
+}
+
+.menu__caret:hover {
+  color: var(--purple-accent);
+}
+
+.menu__list-item-collapsible .menu__link {
+  font-weight: 600;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Nested menu items - no containers */
+.menu__list .menu__list {
+  margin-left: 1rem;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.menu__list .menu__list .menu__link {
+  font-size: 0.875rem;
+  padding: 0.5rem 1rem;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Content enhancements with better contrast */
+[data-theme='dark'] .markdown h1,
+[data-theme='dark'] .markdown h2,
+[data-theme='dark'] .markdown h3,
+[data-theme='dark'] .markdown h4,
+[data-theme='dark'] .markdown h5,
+[data-theme='dark'] .markdown h6 {
+  color: #ffffff;
+  text-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
+}
+
+.markdown h1::after,
+.markdown h2::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  width: 80px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--purple-accent), var(--pink-accent), var(--blue-accent));
+  border-radius: 2px;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+}
+
+[data-theme='dark'] .markdown p,
+[data-theme='dark'] .markdown li {
+  color: #e5e7eb;
+}
+
+/* Enhanced code blocks with stronger dark theme */
+.prism-code {
+  background: rgba(0, 0, 0, 0.8) !important;
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme='dark'] .prism-code {
+  background: rgba(0, 0, 0, 0.9) !important;
+  border: 1px solid rgba(168, 85, 247, 0.4);
+}
+
+.token.keyword {
+  color: var(--purple-accent);
+  text-shadow: 0 0 8px rgba(168, 85, 247, 0.6);
+}
+
+.token.string {
+  color: var(--green-accent);
+  text-shadow: 0 0 5px rgba(16, 185, 129, 0.5);
+}
+
+.token.function {
+  color: var(--blue-accent);
+  text-shadow: 0 0 5px rgba(59, 130, 246, 0.5);
+}
+
+.token.number {
+  color: var(--orange-accent);
+}
+
+.token.comment {
+  color: #6b7280;
+  font-style: italic;
+}
+
+/* Enhanced cards and admonitions */
+.alert {
+  border-radius: 12px;
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  position: relative;
+}
+
+[data-theme='dark'] .alert {
+  background: rgba(0, 0, 0, 0.6);
+  color: #ffffff;
+}
+
+.alert--info {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.alert--warning {
+  background: rgba(251, 191, 36, 0.15);
+  border-color: rgba(251, 191, 36, 0.4);
+}
+
+.alert--danger {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.alert--success {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+/* Enhanced footer */
+.footer {
+  background: rgba(0, 0, 0, 0.9);
+  border-top: 1px solid rgba(168, 85, 247, 0.3);
+  color: #ffffff;
+  padding: 2rem 0;
+}
+
+.footer__link-item {
+  color: #e5e7eb;
+  font-size: 0.875rem;
+  transition: color 0.3s ease;
+}
+
+.footer__link-item:hover {
+  color: var(--purple-accent);
+  text-decoration: none;
+}
+
+.footer__title {
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.footer__copyright {
+  color: #a1a1aa;
+  font-size: 0.8rem;
+}
+
+/* Table of contents - Enhanced positioning and styling */
+/* Clean floating table of contents with neon underlines only */
+.table-of-contents {
+  position: sticky;
+  top: calc(var(--ifm-navbar-height) + 1rem);
+  background: transparent !important;
+  border: none !important;
+  padding: 1rem !important;
+  box-shadow: none !important;
+}
+
+.table-of-contents__link {
+  color: #e5e7eb;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  padding: 0.5rem 0;
+  transition: all 0.3s ease;
+  display: block;
+  text-decoration: none;
+  border-bottom: 2px solid transparent !important;
+  position: relative;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.table-of-contents__link:hover {
+  color: #ffffff;
+  text-shadow: 0 0 8px rgba(168, 85, 247, 0.6);
+  border-bottom: 2px solid rgba(168, 85, 247, 0.8) !important;
+  background: transparent !important;
+  box-shadow: 0 2px 10px rgba(168, 85, 247, 0.4) !important;
+}
+
+.table-of-contents__link--active {
+  color: #ffffff;
+  text-shadow: 0 0 12px rgba(168, 85, 247, 0.8);
+  border-bottom: 2px solid var(--purple-accent) !important;
+  background: transparent !important;
+  box-shadow: 0 2px 15px rgba(168, 85, 247, 0.8) !important;
+}
+
+/* Main content area adjustments */
+.theme-doc-markdown {
+  max-width: none;
+}
+
+/* Ensure proper layout for TOC container - remove scroll container styling */
+.col.col--3 {
+  padding-left: 1rem;
+  padding-right: 1rem;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  border-radius: 0 !important;
+  max-height: none !important;
+  overflow-y: visible !important;
+}
+
+/* Fix main content wrapper */
+.container .row {
+  margin: 0;
+}
+
+.container .row .col {
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+/* Pagination */
+[data-theme='dark'] .pagination-nav {
+  color: #ffffff;
+}
+
+[data-theme='dark'] .pagination-nav__link {
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  background: rgba(0, 0, 0, 0.6);
+  color: #ffffff;
+}
+
+[data-theme='dark'] .pagination-nav__link:hover {
+  border-color: rgba(168, 85, 247, 0.6);
+  background: rgba(168, 85, 247, 0.1);
+  box-shadow: 0 5px 20px rgba(168, 85, 247, 0.3);
+}
+
+/* Breadcrumbs */
+[data-theme='dark'] .breadcrumbs {
+  color: #e5e7eb;
+}
+
+[data-theme='dark'] .breadcrumbs__link {
+  color: #e5e7eb;
+}
+
+[data-theme='dark'] .breadcrumbs__link:hover {
+  color: var(--purple-accent);
+  text-shadow: 0 0 5px rgba(168, 85, 247, 0.5);
+}
+
+/* Enhanced scrollbar styling */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, var(--purple-accent), var(--blue-accent));
+  border-radius: 5px;
+  box-shadow: 0 0 15px rgba(168, 85, 247, 0.6);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, var(--ifm-color-primary-light), var(--blue-accent));
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.8);
+}
+
+/* Enhanced selection styling */
+::selection {
+  background: rgba(168, 85, 247, 0.4);
+  color: #ffffff;
+  text-shadow: 0 0 5px rgba(168, 85, 247, 0.8);
+}
+
+::-moz-selection {
+  background: rgba(168, 85, 247, 0.4);
+  color: #ffffff;
+}
+
+/* Animation utilities */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s ease-out;
+}
+
+.animate-pulse {
+  animation: pulse 2s infinite;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .hero__title {
+    font-size: 2.5rem;
+  }
+  
+  .hero__subtitle {
+    font-size: 1.1rem;
+  }
+  
+  .featureSvg {
+    height: 35px;
+    width: 35px;
+  }
+  
+  .row .col > div {
+    padding: 0.625rem;
+    min-height: 110px;
+  }
+  
+  .row .col h3 {
+    font-size: 0.95rem;
+    margin-bottom: 0.4rem;
+  }
+  
+  .row .col p {
+    font-size: 0.75rem;
+    line-height: 1.3;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero__title {
+    font-size: 2rem;
+  }
+  
+  .hero__subtitle {
+    font-size: 1rem;
+  }
+  
+  .featureSvg {
+    height: 30px;
+    width: 30px;
+    margin-bottom: 0.4rem;
+  }
+  
+  .row .col > div {
+    padding: 0.5rem;
+    min-height: 100px;
+  }
+  
+  .row .col h3 {
+    font-size: 0.9rem;
+    margin-bottom: 0.3rem;
+  }
+  
+  .row .col p {
+    font-size: 0.7rem;
+    line-height: 1.2;
+  }
+}
+
+/* Force dark theme on load and improve layout - make containers transparent */
+.main-wrapper {
+  background-color: transparent;
+}
+
+article {
+  background-color: transparent;
+}
+
+/* Make all main content containers transparent to show grid */
+.container {
+  background: transparent;
+}
+
+.theme-doc-markdown {
+  background: transparent;
+}
+
+.docMainContainer {
+  background: transparent;
+}
+
+.docItemContainer {
+  background: transparent;
+}
+
+/* Main content wrapper */
+.main-wrapper .container-fluid {
+  background: transparent;
+}
+
+/* Ensure sidebar doesn't block grid */
+.theme-doc-sidebar-container {
+  background: transparent;
+  border-right: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+/* Make sure the main doc page is transparent */
+div[class*="docPage"] {
+  background: transparent;
+}
+
+div[class*="docMainContainer"] {
+  background: transparent;
+}
+
+div[class*="docItemContainer"] {
+  background: transparent;
+}
+
+/* Fix doc layout and ensure proper positioning */
+.docMainContainer_node_modules-\@docusaurus-theme-classic-lib-theme-DocPage-Layout-Main-styles-module {
+  max-width: none;
+}
+
+.docItemContainer_node_modules-\@docusaurus-theme-classic-lib-theme-DocItem-Layout-styles-module {
+  max-width: none;
+}
+
+/* Ensure the sidebar is properly positioned */
+.tocCollapsible_node_modules-\@docusaurus-theme-classic-lib-theme-TOC-styles-module {
+  position: sticky;
+  top: calc(var(--ifm-navbar-height) + 1rem);
+}
+
+/* Remove extra spacing and containers */
+.theme-doc-toc-mobile {
+  margin-bottom: 0;
+}
+
+.theme-doc-toc-desktop {
+  padding-left: 0;
+}
+
+/* Adjust main doc content */
+.markdown {
+  max-width: none;
+}
+
+/* Fix any layout issues with the doc page container */
+.docPage__5DB {
+  max-width: none;
+}
+
+.docMainContainer__7XE {
+  max-width: none;
+}
+
+/* General layout fixes for better alignment */
+.theme-doc-footer {
+  margin-top: 3rem;
+  background: transparent;
+}
+
+/* Remove ALL TOC containers and wrappers completely */
+div[class*="tocCollapsible"] {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+div[class*="tableOfContents"] {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Remove any wrapper around TOC */
+.theme-doc-toc-desktop {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.theme-doc-toc-mobile {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Remove any remaining sidebar containers */
+.theme-doc-sidebar-item-category {
+  background: transparent;
+}
+
+.theme-doc-sidebar-item-link {
+  background: transparent;
+}
+
+/* Better spacing for doc content */
+.theme-doc-markdown > div {
+  max-width: none;
 }

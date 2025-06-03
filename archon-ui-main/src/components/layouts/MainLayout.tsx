@@ -27,14 +27,50 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
   const { showToast } = useToast();
   const navigate = useNavigate();
   const [hasShownApiKeyToast, setHasShownApiKeyToast] = useState(false);
+  const [backendReady, setBackendReady] = useState(false);
 
-  // Check for OpenAI API key on component mount with retry logic
+  // Check backend readiness first, then validate credentials
   useEffect(() => {
     if (hasShownApiKeyToast) return; // Don't show multiple times per session
     
+    const checkBackendHealth = async (retryCount = 0) => {
+      const maxRetries = 5;
+      const retryDelay = 1000;
+      
+      try {
+        // Check if backend is responding with a simple health check
+        const response = await fetch(`${credentialsService['baseUrl']}/health`, {
+          method: 'GET',
+          timeout: 5000
+        } as any);
+        
+        if (response.ok) {
+          console.log('✅ Backend is ready, checking credentials...');
+          setBackendReady(true);
+          // Backend is ready, now check credentials
+          setTimeout(() => checkOpenAIKey(), 500);
+        } else {
+          throw new Error(`Backend health check failed: ${response.status}`);
+        }
+              } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          console.log(`Backend not ready yet (attempt ${retryCount + 1}/${maxRetries}):`, errorMessage);
+        
+        // Retry if we haven't exceeded max retries
+        if (retryCount < maxRetries) {
+          setTimeout(() => {
+            checkBackendHealth(retryCount + 1);
+          }, retryDelay * Math.pow(1.5, retryCount)); // Exponential backoff
+        } else {
+          console.warn('Backend not ready after maximum retries - skipping credential check');
+          setBackendReady(false);
+        }
+      }
+    };
+
     const checkOpenAIKey = async (retryCount = 0) => {
       const maxRetries = 3;
-      const retryDelay = 1000; // 1 second delay between retries
+      const retryDelay = 1000;
       
       try {
         const credentials = await credentialsService.getCredentialsByCategory('llm_config');
@@ -52,26 +88,30 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
             }
           };
           document.addEventListener('click', handleToastClick);
+        } else {
+          console.log('✅ OpenAI API key is configured');
+          setHasShownApiKeyToast(true); // Mark as checked to prevent re-checking
         }
       } catch (error) {
         console.error(`Error checking OpenAI API key (attempt ${retryCount + 1}):`, error);
         
-        // Retry if we haven't exceeded max retries
-        if (retryCount < maxRetries) {
+        // Retry if we haven't exceeded max retries and backend is still ready
+        if (retryCount < maxRetries && backendReady) {
           setTimeout(() => {
             checkOpenAIKey(retryCount + 1);
-          }, retryDelay * (retryCount + 1)); // Exponential backoff
+          }, retryDelay * (retryCount + 1)); // Linear backoff for credential check
         } else {
           console.warn('Failed to check OpenAI API key after maximum retries');
+          // Don't show error toast for credential check failures - only for missing keys
         }
       }
     };
 
-    // Wait a short time before first check to allow backend to initialize
+    // Start the health check process
     setTimeout(() => {
-      checkOpenAIKey();
-    }, 500);
-  }, [showToast, navigate, hasShownApiKeyToast]);
+      checkBackendHealth();
+    }, 1000); // Wait 1 second for initial app startup
+  }, [showToast, navigate, hasShownApiKeyToast, backendReady]);
 
   return <div className="relative min-h-screen bg-white dark:bg-black overflow-hidden">
       {/* Full-page background grid */}
