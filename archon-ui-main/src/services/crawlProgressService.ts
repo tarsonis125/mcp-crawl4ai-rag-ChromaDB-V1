@@ -48,7 +48,12 @@ class CrawlProgressService {
     // Close existing connection if any
     this.disconnect();
 
-    const ws = new WebSocket(`${this.wsUrl}/api/crawl-progress/${progressId}`);
+    const wsUrl = `${this.wsUrl}/api/crawl-progress/${progressId}`;
+    console.log(`🔌 Attempting to connect to WebSocket: ${wsUrl}`);
+    console.log(`   Base URL: ${this.baseUrl}`);
+    console.log(`   WS URL: ${this.wsUrl}`);
+    
+    const ws = new WebSocket(wsUrl);
     this.progressWebSocket = ws;
 
     ws.onopen = () => {
@@ -59,6 +64,7 @@ class CrawlProgressService {
     ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
+        console.log(`📨 Received WebSocket message:`, message);
         
         // Ignore ping messages
         if (message.type === 'ping') {
@@ -76,8 +82,9 @@ class CrawlProgressService {
       }
     };
 
-    ws.onclose = () => {
-      console.log(`Crawl progress stream disconnected: ${progressId}`);
+    ws.onclose = (event) => {
+      console.log(`❌ Crawl progress stream disconnected: ${progressId}`, event);
+      console.log(`   Close code: ${event.code}, reason: ${event.reason}`);
       this.progressWebSocket = null;
       
       if (autoReconnect && !this.isReconnecting) {
@@ -90,7 +97,8 @@ class CrawlProgressService {
     };
 
     ws.onerror = (error) => {
-      console.error('Crawl progress WebSocket error:', error);
+      console.error('❌ Crawl progress WebSocket error:', error);
+      console.error('   WebSocket readyState:', ws.readyState);
     };
 
     return ws;

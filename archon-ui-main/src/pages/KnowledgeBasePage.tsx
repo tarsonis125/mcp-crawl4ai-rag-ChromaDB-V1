@@ -217,7 +217,8 @@ export const KnowledgeBasePage = () => {
   };
 
   const handleStartCrawl = (progressId: string, initialData: Partial<CrawlProgressData>) => {
-    console.log(`Starting crawl tracking for: ${progressId}`);
+    console.log(`🚨 handleStartCrawl called with progressId: ${progressId}`);
+    console.log(`🚨 Initial data:`, initialData);
     
     const newProgressItem: CrawlProgressData = {
       progressId,
@@ -227,6 +228,7 @@ export const KnowledgeBasePage = () => {
       ...initialData
     };
     
+    console.log(`🚨 Adding progress item to state`);
     setProgressItems(prev => [...prev, newProgressItem]);
     
     // Set up callbacks BEFORE connecting to ensure we don't miss any messages
@@ -248,12 +250,18 @@ export const KnowledgeBasePage = () => {
     };
     
     console.log(`🚀 Starting progress stream for ${progressId}`);
+    console.log(`🚀 About to call crawlProgressService.streamProgress`);
     
-    // Use the new streamProgress method (matches MCP pattern)
-    crawlProgressService.streamProgress(progressId, progressCallback, {
-      autoReconnect: true,
-      reconnectDelay: 5000
-    });
+    try {
+      // Use the new streamProgress method (matches MCP pattern)
+      const ws = crawlProgressService.streamProgress(progressId, progressCallback, {
+        autoReconnect: true,
+        reconnectDelay: 5000
+      });
+      console.log(`🚀 streamProgress called, WebSocket:`, ws);
+    } catch (error) {
+      console.error(`❌ Error calling streamProgress:`, error);
+    }
   };
 
   // Transform new KnowledgeItem format to legacy format for MindMapView
@@ -633,8 +641,14 @@ const AddKnowledgeModal = ({
           update_frequency: parseInt(updateFrequency)
         });
         
+        console.log('🔍 Crawl URL result:', result);
+        
         // Check if result contains a progressId for streaming
         if ((result as any).progressId) {
+          console.log('✅ Got progressId:', (result as any).progressId);
+          console.log('✅ About to call onStartCrawl function');
+          console.log('✅ onStartCrawl function is:', onStartCrawl);
+          
           // Start progress tracking
           onStartCrawl((result as any).progressId, {
             currentUrl: formattedUrl,
@@ -642,9 +656,14 @@ const AddKnowledgeModal = ({
             processedPages: 0
           });
           
+          console.log('✅ onStartCrawl called successfully');
+          
           showToast('Crawling started - tracking progress', 'success');
           onClose(); // Close modal immediately
         } else {
+          console.log('❌ No progressId in result');
+          console.log('❌ Result structure:', JSON.stringify(result, null, 2));
+          
           // Fallback for non-streaming response
           showToast((result as any).message || 'Crawling started', 'success');
           onSuccess();

@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Form, Request
 from pydantic import BaseModel, HttpUrl
 from pathlib import Path
+import traceback
 
 from ..utils import get_supabase_client
 
@@ -112,11 +113,17 @@ class CrawlProgressManager:
     
     def start_crawl(self, progress_id: str, initial_data: Dict[str, Any]) -> None:
         """Start tracking a new crawl operation."""
+        # Ensure logs is always a list
+        if 'logs' not in initial_data:
+            initial_data['logs'] = []
+        elif isinstance(initial_data.get('logs'), str):
+            initial_data['logs'] = [initial_data['logs']]
+            
         self.active_crawls[progress_id] = {
             'status': 'starting',
             'percentage': 0,
             'start_time': datetime.now(),
-            'logs': ['Starting crawl...'],
+            'logs': initial_data.get('logs', ['Starting crawl...']),
             **initial_data
         }
         
@@ -175,28 +182,58 @@ class CrawlProgressManager:
     
     async def add_websocket(self, progress_id: str, websocket: WebSocket) -> None:
         """Add WebSocket to progress tracking."""
-        await websocket.accept()
-        
-        if progress_id not in self.progress_websockets:
-            self.progress_websockets[progress_id] = []
-        
-        self.progress_websockets[progress_id].append(websocket)
-        
-        # Send current progress immediately if available
-        if progress_id in self.active_crawls:
-            progress_data = self.active_crawls[progress_id].copy()
-            progress_data['progressId'] = progress_id
+        try:
+            print(f"DEBUG: add_websocket called for progress_id: {progress_id}")
+            await websocket.accept()
+            print(f"DEBUG: WebSocket accepted for progress_id: {progress_id}")
             
-            if 'start_time' in progress_data and hasattr(progress_data['start_time'], 'isoformat'):
-                progress_data['start_time'] = progress_data['start_time'].isoformat()
+            if progress_id not in self.progress_websockets:
+                self.progress_websockets[progress_id] = []
             
-            try:
-                await websocket.send_json({
-                    "type": "crawl_progress",
-                    "data": progress_data
-                })
-            except Exception:
-                self.remove_websocket(progress_id, websocket)
+            self.progress_websockets[progress_id].append(websocket)
+            print(f"DEBUG: WebSocket added to progress_websockets for {progress_id}. Total websockets: {len(self.progress_websockets[progress_id])}")
+            
+            # Send current progress immediately if available
+            if progress_id in self.active_crawls:
+                print(f"DEBUG: Found active crawl for {progress_id}, sending current state")
+                try:
+                    # Ensure progressId is included in the data
+                    data = self.active_crawls[progress_id].copy()
+                    data['progressId'] = progress_id
+                    
+                    # Convert ALL datetime objects to strings for JSON serialization
+                    for key, value in data.items():
+                        if hasattr(value, 'isoformat'):
+                            data[key] = value.isoformat()
+                    
+                    message = {
+                        "type": "crawl_progress",
+                        "data": data
+                    }
+                    print(f"DEBUG: Sending initial progress to new WebSocket: {message}")
+                    await websocket.send_json(message)
+                except Exception as e:
+                    print(f"DEBUG: Error sending initial progress: {e}")
+            else:
+                print(f"DEBUG: No active crawl found for {progress_id} in active_crawls. Keys: {list(self.active_crawls.keys())}")
+                # Send a waiting message
+                try:
+                    await websocket.send_json({
+                        "type": "crawl_progress",
+                        "data": {
+                            "progressId": progress_id,
+                            "status": "waiting",
+                            "percentage": 0,
+                            "logs": ["Waiting for crawl to start..."]
+                        }
+                    })
+                except Exception as e:
+                    print(f"DEBUG: Error sending waiting message: {e}")
+        except Exception as e:
+            print(f"ERROR: Exception in add_websocket: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
     
     def remove_websocket(self, progress_id: str, websocket: WebSocket) -> None:
         """Remove WebSocket from progress tracking."""
@@ -211,25 +248,32 @@ class CrawlProgressManager:
     async def _broadcast_progress(self, progress_id: str) -> None:
         """Broadcast progress update to all connected clients."""
         if progress_id not in self.progress_websockets:
+            print(f"DEBUG: No WebSockets found for progress_id: {progress_id}")
             return
         
         progress_data = self.active_crawls.get(progress_id, {}).copy()
         progress_data['progressId'] = progress_id
         
-        if 'start_time' in progress_data and hasattr(progress_data['start_time'], 'isoformat'):
-            progress_data['start_time'] = progress_data['start_time'].isoformat()
+        # Convert ALL datetime objects to strings for JSON serialization
+        for key, value in progress_data.items():
+            if hasattr(value, 'isoformat'):
+                progress_data[key] = value.isoformat()
         
         message = {
             "type": "crawl_progress" if progress_data.get('status') != 'completed' else "crawl_completed",
             "data": progress_data
         }
         
+        print(f"DEBUG: Broadcasting to {len(self.progress_websockets[progress_id])} WebSocket(s) for {progress_id}: {progress_data.get('status')} {progress_data.get('percentage')}%")
+        
         # Send to all connected WebSocket clients
         disconnected = []
         for websocket in self.progress_websockets[progress_id]:
             try:
                 await websocket.send_json(message)
-            except Exception:
+                print(f"DEBUG: Successfully sent progress update to WebSocket")
+            except Exception as e:
+                print(f"DEBUG: Failed to send to WebSocket: {e}")
                 disconnected.append(websocket)
         
         # Clean up disconnected WebSockets
@@ -421,7 +465,6 @@ async def delete_knowledge_item(source_id: str):
             
     except Exception as e:
         print(f"DEBUG: Exception in delete endpoint: {type(e).__name__}: {str(e)}")
-        import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
@@ -431,38 +474,47 @@ async def crawl_knowledge_item(request: KnowledgeItemRequest):
     try:
         # Generate unique progress ID
         progress_id = str(uuid.uuid4())
+        print(f"🚀 API: Generated new progress_id: {progress_id} for URL: {request.url}")
         
-        # Start progress tracking
+        # Start progress tracking with initial state
         progress_manager.start_crawl(progress_id, {
             'progressId': progress_id,
             'currentUrl': str(request.url),
             'totalPages': 0,
             'processedPages': 0,
             'percentage': 0,
-            'log': f'Starting crawl of {request.url}'
+            'status': 'starting',
+            'logs': [f'Starting crawl of {request.url}'],
+            'eta': 'Calculating...'
         })
         
-        # Start background task
+        # Start background task IMMEDIATELY (like the old API)
         asyncio.create_task(_perform_crawl_with_progress(progress_id, request))
         
-        return {
-            'success': True,
-            'progressId': progress_id,
-            'message': 'Crawling started',
-            'estimatedDuration': '3-5 minutes'
+        response_data = {
+            "success": True,
+            "progressId": progress_id,
+            "message": "Crawling started",
+            "estimatedDuration": "3-5 minutes"
         }
+        print(f"🚀 API: Returning response with progress_id: {progress_id}")
+        return response_data
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail={'error': str(e)})
+        print(f"ERROR: Failed to start crawl: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemRequest):
     """Perform the actual crawl operation with progress tracking."""
     try:
-        print(f"DEBUG: Starting crawl for progress_id: {progress_id}")
+        print(f"🚀 CRAWL: Starting crawl function with progress_id: {progress_id}")
+        print(f"🚀 CRAWL: URL: {request.url}")
         
         # Create a progress callback that will be called by the crawling function
         async def progress_callback(status: str, percentage: int, message: str, **kwargs):
             """Callback function to receive real-time progress updates from crawling."""
+            print(f"🚀 CRAWL: Progress callback called with progress_id: {progress_id}")
             await progress_manager.update_progress(progress_id, {
                 'status': status,
                 'percentage': percentage,
@@ -497,6 +549,8 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         # IMPORTANT: Add progress callback to context so MCP function can use it
         ctx.progress_callback = progress_callback
         
+        print(f"🚀 CRAWL: About to call smart_crawl_url_direct with progress_id: {progress_id}")
+        
         # Call the actual crawling function with progress callback support
         from src.modules.rag_module import smart_crawl_url_direct
         result = await smart_crawl_url_direct(
@@ -506,6 +560,8 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
             max_concurrent=5,
             chunk_size=5000
         )
+        
+        print(f"🚀 CRAWL: smart_crawl_url_direct completed for progress_id: {progress_id}")
         
         # Parse JSON string response if needed
         if isinstance(result, str):
@@ -518,8 +574,10 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
                 'wordCount': result.get('total_word_count', 0),
                 'log': 'Crawling completed successfully'
             }
+            print(f"🚀 CRAWL: Completing crawl for progress_id: {progress_id}")
             await progress_manager.complete_crawl(progress_id, completion_data)
         else:
+            print(f"🚀 CRAWL: Error in crawl for progress_id: {progress_id}")
             await progress_manager.error_crawl(progress_id, result.get('error', 'Unknown error'))
         
         # Broadcast final update to general WebSocket clients
@@ -535,6 +593,7 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         
     except Exception as e:
         error_message = f'Crawling failed: {str(e)}'
+        print(f"🚀 CRAWL: Exception in crawl for progress_id: {progress_id} - {error_message}")
         await progress_manager.error_crawl(progress_id, error_message)
         print(f"Crawl error for {progress_id}: {e}")
 
@@ -733,23 +792,37 @@ async def websocket_knowledge_items(websocket: WebSocket):
 @router.websocket("/crawl-progress/{progress_id}")
 async def websocket_crawl_progress(websocket: WebSocket, progress_id: str):
     """WebSocket endpoint for tracking specific crawl progress."""
-    # Add WebSocket to progress manager (now handles accept internally)
-    await progress_manager.add_websocket(progress_id, websocket)
-    
     try:
+        print(f"DEBUG: WebSocket connecting for progress_id: {progress_id}")
+        print(f"DEBUG: Active crawls: {list(progress_manager.active_crawls.keys())}")
+        print(f"DEBUG: WebSocket headers: {websocket.headers}")
+        
+        # Add WebSocket to progress manager (handles accept internally)
+        await progress_manager.add_websocket(progress_id, websocket)
+        
+        print(f"DEBUG: WebSocket registered for progress_id: {progress_id}")
+        
+        # Keep connection alive but don't flood with pings
         while True:
-            # Keep connection alive with ping
-            await asyncio.sleep(1)
-            await websocket.send_json({"type": "ping"})
-            
+            try:
+                # Wait for messages from client (like ping)
+                message = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+                # Respond to ping messages only
+                if message == "ping":
+                    await websocket.send_json({"type": "pong"})
+            except asyncio.TimeoutError:
+                # Send heartbeat every 30 seconds
+                await websocket.send_json({"type": "heartbeat"})
+            except WebSocketDisconnect:
+                break
+                
     except WebSocketDisconnect:
-        progress_manager.remove_websocket(progress_id, websocket)
+        print(f"DEBUG: WebSocket disconnected for progress_id: {progress_id}")
     except Exception as e:
+        print(f"DEBUG: WebSocket error for progress_id {progress_id}: {e}")
+        traceback.print_exc()
+    finally:
         progress_manager.remove_websocket(progress_id, websocket)
-        try:
-            await websocket.close()
-        except:
-            pass
 
 @router.get("/database/metrics")
 async def get_database_metrics():

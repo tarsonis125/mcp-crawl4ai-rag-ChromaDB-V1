@@ -164,10 +164,18 @@ class KnowledgeBaseService {
    * Start crawling a URL with metadata
    */
   async crawlUrl(request: CrawlRequest) {
-    return apiRequest('/knowledge-items/crawl', {
+    console.log('📡 Sending crawl request:', request);
+    
+    const response = await apiRequest('/knowledge-items/crawl', {
       method: 'POST',
       body: JSON.stringify(request)
-    })
+    });
+    
+    console.log('📡 Crawl response received:', response);
+    console.log('📡 Response type:', typeof response);
+    console.log('📡 Response has progressId?', 'progressId' in (response as any));
+    
+    return response;
   }
 
   /**
