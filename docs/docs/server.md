@@ -54,11 +54,18 @@ graph TB
 mcp-crawl4ai-rag/
 ├── python/                      # Python backend application
 │   ├── src/                     # Main application source
-│   │   ├── api_wrapper.py       # FastAPI application entry point
+│   │   ├── main.py              # FastAPI application entry point
 │   │   ├── mcp_server.py        # MCP server implementation
 │   │   ├── config.py            # Configuration management
 │   │   ├── credential_service.py# API key and settings management
 │   │   ├── utils.py             # Utility functions
+│   │   ├── api/                 # Modular API routers
+│   │   │   ├── __init__.py
+│   │   │   ├── knowledge_api.py # Knowledge & crawling endpoints
+│   │   │   ├── mcp_api.py       # MCP server control & WebSockets
+│   │   │   ├── settings_api.py  # Settings & credential management
+│   │   │   └── projects_api.py  # Project & task management
+│   │   ├── agents/              # AI agent implementations
 │   │   └── modules/             # Feature modules
 │   │       ├── __init__.py
 │   │       ├── rag_module.py    # RAG functionality
@@ -75,19 +82,33 @@ mcp-crawl4ai-rag/
 └── .env                         # Environment configuration
 ```
 
-## 🚀 FastAPI Application (`api_wrapper.py`)
+## 🚀 FastAPI Application (`main.py`)
 
-The main FastAPI application serves as the central API gateway, handling all HTTP requests and coordinating between different services.
+The main FastAPI application serves as the central API gateway, mounting modular routers and coordinating between different services. The application follows a clean separation of concerns with dedicated routers for each functional area.
+
+### Modular Architecture Benefits
+
+- **🔧 Maintainability**: Each router handles a specific domain (knowledge, MCP, settings, projects)
+- **🧪 Testability**: Individual routers can be tested in isolation
+- **📈 Scalability**: Routers can be deployed as separate microservices if needed
+- **🔒 Security**: Fine-grained access control per router
+- **📖 Documentation**: Automatic OpenAPI tags and grouping
 
 ### Core Components
 
-#### Application Initialization
+#### Application Initialization (`main.py`)
 
 ```python
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import uvicorn
+
+# Import modular routers
+from api.knowledge_api import router as knowledge_router
+from api.mcp_api import router as mcp_router  
+from api.settings_api import router as settings_router
+from api.projects_api import router as projects_router
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -106,19 +127,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount modular routers
+app.include_router(knowledge_router, prefix="/api", tags=["knowledge"])
+app.include_router(mcp_router, prefix="/api", tags=["mcp"])
+app.include_router(settings_router, prefix="/api", tags=["settings"])
+app.include_router(projects_router, prefix="/api", tags=["projects"])
 ```
 
-#### Key API Endpoints
+#### Modular Router Structure
 
-| Endpoint Category | Base Path | Purpose |
-|------------------|-----------|----------|
-| **Knowledge Management** | `/api/knowledge-items` | CRUD operations for knowledge base |
-| **Document Upload** | `/api/documents` | File upload and processing |
-| **RAG Operations** | `/api/rag` | Search and retrieval functionality |
-| **MCP Server Control** | `/api/mcp` | Start/stop MCP server |
-| **Task Management** | `/api/tasks` | Project and task operations |
-| **WebSocket Streams** | `/api/ws` | Real-time communication |
-| **Settings** | `/api/settings` | Configuration management |
+| Router Module | Base Path | Endpoints | Purpose |
+|--------------|-----------|-----------|----------|
+| **`knowledge_api.py`** | `/api/knowledge-items`, `/api/documents` | Knowledge CRUD, crawling, upload | Core knowledge management |
+| **`mcp_api.py`** | `/api/mcp` | Server control, logs, WebSockets | MCP server management & real-time communication |
+| **`settings_api.py`** | `/api/settings` | Configuration, credentials | Application settings |
+| **`projects_api.py`** | `/api/projects`, `/api/tasks` | Project/task CRUD | Task management |
 
 ### Request/Response Flow
 
@@ -701,7 +725,7 @@ pip install -r requirements.txt
 pip install -r requirements-dev.txt
 
 # Run in development mode with hot reload
-uvicorn src.api_wrapper:app --host 0.0.0.0 --port 8080 --reload
+uvicorn src.main:app --host 0.0.0.0 --port 8080 --reload
 
 # Run MCP server separately for testing
 python python/src/mcp_server.py
@@ -999,4 +1023,7 @@ wscat -c ws://localhost:8080/api/crawl-progress/test-id
 
 ---
 
-**Next Steps**: Explore the [API Reference](./api-reference) for detailed endpoint documentation or learn about [MCP Integration](./mcp-reference) for connecting AI clients.
+**Next Steps**: 
+- Explore the [API Reference](./api-reference) for detailed endpoint documentation
+- Learn about [MCP Integration](./mcp-reference) for connecting AI clients  
+- Check the [WebSocket Communication Guide](./websockets) for real-time features

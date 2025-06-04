@@ -5,6 +5,7 @@ module.exports = {
       type: 'category', label: 'Server & API', items: [
         'server',
         'api-reference',
+        'websockets',
       ],
     },
     {

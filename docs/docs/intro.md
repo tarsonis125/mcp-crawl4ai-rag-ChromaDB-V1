@@ -72,6 +72,7 @@ Ready to get started? Follow our comprehensive setup guide:
 | **[Getting Started](./getting-started)** | Complete setup guide from prerequisites to first crawl |
 | **[MCP Integration](./mcp-reference)** | Connect AI clients like Cursor, Windsurf, Claude Desktop |
 | **[API Reference](./api-reference)** | Complete REST API documentation with examples |
+| **[WebSocket Communication](./websockets)** | Real-time updates, progress tracking, and troubleshooting |
 | **[RAG Strategies](./rag)** | Configure advanced retrieval strategies for optimal performance |
 | **[Task Management](./tasks)** | Organize projects and tasks with AI agent integration |
 | **[Web Interface](./ui)** | Comprehensive guide to the React frontend |

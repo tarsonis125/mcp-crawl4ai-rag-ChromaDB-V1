@@ -147,7 +147,7 @@ async def start_services():
         # Manual startup fallback
         print("🔧 Starting backend API server...")
         backend_process = subprocess.Popen([
-            "python", "-m", "uvicorn", "src.api_wrapper:app", 
+            "python", "-m", "uvicorn", "src.main:app", 
             "--host", "0.0.0.0", "--port", "8080", "--reload"
         ])
         

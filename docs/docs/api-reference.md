@@ -17,6 +17,18 @@ Archon provides a comprehensive REST API built with FastAPI for all knowledge ma
 
 **Authentication**: Currently API key-based through settings. Future versions will support JWT tokens.
 
+## 🏗️ Modular API Architecture
+
+Archon uses a modular FastAPI architecture with separate routers for different functionalities:
+
+- **`knowledge_api.py`**: Knowledge items, web crawling, and document management
+- **`mcp_api.py`**: MCP server control and WebSocket communications  
+- **`settings_api.py`**: Application settings and credential management
+- **`projects_api.py`**: Project and task management
+- **`main.py`**: Application entry point and router mounting
+
+All routers are mounted with the `/api` prefix and provide comprehensive OpenAPI documentation.
+
 ## 📚 Knowledge Management API
 
 ### List Knowledge Items
@@ -1169,5 +1181,6 @@ client.startCrawl('https://raw.githubusercontent.com/user/repo/main/README.txt',
 
 **Next Steps**: 
 - Explore [MCP Integration](./mcp-reference) to connect AI clients
-- Learn about [RAG Strategies](./rag) for optimal search performance
-- Check [Testing Guide](./testing) for API testing examples
+- Learn about [RAG Strategies](./rag) for optimal search performance  
+- Check [WebSocket Communication](./websockets) for real-time features and troubleshooting
+- Review [Testing Guide](./testing) for API testing examples
