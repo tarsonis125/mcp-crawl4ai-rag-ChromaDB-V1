@@ -15,7 +15,7 @@ class ConfigurationError(Exception):
 @dataclass
 class EnvironmentConfig:
     """Configuration loaded from environment variables."""
-    openai_api_key: str
+    openai_api_key: Optional[str]
     supabase_url: str
     supabase_service_key: str
     host: str = "0.0.0.0"
@@ -61,11 +61,10 @@ def validate_supabase_url(url: str) -> bool:
 
 def load_environment_config() -> EnvironmentConfig:
     """Load and validate environment configuration."""
-    # Required environment variables
+    # OpenAI API key is optional at startup - can be set via API
     openai_api_key = os.getenv("OPENAI_API_KEY")
-    if not openai_api_key:
-        raise ConfigurationError("OPENAI_API_KEY environment variable is required")
     
+    # Required environment variables for database access
     supabase_url = os.getenv("SUPABASE_URL")
     if not supabase_url:
         raise ConfigurationError("SUPABASE_URL environment variable is required")
@@ -75,7 +74,8 @@ def load_environment_config() -> EnvironmentConfig:
         raise ConfigurationError("SUPABASE_SERVICE_KEY environment variable is required")
     
     # Validate required fields
-    validate_openai_api_key(openai_api_key)
+    if openai_api_key:
+        validate_openai_api_key(openai_api_key)
     validate_supabase_url(supabase_url)
     
     # Optional environment variables with defaults

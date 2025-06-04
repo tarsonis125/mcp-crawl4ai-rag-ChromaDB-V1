@@ -15,6 +15,21 @@ import json
 import uuid
 from datetime import datetime
 
+# Import our new models
+try:
+    from .models import (
+        ProjectRequirementsDocument, 
+        GeneralDocument, 
+        DocumentType,
+        CreateDocumentRequest,
+        UpdateDocumentRequest,
+        create_default_prd,
+        create_default_document
+    )
+except ImportError:
+    # Fallback if models module not available yet
+    print("Warning: models module not available, using basic functionality")
+
 
 def register_project_tools(mcp: FastMCP):
     """Register all project and task management tools with the MCP server."""
@@ -22,7 +37,7 @@ def register_project_tools(mcp: FastMCP):
     @mcp.tool()
     async def create_project(ctx: Context, title: str, prd: Dict[str, Any] = None, github_repo: str = None) -> str:
         """
-        Create a new project.
+        Create a new project with a default PRD document.
         
         Args:
             ctx: The MCP server provided context
@@ -36,6 +51,7 @@ def register_project_tools(mcp: FastMCP):
         try:
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             
+            # Create the project first
             project_data = {
                 "title": title,
                 "prd": prd or {},
@@ -51,8 +67,83 @@ def register_project_tools(mcp: FastMCP):
             
             response = supabase_client.table("projects").insert(project_data).execute()
             
-            if response.data:
-                project = response.data[0]
+            if not response.data:
+                return json.dumps({
+                    "success": False,
+                    "error": "Failed to create project"
+                })
+            
+            project = response.data[0]
+            project_id = project["id"]
+            
+            # Create a default PRD document in the docs JSONB field
+            try:
+                if 'create_default_prd' in globals():
+                    # Use the Pydantic model to create a structured PRD
+                    default_prd = create_default_prd(title)
+                    prd_content = default_prd.dict()
+                else:
+                    # Fallback to basic PRD structure
+                    prd_content = {
+                        "title": f"{title} - Requirements",
+                        "description": f"Product Requirements Document for {title}",
+                        "version": "1.0",
+                        "goals": [],
+                        "user_stories": [],
+                        "scope": "",
+                        "success_criteria": []
+                    }
+                
+                # Create document entry for the docs JSONB array
+                doc_entry = {
+                    "id": str(uuid.uuid4()),
+                    "document_type": "prd",
+                    "title": f"{title} - Requirements",
+                    "content": prd_content,
+                    "status": "draft",
+                    "tags": ["default", "prd"],
+                    "version": "1.0",
+                    "created_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat()
+                }
+                
+                # Update the project to include the default document in the docs JSONB field
+                docs_array = [doc_entry]
+                update_response = supabase_client.table("projects").update({
+                    "docs": docs_array,
+                    "updated_at": datetime.now().isoformat()
+                }).eq("id", project_id).execute()
+                
+                if update_response.data:
+                    return json.dumps({
+                        "success": True,
+                        "project": {
+                            "id": project["id"],
+                            "title": project["title"],
+                            "github_repo": project.get("github_repo"),
+                            "created_at": project["created_at"]
+                        },
+                        "default_document": {
+                            "id": doc_entry["id"],
+                            "title": doc_entry["title"],
+                            "document_type": doc_entry["document_type"]
+                        }
+                    })
+                else:
+                    # Project created but document creation failed
+                    return json.dumps({
+                        "success": True,
+                        "project": {
+                            "id": project["id"],
+                            "title": project["title"],
+                            "github_repo": project.get("github_repo"),
+                            "created_at": project["created_at"]
+                        },
+                        "warning": "Project created but default PRD document creation failed"
+                    })
+                    
+            except Exception as doc_error:
+                # Project created but document creation failed
                 return json.dumps({
                     "success": True,
                     "project": {
@@ -60,12 +151,8 @@ def register_project_tools(mcp: FastMCP):
                         "title": project["title"],
                         "github_repo": project.get("github_repo"),
                         "created_at": project["created_at"]
-                    }
-                })
-            else:
-                return json.dumps({
-                    "success": False,
-                    "error": "Failed to create project"
+                    },
+                    "warning": f"Project created but default PRD document creation failed: {str(doc_error)}"
                 })
                 
         except Exception as e:
@@ -571,4 +658,337 @@ def register_project_tools(mcp: FastMCP):
             return json.dumps({
                 "success": False,
                 "error": f"Error getting tasks by status: {str(e)}"
+            })
+
+    # Document Operations for docs JSONB field
+    
+    @mcp.tool()
+    async def add_project_document(ctx: Context, project_id: str, document_type: str, title: str, content: Dict[str, Any] = None, tags: List[str] = None, author: str = None) -> str:
+        """
+        Add a new document to a project's docs JSONB field.
+        
+        Args:
+            ctx: The MCP server provided context
+            project_id: UUID of the parent project
+            document_type: Type of document (prd, feature_plan, erd, technical_spec, etc.)
+            title: Document title
+            content: Document content as JSON
+            tags: Optional list of tags
+            author: Optional author name
+        
+        Returns:
+            JSON string with the created document information
+        """
+        try:
+            supabase_client = ctx.request_context.lifespan_context.supabase_client
+            
+            # Get current project
+            project_response = supabase_client.table("projects").select("docs").eq("id", project_id).execute()
+            if not project_response.data:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Project with ID {project_id} not found"
+                })
+            
+            current_docs = project_response.data[0].get("docs", [])
+            
+            # Create new document entry
+            new_doc = {
+                "id": str(uuid.uuid4()),
+                "document_type": document_type,
+                "title": title,
+                "content": content or {},
+                "tags": tags or [],
+                "status": "draft",
+                "version": "1.0",
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
+            }
+            
+            if author:
+                new_doc["author"] = author
+            
+            # Add to docs array
+            updated_docs = current_docs + [new_doc]
+            
+            # Update project
+            response = supabase_client.table("projects").update({
+                "docs": updated_docs,
+                "updated_at": datetime.now().isoformat()
+            }).eq("id", project_id).execute()
+            
+            if response.data:
+                return json.dumps({
+                    "success": True,
+                    "document": {
+                        "id": new_doc["id"],
+                        "project_id": project_id,
+                        "document_type": new_doc["document_type"],
+                        "title": new_doc["title"],
+                        "status": new_doc["status"],
+                        "version": new_doc["version"],
+                        "created_at": new_doc["created_at"]
+                    }
+                })
+            else:
+                return json.dumps({
+                    "success": False,
+                    "error": "Failed to add document to project"
+                })
+                
+        except Exception as e:
+            return json.dumps({
+                "success": False,
+                "error": f"Error adding document: {str(e)}"
+            })
+    
+    @mcp.tool()
+    async def list_project_documents(ctx: Context, project_id: str) -> str:
+        """
+        List all documents in a project's docs JSONB field.
+        
+        Args:
+            ctx: The MCP server provided context
+            project_id: UUID of the project
+        
+        Returns:
+            JSON string with list of documents for the project
+        """
+        try:
+            supabase_client = ctx.request_context.lifespan_context.supabase_client
+            
+            response = supabase_client.table("projects").select("docs").eq("id", project_id).execute()
+            
+            if not response.data:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Project with ID {project_id} not found"
+                })
+            
+            docs = response.data[0].get("docs", [])
+            
+            # Format documents for response (exclude full content for listing)
+            documents = []
+            for doc in docs:
+                documents.append({
+                    "id": doc.get("id"),
+                    "document_type": doc.get("document_type"),
+                    "title": doc.get("title"),
+                    "status": doc.get("status"),
+                    "version": doc.get("version"),
+                    "tags": doc.get("tags", []),
+                    "author": doc.get("author"),
+                    "created_at": doc.get("created_at"),
+                    "updated_at": doc.get("updated_at")
+                })
+            
+            return json.dumps({
+                "success": True,
+                "project_id": project_id,
+                "documents": documents,
+                "total_count": len(documents)
+            })
+            
+        except Exception as e:
+            return json.dumps({
+                "success": False,
+                "error": f"Error listing documents: {str(e)}"
+            })
+    
+    @mcp.tool()
+    async def get_project_document(ctx: Context, project_id: str, doc_id: str) -> str:
+        """
+        Get a specific document from a project's docs JSONB field.
+        
+        Args:
+            ctx: The MCP server provided context
+            project_id: UUID of the project
+            doc_id: UUID of the document
+        
+        Returns:
+            JSON string with document details including full content
+        """
+        try:
+            supabase_client = ctx.request_context.lifespan_context.supabase_client
+            
+            response = supabase_client.table("projects").select("docs").eq("id", project_id).execute()
+            
+            if not response.data:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Project with ID {project_id} not found"
+                })
+            
+            docs = response.data[0].get("docs", [])
+            
+            # Find the specific document
+            document = None
+            for doc in docs:
+                if doc.get("id") == doc_id:
+                    document = doc
+                    break
+            
+            if document:
+                return json.dumps({
+                    "success": True,
+                    "document": document
+                })
+            else:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Document with ID {doc_id} not found in project {project_id}"
+                })
+                
+        except Exception as e:
+            return json.dumps({
+                "success": False,
+                "error": f"Error getting document: {str(e)}"
+            })
+    
+    @mcp.tool()
+    async def update_project_document(ctx: Context, project_id: str, doc_id: str, title: str = None, content: Dict[str, Any] = None, status: str = None, tags: List[str] = None, author: str = None, version: str = None) -> str:
+        """
+        Update a document in a project's docs JSONB field.
+        
+        Args:
+            ctx: The MCP server provided context
+            project_id: UUID of the project
+            doc_id: UUID of the document to update
+            title: Optional new title
+            content: Optional new content
+            status: Optional new status
+            tags: Optional new tags
+            author: Optional new author
+            version: Optional new version
+        
+        Returns:
+            JSON string with update results
+        """
+        try:
+            supabase_client = ctx.request_context.lifespan_context.supabase_client
+            
+            # Get current project docs
+            project_response = supabase_client.table("projects").select("docs").eq("id", project_id).execute()
+            if not project_response.data:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Project with ID {project_id} not found"
+                })
+            
+            docs = project_response.data[0].get("docs", [])
+            
+            # Find and update the document
+            updated = False
+            for i, doc in enumerate(docs):
+                if doc.get("id") == doc_id:
+                    if title is not None:
+                        docs[i]["title"] = title
+                    if content is not None:
+                        docs[i]["content"] = content
+                    if status is not None:
+                        docs[i]["status"] = status
+                    if tags is not None:
+                        docs[i]["tags"] = tags
+                    if author is not None:
+                        docs[i]["author"] = author
+                    if version is not None:
+                        docs[i]["version"] = version
+                    docs[i]["updated_at"] = datetime.now().isoformat()
+                    updated = True
+                    break
+            
+            if not updated:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Document with ID {doc_id} not found in project {project_id}"
+                })
+            
+            # Update the project
+            response = supabase_client.table("projects").update({
+                "docs": docs,
+                "updated_at": datetime.now().isoformat()
+            }).eq("id", project_id).execute()
+            
+            if response.data:
+                # Find the updated document to return
+                updated_doc = None
+                for doc in docs:
+                    if doc.get("id") == doc_id:
+                        updated_doc = doc
+                        break
+                
+                return json.dumps({
+                    "success": True,
+                    "document": updated_doc
+                })
+            else:
+                return json.dumps({
+                    "success": False,
+                    "error": "Failed to update document"
+                })
+                
+        except Exception as e:
+            return json.dumps({
+                "success": False,
+                "error": f"Error updating document: {str(e)}"
+            })
+    
+    @mcp.tool()
+    async def delete_project_document(ctx: Context, project_id: str, doc_id: str) -> str:
+        """
+        Delete a document from a project's docs JSONB field.
+        
+        Args:
+            ctx: The MCP server provided context
+            project_id: UUID of the project
+            doc_id: UUID of the document to delete
+        
+        Returns:
+            JSON string with deletion results
+        """
+        try:
+            supabase_client = ctx.request_context.lifespan_context.supabase_client
+            
+            # Get current project docs
+            project_response = supabase_client.table("projects").select("docs").eq("id", project_id).execute()
+            if not project_response.data:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Project with ID {project_id} not found"
+                })
+            
+            docs = project_response.data[0].get("docs", [])
+            
+            # Remove the document
+            original_length = len(docs)
+            docs = [doc for doc in docs if doc.get("id") != doc_id]
+            
+            if len(docs) == original_length:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Document with ID {doc_id} not found in project {project_id}"
+                })
+            
+            # Update the project
+            response = supabase_client.table("projects").update({
+                "docs": docs,
+                "updated_at": datetime.now().isoformat()
+            }).eq("id", project_id).execute()
+            
+            if response.data:
+                return json.dumps({
+                    "success": True,
+                    "project_id": project_id,
+                    "doc_id": doc_id
+                })
+            else:
+                return json.dumps({
+                    "success": False,
+                    "error": "Failed to delete document"
+                })
+                
+        except Exception as e:
+            return json.dumps({
+                "success": False,
+                "error": f"Error deleting document: {str(e)}"
             }) 

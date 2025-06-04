@@ -216,6 +216,29 @@ export const projectService = {
   },
 
   /**
+   * Create a new project with streaming progress
+   */
+  async createProjectWithStreaming(projectData: CreateProjectRequest): Promise<{ progress_id: string; status: string; message: string }> {
+    // Validate input
+    const validation = validateCreateProject(projectData);
+    if (!validation.success) {
+      throw new ValidationError(formatValidationErrors(validation.error));
+    }
+
+    try {
+      const response = await callAPI<{ progress_id: string; status: string; message: string }>('/api/projects', {
+        method: 'POST',
+        body: JSON.stringify(validation.data)
+      });
+      
+      return response;
+    } catch (error) {
+      console.error('Failed to initiate project creation:', error);
+      throw error;
+    }
+  },
+
+  /**
    * Update an existing project
    */
   async updateProject(projectId: string, updates: UpdateProjectRequest): Promise<Project> {

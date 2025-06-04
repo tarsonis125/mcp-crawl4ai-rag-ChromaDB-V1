@@ -13,6 +13,8 @@ import { ChevronRight, ShoppingCart, Code, Briefcase, Layers, Plus, X, AlertCirc
 import { projectService } from '../services/projectService';
 import type { Project, CreateProjectRequest } from '../types/project';
 import type { Task } from '../components/project-tasks/TasksTab';
+import { ProjectCreationProgressCard } from '../components/ProjectCreationProgressCard';
+import { projectCreationProgressService, ProjectCreationProgressData } from '../services/projectCreationProgressService';
 
 interface ProjectPageProps {
   className?: string;
@@ -57,6 +59,10 @@ export function ProjectPage({
     color: 'blue' as const
   });
   const [isCreatingProject, setIsCreatingProject] = useState(false);
+  
+  // Project creation progress state
+  const [projectCreationProgress, setProjectCreationProgress] = useState<ProjectCreationProgressData | null>(null);
+  const [showCreationProgress, setShowCreationProgress] = useState(false);
 
   // Load projects on component mount
   useEffect(() => {
@@ -149,25 +155,70 @@ export function ProjectPage({
         data: []
       };
 
-      const newProject = await projectService.createProject(projectData);
+      // Call the streaming project creation API
+      const response = await projectService.createProjectWithStreaming(projectData);
       
-      // Add to local state
-      setProjects((prev) => [...prev, newProject]);
+      if (response.progress_id) {
+        // Transition modal to show streaming console
+        setShowCreationProgress(true);
+        
+        // Start tracking progress
+        const initialProgressData: ProjectCreationProgressData = {
+          progressId: response.progress_id,
+          status: 'starting',
+          percentage: 0,
+          logs: ['🚀 Starting project creation...'],
+          project: { title: newProjectForm.title }
+        };
+        
+        setProjectCreationProgress(initialProgressData);
+        
+        // Set up WebSocket connection for real-time progress
+        projectCreationProgressService.streamProgress(
+          response.progress_id,
+          (data: ProjectCreationProgressData) => {
+            console.log('📨 Project creation progress:', data);
+            setProjectCreationProgress(data);
+            
+            // Handle completion
+            if (data.status === 'completed' && data.project) {
+              // Add to local state
+              setProjects((prev) => [...prev, data.project]);
+              
+              // Select the new project
+              setSelectedProject(data.project);
+              setShowProjectDetails(true);
+              
+              // Reset and close modal after a brief delay
+              setTimeout(() => {
+                setNewProjectForm({ title: '', description: '', color: 'blue' });
+                setIsNewProjectModalOpen(false);
+                setShowCreationProgress(false);
+                setProjectCreationProgress(null);
+                setIsCreatingProject(false);
+              }, 2000);
+            }
+          },
+          { autoReconnect: true, reconnectDelay: 5000 }
+        );
+      } else {
+        // Fallback to old synchronous flow
+        const newProject = await projectService.createProject(projectData);
+        
+        setProjects((prev) => [...prev, newProject]);
+        setSelectedProject(newProject);
+        setShowProjectDetails(true);
+        
+        setNewProjectForm({ title: '', description: '', color: 'blue' });
+        setIsNewProjectModalOpen(false);
+        setIsCreatingProject(false);
+      }
       
-      // Select the new project
-      setSelectedProject(newProject);
-      setShowProjectDetails(true);
-      
-      // Reset form and close modal
-      setNewProjectForm({ title: '', description: '', color: 'blue' });
-      setIsNewProjectModalOpen(false);
-      
-      console.log('✅ Project created successfully:', newProject);
+      console.log('✅ Project creation initiated successfully');
     } catch (error) {
       console.error('Failed to create project:', error);
-      // TODO: Add toast notification for error
-    } finally {
       setIsCreatingProject(false);
+      // TODO: Add toast notification for error
     }
   };
 
@@ -402,7 +453,7 @@ export function ProjectPage({
       {/* New Project Modal */}
       {isNewProjectModalOpen && (
         <div className="fixed inset-0 bg-black/50 dark:bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm">
-          <div className="relative p-6 rounded-md backdrop-blur-md w-full max-w-md
+          <div className={`relative p-6 rounded-md backdrop-blur-md ${showCreationProgress ? 'w-full max-w-2xl' : 'w-full max-w-md'}
               bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30
               border border-gray-200 dark:border-zinc-800/50
               shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)]
@@ -411,72 +462,128 @@ export function ProjectPage({
               before:shadow-[0_0_10px_2px_rgba(168,85,247,0.4)] dark:before:shadow-[0_0_20px_5px_rgba(168,85,247,0.7)]
               after:content-[''] after:absolute after:top-0 after:left-0 after:right-0 after:h-16
               after:bg-gradient-to-b after:from-purple-100 after:to-white dark:after:from-purple-500/20 dark:after:to-purple-500/5
-              after:rounded-t-md after:pointer-events-none">
+              after:rounded-t-md after:pointer-events-none
+              transition-all duration-300`}>
             <div className="relative z-10">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-bold bg-gradient-to-r from-purple-400 to-fuchsia-500 text-transparent bg-clip-text">
-                  Create New Project
-                </h3>
-                <button 
-                  onClick={() => setIsNewProjectModalOpen(false)} 
-                  className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-gray-700 dark:text-gray-300 mb-1">
-                    Project Name
-                  </label>
-                  <input 
-                    type="text" 
-                    placeholder="Enter project name..." 
-                    value={newProjectForm.title}
-                    onChange={(e) => setNewProjectForm((prev) => ({ ...prev, title: e.target.value }))}
-                    className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-md py-2 px-3 focus:outline-none focus:border-purple-400 focus:shadow-[0_0_10px_rgba(168,85,247,0.2)] transition-all duration-300" 
-                  />
-                </div>
-                <div>
-                  <label className="block text-gray-700 dark:text-gray-300 mb-1">
-                    Description
-                  </label>
-                  <textarea 
-                    placeholder="Enter project description..." 
-                    rows={4} 
-                    value={newProjectForm.description}
-                    onChange={(e) => setNewProjectForm((prev) => ({ ...prev, description: e.target.value }))}
-                    className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-md py-2 px-3 focus:outline-none focus:border-purple-400 focus:shadow-[0_0_10px_rgba(168,85,247,0.2)] transition-all duration-300" 
-                  />
-                </div>
-              </div>
-              
-              <div className="flex justify-end gap-3 mt-6">
-                <Button 
-                  onClick={() => setIsNewProjectModalOpen(false)} 
-                  variant="ghost"
-                  disabled={isCreatingProject}
-                >
-                  Cancel
-                </Button>
-                <Button 
-                  onClick={handleCreateProject} 
-                  variant="primary" 
-                  accentColor="purple" 
-                  className="shadow-lg shadow-purple-500/20"
-                  disabled={isCreatingProject || !newProjectForm.title.trim()}
-                >
-                  {isCreatingProject ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Creating...
-                    </>
-                  ) : (
-                    'Create Project'
+              {!showCreationProgress ? (
+                // Project Creation Form
+                <>
+                  <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-xl font-bold bg-gradient-to-r from-purple-400 to-fuchsia-500 text-transparent bg-clip-text">
+                      Create New Project
+                    </h3>
+                    <button 
+                      onClick={() => setIsNewProjectModalOpen(false)} 
+                      className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-gray-700 dark:text-gray-300 mb-1">
+                        Project Name
+                      </label>
+                      <input 
+                        type="text" 
+                        placeholder="Enter project name..." 
+                        value={newProjectForm.title}
+                        onChange={(e) => setNewProjectForm((prev) => ({ ...prev, title: e.target.value }))}
+                        className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-md py-2 px-3 focus:outline-none focus:border-purple-400 focus:shadow-[0_0_10px_rgba(168,85,247,0.2)] transition-all duration-300" 
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-gray-700 dark:text-gray-300 mb-1">
+                        Description
+                      </label>
+                      <textarea 
+                        placeholder="Enter project description..." 
+                        rows={4} 
+                        value={newProjectForm.description}
+                        onChange={(e) => setNewProjectForm((prev) => ({ ...prev, description: e.target.value }))}
+                        className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-md py-2 px-3 focus:outline-none focus:border-purple-400 focus:shadow-[0_0_10px_rgba(168,85,247,0.2)] transition-all duration-300" 
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-end gap-3 mt-6">
+                    <Button 
+                      onClick={() => setIsNewProjectModalOpen(false)} 
+                      variant="ghost"
+                      disabled={isCreatingProject}
+                    >
+                      Cancel
+                    </Button>
+                    <Button 
+                      onClick={handleCreateProject} 
+                      variant="primary" 
+                      accentColor="purple" 
+                      className="shadow-lg shadow-purple-500/20"
+                      disabled={isCreatingProject || !newProjectForm.title.trim()}
+                    >
+                      {isCreatingProject ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Creating...
+                        </>
+                      ) : (
+                        'Create Project'
+                      )}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                // Project Creation Progress Console
+                <>
+                  <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-xl font-bold bg-gradient-to-r from-purple-400 to-fuchsia-500 text-transparent bg-clip-text">
+                      Creating Project with AI
+                    </h3>
+                    <button 
+                      onClick={() => {
+                        // Only allow closing if creation is complete or failed
+                        if (projectCreationProgress?.status === 'completed' || projectCreationProgress?.status === 'error') {
+                          setIsNewProjectModalOpen(false);
+                          setShowCreationProgress(false);
+                          setProjectCreationProgress(null);
+                          projectCreationProgressService.disconnect();
+                        }
+                      }}
+                      className={`text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors ${
+                        projectCreationProgress?.status !== 'completed' && projectCreationProgress?.status !== 'error' 
+                          ? 'opacity-50 cursor-not-allowed' 
+                          : ''
+                      }`}
+                      disabled={projectCreationProgress?.status !== 'completed' && projectCreationProgress?.status !== 'error'}
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Progress Card */}
+                  {projectCreationProgress && (
+                    <ProjectCreationProgressCard
+                      progressData={projectCreationProgress}
+                      onComplete={(data) => {
+                        console.log('Project creation completed:', data);
+                        // The completion handling is already done in the handleCreateProject function
+                      }}
+                      onError={(error) => {
+                        console.error('Project creation failed:', error);
+                        setIsCreatingProject(false);
+                      }}
+                      onRetry={() => {
+                        // Reset and try again
+                        setShowCreationProgress(false);
+                        setProjectCreationProgress(null);
+                        setIsCreatingProject(false);
+                        projectCreationProgressService.disconnect();
+                      }}
+                    />
                   )}
-                </Button>
-              </div>
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -94,6 +94,9 @@ from src.modules.rag_module import (
     crawl_recursive_with_progress
 )
 
+# Initialize logger
+logger = logging.getLogger(__name__)
+
 from src.utils import (
     add_documents_to_supabase,
     search_documents,
@@ -629,6 +632,12 @@ async def stop_mcp_server():
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail={'error': str(e)})
+
+
+@app.get("/health")
+async def health_check():
+    """Simple health check endpoint for Docker and load balancers."""
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
 
 @app.get("/api/mcp/status")
@@ -1211,6 +1220,7 @@ async def initialize_credentials_endpoint():
 # Request/Response Models for Projects
 class CreateProjectRequest(BaseModel):
     title: str
+    description: Optional[str] = None
     prd: Optional[Dict[str, Any]] = None
     github_repo: Optional[str] = None
 
@@ -1260,17 +1270,88 @@ async def list_projects():
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
 
-@app.post("/api/projects")
-async def create_project(request: CreateProjectRequest):
-    """Create a new project."""
+async def _create_project_background(progress_id: str, request: CreateProjectRequest):
+    """Background task to actually create the project with progress updates."""
     try:
+        # Update progress: Starting
+        await project_creation_manager.update_progress(progress_id, {
+            'percentage': 10,
+            'step': 'initializing_agents',
+            'log': '🤖 Initializing DocsAgent...'
+        })
+        
         # Get Supabase client
         supabase_client = get_supabase_client()
         
+        # Update progress: DocsAgent processing
+        await project_creation_manager.update_progress(progress_id, {
+            'percentage': 30,
+            'step': 'generating_docs',
+            'log': '📝 Generating comprehensive documentation...'
+        })
+        
+        # Try to use DocsAgent for enhanced documentation
+        generated_prd = {}
+        generated_docs = []
+        
+        try:
+            # Import DocsAgent (lazy import to avoid startup issues)
+            from .agents.docs_agent import DocsAgent, DocumentProcessingRequest
+            
+            await project_creation_manager.update_progress(progress_id, {
+                'percentage': 50,
+                'step': 'processing_requirements',
+                'log': '🧠 AI is analyzing project requirements...'
+            })
+            
+            # Initialize and use DocsAgent
+            docs_agent = DocsAgent()
+            processing_request = DocumentProcessingRequest(
+                title=request.title,
+                description=request.description or '',
+                mode="create_comprehensive",
+                requirements={
+                    "title": request.title,
+                    "basic_description": request.description or '',
+                    "github_repo": request.github_repo
+                }
+            )
+            
+            await project_creation_manager.update_progress(progress_id, {
+                'percentage': 70,
+                'step': 'ai_generation',
+                'log': '✨ AI is creating project documentation...'
+            })
+            
+            # Generate documentation
+            agent_result = await docs_agent.process_document(processing_request)
+            generated_prd = agent_result.prd if hasattr(agent_result, 'prd') else {}
+            generated_docs = agent_result.documents if hasattr(agent_result, 'documents') else []
+            
+            await project_creation_manager.update_progress(progress_id, {
+                'percentage': 85,
+                'step': 'finalizing_docs',
+                'log': f'📋 Generated {len(generated_docs)} documents and comprehensive PRD'
+            })
+            
+        except ImportError:
+            await project_creation_manager.update_progress(progress_id, {
+                'percentage': 60,
+                'step': 'fallback_mode',
+                'log': '⚠️ DocsAgent not available, using basic project structure'
+            })
+        except Exception as e:
+            await project_creation_manager.update_progress(progress_id, {
+                'percentage': 60,
+                'step': 'ai_fallback',
+                'log': f'⚠️ AI generation failed ({str(e)}), using basic structure'
+            })
+        
+        # Create project data structure
         project_data = {
             "title": request.title,
-            "prd": request.prd or {},
-            "docs": [],
+            "prd": generated_prd or request.prd or {},
+            "docs": generated_docs or [],
             "features": [],
             "data": [],
             "created_at": datetime.now().isoformat(),
@@ -1280,25 +1361,192 @@ async def create_project(request: CreateProjectRequest):
         if request.github_repo:
             project_data["github_repo"] = request.github_repo
         
+        await project_creation_manager.update_progress(progress_id, {
+            'percentage': 95,
+            'step': 'saving_to_database',
+            'log': '💾 Saving project to database...'
+        })
+        
+        # Insert project into database
         response = supabase_client.table("projects").insert(project_data).execute()
         
         if response.data:
             project = response.data[0]
+            
+            # Complete the creation process
+            await project_creation_manager.complete_creation(progress_id, {
+                'project': {
+                    "id": project["id"],
+                    "title": project["title"],
+                    "github_repo": project.get("github_repo"),
+                    "created_at": project["created_at"],
+                    "updated_at": project["updated_at"],
+                    "prd": project.get("prd", {}),
+                    "docs": project.get("docs", []),
+                    "features": project.get("features", []),
+                    "data": project.get("data", [])
+                }
+            })
+        else:
+            await project_creation_manager.error_creation(progress_id, "Failed to save project to database")
+            
+    except Exception as e:
+        await project_creation_manager.error_creation(progress_id, str(e))
+
+
+@app.post("/api/projects")
+async def create_project(request: CreateProjectRequest):
+    """Create a new project with streaming progress."""
+    # Generate unique progress ID for this creation
+    progress_id = secrets.token_hex(16)
+    
+    # Start tracking creation progress
+    project_creation_manager.start_creation(progress_id, {
+        'title': request.title,
+        'description': request.description or '',
+        'github_repo': request.github_repo
+    })
+    
+    # Start background task to actually create the project
+    asyncio.create_task(_create_project_background(progress_id, request))
+    
+    # Return progress_id immediately so frontend can connect to WebSocket
+    return {
+        "progress_id": progress_id,
+        "status": "started",
+        "message": "Project creation started. Connect to WebSocket for progress updates."
+    }
+
+
+@app.post("/api/projects/create-with-progress/{progress_id}")
+async def create_project_with_progress(progress_id: str, request: CreateProjectRequest):
+    """Actually create the project with DocsAgent and stream progress."""
+    try:
+        # Update progress: Starting
+        await project_creation_manager.update_progress(progress_id, {
+            'percentage': 10,
+            'step': 'initializing_agents',
+            'log': '🤖 Initializing DocsAgent...'
+        })
+        
+        # Get Supabase client
+        supabase_client = get_supabase_client()
+        
+        # Update progress: DocsAgent processing
+        await project_creation_manager.update_progress(progress_id, {
+            'percentage': 30,
+            'step': 'generating_docs',
+            'log': '📝 Generating comprehensive documentation...'
+        })
+        
+        # Try to use DocsAgent for enhanced documentation
+        generated_prd = {}
+        generated_docs = []
+        
+        try:
+            # Import DocsAgent (lazy import to avoid startup issues)
+            from .agents.docs_agent import DocsAgent, DocumentProcessingRequest
+            
+            await project_creation_manager.update_progress(progress_id, {
+                'percentage': 50,
+                'step': 'processing_requirements',
+                'log': '🧠 AI is analyzing project requirements...'
+            })
+            
+            # Initialize and use DocsAgent
+            docs_agent = DocsAgent()
+            processing_request = DocumentProcessingRequest(
+                title=request.title,
+                description=request.description or '',
+                mode="create_comprehensive",
+                requirements={
+                    "title": request.title,
+                    "basic_description": request.description or '',
+                    "github_repo": request.github_repo
+                }
+            )
+            
+            await project_creation_manager.update_progress(progress_id, {
+                'percentage': 70,
+                'step': 'ai_generation',
+                'log': '✨ AI is creating project documentation...'
+            })
+            
+            # Generate documentation
+            agent_result = await docs_agent.process_document(processing_request)
+            generated_prd = agent_result.prd if hasattr(agent_result, 'prd') else {}
+            generated_docs = agent_result.documents if hasattr(agent_result, 'documents') else []
+            
+            await project_creation_manager.update_progress(progress_id, {
+                'percentage': 85,
+                'step': 'finalizing_docs',
+                'log': f'📋 Generated {len(generated_docs)} documents and comprehensive PRD'
+            })
+            
+        except ImportError:
+            await project_creation_manager.update_progress(progress_id, {
+                'percentage': 60,
+                'step': 'fallback_mode',
+                'log': '⚠️ DocsAgent not available, using basic project structure'
+            })
+        except Exception as e:
+            await project_creation_manager.update_progress(progress_id, {
+                'percentage': 60,
+                'step': 'ai_fallback',
+                'log': f'⚠️ AI generation failed ({str(e)}), using basic structure'
+            })
+        
+        # Create project data structure
+        project_data = {
+            "title": request.title,
+            "prd": generated_prd or request.prd or {},
+            "docs": generated_docs or [],
+            "features": [],
+            "data": [],
+            "created_at": datetime.now().isoformat(),
+            "updated_at": datetime.now().isoformat()
+        }
+        
+        if request.github_repo:
+            project_data["github_repo"] = request.github_repo
+        
+        await project_creation_manager.update_progress(progress_id, {
+            'percentage': 95,
+            'step': 'saving_to_database',
+            'log': '💾 Saving project to database...'
+        })
+        
+        # Insert project into database
+        response = supabase_client.table("projects").insert(project_data).execute()
+        
+        if response.data:
+            project = response.data[0]
+            
+            # Complete the creation process
+            await project_creation_manager.complete_creation(progress_id, {
+                'project': {
+                    "id": project["id"],
+                    "title": project["title"],
+                    "github_repo": project.get("github_repo"),
+                    "created_at": project["created_at"],
+                    "updated_at": project["updated_at"],
+                    "prd": project.get("prd", {}),
+                    "docs": project.get("docs", []),
+                    "features": project.get("features", []),
+                    "data": project.get("data", [])
+                }
+            })
+            
             return {
-                "id": project["id"],
-                "title": project["title"],
-                "github_repo": project.get("github_repo"),
-                "created_at": project["created_at"],
-                "updated_at": project["updated_at"],
-                "prd": project.get("prd", {}),
-                "docs": project.get("docs", []),
-                "features": project.get("features", []),
-                "data": project.get("data", [])
+                "success": True,
+                "project": project
             }
         else:
+            await project_creation_manager.error_creation(progress_id, "Failed to save project to database")
             raise HTTPException(status_code=500, detail={'error': 'Failed to create project'})
                 
     except Exception as e:
+        await project_creation_manager.error_creation(progress_id, str(e))
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
 
@@ -2378,6 +2626,60 @@ async def websocket_crawl_progress(websocket: WebSocket, progress_id: str):
             pass
 
 
+@app.websocket("/api/project-creation-progress/{progress_id}")
+async def websocket_project_creation_progress(websocket: WebSocket, progress_id: str):
+    """WebSocket endpoint for tracking specific project creation progress."""
+    print(f"DEBUG: Project creation WebSocket connection attempt for progress_id: {progress_id}")
+    
+    # Add WebSocket to project creation progress manager
+    await project_creation_manager.add_websocket(progress_id, websocket)
+    print(f"DEBUG: Project creation WebSocket added to progress manager for progress_id: {progress_id}")
+    
+    try:
+        while True:
+            # Keep connection alive with ping (match MCP pattern exactly)
+            await asyncio.sleep(1)
+            await websocket.send_json({"type": "ping"})
+            
+    except WebSocketDisconnect:
+        print(f"DEBUG: Project creation WebSocket disconnected for progress_id: {progress_id}")
+        project_creation_manager.remove_websocket(progress_id, websocket)
+    except Exception as e:
+        print(f"DEBUG: Project creation WebSocket error for progress {progress_id}: {e}")
+        project_creation_manager.remove_websocket(progress_id, websocket)
+        try:
+            await websocket.close()
+        except:
+            pass
+
+
+@app.websocket("/api/project-creation-progress/{progress_id}")
+async def websocket_project_creation_progress(websocket: WebSocket, progress_id: str):
+    """WebSocket endpoint for tracking specific project creation progress."""
+    logger.info(f"WebSocket connection for project creation progress_id: {progress_id}")
+    
+    # Add WebSocket to project creation manager
+    await project_creation_manager.add_websocket(progress_id, websocket)
+    logger.info(f"WebSocket added to project creation manager for progress_id: {progress_id}")
+    
+    try:
+        while True:
+            # Keep connection alive with ping
+            await asyncio.sleep(1)
+            await websocket.send_json({"type": "ping"})
+            
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected for project creation progress_id: {progress_id}")
+        project_creation_manager.remove_websocket(progress_id, websocket)
+    except Exception as e:
+        logger.error(f"WebSocket error for project creation progress {progress_id}: {e}")
+        project_creation_manager.remove_websocket(progress_id, websocket)
+        try:
+            await websocket.close()
+        except:
+            pass
+
+
 class CrawlProgressManager:
     """Manages crawling progress tracking and WebSocket streaming."""
     
@@ -2532,8 +2834,154 @@ class CrawlProgressManager:
         for ws in disconnected:
             self.remove_websocket(progress_id, ws)
 
-# Global progress manager
+class ProjectCreationProgressManager:
+    """Manages project creation progress tracking and WebSocket streaming."""
+    
+    def __init__(self):
+        self.active_creations: Dict[str, Dict[str, Any]] = {}
+        self.progress_websockets: Dict[str, List[WebSocket]] = {}
+    
+    def start_creation(self, progress_id: str, initial_data: Dict[str, Any]) -> None:
+        """Start tracking a new project creation operation."""
+        self.active_creations[progress_id] = {
+            'status': 'starting',
+            'percentage': 0,
+            'start_time': datetime.now(),
+            'logs': ['🚀 Starting project creation...'],
+            'step': 'initialization',
+            **initial_data
+        }
+        
+    async def update_progress(self, progress_id: str, update_data: Dict[str, Any]) -> None:
+        """Update creation progress and notify connected clients."""
+        if progress_id not in self.active_creations:
+            return
+        
+        # Update progress data
+        self.active_creations[progress_id].update(update_data)
+        
+        # Add log if provided
+        if 'log' in update_data:
+            self.active_creations[progress_id]['logs'].append(update_data['log'])
+            # Keep only last 50 logs
+            if len(self.active_creations[progress_id]['logs']) > 50:
+                self.active_creations[progress_id]['logs'] = self.active_creations[progress_id]['logs'][-50:]
+        
+        # Broadcast to connected WebSocket clients
+        await self._broadcast_progress(progress_id)
+    
+    async def complete_creation(self, progress_id: str, completion_data: Dict[str, Any]) -> None:
+        """Mark a project creation as completed and send final update."""
+        if progress_id not in self.active_creations:
+            return
+        
+        completion_data.update({
+            'status': 'completed',
+            'percentage': 100,
+            'step': 'finished',
+            'log': '✅ Project creation completed successfully!',
+            'duration': str(datetime.now() - self.active_creations[progress_id]['start_time'])
+        })
+        
+        self.active_creations[progress_id].update(completion_data)
+        await self._broadcast_progress(progress_id)
+        
+        # Clean up after a delay
+        await asyncio.sleep(5)
+        if progress_id in self.active_creations:
+            del self.active_creations[progress_id]
+    
+    async def error_creation(self, progress_id: str, error_message: str) -> None:
+        """Mark a project creation as failed and send error update."""
+        if progress_id not in self.active_creations:
+            return
+        
+        self.active_creations[progress_id].update({
+            'status': 'error',
+            'error': error_message,
+            'log': f'❌ Error: {error_message}',
+            'step': 'failed'
+        })
+        
+        await self._broadcast_progress(progress_id)
+    
+    async def add_websocket(self, progress_id: str, websocket: WebSocket) -> None:
+        """Add a WebSocket connection for progress updates."""
+        await websocket.accept()
+        
+        if progress_id not in self.progress_websockets:
+            self.progress_websockets[progress_id] = []
+        
+        self.progress_websockets[progress_id].append(websocket)
+        
+        # Send current progress if available
+        if progress_id in self.active_creations:
+            try:
+                data = self.active_creations[progress_id].copy()
+                data['progressId'] = progress_id
+                
+                if 'start_time' in data and hasattr(data['start_time'], 'isoformat'):
+                    data['start_time'] = data['start_time'].isoformat()
+                
+                message = {
+                    "type": "project_creation_progress",
+                    "data": data
+                }
+                await websocket.send_json(message)
+            except Exception as e:
+                logger.error(f"Error sending initial progress: {e}")
+        else:
+            try:
+                await websocket.send_json({
+                    "type": "connection_established",
+                    "data": {"progressId": progress_id, "status": "waiting"}
+                })
+            except Exception as e:
+                logger.error(f"Error sending connection confirmation: {e}")
+    
+    def remove_websocket(self, progress_id: str, websocket: WebSocket) -> None:
+        """Remove a WebSocket connection."""
+        if progress_id in self.progress_websockets:
+            try:
+                self.progress_websockets[progress_id].remove(websocket)
+                if not self.progress_websockets[progress_id]:
+                    del self.progress_websockets[progress_id]
+            except ValueError:
+                pass
+    
+    async def _broadcast_progress(self, progress_id: str) -> None:
+        """Broadcast progress update to all connected clients."""
+        if progress_id not in self.progress_websockets:
+            return
+        
+        progress_data = self.active_creations.get(progress_id, {}).copy()
+        progress_data['progressId'] = progress_id
+        
+        if 'start_time' in progress_data and hasattr(progress_data['start_time'], 'isoformat'):
+            progress_data['start_time'] = progress_data['start_time'].isoformat()
+        
+        message = {
+            "type": "project_creation_progress" if progress_data.get('status') != 'completed' else "project_creation_completed",
+            "data": progress_data
+        }
+        
+        # Send to all connected WebSocket clients
+        disconnected = []
+        for websocket in self.progress_websockets[progress_id]:
+            try:
+                await websocket.send_json(message)
+            except Exception as e:
+                logger.error(f"Failed to send to WebSocket client: {e}")
+                disconnected.append(websocket)
+        
+        # Clean up disconnected WebSockets
+        for ws in disconnected:
+            self.remove_websocket(progress_id, ws)
+
+
+# Global progress managers
 progress_manager = CrawlProgressManager()
+project_creation_manager = ProjectCreationProgressManager()
 
 
 if __name__ == "__main__":
