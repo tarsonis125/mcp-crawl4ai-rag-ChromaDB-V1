@@ -12,9 +12,11 @@ Modules:
 """
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Optional
 import logging
+from dataclasses import dataclass
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,12 +27,108 @@ from .api.mcp_api import router as mcp_router
 from .api.knowledge_api import router as knowledge_router  
 from .api.projects_api import router as projects_router
 
-# Import utilities  
+# Import utilities and core classes
 from .credential_service import initialize_credentials
+from .utils import get_supabase_client
+
+# Import missing dependencies that the modular APIs need
+try:
+    from crawl4ai import AsyncWebCrawler, BrowserConfig
+    from sentence_transformers import CrossEncoder
+except ImportError:
+    # These are optional dependencies for full functionality
+    AsyncWebCrawler = None
+    BrowserConfig = None
+    CrossEncoder = None
 
 # Initialize logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Mock context classes that the knowledge API expects
+@dataclass
+class MockRequestContext:
+    lifespan_context: Any
+
+@dataclass
+class MockContext:
+    request_context: MockRequestContext
+    state: Any = None
+
+class CrawlingContext:
+    """Context for direct crawling function calls."""
+    
+    def __init__(self):
+        self.crawler: Optional[Any] = None
+        self.supabase_client: Optional[Any] = None
+        self.reranking_model: Optional[Any] = None
+        self._initialized = False
+    
+    async def initialize(self):
+        """Initialize the crawling context."""
+        if self._initialized:
+            return
+        
+        try:
+            # Create browser configuration if crawl4ai is available
+            if AsyncWebCrawler and BrowserConfig:
+                browser_config = BrowserConfig(
+                    headless=True,
+                    verbose=False
+                )
+                
+                # Initialize the crawler
+                self.crawler = AsyncWebCrawler(config=browser_config)
+                await self.crawler.__aenter__()
+            
+            # Initialize Supabase client
+            self.supabase_client = get_supabase_client()
+            
+            # Initialize cross-encoder model for reranking if enabled
+            if os.getenv("USE_RERANKING", "false") == "true" and CrossEncoder:
+                try:
+                    self.reranking_model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+                except Exception as e:
+                    logger.warning(f"Failed to load reranking model: {e}")
+                    self.reranking_model = None
+            
+            self._initialized = True
+            logger.info("✅ Crawling context initialized")
+            
+        except Exception as e:
+            logger.error(f"Error initializing crawling context: {e}")
+            # Don't raise - allow startup to continue without full crawling functionality
+    
+    async def cleanup(self):
+        """Clean up the crawling context."""
+        if self.crawler:
+            try:
+                await self.crawler.__aexit__(None, None, None)
+            except Exception as e:
+                logger.warning(f"Error cleaning up crawler: {e}")
+            finally:
+                self.crawler = None
+        
+        self._initialized = False
+    
+    def create_context(self) -> MockContext:
+        """Create a context object that matches what MCP functions expect."""
+        lifespan_context = type('LifespanContext', (), {
+            'crawler': self.crawler,
+            'supabase_client': self.supabase_client,
+            'reranking_model': self.reranking_model
+        })()
+        
+        request_context = MockRequestContext(lifespan_context=lifespan_context)
+        context = MockContext(request_context=request_context)
+        
+        # Add state as well for compatibility
+        context.state = type('State', (), {'supabase_client': self.supabase_client})()
+        
+        return context
+
+# Global crawling context instance
+crawling_context = CrawlingContext()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -43,7 +141,14 @@ async def lifespan(app: FastAPI):
         await initialize_credentials()
         logger.info("✅ Credentials initialized")
         
-        # Additional startup tasks can go here
+        # Initialize crawling context
+        try:
+            await crawling_context.initialize()
+        except Exception as e:
+            logger.warning(f"Could not fully initialize crawling context: {e}")
+        
+        # Make crawling context available to modules
+        app.state.crawling_context = crawling_context
         
         logger.info("🎉 Archon backend started successfully!")
         
@@ -57,7 +162,12 @@ async def lifespan(app: FastAPI):
     logger.info("🛑 Shutting down Archon backend...")
     
     try:
-        # Cleanup tasks can go here
+        # Cleanup crawling context
+        try:
+            await crawling_context.cleanup()
+        except Exception as e:
+            logger.warning(f"Could not cleanup crawling context: {e}")
+        
         logger.info("✅ Cleanup completed")
         
     except Exception as e:
@@ -74,7 +184,7 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
+    allow_origins=["http://localhost:3737", "http://localhost:5173"],  # React dev servers
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

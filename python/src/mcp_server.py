@@ -95,7 +95,7 @@ mcp = FastMCP(
     description="Modular MCP server for Archon: RAG, Tasks, and UI tools",
     lifespan=archon_lifespan,
     host=os.getenv("HOST", "0.0.0.0"),
-    port=os.getenv("PORT", "8051")
+    port=int(os.getenv("PORT", "8051"))
 )
 
 # Import and register all modules
