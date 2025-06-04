@@ -402,24 +402,40 @@ async def clear_logs():
     return {"success": True, "message": "Logs cleared"}
 
 @router.get("/config")
-async def get_configuration():
+async def get_mcp_config():
     """Get MCP server configuration."""
     try:
-        supabase_client = get_supabase_client()
+        from ..credential_service import credential_service
         
-        # Try to get config from database first
-        response = supabase_client.table("credentials").select("key_value").eq("key_name", "mcp_config").execute()
+        # Get configuration from database or defaults
+        try:
+            config = {
+                'host': await credential_service.get_credential('HOST', 'localhost'),
+                'port': int(await credential_service.get_credential('PORT', '8051')),
+                'transport': await credential_service.get_credential('TRANSPORT', 'sse'),
+                'model_choice': await credential_service.get_credential('MODEL_CHOICE', 'gpt-4o-mini'),
+                'use_contextual_embeddings': (await credential_service.get_credential('USE_CONTEXTUAL_EMBEDDINGS', 'false')).lower() == 'true',
+                'use_hybrid_search': (await credential_service.get_credential('USE_HYBRID_SEARCH', 'false')).lower() == 'true',
+                'use_agentic_rag': (await credential_service.get_credential('USE_AGENTIC_RAG', 'false')).lower() == 'true',
+                'use_reranking': (await credential_service.get_credential('USE_RERANKING', 'false')).lower() == 'true',
+            }
+        except Exception:
+            # Fallback to environment variables
+            import os
+            config = {
+                'host': os.getenv('HOST', 'localhost'),
+                'port': int(os.getenv('PORT', '8051')),
+                'transport': os.getenv('TRANSPORT', 'sse'),
+                'model_choice': os.getenv('MODEL_CHOICE', 'gpt-4o-mini'),
+                'use_contextual_embeddings': os.getenv('USE_CONTEXTUAL_EMBEDDINGS', 'false').lower() == 'true',
+                'use_hybrid_search': os.getenv('USE_HYBRID_SEARCH', 'false').lower() == 'true',
+                'use_agentic_rag': os.getenv('USE_AGENTIC_RAG', 'false').lower() == 'true',
+                'use_reranking': os.getenv('USE_RERANKING', 'false').lower() == 'true',
+            }
         
-        if response.data:
-            config_data = json.loads(response.data[0]['key_value'])
-            return ServerConfig(**config_data)
-        else:
-            # Return default config
-            return ServerConfig()
-            
+        return config
     except Exception as e:
-        # Return default config on error
-        return ServerConfig()
+        raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.post("/config")
 async def save_configuration(config: ServerConfig):

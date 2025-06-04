@@ -114,8 +114,37 @@ async def list_credentials(category: Optional[str] = None):
     try:
         credentials = await credential_service.list_all_credentials()
         
-        # Filter by category if specified
-        if category:
+        # Special handling for llm_config category to include OPENAI_API_KEY
+        if category == 'llm_config':
+            # Get OPENAI_API_KEY from api_keys category and include it
+            openai_key_cred = None
+            for cred in credentials:
+                if cred.key == 'OPENAI_API_KEY':
+                    openai_key_cred = cred
+                    break
+            
+            # Filter for llm_config category
+            filtered_credentials = [cred for cred in credentials if cred.category == category]
+            
+            # Add OPENAI_API_KEY to llm_config if it exists
+            if openai_key_cred:
+                # Get the decrypted value for the virtual credential
+                decrypted_value = await credential_service.get_credential('OPENAI_API_KEY', decrypt=True)
+                
+                # Create a virtual credential entry for OPENAI_API_KEY in llm_config with decrypted value
+                virtual_openai_cred = CredentialItem(
+                    key=openai_key_cred.key,
+                    value=decrypted_value,  # Use decrypted value for frontend validation
+                    encrypted_value=openai_key_cred.encrypted_value,
+                    is_encrypted=False,  # Mark as not encrypted since we're returning decrypted value
+                    category='llm_config',  # Virtual category for frontend
+                    description=openai_key_cred.description
+                )
+                filtered_credentials.append(virtual_openai_cred)
+            
+            credentials = filtered_credentials
+        elif category:
+            # Normal category filtering
             credentials = [cred for cred in credentials if cred.category == category]
         
         return [

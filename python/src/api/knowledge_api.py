@@ -17,6 +17,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Form, Request
 from pydantic import BaseModel, HttpUrl
+from pathlib import Path
 
 from ..utils import get_supabase_client
 
@@ -381,19 +382,47 @@ async def get_knowledge_items(
 
 @router.delete("/knowledge-items/{source_id}")
 async def delete_knowledge_item(source_id: str):
-    """Delete a knowledge item and all associated content."""
+    """Delete a knowledge item from the database."""
     try:
-        supabase_client = get_supabase_client()
+        print(f"DEBUG: Attempting to delete source_id: {source_id}")
         
-        # Delete from sources table (this should cascade to related tables)
-        response = supabase_client.table("sources").delete().eq("source_id", source_id).execute()
+        # Get crawling context
+        crawling_context = get_crawling_context()
         
-        # Also delete from crawled_pages table if needed
-        supabase_client.table("crawled_pages").delete().eq("source_id", source_id).execute()
+        # Ensure crawling context is initialized once
+        if not crawling_context._initialized:
+            print("DEBUG: Initializing crawling context")
+            await crawling_context.initialize()
         
-        return {"message": "Knowledge item deleted successfully", "source_id": source_id}
+        # Create context for the MCP function
+        ctx = crawling_context.create_context()
+        print(f"DEBUG: Created context, supabase_client available: {ctx.request_context.lifespan_context.supabase_client is not None}")
         
+        # Call the actual function from rag_module
+        print("DEBUG: Calling delete_source function")
+        from src.modules.rag_module import delete_source
+        result = await delete_source(ctx, source_id)
+        print(f"DEBUG: delete_source returned: {result}")
+        
+        # Parse JSON string response if needed
+        if isinstance(result, str):
+            result = json.loads(result)
+        
+        print(f"DEBUG: Parsed result: {result}")
+        
+        if result.get('success'):
+            return {
+                'success': True,
+                'message': f'Successfully deleted knowledge item {source_id}'
+            }
+        else:
+            print(f"DEBUG: Delete failed with error: {result.get('error')}")
+            raise HTTPException(status_code=500, detail={'error': result.get('error', 'Deletion failed')})
+            
     except Exception as e:
+        print(f"DEBUG: Exception in delete endpoint: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.post("/knowledge-items/crawl")
@@ -417,9 +446,10 @@ async def crawl_knowledge_item(request: KnowledgeItemRequest):
         asyncio.create_task(_perform_crawl_with_progress(progress_id, request))
         
         return {
-            "progressId": progress_id,
-            "status": "started",
-            "message": "Crawling started. Connect to WebSocket for progress updates."
+            'success': True,
+            'progressId': progress_id,
+            'message': 'Crawling started',
+            'estimatedDuration': '3-5 minutes'
         }
         
     except Exception as e:
@@ -428,6 +458,8 @@ async def crawl_knowledge_item(request: KnowledgeItemRequest):
 async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemRequest):
     """Perform the actual crawl operation with progress tracking."""
     try:
+        print(f"DEBUG: Starting crawl for progress_id: {progress_id}")
+        
         # Create a progress callback that will be called by the crawling function
         async def progress_callback(status: str, percentage: int, message: str, **kwargs):
             """Callback function to receive real-time progress updates from crawling."""
@@ -440,65 +472,62 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
                 'log': message,
                 **kwargs
             })
+            print(f"DEBUG: Progress callback - {status}: {percentage}% - {message}")
         
         # Initial progress update
         await progress_callback('starting', 0, f'Starting crawl of {request.url}')
         
-        # Simulate crawling process (in real implementation, you'd use MCP server here)
-        await progress_callback('crawling', 25, 'Analyzing page structure...')
-        await asyncio.sleep(1)
+        # Get crawling context
+        crawling_context = get_crawling_context()
         
-        await progress_callback('processing', 50, 'Extracting content...')
-        await asyncio.sleep(1)
+        # Ensure crawling context is initialized
+        if not crawling_context._initialized:
+            await crawling_context.initialize()
         
-        await progress_callback('storing', 75, 'Processing and storing content...')
-        await asyncio.sleep(1)
+        # Create context for the MCP function
+        ctx = crawling_context.create_context()
         
-        # Store dummy data for demo
-        supabase_client = get_supabase_client()
-        
-        # Create source entry
-        source_data = {
-            "source_id": f"crawl_{int(datetime.now().timestamp())}",
-            "title": f"Page from {request.url}",
-            "summary": f"Crawled content from {request.url}",
-            "metadata": {
-                "knowledge_type": request.knowledge_type,
-                "tags": request.tags,
-                "source_type": "url",
-                "update_frequency": request.update_frequency
-            },
-                         "total_words": 100
+        # Store metadata in context for the crawling functions to access
+        ctx.knowledge_metadata = {
+            'knowledge_type': request.knowledge_type,
+            'tags': request.tags,
+            'update_frequency': request.update_frequency
         }
         
-        sources_response = supabase_client.table("sources").insert(source_data).execute()
+        # IMPORTANT: Add progress callback to context so MCP function can use it
+        ctx.progress_callback = progress_callback
         
-        # Create crawled page entry
-        page_data = {
-            "url": str(request.url),
-            "title": f"Page from {request.url}",
-            "content": f"Sample content from {request.url}",
-            "source_id": source_data["source_id"],
-            "word_count": 100,
-            "chunk_index": 0
-        }
+        # Call the actual crawling function with progress callback support
+        from src.modules.rag_module import smart_crawl_url_direct
+        result = await smart_crawl_url_direct(
+            ctx=ctx,
+            url=str(request.url),
+            max_depth=2,
+            max_concurrent=5,
+            chunk_size=5000
+        )
         
-        pages_response = supabase_client.table("crawled_pages").insert(page_data).execute()
+        # Parse JSON string response if needed
+        if isinstance(result, str):
+            result = json.loads(result)
         
-        # Final completion update
-        completion_data = {
-            'chunksStored': 1,
-            'wordCount': 100,
-            'log': 'Crawling completed successfully'
-        }
-        await progress_manager.complete_crawl(progress_id, completion_data)
+        # Final completion update (the MCP function should have sent this, but ensure it happens)
+        if result.get('success'):
+            completion_data = {
+                'chunksStored': result.get('chunks_stored', 0),
+                'wordCount': result.get('total_word_count', 0),
+                'log': 'Crawling completed successfully'
+            }
+            await progress_manager.complete_crawl(progress_id, completion_data)
+        else:
+            await progress_manager.error_crawl(progress_id, result.get('error', 'Unknown error'))
         
         # Broadcast final update to general WebSocket clients
         await manager.broadcast({
             "type": "crawl_completed",
             "data": {
                 "url": str(request.url),
-                "success": True,
+                "success": result.get('success', False),
                 "message": f'Crawling completed for {request.url}',
                 "progressId": progress_id
             }
@@ -507,6 +536,7 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
     except Exception as e:
         error_message = f'Crawling failed: {str(e)}'
         await progress_manager.error_crawl(progress_id, error_message)
+        print(f"Crawl error for {progress_id}: {e}")
 
 @router.post("/documents/upload")
 async def upload_document(

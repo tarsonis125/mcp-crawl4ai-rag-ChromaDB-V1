@@ -610,8 +610,24 @@ const AddKnowledgeModal = ({
           return;
         }
         
+        // Validate and format URL
+        let formattedUrl = url.trim();
+        if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
+          // Auto-prepend https:// if no protocol is specified
+          formattedUrl = `https://${formattedUrl}`;
+          setUrl(formattedUrl); // Update the input field to show the corrected URL
+        }
+        
+        // Additional validation to ensure it's a valid URL format
+        try {
+          new URL(formattedUrl);
+        } catch (urlError) {
+          showToast('Please enter a valid URL (e.g., https://example.com)', 'error');
+          return;
+        }
+        
         const result = await knowledgeBaseService.crawlUrl({
-          url: url.trim(),
+          url: formattedUrl,
           knowledge_type: knowledgeType,
           tags,
           update_frequency: parseInt(updateFrequency)
@@ -621,7 +637,7 @@ const AddKnowledgeModal = ({
         if ((result as any).progressId) {
           // Start progress tracking
           onStartCrawl((result as any).progressId, {
-            currentUrl: url.trim(),
+            currentUrl: formattedUrl,
             totalPages: 0,
             processedPages: 0
           });
@@ -697,7 +713,19 @@ const AddKnowledgeModal = ({
         </div>
         {/* URL Input */}
         {method === 'url' && <div className="mb-6">
-            <Input label="URL to Scrape" type="url" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://..." accentColor="blue" />
+            <Input 
+              label="URL to Scrape" 
+              type="url" 
+              value={url} 
+              onChange={e => setUrl(e.target.value)} 
+              placeholder="https://example.com or example.com" 
+              accentColor="blue" 
+            />
+            {url && !url.startsWith('http://') && !url.startsWith('https://') && (
+              <p className="text-amber-600 dark:text-amber-400 text-sm mt-1">
+                ℹ️ Will automatically add https:// prefix
+              </p>
+            )}
           </div>}
         {/* File Upload */}
         {method === 'file' &&           <div className="mb-6">
