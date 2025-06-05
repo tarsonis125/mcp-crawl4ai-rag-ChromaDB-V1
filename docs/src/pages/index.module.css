@@ -4,10 +4,54 @@
  */
 
 .heroBanner {
-  padding: 4rem 0;
+  padding: 6rem 0;
   text-align: center;
   position: relative;
   overflow: hidden;
+}
+
+.heroBanner::before {
+  content: '';
+  position: absolute;
+  left: -2%;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 55%;
+  height: 95%;
+  background-image: url('/img/logo-neon.svg');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center right;
+  opacity: 0.2;
+  z-index: 0;
+  filter: 
+    blur(1px)
+    drop-shadow(0 0 30px rgba(168, 85, 247, 0.8))
+    drop-shadow(0 0 60px rgba(59, 130, 246, 0.6))
+    drop-shadow(0 0 90px rgba(236, 72, 153, 0.4))
+    drop-shadow(0 0 120px rgba(16, 185, 129, 0.3));
+  animation: logoGlow 4s ease-in-out infinite alternate;
+}
+
+@keyframes logoGlow {
+  0% {
+    opacity: 0.15;
+    filter: 
+      blur(1px)
+      drop-shadow(0 0 20px rgba(168, 85, 247, 0.6))
+      drop-shadow(0 0 40px rgba(59, 130, 246, 0.4))
+      drop-shadow(0 0 60px rgba(236, 72, 153, 0.3))
+      drop-shadow(0 0 80px rgba(16, 185, 129, 0.2));
+  }
+  100% {
+    opacity: 0.25;
+    filter: 
+      blur(0.5px)
+      drop-shadow(0 0 40px rgba(168, 85, 247, 1.0))
+      drop-shadow(0 0 80px rgba(59, 130, 246, 0.8))
+      drop-shadow(0 0 120px rgba(236, 72, 153, 0.6))
+      drop-shadow(0 0 160px rgba(16, 185, 129, 0.4));
+  }
 }
 
 @media screen and (max-width: 966px) {
@@ -20,4 +64,279 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  margin-top: 2rem;
+  position: relative;
+  z-index: 2;
+}
+
+.heroBanner .container {
+  position: relative;
+  z-index: 2;
+}
+
+.whatIsArchon {
+  padding: 4rem 0;
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(5px);
+}
+
+.features {
+  padding: 5rem 0;
+}
+
+.glassContainer {
+  height: 100%;
+  padding: 1.5rem;
+  border-radius: 16px;
+  transition: all 0.3s ease;
+  position: relative;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  box-shadow: 0 15px 35px -10px rgba(0, 0, 0, 0.8);
+  margin-bottom: 2rem;
+  overflow: hidden; /* Ensures glows stay within border-radius */
+}
+
+.glassContainer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #a855f7, #3b82f6, #ec4899, #10b981);
+  box-shadow: 
+    0 0 20px 4px rgba(168, 85, 247, 0.4),
+    inset 0 0 20px 2px rgba(168, 85, 247, 0.2);
+  border-radius: 16px 16px 0 0;
+}
+
+.glassContainer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100px;
+  background: linear-gradient(to bottom, rgba(168, 85, 247, 0.2), rgba(168, 85, 247, 0.05));
+  border-radius: 16px 16px 0 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.glassContainer > * {
+  position: relative;
+  z-index: 1;
+}
+
+.glassContainer:hover {
+  transform: translateY(-8px);
+  box-shadow: 
+    0 30px 70px rgba(168, 85, 247, 0.3),
+    0 0 40px rgba(168, 85, 247, 0.2);
+  border-color: rgba(168, 85, 247, 0.5);
+}
+
+.glassContainer h3 {
+  color: #ffffff;
+  text-shadow: 0 0 15px rgba(168, 85, 247, 0.7);
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  z-index: 10;
+  position: relative;
+}
+
+.glassContainer p {
+  color: #f8fafc;
+  line-height: 1.6;
+  font-size: 0.95rem;
+  z-index: 10;
+  position: relative;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.featureIcon {
+  color: #a855f7;
+  margin-bottom: 1rem;
+  filter: drop-shadow(0 0 10px rgba(168, 85, 247, 0.6));
+  transition: all 0.3s ease;
+}
+
+.glassContainer:hover .featureIcon {
+  color: #c084fc;
+  filter: drop-shadow(0 0 20px rgba(168, 85, 247, 0.8));
+  transform: scale(1.1);
+}
+
+.quickStart {
+  padding: 4rem 0;
+  background: rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(5px);
+}
+
+.nextSteps {
+  padding: 4rem 0;
+}
+
+.callToAction {
+  padding: 4rem 0;
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(5px);
+}
+
+.diagramContainer {
+  margin: 2rem 0;
+  padding: 2rem;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 16px;
+  border: 1px solid rgba(168, 85, 247, 0.2);
+  backdrop-filter: blur(10px);
+  overflow-x: auto;
+}
+
+.diagramContainer .mermaid {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 600px;
+}
+
+.powerFeature {
+  padding: 2rem;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 12px;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  backdrop-filter: blur(15px);
+  margin-bottom: 1rem;
+  transition: all 0.3s ease;
+}
+
+.powerFeature:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px rgba(168, 85, 247, 0.2);
+  border-color: rgba(168, 85, 247, 0.5);
+}
+
+.powerFeature h3 {
+  color: #ffffff;
+  text-shadow: 0 0 10px rgba(168, 85, 247, 0.6);
+  margin-bottom: 1rem;
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.powerFeature p {
+  color: #e5e7eb;
+  line-height: 1.6;
+  font-size: 1rem;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .heroBanner {
+    padding: 4rem 0;
+  }
+
+  .heroBanner::before {
+    left: 0%;
+    width: 50%;
+    height: 80%;
+    opacity: 0.12;
+  }
+
+  .glassContainer {
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .glassContainer h3 {
+    font-size: 1.1rem;
+  }
+
+  .glassContainer p {
+    font-size: 0.9rem;
+  }
+
+  .featureIcon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .whatIsArchon, .quickStart, .nextSteps, .callToAction {
+    padding: 3rem 0;
+  }
+
+  .diagramContainer {
+    padding: 1.5rem;
+    margin: 1.5rem 0;
+  }
+
+  .diagramContainer .mermaid {
+    min-height: 500px;
+  }
+
+  .powerFeature {
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .heroBanner {
+    padding: 3rem 0;
+  }
+
+  .heroBanner::before {
+    left: -5%;
+    width: 60%;
+    height: 70%;
+    opacity: 0.08;
+  }
+
+  .glassContainer {
+    padding: 1rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .glassContainer h3 {
+    font-size: 1rem;
+  }
+
+  .glassContainer p {
+    font-size: 0.85rem;
+  }
+
+  .featureIcon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .whatIsArchon, .quickStart, .nextSteps, .callToAction {
+    padding: 2.5rem 0;
+  }
+
+  .diagramContainer {
+    padding: 1rem;
+    margin: 1rem 0;
+  }
+
+  .diagramContainer .mermaid {
+    min-height: 400px;
+  }
+
+  .powerFeature {
+    padding: 1.25rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .powerFeature h3 {
+    font-size: 1.1rem;
+  }
+
+  .powerFeature p {
+    font-size: 0.9rem;
+  }
 }

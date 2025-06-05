@@ -43,7 +43,7 @@ graph TB
 1. **Clone the repository:**
 ```bash
 git clone <repository-url>
-cd mcp-crawl4ai-rag
+cd archon
 ```
 
 2. **Create environment file:**
@@ -255,7 +255,7 @@ sudo chmod +x /usr/local/bin/docker-compose
 ```bash
 # Clone repository
 git clone <repository-url>
-cd mcp-crawl4ai-rag
+cd archon
 
 # Set up environment
 cp .env.example .env

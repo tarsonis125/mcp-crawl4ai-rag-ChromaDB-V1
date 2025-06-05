@@ -51,7 +51,7 @@ graph TB
 ## 📁 Project Structure
 
 ```
-mcp-crawl4ai-rag/
+archon/
 ├── python/                      # Python backend application
 │   ├── src/                     # Main application source
 │   │   ├── main.py              # FastAPI application entry point
