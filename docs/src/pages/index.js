@@ -88,8 +88,26 @@ const ReactFlowDiagram = ({ reactFlowInstance, lucideIcons }) => {
     {
       id: 'archon',
       type: 'archon',
-      position: { x: 400, y: 100 },
+      position: { x: 330, y: 50 },
       data: { label: 'ARCHON', subtitle: 'Knowledge Engine' },
+      draggable: false
+    },
+    
+    // MCP Logo positioned on connector line
+    {
+      id: 'mcp-logo',
+      type: 'mcp',
+      position: { x: 210, y: 135 },
+      data: { label: 'MCP' },
+      draggable: false
+    },
+    
+    // FastApi Logo positioned on connector line
+    {
+      id: 'fastapi',
+      type: 'fastapi',
+      position: { x: 355, y: 275 },
+      data: { label: 'FastAPI' },
       draggable: false
     },
     
@@ -97,7 +115,7 @@ const ReactFlowDiagram = ({ reactFlowInstance, lucideIcons }) => {
     {
       id: 'archon-ui',
       type: 'ui-control',
-      position: { x: 410, y: 320 },
+      position: { x: 313, y: 350 },
       data: { 
         title: 'Archon UI',
         subtitle: 'Control all of Archon\'s Features'
@@ -248,6 +266,7 @@ const ReactFlowDiagram = ({ reactFlowInstance, lucideIcons }) => {
           id="left"
           style={{ background: '#8b5cf6', border: '2px solid #8b5cf6' }}
         />
+<img src="/img/Python-logo-notext.svg" alt="Python" className={styles.pythonIcon} />
         <img src="/img/logo-neon.svg" alt="Archon" className={styles.archonIcon} />
         <div className={styles.archonText}>
           <h3>{data.label}</h3>
@@ -274,8 +293,19 @@ const ReactFlowDiagram = ({ reactFlowInstance, lucideIcons }) => {
           position={Position.Top}
           style={{ background: '#3b82f6', border: '2px solid #3b82f6' }}
         />
+<img src="/img/React-icon.svg" alt="React" className={styles.reactIcon} />
         <h3 className={styles.uiControlTitle}>{data.title}</h3>
         <p className={styles.uiControlSubtitle}>{data.subtitle}</p>
+      </div>
+    ),
+    mcp: ({ data }) => (
+      <div className={styles.mcpNode}>
+        <img src="/img/mcp.svg" alt="MCP" className={styles.mcpIcon} />
+      </div>
+    ),
+    fastapi: ({ data }) => (
+      <div className={styles.fastapiNode}>
+        <img src="/img/fastapi-seeklogo.svg" alt="FastAPI" className={styles.fastapiIcon} />
       </div>
     ),
     container: ({ data }) => (
@@ -299,7 +329,7 @@ const ReactFlowDiagram = ({ reactFlowInstance, lucideIcons }) => {
   };
 
   return (
-    <div style={{ height: '550px', width: '100%', position: 'relative' }}>
+    <div style={{ height: '450px', width: '100%', position: 'relative' }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}

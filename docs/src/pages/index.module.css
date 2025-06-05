@@ -86,7 +86,7 @@
 
 /* Architecture Diagram Section */
 .architectureSection {
-  padding: 20px 0;
+  padding: 20px 0 10px 0;
   background: transparent;
 }
 
@@ -272,7 +272,7 @@
 }
 
 .archonDiagram {
-  padding: 2rem 0;
+  padding: 2rem 0 1rem 0;
 }
 
 /* App Icon Styling */
@@ -490,9 +490,20 @@
 }
 
 .archonText p {
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 14px;
+  color: #9ca3af;
+  font-size: 0.9rem;
   margin: 0;
+  text-shadow: 0 0 10px rgba(139, 92, 246, 0.5);
+}
+
+.pythonIcon {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 24px;
+  height: 24px;
+  z-index: 10;
+  filter: drop-shadow(0 0 8px rgba(255, 212, 59, 0.8));
 }
 
 /* Knowledge Node Styling */
@@ -848,11 +859,21 @@
 
 .uiControlTitle {
   color: #ffffff;
-  font-size: 18px;
+  font-size: 1.3rem;
   font-weight: 700;
-  margin: 0 0 8px 0;
+  margin: 0 0 0.5rem 0;
+  text-shadow: 0 0 15px rgba(59, 130, 246, 0.7);
   text-align: center;
-  text-shadow: 0 0 10px rgba(59, 130, 246, 0.6);
+}
+
+.reactIcon {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 24px;
+  height: 24px;
+  z-index: 10;
+  filter: drop-shadow(0 0 8px rgba(97, 218, 251, 0.8));
 }
 
 .uiControlSubtitle {
@@ -861,6 +882,66 @@
   margin: 0;
   text-align: center;
   line-height: 1.3;
+}
+
+.mcpNode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(139, 92, 246, 0.2);
+  border: 2px solid #8b5cf6;
+  border-radius: 50%;
+  width: 60px;
+  height: 60px;
+  box-shadow: 
+    0 0 20px rgba(139, 92, 246, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+}
+
+.mcpNode:hover {
+  transform: scale(1.1);
+  box-shadow: 
+    0 0 30px rgba(139, 92, 246, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.mcpIcon {
+  width: 40px;
+  height: 40px;
+  filter: brightness(0) invert(1) drop-shadow(0 0 10px rgba(255, 255, 255, 0.8));
+}
+
+.fastapiNode {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 150, 136, 0.2);
+  border: 2px solid #009688;
+  border-radius: 12px;
+  padding: 8px 12px;
+  min-width: 120px;
+  height: 40px;
+  box-shadow: 
+    0 0 20px rgba(0, 150, 136, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+}
+
+.fastapiNode:hover {
+  transform: scale(1.05);
+  box-shadow: 
+    0 0 30px rgba(0, 150, 136, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.fastapiIcon {
+  height: 24px;
+  width: auto;
+  filter: brightness(0) invert(1) drop-shadow(0 0 8px rgba(255, 255, 255, 0.6));
 }
 
 
