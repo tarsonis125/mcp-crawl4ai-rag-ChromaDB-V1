@@ -9,6 +9,8 @@ This module provides tools for:
 - Code example extraction and search
 
 All tools in this module work with web content and document storage/retrieval.
+
+Enhanced with comprehensive error handling and graceful degradation.
 """
 from mcp.server.fastmcp import FastMCP, Context
 from sentence_transformers import CrossEncoder
@@ -21,6 +23,8 @@ import json
 import os
 import re
 import concurrent.futures
+import logging
+import traceback
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, MemoryAdaptiveDispatcher
 
@@ -35,38 +39,36 @@ from src.utils import (
     search_code_examples
 )
 
+# Setup logging for the RAG module
+logger = logging.getLogger(__name__)
 
-def rerank_results(model: CrossEncoder, query: str, results: List[Dict[str, Any]], content_key: str = "content") -> List[Dict[str, Any]]:
+def safe_rerank_results(model: CrossEncoder, query: str, results: List[Dict[str, Any]], content_key: str = "content") -> List[Dict[str, Any]]:
     """
-    Rerank search results using a cross-encoder model for improved relevance.
+    Safely rerank search results using a cross-encoder model with comprehensive error handling.
     
     This function takes search results from vector/keyword search and re-scores them
     using a cross-encoder model that directly compares the query with each result.
-    Cross-encoders typically provide better relevance scoring than bi-encoders used
-    in vector search, at the cost of higher computational requirements.
-    
-    The function adds a 'rerank_score' field to each result and sorts by this score.
-    
-    Args:
-        model: The cross-encoder model to use for reranking (e.g., ms-marco-MiniLM)
-        query: The search query to compare against
-        results: List of search results, each containing at least the content_key field
-        content_key: The key in each result dict that contains the text content
-        
-    Returns:
-        Reranked list of results sorted by relevance (highest score first)
-        
-    Note:
-        - Falls back gracefully to original results if reranking fails
-        - Preserves all original fields in results
-        - Adds 'rerank_score' field with float values
+    Falls back gracefully if reranking fails for any reason.
     """
     if not model or not results:
+        logger.debug("No model or results provided for reranking")
         return results
     
     try:
-        # Extract content from results
-        texts = [result.get(content_key, "") for result in results]
+        logger.debug(f"Attempting to rerank {len(results)} results")
+        
+        # Extract content from results with error handling
+        texts = []
+        for i, result in enumerate(results):
+            try:
+                content = result.get(content_key, "")
+                if not content:
+                    logger.warning(f"Result {i} has no content for key '{content_key}'")
+                    content = str(result)  # Fallback to string representation
+                texts.append(content)
+            except Exception as e:
+                logger.warning(f"Error extracting content from result {i}: {e}")
+                texts.append("")  # Empty fallback
         
         # Create pairs of [query, document] for the cross-encoder
         pairs = [[query, text] for text in texts]
@@ -75,147 +77,206 @@ def rerank_results(model: CrossEncoder, query: str, results: List[Dict[str, Any]
         scores = model.predict(pairs)
         
         # Add scores to results and sort by score (descending)
+        reranked_results = []
         for i, result in enumerate(results):
-            result["rerank_score"] = float(scores[i])
+            try:
+                result_copy = result.copy()  # Don't modify original
+                result_copy["rerank_score"] = float(scores[i])
+                reranked_results.append(result_copy)
+            except Exception as e:
+                logger.warning(f"Error adding rerank score to result {i}: {e}")
+                # Keep original result without score
+                reranked_results.append(result)
         
-        # Sort by rerank score
-        reranked = sorted(results, key=lambda x: x.get("rerank_score", 0), reverse=True)
+        # Sort by rerank score (highest first)
+        reranked_results.sort(key=lambda x: x.get("rerank_score", 0), reverse=True)
         
-        return reranked
+        logger.debug(f"Successfully reranked {len(reranked_results)} results")
+        return reranked_results
+        
     except Exception as e:
-        # Only print when not using stdio to avoid contaminating JSON-RPC stream
-        import os
-        if os.getenv("TRANSPORT", "sse") != "stdio":
-            print(f"Error during reranking: {e}")
+        logger.error(f"Error during reranking: {e}")
+        logger.error(traceback.format_exc())
+        # Return original results on any error
         return results
 
 
 def is_sitemap(url: str) -> bool:
-    """Check if a URL is a sitemap."""
-    return url.endswith('sitemap.xml') or 'sitemap' in urlparse(url).path
+    """Check if a URL is a sitemap with error handling."""
+    try:
+        return url.endswith('sitemap.xml') or 'sitemap' in urlparse(url).path
+    except Exception as e:
+        logger.warning(f"Error checking if URL is sitemap: {e}")
+        return False
 
 
 def is_txt(url: str) -> bool:
-    """Check if a URL is a text file."""
-    return url.endswith('.txt')
+    """Check if a URL is a text file with error handling."""
+    try:
+        return url.endswith('.txt')
+    except Exception as e:
+        logger.warning(f"Error checking if URL is text file: {e}")
+        return False
 
 
-def parse_sitemap(sitemap_url: str) -> List[str]:
-    """Parse a sitemap and extract URLs."""
-    resp = requests.get(sitemap_url)
+def safe_parse_sitemap(sitemap_url: str) -> List[str]:
+    """Parse a sitemap and extract URLs with comprehensive error handling."""
     urls = []
-
-    if resp.status_code == 200:
+    
+    try:
+        logger.info(f"Parsing sitemap: {sitemap_url}")
+        resp = requests.get(sitemap_url, timeout=30)
+        
+        if resp.status_code != 200:
+            logger.error(f"Failed to fetch sitemap: HTTP {resp.status_code}")
+            return urls
+            
         try:
             tree = ElementTree.fromstring(resp.content)
-            urls = [loc.text for loc in tree.findall('.//{*}loc')]
+            urls = [loc.text for loc in tree.findall('.//{*}loc') if loc.text]
+            logger.info(f"Successfully extracted {len(urls)} URLs from sitemap")
+            
+        except ElementTree.ParseError as e:
+            logger.error(f"Error parsing sitemap XML: {e}")
         except Exception as e:
-            # Only print when not using stdio to avoid contaminating JSON-RPC stream
-            import os
-            if os.getenv("TRANSPORT", "sse") != "stdio":
-                print(f"Error parsing sitemap XML: {e}")
+            logger.error(f"Unexpected error parsing sitemap: {e}")
+            
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Network error fetching sitemap: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error in sitemap parsing: {e}")
+        logger.error(traceback.format_exc())
 
     return urls
 
 
 def smart_chunk_markdown(text: str, chunk_size: int = 5000) -> List[str]:
     """
-    Split text into chunks intelligently, respecting code blocks and paragraphs.
+    Split text into chunks intelligently with error handling.
     
     This function implements a context-aware chunking strategy that:
     1. Preserves code blocks (```) as complete units when possible
     2. Prefers to break at paragraph boundaries (\\n\\n)
     3. Falls back to sentence boundaries (. ) if needed
     4. Only splits mid-content when absolutely necessary
-    
-    The algorithm ensures that important semantic units like code examples
-    remain intact, improving the quality of RAG retrieval.
-    
-    Args:
-        text: The markdown text to chunk
-        chunk_size: Maximum size of each chunk in characters (default: 5000)
-        
-    Returns:
-        List of text chunks, each no larger than chunk_size
     """
-    chunks = []
-    start = 0
-    text_length = len(text)
+    if not text or not isinstance(text, str):
+        logger.warning("Invalid text provided for chunking")
+        return []
+        
+    try:
+        chunks = []
+        start = 0
+        text_length = len(text)
 
-    while start < text_length:
-        # Calculate end position
-        end = start + chunk_size
+        while start < text_length:
+            # Calculate end position
+            end = start + chunk_size
 
-        # If we're at the end of the text, just take what's left
-        if end >= text_length:
-            chunks.append(text[start:].strip())
-            break
+            # If we're at the end of the text, just take what's left
+            if end >= text_length:
+                remaining = text[start:].strip()
+                if remaining:
+                    chunks.append(remaining)
+                break
 
-        # Try to find a code block boundary first (```)
-        chunk = text[start:end]
-        code_block = chunk.rfind('```')
-        if code_block != -1 and code_block > chunk_size * 0.3:
-            end = start + code_block
+            # Try to find a code block boundary first (```)
+            chunk = text[start:end]
+            code_block = chunk.rfind('```')
+            if code_block != -1 and code_block > chunk_size * 0.3:
+                end = start + code_block
 
-        # If no code block, try to break at a paragraph
-        elif '\n\n' in chunk:
-            # Find the last paragraph break
-            last_break = chunk.rfind('\n\n')
-            if last_break > chunk_size * 0.3:  # Only break if we're past 30% of chunk_size
-                end = start + last_break
+            # If no code block, try to break at a paragraph
+            elif '\n\n' in chunk:
+                last_break = chunk.rfind('\n\n')
+                if last_break > chunk_size * 0.3:
+                    end = start + last_break
 
-        # If no paragraph break, try to break at a sentence
-        elif '. ' in chunk:
-            # Find the last sentence break
-            last_period = chunk.rfind('. ')
-            if last_period > chunk_size * 0.3:  # Only break if we're past 30% of chunk_size
-                end = start + last_period + 1
+            # If no paragraph break, try to break at a sentence
+            elif '. ' in chunk:
+                last_period = chunk.rfind('. ')
+                if last_period > chunk_size * 0.3:
+                    end = start + last_period + 1
 
-        # Extract chunk and clean it up
-        chunk = text[start:end].strip()
-        if chunk:
-            chunks.append(chunk)
+            # Extract chunk and clean it up
+            chunk = text[start:end].strip()
+            if chunk:
+                chunks.append(chunk)
 
-        # Move start position for next chunk
-        start = end
+            # Move start position for next chunk
+            start = end
 
-    return chunks
+        logger.debug(f"Successfully chunked text into {len(chunks)} chunks")
+        return chunks
+        
+    except Exception as e:
+        logger.error(f"Error in smart chunking: {e}")
+        logger.error(traceback.format_exc())
+        # Fallback to simple chunking
+        try:
+            return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+        except Exception as fallback_error:
+            logger.error(f"Even fallback chunking failed: {fallback_error}")
+            return [text] if text else []
 
 
 def extract_section_info(chunk: str) -> Dict[str, Any]:
-    """Extracts headers and stats from a chunk."""
-    headers = re.findall(r'^(#+)\s+(.+)$', chunk, re.MULTILINE)
-    header_str = '; '.join([f'{h[0]} {h[1]}' for h in headers]) if headers else ''
+    """Extracts headers and stats from a chunk with error handling."""
+    try:
+        headers = re.findall(r'^(#+)\s+(.+)$', chunk, re.MULTILINE)
+        header_str = '; '.join([f'{h[0]} {h[1]}' for h in headers]) if headers else ''
 
-    return {
-        "headers": header_str,
-        "char_count": len(chunk),
-        "word_count": len(chunk.split())
-    }
+        return {
+            "headers": header_str,
+            "char_count": len(chunk),
+            "word_count": len(chunk.split())
+        }
+    except Exception as e:
+        logger.warning(f"Error extracting section info: {e}")
+        return {
+            "headers": "",
+            "char_count": len(chunk) if chunk else 0,
+            "word_count": len(chunk.split()) if chunk else 0
+        }
 
 
-def process_code_example(args):
-    """Process a single code example to generate its summary."""
-    code, context_before, context_after = args
-    return generate_code_example_summary(code, context_before, context_after)
+def safe_process_code_example(args):
+    """Process a single code example to generate its summary with error handling."""
+    try:
+        code, context_before, context_after = args
+        return generate_code_example_summary(code, context_before, context_after)
+    except Exception as e:
+        logger.warning(f"Error processing code example: {e}")
+        return f"Code example (processing failed: {str(e)})"
 
 
-# Helper functions for crawling
-async def crawl_markdown_file(crawler: AsyncWebCrawler, url: str) -> List[Dict[str, Any]]:
-    """Crawl a .txt or markdown file."""
-    crawl_config = CrawlerRunConfig()
+# Helper functions for crawling with enhanced error handling
+async def safe_crawl_markdown_file(crawler: AsyncWebCrawler, url: str) -> List[Dict[str, Any]]:
+    """Crawl a .txt or markdown file with comprehensive error handling."""
+    try:
+        logger.info(f"Crawling markdown file: {url}")
+        crawl_config = CrawlerRunConfig()
 
-    result = await crawler.arun(url=url, config=crawl_config)
-    if result.success and result.markdown:
-        return [{'url': url, 'markdown': result.markdown}]
-    else:
-        # Only print when not using stdio to avoid contaminating JSON-RPC stream
-        import os
-        if os.getenv("TRANSPORT", "sse") != "stdio":
-            print(f"Failed to crawl {url}: {result.error_message}")
+        result = await crawler.arun(url=url, config=crawl_config)
+        if result.success and result.markdown:
+            logger.info(f"Successfully crawled markdown file: {url}")
+            return [{'url': url, 'markdown': result.markdown}]
+        else:
+            logger.error(f"Failed to crawl {url}: {result.error_message}")
+            return []
+    except Exception as e:
+        logger.error(f"Exception while crawling markdown file {url}: {e}")
+        logger.error(traceback.format_exc())
         return []
 
 
+# Update function names to use safe_ prefix for consistency
+rerank_results = safe_rerank_results
+parse_sitemap = safe_parse_sitemap
+crawl_markdown_file = safe_crawl_markdown_file
+process_code_example = safe_process_code_example
+
+# Helper functions for crawling
 async def crawl_batch_with_progress(crawler: AsyncWebCrawler, urls: List[str], max_concurrent: int = 10, progress_callback=None, start_progress: int = 15, end_progress: int = 60) -> List[Dict[str, Any]]:
     """Batch crawl multiple URLs in parallel with progress reporting."""
     crawl_config = CrawlerRunConfig(cache_mode=CacheMode.BYPASS, stream=False)
@@ -598,13 +659,13 @@ def register_rag_tools(mcp: FastMCP):
         The content is stored in Supabase for later retrieval and querying.
         
         Args:
-            ctx: The MCP server provided context containing crawler and database clients
             url: URL of the web page to crawl (must be a valid HTTP/HTTPS URL)
         
         Returns:
             JSON string with the operation results including success status, content metrics, and any errors
         """
         try:
+            # Get the crawler from the context
             crawler = ctx.request_context.lifespan_context.crawler
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             
@@ -674,7 +735,7 @@ def register_rag_tools(mcp: FastMCP):
                 if code_blocks:
                     # Process code examples in parallel
                     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-                        code_summaries = list(executor.map(process_code_example, code_blocks))
+                        code_summaries = list(executor.map(safe_process_code_example, code_blocks))
                     
                     # Prepare data for code examples insertion
                     code_urls = [url for _ in code_blocks]  # All from same URL
@@ -721,7 +782,6 @@ def register_rag_tools(mcp: FastMCP):
         Automatically detects sitemaps, text files, or regular webpages and applies appropriate crawling method.
         
         Args:
-            ctx: The MCP server provided context
             url: URL to crawl (webpage, sitemap.xml, or .txt file)
             max_depth: Maximum recursion depth for regular URLs (default: 3)
             max_concurrent: Maximum concurrent browser sessions (default: 10)
@@ -740,13 +800,11 @@ def register_rag_tools(mcp: FastMCP):
         
         Returns a list of all unique sources that have been crawled and stored in the database.
         
-        Args:
-            ctx: The MCP server provided context
-        
         Returns:
             JSON string with list of sources and their metadata
         """
         try:
+            # Get the Supabase client from the context
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             
             response = supabase_client.table("sources").select("*").execute()
@@ -781,7 +839,6 @@ def register_rag_tools(mcp: FastMCP):
         Searches the vector database for content relevant to the query.
         
         Args:
-            ctx: The MCP server provided context
             query: The search query
             source: Optional source domain to filter results
             match_count: Maximum number of results to return (default: 5)
@@ -790,6 +847,7 @@ def register_rag_tools(mcp: FastMCP):
             JSON string with search results and metadata
         """
         try:
+            # Get the Supabase client from the context
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             reranking_model = ctx.request_context.lifespan_context.reranking_model
             
@@ -830,7 +888,6 @@ def register_rag_tools(mcp: FastMCP):
         Delete a source and all associated crawled pages and code examples from the database.
         
         Args:
-            ctx: The MCP server provided context
             source_id: The source ID to delete
         
         Returns:
@@ -847,7 +904,6 @@ def register_rag_tools(mcp: FastMCP):
         Searches the vector database for code examples with their summaries.
         
         Args:
-            ctx: The MCP server provided context
             query: The search query
             source_id: Optional source ID to filter results
             match_count: Maximum number of results to return (default: 5)
@@ -856,10 +912,12 @@ def register_rag_tools(mcp: FastMCP):
             JSON string with search results
         """
         try:
+            # Get the Supabase client from the context
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             
-            # search_code_examples is not async
-            results = search_code_examples(
+            # Call the utils function (not the MCP tool itself) 
+            from src.utils import search_code_examples as utils_search_code_examples
+            results = utils_search_code_examples(
                 supabase_client,
                 query,
                 source_id=source_id,
@@ -881,8 +939,7 @@ def register_rag_tools(mcp: FastMCP):
             })
     
     @mcp.tool()
-    async def upload_document(
-        ctx: Context, 
+    async def upload_document(ctx: Context,
         file_content: str, 
         filename: str, 
         knowledge_type: str = "technical", 
@@ -895,7 +952,6 @@ def register_rag_tools(mcp: FastMCP):
         Takes document content and stores it in the knowledge base with proper chunking and embeddings.
         
         Args:
-            ctx: The MCP server provided context
             file_content: The content of the document
             filename: Name of the file
             knowledge_type: Type of knowledge (default: "technical")
@@ -906,6 +962,7 @@ def register_rag_tools(mcp: FastMCP):
             JSON string with upload results
         """
         try:
+            # Get the Supabase client from the context
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             
             # Create a pseudo-URL for the uploaded document

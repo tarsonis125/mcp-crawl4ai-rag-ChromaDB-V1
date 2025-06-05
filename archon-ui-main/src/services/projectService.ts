@@ -447,6 +447,78 @@ export const projectService = {
     }
   },
 
+  // ==================== DOCUMENT OPERATIONS ====================
+
+  /**
+   * List all documents for a project
+   */
+  async listProjectDocuments(projectId: string): Promise<any[]> {
+    try {
+      const response = await callAPI<{documents: any[]}>(`/api/projects/${projectId}/docs`);
+      return response.documents || [];
+    } catch (error) {
+      console.error(`Failed to list documents for project ${projectId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get a specific document with full content
+   */
+  async getDocument(docId: string): Promise<any> {
+    try {
+      const response = await callAPI<{document: any}>(`/api/docs/${docId}`);
+      return response.document;
+    } catch (error) {
+      console.error(`Failed to get document ${docId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Create a new document for a project
+   */
+  async createDocument(projectId: string, documentData: any): Promise<any> {
+    try {
+      const response = await callAPI<{document: any}>(`/api/projects/${projectId}/docs`, {
+        method: 'POST',
+        body: JSON.stringify(documentData)
+      });
+      return response.document;
+    } catch (error) {
+      console.error(`Failed to create document for project ${projectId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Update an existing document
+   */
+  async updateDocument(docId: string, updates: any): Promise<any> {
+    try {
+      const response = await callAPI<{document: any}>(`/api/docs/${docId}`, {
+        method: 'PUT',
+        body: JSON.stringify(updates)
+      });
+      return response.document;
+    } catch (error) {
+      console.error(`Failed to update document ${docId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Delete a document
+   */
+  async deleteDocument(docId: string): Promise<void> {
+    try {
+      await callAPI<void>(`/api/docs/${docId}`, { method: 'DELETE' });
+    } catch (error) {
+      console.error(`Failed to delete document ${docId}:`, error);
+      throw error;
+    }
+  },
+
   // ==================== REAL-TIME SUBSCRIPTIONS ====================
 
   /**

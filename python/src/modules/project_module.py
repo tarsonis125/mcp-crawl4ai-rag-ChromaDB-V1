@@ -8,14 +8,64 @@ This module provides tools for:
 - Task hierarchy (subtasks with parent relationships)
 
 All tools work with the Supabase tasks and projects tables.
+
+Enhanced with comprehensive error handling and robustness features.
 """
 from mcp.server.fastmcp import FastMCP, Context
 from typing import List, Dict, Any, Optional
 import json
 import uuid
+import logging
+import traceback
 from datetime import datetime
 
-# Import our new models
+# Setup logging for the project module
+logger = logging.getLogger(__name__)
+
+def create_fallback_prd(title: str) -> Dict[str, Any]:
+    """Create a basic PRD structure when Pydantic models are not available."""
+    return {
+        "title": f"{title} - Requirements",
+        "description": f"Product Requirements Document for {title}",
+        "version": "1.0",
+        "goals": [],
+        "user_stories": [],
+        "scope": "",
+        "success_criteria": []
+    }
+
+def create_project_success_response(project: Dict[str, Any], warning: str = None) -> str:
+    """Create a standardized project success response."""
+    response = {
+        "success": True,
+        "project": {
+            "id": project["id"],
+            "title": project["title"],
+            "github_repo": project.get("github_repo"),
+            "created_at": project["created_at"]
+        }
+    }
+    if warning:
+        response["warning"] = warning
+    return json.dumps(response)
+
+def validate_task_status(status: str) -> tuple[bool, str]:
+    """Validate task status and return (is_valid, error_message)."""
+    valid_statuses = ['todo', 'doing', 'blocked', 'done']
+    if status not in valid_statuses:
+        return False, f"Invalid status '{status}'. Must be one of: {', '.join(valid_statuses)}"
+    return True, ""
+
+def safe_get_supabase_client(ctx: Context) -> tuple[Any, str]:
+    """Safely get Supabase client with error handling. Returns (client, error_message)."""
+    try:
+        client = ctx.request_context.lifespan_context.supabase_client
+        return client, ""
+    except AttributeError as e:
+        logger.error(f"Failed to get Supabase client: {e}")
+        return None, "Database connection not available"
+
+# Import our new models with error handling
 try:
     from .models import (
         ProjectRequirementsDocument, 
@@ -26,9 +76,12 @@ try:
         create_default_prd,
         create_default_document
     )
-except ImportError:
+    MODELS_AVAILABLE = True
+    logger.info("✓ Project models imported successfully")
+except ImportError as e:
     # Fallback if models module not available yet
-    print("Warning: models module not available, using basic functionality")
+    logger.warning(f"⚠ Models module not available: {e} - using basic functionality")
+    MODELS_AVAILABLE = False
 
 
 def register_project_tools(mcp: FastMCP):
@@ -40,7 +93,6 @@ def register_project_tools(mcp: FastMCP):
         Create a new project with a default PRD document.
         
         Args:
-            ctx: The MCP server provided context
             title: Title of the project
             prd: Optional product requirements document as JSON
             github_repo: Optional GitHub repository URL
@@ -49,11 +101,29 @@ def register_project_tools(mcp: FastMCP):
             JSON string with the created project information
         """
         try:
-            supabase_client = ctx.request_context.lifespan_context.supabase_client
+            logger.info(f"Creating project: {title}")
+            
+            # Validate inputs
+            if not title or not isinstance(title, str) or len(title.strip()) == 0:
+                return json.dumps({
+                    "success": False,
+                    "error": "Project title is required and must be a non-empty string"
+                })
+            
+            # Get Supabase client with error handling
+            try:
+                # Get the Supabase client from the context
+                supabase_client = ctx.request_context.lifespan_context.supabase_client
+            except AttributeError as e:
+                logger.error(f"Failed to get Supabase client: {e}")
+                return json.dumps({
+                    "success": False,
+                    "error": "Database connection not available"
+                })
             
             # Create the project first
             project_data = {
-                "title": title,
+                "title": title.strip(),
                 "prd": prd or {},
                 "docs": [],
                 "features": [],
@@ -62,37 +132,48 @@ def register_project_tools(mcp: FastMCP):
                 "updated_at": datetime.now().isoformat()
             }
             
-            if github_repo:
-                project_data["github_repo"] = github_repo
+            if github_repo and isinstance(github_repo, str) and len(github_repo.strip()) > 0:
+                project_data["github_repo"] = github_repo.strip()
             
-            response = supabase_client.table("projects").insert(project_data).execute()
-            
-            if not response.data:
+            try:
+                response = supabase_client.table("projects").insert(project_data).execute()
+                
+                if not response.data:
+                    logger.error("Supabase returned empty data for project creation")
+                    return json.dumps({
+                        "success": False,
+                        "error": "Failed to create project - database returned no data"
+                    })
+                
+                project = response.data[0]
+                project_id = project["id"]
+                logger.info(f"Project created successfully with ID: {project_id}")
+                
+            except Exception as db_error:
+                logger.error(f"Database error creating project: {db_error}")
+                logger.error(traceback.format_exc())
                 return json.dumps({
                     "success": False,
-                    "error": "Failed to create project"
+                    "error": f"Database error: {str(db_error)}"
                 })
-            
-            project = response.data[0]
-            project_id = project["id"]
             
             # Create a default PRD document in the docs JSONB field
             try:
-                if 'create_default_prd' in globals():
+                logger.debug("Creating default PRD document")
+                
+                if MODELS_AVAILABLE and 'create_default_prd' in globals():
                     # Use the Pydantic model to create a structured PRD
-                    default_prd = create_default_prd(title)
-                    prd_content = default_prd.dict()
+                    try:
+                        default_prd = create_default_prd(title)
+                        prd_content = default_prd.dict()
+                        logger.debug("Used Pydantic model for PRD creation")
+                    except Exception as model_error:
+                        logger.warning(f"Pydantic model failed, using fallback: {model_error}")
+                        prd_content = create_fallback_prd(title)
                 else:
                     # Fallback to basic PRD structure
-                    prd_content = {
-                        "title": f"{title} - Requirements",
-                        "description": f"Product Requirements Document for {title}",
-                        "version": "1.0",
-                        "goals": [],
-                        "user_stories": [],
-                        "scope": "",
-                        "success_criteria": []
-                    }
+                    prd_content = create_fallback_prd(title)
+                    logger.debug("Used fallback PRD structure")
                 
                 # Create document entry for the docs JSONB array
                 doc_entry = {
@@ -109,56 +190,47 @@ def register_project_tools(mcp: FastMCP):
                 
                 # Update the project to include the default document in the docs JSONB field
                 docs_array = [doc_entry]
-                update_response = supabase_client.table("projects").update({
-                    "docs": docs_array,
-                    "updated_at": datetime.now().isoformat()
-                }).eq("id", project_id).execute()
-                
-                if update_response.data:
-                    return json.dumps({
-                        "success": True,
-                        "project": {
-                            "id": project["id"],
-                            "title": project["title"],
-                            "github_repo": project.get("github_repo"),
-                            "created_at": project["created_at"]
-                        },
-                        "default_document": {
-                            "id": doc_entry["id"],
-                            "title": doc_entry["title"],
-                            "document_type": doc_entry["document_type"]
-                        }
-                    })
-                else:
-                    # Project created but document creation failed
-                    return json.dumps({
-                        "success": True,
-                        "project": {
-                            "id": project["id"],
-                            "title": project["title"],
-                            "github_repo": project.get("github_repo"),
-                            "created_at": project["created_at"]
-                        },
-                        "warning": "Project created but default PRD document creation failed"
-                    })
+                try:
+                    update_response = supabase_client.table("projects").update({
+                        "docs": docs_array,
+                        "updated_at": datetime.now().isoformat()
+                    }).eq("id", project_id).execute()
+                    
+                    if update_response.data:
+                        logger.info(f"Default PRD document created for project {project_id}")
+                        return json.dumps({
+                            "success": True,
+                            "project": {
+                                "id": project["id"],
+                                "title": project["title"],
+                                "github_repo": project.get("github_repo"),
+                                "created_at": project["created_at"]
+                            },
+                            "default_document": {
+                                "id": doc_entry["id"],
+                                "title": doc_entry["title"],
+                                "document_type": doc_entry["document_type"]
+                            }
+                        })
+                    else:
+                        logger.warning(f"Project created but document update failed for project {project_id}")
+                        return create_project_success_response(project, "Project created but default PRD document creation failed")
+                        
+                except Exception as update_error:
+                    logger.error(f"Error updating project with PRD document: {update_error}")
+                    return create_project_success_response(project, f"Project created but default PRD document creation failed: {str(update_error)}")
                     
             except Exception as doc_error:
-                # Project created but document creation failed
-                return json.dumps({
-                    "success": True,
-                    "project": {
-                        "id": project["id"],
-                        "title": project["title"],
-                        "github_repo": project.get("github_repo"),
-                        "created_at": project["created_at"]
-                    },
-                    "warning": f"Project created but default PRD document creation failed: {str(doc_error)}"
-                })
+                logger.error(f"Error creating PRD document: {doc_error}")
+                logger.error(traceback.format_exc())
+                return create_project_success_response(project, f"Project created but default PRD document creation failed: {str(doc_error)}")
                 
         except Exception as e:
+            logger.error(f"Unexpected error creating project: {e}")
+            logger.error(traceback.format_exc())
             return json.dumps({
                 "success": False,
-                "error": f"Error creating project: {str(e)}"
+                "error": f"Unexpected error creating project: {str(e)}"
             })
     
     @mcp.tool()
@@ -166,13 +238,11 @@ def register_project_tools(mcp: FastMCP):
         """
         List all projects.
         
-        Args:
-            ctx: The MCP server provided context
-        
         Returns:
             JSON string with list of all projects
         """
         try:
+            # Get the Supabase client from the context
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             
             response = supabase_client.table("projects").select("*").order("created_at", desc=True).execute()
@@ -205,13 +275,13 @@ def register_project_tools(mcp: FastMCP):
         Get a specific project by ID.
         
         Args:
-            ctx: The MCP server provided context
             project_id: UUID of the project
         
         Returns:
             JSON string with project details
         """
         try:
+            # Get the Supabase client from the context
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             
             response = supabase_client.table("projects").select("*").eq("id", project_id).execute()
@@ -240,13 +310,13 @@ def register_project_tools(mcp: FastMCP):
         Delete a project and all its associated tasks.
         
         Args:
-            ctx: The MCP server provided context
             project_id: UUID of the project to delete
         
         Returns:
             JSON string with deletion results
         """
         try:
+            # Get the Supabase client from the context
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             
             # First, get task count for reporting
@@ -280,7 +350,6 @@ def register_project_tools(mcp: FastMCP):
         Create a new task under a project.
         
         Args:
-            ctx: The MCP server provided context
             project_id: UUID of the parent project
             title: Title of the task
             description: Optional detailed description
@@ -292,6 +361,7 @@ def register_project_tools(mcp: FastMCP):
             JSON string with the created task information
         """
         try:
+            # Get the Supabase client from the context
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             
             task_data = {
@@ -342,13 +412,13 @@ def register_project_tools(mcp: FastMCP):
         List all tasks under a specific project.
         
         Args:
-            ctx: The MCP server provided context
             project_id: UUID of the project
         
         Returns:
             JSON string with list of tasks for the project
         """
         try:
+            # Get the Supabase client from the context
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             
             response = supabase_client.table("tasks").select("*").eq("project_id", project_id).order("created_at", desc=False).execute()

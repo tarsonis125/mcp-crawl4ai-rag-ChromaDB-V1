@@ -195,6 +195,7 @@ app.include_router(settings_router)
 app.include_router(mcp_router)
 app.include_router(knowledge_router)
 app.include_router(projects_router)
+app.include_router(tests_router)
 
 # Root endpoint
 @app.get("/")
