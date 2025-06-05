@@ -18,14 +18,16 @@ function HomepageHeader() {
   return (
     <header className={clsx('hero hero--primary', styles.heroBanner)}>
       <div className="container">
-        <h1 className="hero__title">{siteConfig.title}</h1>
-        <p className="hero__subtitle">Supercharge your AI development workflow. Plug Cursor, Windsurf, or any AI IDE into Archon to unlock instant access to your business knowledge, technical docs, project requirements, and development tasks.</p>
-        <div className={styles.buttons}>
-          <Link
-            className="button button--green-neon button--lg"
-            to="/getting-started">
-            Get Started - Quick Setup ⚡
-          </Link>
+        <div className={styles.heroContent}>
+          <h1 className="hero__title">{siteConfig.title}</h1>
+          <p className="hero__subtitle">Supercharge your AI development workflow. Plug Cursor, Windsurf, or any AI IDE into Archon to unlock instant access to your business knowledge, technical docs, project requirements, and development tasks.</p>
+          <div className={styles.buttons}>
+            <Link
+              className="button button--green-neon button--lg"
+              to="/getting-started">
+              Get Started - Quick Setup ⚡
+            </Link>
+          </div>
         </div>
       </div>
     </header>
@@ -68,75 +70,72 @@ function HomepageContent() {
 
   return (
     <main>
-      <section className={styles.whatIsArchon}>
+      <section className={styles.architectureSection}>
         <div className="container">
           <div className="row">
             <div className="col col--12">
-              <h2 className="text--center">🎯 What is Archon?</h2>
-              <p className="text--center" style={{ fontSize: '1.2rem', marginBottom: '3rem' }}>
-                <strong>Supercharge your AI development workflow.</strong> Archon transforms any MCP-compatible IDE into an intelligent powerhouse with instant access to your entire knowledge ecosystem.
+              <h2 className="text--center">🎯 How Archon Supercharges Your IDE</h2>
+              <p className="text--center" style={{ fontSize: '1.2rem', marginBottom: '3rem', color: '#e5e7eb' }}>
+                Connect any MCP-compatible IDE to unlock instant access to your entire knowledge ecosystem
               </p>
               
               <div className={styles.diagramContainer}>
-                <div className="mermaid">
-{`graph TB
-    subgraph "AI Development IDEs"
-        Cursor["🎯 Cursor<br/>AI-First IDE"]
-        Windsurf["🏄 Windsurf<br/>AI-Enhanced"]
-        VSCode["📝 VS Code<br/>with Extensions"]
-        AnyMCP["🔌 Any MCP Client<br/>Compatible IDE"]
-    end
-    
-    subgraph "Archon Knowledge Engine"
-        ArchonCore["🏛️ ARCHON<br/>MCP Server<br/>Knowledge Engine"]
-    end
-    
-    subgraph "Knowledge Sources"
-        Knowledge["📚 Knowledge Base<br/>Centralized Intelligence"]
-        CrawlWeb["🌐 Crawl Websites<br/>Documentation Sites<br/>Technical Resources"]
-        UploadDocs["📄 Upload Documents<br/>PDFs, Word, Markdown<br/>Technical Specs"]
-        PerformRAG["⚡ Advanced RAG<br/>Semantic Search<br/>Context Retrieval"]
-    end
-    
-    subgraph "Project Intelligence"
-        Projects["📋 Project Management<br/>AI-Enhanced Workflows"]
-        PRD["📋 PRD<br/>Product Requirements<br/>Document"]
-        FeaturePlan["🎯 Feature Plans<br/>Development Roadmaps<br/>Technical Specs"]
-        DataPlan["📊 Data Architecture<br/>Database Design<br/>API Planning"]
-        TaskMgmt["✅ Task Management<br/>Sprint Planning<br/>Development Tracking"]
-    end
-    
-    %% IDE to Archon connections
-    Cursor -.->|"MCP Protocol<br/>Real-time Access"| ArchonCore
-    Windsurf -.->|"MCP Protocol<br/>Real-time Access"| ArchonCore
-    VSCode -.->|"MCP Protocol<br/>Real-time Access"| ArchonCore
-    AnyMCP -.->|"MCP Protocol<br/>Real-time Access"| ArchonCore
-    
-    %% Archon to Knowledge connections
-    ArchonCore -->|"Intelligent<br/>Knowledge Access"| Knowledge
-    Knowledge --> CrawlWeb
-    Knowledge --> UploadDocs
-    Knowledge --> PerformRAG
-    
-    %% Archon to Projects connections
-    ArchonCore -->|"Project<br/>Intelligence"| Projects
-    Projects --> PRD
-    Projects --> FeaturePlan
-    Projects --> DataPlan
-    Projects --> TaskMgmt
-    
-    %% Styling
-    classDef ideClass fill:#1a1a2e,stroke:#16a085,stroke-width:3px,color:#00ff88
-    classDef archonClass fill:#0f3460,stroke:#a855f7,stroke-width:4px,color:#ffffff
-    classDef knowledgeClass fill:#16213e,stroke:#3b82f6,stroke-width:3px,color:#60a5fa
-    classDef projectClass fill:#1a1a2e,stroke:#ec4899,stroke-width:3px,color:#f472b6
-    classDef sourceClass fill:#0d1b2a,stroke:#06b6d4,stroke-width:2px,color:#67e8f9
-    
-    class Cursor,Windsurf,VSCode,AnyMCP ideClass
-    class ArchonCore archonClass
-    class Knowledge knowledgeClass
-    class Projects projectClass
-    class CrawlWeb,UploadDocs,PerformRAG,PRD,FeaturePlan,DataPlan,TaskMgmt sourceClass`}
+                <div className={styles.archonDiagram}>
+                  <div className="row">
+                    <div className="col col--12 text--center">
+                      <div className={styles.diagramNode} style={{ background: 'linear-gradient(135deg, #1a1a2e 0%, #16a085 100%)', marginBottom: '2rem' }}>
+                        <h3>🎯 AI Development IDEs</h3>
+                        <div className="row">
+                          <div className="col col--3">
+                            <div className={styles.ideBox}>🎯 Cursor<br/>AI-First IDE</div>
+                          </div>
+                          <div className="col col--3">
+                            <div className={styles.ideBox}>🏄 Windsurf<br/>AI-Enhanced</div>
+                          </div>
+                          <div className="col col--3">
+                            <div className={styles.ideBox}>📝 VS Code<br/>Extensions</div>
+                          </div>
+                          <div className="col col--3">
+                            <div className={styles.ideBox}>🔌 Any MCP Client<br/>Compatible IDE</div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className={styles.connectionArrow}>⬇️ MCP Protocol ⬇️</div>
+                      
+                      <div className={styles.diagramNode} style={{ background: 'linear-gradient(135deg, #0f3460 0%, #a855f7 100%)', margin: '2rem 0' }}>
+                        <h3>🏛️ ARCHON Knowledge Engine</h3>
+                        <p>MCP Server • Knowledge Engine • Real-time Access</p>
+                      </div>
+                      
+                      <div className={styles.connectionArrow}>⬇️ Powers Two Main Systems ⬇️</div>
+                      
+                      <div className="row" style={{ marginTop: '2rem' }}>
+                        <div className="col col--6">
+                          <div className={styles.diagramNode} style={{ background: 'linear-gradient(135deg, #16213e 0%, #3b82f6 100%)' }}>
+                            <h3>📚 Knowledge Sources</h3>
+                            <div className={styles.featureList}>
+                              <div>🌐 Crawl Websites</div>
+                              <div>📄 Upload Documents</div>
+                              <div>⚡ Advanced RAG</div>
+                              <div>🔍 Semantic Search</div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="col col--6">
+                          <div className={styles.diagramNode} style={{ background: 'linear-gradient(135deg, #1a1a2e 0%, #ec4899 100%)' }}>
+                            <h3>📋 Project Intelligence</h3>
+                            <div className={styles.featureList}>
+                              <div>📋 PRD Management</div>
+                              <div>🎯 Feature Planning</div>
+                              <div>📊 Data Architecture</div>
+                              <div>✅ Task Management</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
               
