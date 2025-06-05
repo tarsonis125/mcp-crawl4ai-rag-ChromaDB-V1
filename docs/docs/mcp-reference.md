@@ -272,7 +272,7 @@ Create or edit `~/.cursor/mcp.json`:
         "-e", "HOST=localhost", 
         "-e", "PORT=8051",
         "archon-pyserver",
-        "python", "src/mcp_server.py"
+        "uv", "run", "python", "src/mcp_server.py"
       ]
     }
   }
@@ -294,7 +294,7 @@ For Windsurf IDE, use this format:
         "-e", "HOST=localhost", 
         "-e", "PORT=8051",
         "archon-pyserver",
-        "python", "src/mcp_server.py"
+        "uv", "run", "python", "src/mcp_server.py"
       ]
     }
   }
@@ -310,7 +310,7 @@ For Windsurf IDE, use this format:
    - **Command**: `docker`
    - **Arguments**: 
      ```
-     exec -i -e TRANSPORT=stdio -e HOST=localhost -e PORT=8051 archon-pyserver python src/mcp_server.py
+     exec -i -e TRANSPORT=stdio -e HOST=localhost -e PORT=8051 archon-pyserver uv run python src/mcp_server.py
      ```
 
 ### Claude Desktop Setup
@@ -330,7 +330,7 @@ For Windsurf IDE, use this format:
       "-e", "HOST=localhost", 
       "-e", "PORT=8051",
       "archon-pyserver",
-      "python", "src/mcp_server.py"
+      "uv", "run", "python", "src/mcp_server.py"
     ]
   }
 }
@@ -343,7 +343,7 @@ For other MCP-compatible clients:
 #### Standard I/O Transport
 ```bash
 # Start MCP server via Docker
-docker exec -i -e TRANSPORT=stdio -e HOST=localhost -e PORT=8051 archon-pyserver python src/mcp_server.py
+docker exec -i -e TRANSPORT=stdio -e HOST=localhost -e PORT=8051 archon-pyserver uv run python src/mcp_server.py
 
 # Or start the full stack
 docker-compose up -d
@@ -391,7 +391,7 @@ curl http://localhost:8080/api/mcp/connection-info
         "-e", "HOST=localhost", 
         "-e", "PORT=8051",
         "archon-pyserver",
-        "python", "src/mcp_server.py"
+        "uv", "run", "python", "src/mcp_server.py"
       ]
     },
     "sse": {
@@ -418,7 +418,7 @@ curl http://localhost:8080/api/mcp/connection-info
             "-e", "HOST=localhost", 
             "-e", "PORT=8051",
             "archon-pyserver",
-            "python", "src/mcp_server.py"
+            "uv", "run", "python", "src/mcp_server.py"
           ]
         }
       }
@@ -435,7 +435,7 @@ curl http://localhost:8080/api/mcp/connection-info
             "-e", "HOST=localhost", 
             "-e", "PORT=8051",
             "archon-pyserver",
-            "python", "src/mcp_server.py"
+            "uv", "run", "python", "src/mcp_server.py"
           ]
         }
       }

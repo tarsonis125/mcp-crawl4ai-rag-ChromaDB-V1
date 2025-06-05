@@ -357,7 +357,7 @@ export const MCPPage = () => {
               "-e", "HOST=localhost", 
               "-e", "PORT=8051",
               "archon-pyserver",
-              "python", "src/mcp_server.py"
+              "uv", "run", "python", "src/mcp_server.py"
             ]
           }
         }
