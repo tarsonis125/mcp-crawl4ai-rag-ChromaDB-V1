@@ -44,6 +44,12 @@ export const DocsTab = ({
   const [progressItems, setProgressItems] = useState<CrawlProgressData[]>([]);
   const { showToast } = useToast();
 
+  // Editable PRD state
+  const [editablePRD, setEditablePRD] = useState<any>({});
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [autoSaveTimeout, setAutoSaveTimeout] = useState<NodeJS.Timeout | null>(null);
+
   // Load knowledge items from the service
   const loadKnowledgeItems = async (knowledgeType?: 'technical' | 'business') => {
     try {
@@ -67,6 +73,66 @@ export const DocsTab = ({
   useEffect(() => {
     loadKnowledgeItems();
   }, []);
+
+  // Initialize editable PRD from project data
+  useEffect(() => {
+    if (project?.prd) {
+      setEditablePRD(project.prd);
+    }
+  }, [project?.prd]);
+
+  // Autosave function
+  const autoSavePRD = async (updatedPRD: any) => {
+    if (!project?.id) return;
+    
+    try {
+      setIsSaving(true);
+      
+      // Make API call to update project PRD
+      const response = await fetch(`http://localhost:8080/api/projects/${project.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ prd: updatedPRD })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      showToast('Changes saved automatically', 'success');
+    } catch (error) {
+      console.error('Failed to save PRD:', error);
+      showToast('Failed to save changes', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Handle PRD field changes with debounced autosave
+  const handlePRDChange = (sectionKey: string, value: any) => {
+    const updatedPRD = {
+      ...editablePRD,
+      [sectionKey]: value
+    };
+    
+    setEditablePRD(updatedPRD);
+    setIsEditing(true);
+
+    // Clear existing timeout
+    if (autoSaveTimeout) {
+      clearTimeout(autoSaveTimeout);
+    }
+
+    // Set new timeout for autosave (debounced by 2 seconds)
+    const newTimeout = setTimeout(() => {
+      autoSavePRD(updatedPRD);
+      setIsEditing(false);
+    }, 2000);
+    
+    setAutoSaveTimeout(newTimeout);
+  };
 
   // Transform KnowledgeItem to legacy format for compatibility
   const transformToLegacyFormat = (items: KnowledgeItem[]) => {
@@ -165,7 +231,7 @@ export const DocsTab = ({
   };
 
   // Dynamic PRD rendering functions
-  const renderPRDSection = (sectionKey: string, sectionData: any, color: 'blue' | 'purple' | 'pink' | 'orange' = 'blue') => {
+  const renderEditablePRDSection = (sectionKey: string, sectionData: any, color: 'blue' | 'purple' | 'pink' | 'orange' = 'blue') => {
     if (!sectionData) return null;
     
     const formatSectionTitle = (key: string) => {
@@ -175,54 +241,74 @@ export const DocsTab = ({
         .join(' ');
     };
 
-    if (typeof sectionData === 'string') {
+    const currentValue = editablePRD[sectionKey] || sectionData;
+
+    if (typeof currentValue === 'string') {
       return (
-        <Section key={sectionKey} title={formatSectionTitle(sectionKey)} color={color}>
-          <p className="whitespace-pre-wrap">{sectionData}</p>
-        </Section>
+        <EditableSection key={sectionKey} title={formatSectionTitle(sectionKey)} color={color}>
+          <textarea
+            value={currentValue}
+            onChange={(e) => handlePRDChange(sectionKey, e.target.value)}
+            className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-md p-3 focus:outline-none focus:border-blue-400 focus:shadow-[0_0_10px_rgba(59,130,246,0.2)] transition-all duration-300 font-mono text-sm resize-vertical min-h-[100px]"
+            placeholder={`Enter ${formatSectionTitle(sectionKey).toLowerCase()}...`}
+          />
+        </EditableSection>
       );
     }
 
-    if (Array.isArray(sectionData)) {
+    if (Array.isArray(currentValue)) {
       return (
-        <Section key={sectionKey} title={formatSectionTitle(sectionKey)} color={color}>
-          <ul className="list-disc pl-5 space-y-1">
-            {sectionData.map((item: any, index: number) => (
-              <li key={index}>
-                {typeof item === 'string' ? item : JSON.stringify(item)}
-              </li>
-            ))}
-          </ul>
-        </Section>
+        <EditableSection key={sectionKey} title={formatSectionTitle(sectionKey)} color={color}>
+          <EditableList 
+            items={currentValue}
+            onChange={(newItems) => handlePRDChange(sectionKey, newItems)}
+            placeholder={`Add ${formatSectionTitle(sectionKey).toLowerCase()}...`}
+          />
+        </EditableSection>
       );
     }
 
-    if (typeof sectionData === 'object') {
+    if (typeof currentValue === 'object') {
       return (
-        <Section key={sectionKey} title={formatSectionTitle(sectionKey)} color={color}>
+        <EditableSection key={sectionKey} title={formatSectionTitle(sectionKey)} color={color}>
           <div className="space-y-4">
-            {Object.entries(sectionData).map(([subKey, subValue]: [string, any]) => (
+            {Object.entries(currentValue).map(([subKey, subValue]: [string, any]) => (
               <div key={subKey}>
                 <h4 className="text-blue-400 mb-2 font-semibold">
                   {formatSectionTitle(subKey)}
                 </h4>
                 {Array.isArray(subValue) ? (
-                  <ul className="list-disc pl-5 space-y-1">
-                    {subValue.map((item: any, index: number) => (
-                      <li key={index}>
-                        {typeof item === 'string' ? item : JSON.stringify(item)}
-                      </li>
-                    ))}
-                  </ul>
+                  <EditableList 
+                    items={subValue}
+                    onChange={(newItems) => handlePRDChange(sectionKey, {
+                      ...currentValue,
+                      [subKey]: newItems
+                    })}
+                    placeholder={`Add ${formatSectionTitle(subKey).toLowerCase()}...`}
+                  />
                 ) : (
-                  <p className="whitespace-pre-wrap">
-                    {typeof subValue === 'string' ? subValue : JSON.stringify(subValue, null, 2)}
-                  </p>
+                  <textarea
+                    value={typeof subValue === 'string' ? subValue : JSON.stringify(subValue, null, 2)}
+                    onChange={(e) => {
+                      let newValue;
+                      try {
+                        newValue = JSON.parse(e.target.value);
+                      } catch {
+                        newValue = e.target.value;
+                      }
+                      handlePRDChange(sectionKey, {
+                        ...currentValue,
+                        [subKey]: newValue
+                      });
+                    }}
+                    className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-md p-3 focus:outline-none focus:border-blue-400 focus:shadow-[0_0_10px_rgba(59,130,246,0.2)] transition-all duration-300 font-mono text-sm resize-vertical min-h-[80px]"
+                    placeholder={`Enter ${formatSectionTitle(subKey).toLowerCase()}...`}
+                  />
                 )}
               </div>
             ))}
           </div>
-        </Section>
+        </EditableSection>
       );
     }
 
@@ -258,12 +344,36 @@ export const DocsTab = ({
           <p className="text-gray-400">{projectTitle}</p>
         </header>
         <div className="space-y-8">
+          {/* Save Status Indicator */}
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-2">
+              {isSaving && (
+                <div className="flex items-center gap-2 text-blue-500">
+                  <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-sm">Saving...</span>
+                </div>
+              )}
+              {isEditing && !isSaving && (
+                <div className="flex items-center gap-2 text-orange-500">
+                  <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                  <span className="text-sm">Unsaved changes</span>
+                </div>
+              )}
+              {!isEditing && !isSaving && hasCustomPRD && (
+                <div className="flex items-center gap-2 text-green-500">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span className="text-sm">All changes saved</span>
+                </div>
+              )}
+            </div>
+          </div>
+
           {hasCustomPRD ? (
-            // Render dynamic PRD sections
+            // Render dynamic editable PRD sections
             Object.entries(prdData).map(([sectionKey, sectionData], index) => {
               const colors: ('blue' | 'purple' | 'pink' | 'orange')[] = ['blue', 'purple', 'pink', 'orange'];
               const color = colors[index % colors.length];
-              return renderPRDSection(sectionKey, sectionData, color);
+              return renderEditablePRDSection(sectionKey, sectionData, color);
             })
           ) : (
             // Fallback to static content
@@ -527,6 +637,106 @@ const Section: React.FC<{
         {children}
       </div>
     </section>;
+};
+
+const EditableSection: React.FC<{
+  title: string;
+  children: React.ReactNode;
+  color: 'blue' | 'purple' | 'pink' | 'orange';
+}> = ({
+  title,
+  children,
+  color
+}) => {
+  const colorMap = {
+    blue: 'bg-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.6)] dark:shadow-[0_0_8px_rgba(59,130,246,0.6)]',
+    purple: 'bg-purple-400 shadow-[0_0_8px_rgba(168,85,247,0.6)] dark:shadow-[0_0_8px_rgba(168,85,247,0.6)]',
+    pink: 'bg-pink-400 shadow-[0_0_8px_rgba(236,72,153,0.6)] dark:shadow-[0_0_8px_rgba(236,72,153,0.6)]',
+    orange: 'bg-orange-400 shadow-[0_0_8px_rgba(249,115,22,0.6)] dark:shadow-[0_0_8px_rgba(249,115,22,0.6)]'
+  };
+  return <section>
+      <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-4 flex items-center">
+        <span className={`w-2 h-2 rounded-full ${colorMap[color]} mr-2`} />
+        {title}
+        <span className="ml-2 text-xs text-gray-500 dark:text-gray-400 font-normal">✏️ Editable</span>
+      </h3>
+      <div className="bg-white/20 dark:bg-black/20 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg p-4 backdrop-blur-sm relative overflow-hidden hover:border-blue-400 transition-colors">
+        <div className="absolute top-0 left-0 right-0 h-[1px] bg-blue-500/30"></div>
+        {children}
+      </div>
+    </section>;
+};
+
+const EditableList: React.FC<{
+  items: any[];
+  onChange: (newItems: any[]) => void;
+  placeholder: string;
+}> = ({
+  items,
+  onChange,
+  placeholder
+}) => {
+  const [newItem, setNewItem] = useState('');
+
+  const addItem = () => {
+    if (newItem.trim()) {
+      onChange([...items, newItem.trim()]);
+      setNewItem('');
+    }
+  };
+
+  const removeItem = (index: number) => {
+    onChange(items.filter((_, i) => i !== index));
+  };
+
+  const updateItem = (index: number, value: string) => {
+    const newItems = [...items];
+    newItems[index] = value;
+    onChange(newItems);
+  };
+
+  return (
+    <div className="space-y-3">
+      {items.map((item, index) => (
+        <div key={index} className="flex items-center gap-2">
+          <input
+            type="text"
+            value={typeof item === 'string' ? item : JSON.stringify(item)}
+            onChange={(e) => updateItem(index, e.target.value)}
+            className="flex-1 bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-md px-3 py-2 focus:outline-none focus:border-blue-400 focus:shadow-[0_0_10px_rgba(59,130,246,0.2)] transition-all duration-300 text-sm"
+          />
+          <button
+            onClick={() => removeItem(index)}
+            className="p-2 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      ))}
+      
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={newItem}
+          onChange={(e) => setNewItem(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              addItem();
+            }
+          }}
+          placeholder={placeholder}
+          className="flex-1 bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-md px-3 py-2 focus:outline-none focus:border-blue-400 focus:shadow-[0_0_10px_rgba(59,130,246,0.2)] transition-all duration-300 text-sm"
+        />
+        <button
+          onClick={addItem}
+          className="p-2 text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
 };
 const CodeBlock: React.FC<{
   label: string;
