@@ -120,12 +120,29 @@
 }
 
 .features {
-  padding: 3rem 0 2rem 0;
+  padding: 2rem 0 1rem 0;
+}
+
+.featureRowSpacing {
+  margin-top: 2rem !important;
+}
+
+.features .row {
+  margin-bottom: 0 !important;
+}
+
+.features .row:last-child {
+  margin-bottom: 0 !important;
+}
+
+.features .col {
+  margin-bottom: 0 !important;
+  padding: 0 0.5rem;
 }
 
 .glassContainer {
   height: 100%;
-  padding: 1.5rem;
+  padding: 1.2rem;
   border-radius: 16px;
   transition: all 0.3s ease;
   position: relative;
@@ -134,7 +151,7 @@
   background: rgba(0, 0, 0, 0.6);
   border: 1px solid rgba(168, 85, 247, 0.3);
   box-shadow: 0 15px 35px -10px rgba(0, 0, 0, 0.8);
-  margin-bottom: 1.5rem;
+  margin-bottom: 0 !important;
   overflow: hidden; /* Ensures glows stay within border-radius */
 }
 
@@ -181,11 +198,13 @@
 .glassContainer h3 {
   color: #ffffff;
   text-shadow: 0 0 15px rgba(168, 85, 247, 0.7);
-  font-size: 1.25rem;
+  font-size: 1.15rem;
   font-weight: 700;
-  margin-bottom: 1rem;
+  margin: 0;
+  line-height: 1.3;
   z-index: 10;
   position: relative;
+  flex: 1;
 }
 
 .glassContainer p {
@@ -197,11 +216,27 @@
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 
+.featureHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
 .featureIcon {
   color: #a855f7;
-  margin-bottom: 1rem;
   filter: drop-shadow(0 0 10px rgba(168, 85, 247, 0.6));
   transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+
+.featureDescription {
+  color: #9ca3af !important;
+  line-height: 1.6;
+  font-size: 0.95rem;
+  text-align: left;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  margin: 0;
 }
 
 .glassContainer:hover .featureIcon {
@@ -559,15 +594,25 @@
   filter: drop-shadow(0 0 5px rgba(59, 130, 246, 0.4));
 }
 
-/* React Flow Edge Styling - Simple Solid Glowing Lines */
-.react-flow__edge-path {
+/* React Flow Edge Styling - SOLID GLOWING LINES */
+:global(.react-flow__edge-path) {
   stroke-width: 3 !important;
-  filter: drop-shadow(0 0 10px currentColor);
+  filter: drop-shadow(0 0 10px currentColor) !important;
   stroke-dasharray: none !important;
+  animation: solidGlow 2s ease-in-out infinite alternate !important;
 }
 
-.react-flow__edge {
-  pointer-events: none;
+:global(.react-flow__edge) {
+  pointer-events: none !important;
+}
+
+@keyframes solidGlow {
+  0% {
+    filter: drop-shadow(0 0 8px currentColor);
+  }
+  100% {
+    filter: drop-shadow(0 0 20px currentColor);
+  }
 }
 
 /* Responsive design */

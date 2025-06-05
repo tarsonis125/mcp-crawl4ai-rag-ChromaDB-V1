@@ -14,7 +14,6 @@ import {
     CheckSquare,
     Plug
   } from 'lucide-react';
-import HomepageFeatures from '@site/src/components/HomepageFeatures';
 import Heading from '@theme/Heading';
 
 // Architecture Diagram Component
@@ -98,7 +97,7 @@ const ReactFlowDiagram = ({ reactFlowInstance, lucideIcons }) => {
     {
       id: 'archon-ui',
       type: 'ui-control',
-      position: { x: 400, y: 320 },
+      position: { x: 410, y: 320 },
       data: { 
         title: 'Archon UI',
         subtitle: 'Control all of Archon\'s Features'
@@ -431,20 +430,43 @@ function HomepageContent() {
       <section className={styles.features}>
         <div className="container">
           <h2 className="text--center margin-bottom--xl">✨ Key Features</h2>
+          
+          {/* First Row - 3 cards */}
           <div className="row">
-            {features.map((feature, idx) => {
+            {features.slice(0, 3).map((feature, idx) => {
               const IconComponent = feature.icon;
               return (
                 <div key={idx} className="col col--4">
                   <div className={styles.glassContainer}>
-                    <div className="text--center">
+                    <div className={styles.featureHeader}>
                       <IconComponent 
-                        size={48} 
+                        size={36} 
                         className={styles.featureIcon}
                       />
                       <h3>{feature.title}</h3>
-                      <p>{feature.description}</p>
                     </div>
+                    <p className={styles.featureDescription}>{feature.description}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          
+          {/* Second Row - 3 cards */}
+          <div className={`row ${styles.featureRowSpacing}`}>
+            {features.slice(3, 6).map((feature, idx) => {
+              const IconComponent = feature.icon;
+              return (
+                <div key={idx + 3} className="col col--4">
+                  <div className={styles.glassContainer}>
+                    <div className={styles.featureHeader}>
+                      <IconComponent 
+                        size={36} 
+                        className={styles.featureIcon}
+                      />
+                      <h3>{feature.title}</h3>
+                    </div>
+                    <p className={styles.featureDescription}>{feature.description}</p>
                   </div>
                 </div>
               );
