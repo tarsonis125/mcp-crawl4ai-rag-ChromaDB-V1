@@ -26,6 +26,7 @@ from .api.settings_api import router as settings_router
 from .api.mcp_api import router as mcp_router
 from .api.knowledge_api import router as knowledge_router  
 from .api.projects_api import router as projects_router
+from .api.tests_api import router as tests_router
 
 # Import utilities and core classes
 from .credential_service import initialize_credentials

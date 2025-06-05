@@ -129,14 +129,13 @@ websocket_manager = TestWebSocketManager()
 
 # Test execution functions
 async def execute_mcp_tests(execution_id: str) -> TestExecution:
-    """Execute MCP tool tests using Docker container."""
+    """Execute MCP tool tests directly inside the container."""
     execution = test_executions[execution_id]
     
     try:
-        # Docker command to run MCP tests
+        # Run tests directly using uv run python
         cmd = [
-            "docker", "exec", "-it", "archon-pyserver",
-            "python", "tests/run_mcp_tests.py"
+            "uv", "run", "python", "tests/run_mcp_tests.py"
         ]
         
         logger.info(f"Starting MCP test execution: {' '.join(cmd)}")
@@ -146,7 +145,7 @@ async def execute_mcp_tests(execution_id: str) -> TestExecution:
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
-            cwd="/Users/seanbuck/Software Development/archon/archon"  # Absolute path to workspace
+            cwd="/app"  # Use the app directory inside the container
         )
         
         execution.process = process
