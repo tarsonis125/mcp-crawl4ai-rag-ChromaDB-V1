@@ -273,11 +273,10 @@ async def _create_project_background(progress_id: str, request: CreateProjectReq
         
         # Try to use DocsAgent for enhanced documentation
         generated_prd = {}
-        generated_docs = []
         
         try:
             # Import DocsAgent (lazy import to avoid startup issues)
-            from ..agents.docs_agent import DocsAgent, DocumentProcessingRequest
+            from ..agents.docs_agent import DocsAgent
             
             await project_creation_manager.update_progress(progress_id, {
                 'percentage': 50,
@@ -287,16 +286,6 @@ async def _create_project_background(progress_id: str, request: CreateProjectReq
             
             # Initialize and use DocsAgent
             docs_agent = DocsAgent()
-            processing_request = DocumentProcessingRequest(
-                title=request.title,
-                description=request.description or '',
-                mode="create_comprehensive",
-                requirements={
-                    "title": request.title,
-                    "basic_description": request.description or '',
-                    "github_repo": request.github_repo
-                }
-            )
             
             await project_creation_manager.update_progress(progress_id, {
                 'percentage': 70,
@@ -304,15 +293,28 @@ async def _create_project_background(progress_id: str, request: CreateProjectReq
                 'log': '✨ AI is creating project documentation...'
             })
             
-            # Generate documentation
-            agent_result = await docs_agent.process_document(processing_request)
-            generated_prd = agent_result.prd if hasattr(agent_result, 'prd') else {}
-            generated_docs = agent_result.documents if hasattr(agent_result, 'documents') else []
+            # Generate comprehensive PRD
+            agent_result = await docs_agent.create_prd(
+                project_title=request.title,
+                project_description=request.description or 'A new project created in Archon',
+                requirements=[
+                    "User-friendly interface",
+                    "Secure data handling", 
+                    "Scalable architecture"
+                ] if not request.description else [request.description],
+                context={
+                    "github_repo": request.github_repo,
+                    "created_via": "archon_ui"
+                }
+            )
+            
+            # Extract PRD content from agent result
+            generated_prd = agent_result.content if hasattr(agent_result, 'content') else {}
             
             await project_creation_manager.update_progress(progress_id, {
                 'percentage': 85,
                 'step': 'finalizing_docs',
-                'log': f'📋 Generated {len(generated_docs)} documents and comprehensive PRD'
+                'log': f'📋 Generated comprehensive PRD with {len(generated_prd.keys()) if generated_prd else 0} sections'
             })
             
         except ImportError:
@@ -332,7 +334,7 @@ async def _create_project_background(progress_id: str, request: CreateProjectReq
         project_data = {
             "title": request.title,
             "prd": generated_prd or request.prd or {},
-            "docs": generated_docs or [],
+            "docs": [],
             "features": [],
             "data": [],
             "created_at": datetime.now().isoformat(),

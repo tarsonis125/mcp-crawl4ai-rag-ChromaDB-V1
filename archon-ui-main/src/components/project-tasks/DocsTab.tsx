@@ -21,9 +21,17 @@ interface Task {
 /* Main component                                 */
 /* ——————————————————————————————————————————— */
 export const DocsTab = ({
-  tasks
+  tasks,
+  project
 }: {
   tasks: Task[];
+  project?: {
+    id: string;
+    title: string;
+    prd?: any;
+    created_at?: string;
+    updated_at?: string;
+  } | null;
 }) => {
   const [showTechnicalModal, setShowTechnicalModal] = useState(false);
   const [showBusinessModal, setShowBusinessModal] = useState(false);
@@ -155,6 +163,76 @@ export const DocsTab = ({
     setSourceType(type);
     setShowAddSourceModal(true);
   };
+
+  // Dynamic PRD rendering functions
+  const renderPRDSection = (sectionKey: string, sectionData: any, color: 'blue' | 'purple' | 'pink' | 'orange' = 'blue') => {
+    if (!sectionData) return null;
+    
+    const formatSectionTitle = (key: string) => {
+      return key
+        .split('_')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+    };
+
+    if (typeof sectionData === 'string') {
+      return (
+        <Section key={sectionKey} title={formatSectionTitle(sectionKey)} color={color}>
+          <p className="whitespace-pre-wrap">{sectionData}</p>
+        </Section>
+      );
+    }
+
+    if (Array.isArray(sectionData)) {
+      return (
+        <Section key={sectionKey} title={formatSectionTitle(sectionKey)} color={color}>
+          <ul className="list-disc pl-5 space-y-1">
+            {sectionData.map((item: any, index: number) => (
+              <li key={index}>
+                {typeof item === 'string' ? item : JSON.stringify(item)}
+              </li>
+            ))}
+          </ul>
+        </Section>
+      );
+    }
+
+    if (typeof sectionData === 'object') {
+      return (
+        <Section key={sectionKey} title={formatSectionTitle(sectionKey)} color={color}>
+          <div className="space-y-4">
+            {Object.entries(sectionData).map(([subKey, subValue]: [string, any]) => (
+              <div key={subKey}>
+                <h4 className="text-blue-400 mb-2 font-semibold">
+                  {formatSectionTitle(subKey)}
+                </h4>
+                {Array.isArray(subValue) ? (
+                  <ul className="list-disc pl-5 space-y-1">
+                    {subValue.map((item: any, index: number) => (
+                      <li key={index}>
+                        {typeof item === 'string' ? item : JSON.stringify(item)}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="whitespace-pre-wrap">
+                    {typeof subValue === 'string' ? subValue : JSON.stringify(subValue, null, 2)}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </Section>
+      );
+    }
+
+    return null;
+  };
+
+  // Get dynamic PRD data or fallback to static
+  const prdData = project?.prd || {};
+  const hasCustomPRD = Object.keys(prdData).length > 0;
+  const projectTitle = project?.title || 'E-commerce Platform v1.0';
   return <div className="relative bg-white/30 dark:bg-black/50 backdrop-blur-lg border border-gray-200 dark:border-gray-800 rounded-lg p-8 min-h-[70vh]">
       {/* Background effects */}
       <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(to_bottom,rgba(59,130,246,0.01)_50%,transparent_50%)] bg-[length:100%_4px]" />
@@ -177,20 +255,30 @@ export const DocsTab = ({
           <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 text-transparent bg-clip-text mb-2">
             Project Requirements Document (PRD)
           </h2>
-          <p className="text-gray-400">E-commerce Platform v1.0</p>
+          <p className="text-gray-400">{projectTitle}</p>
         </header>
         <div className="space-y-8">
-          {/* Project Overview */}
-          <Section title="Project Overview" color="blue">
-            <p className="mb-3">
-              A modern e-commerce platform built with React and Node.js,
-              featuring a responsive UI, secure payment processing, and
-              comprehensive product management.
-            </p>
-            <p>
-              Target completion: <span className="text-blue-400">Q3 2024</span>
-            </p>
-          </Section>
+          {hasCustomPRD ? (
+            // Render dynamic PRD sections
+            Object.entries(prdData).map(([sectionKey, sectionData], index) => {
+              const colors: ('blue' | 'purple' | 'pink' | 'orange')[] = ['blue', 'purple', 'pink', 'orange'];
+              const color = colors[index % colors.length];
+              return renderPRDSection(sectionKey, sectionData, color);
+            })
+          ) : (
+            // Fallback to static content
+            <>
+              {/* Project Overview */}
+              <Section title="Project Overview" color="blue">
+                <p className="mb-3">
+                  A modern e-commerce platform built with React and Node.js,
+                  featuring a responsive UI, secure payment processing, and
+                  comprehensive product management.
+                </p>
+                <p>
+                  Target completion: <span className="text-blue-400">Q3 2024</span>
+                </p>
+              </Section>
           {/* Architecture and Tech Packages in two columns */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             {/* Architecture Column */}
@@ -235,6 +323,52 @@ export const DocsTab = ({
               </CodeBlock>
             </Section>
           </div>
+              {/* Technical and Business Knowledge in two columns */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Technical Knowledge */}
+                <KnowledgeSection title="Technical Knowledge" color="blue" sources={selectedTechnicalSources.map(id => technicalSources.find(source => source.id === id))} onAddClick={() => setShowTechnicalModal(true)} />
+                {/* Business Knowledge */}
+                <KnowledgeSection title="Business Knowledge" color="purple" sources={selectedBusinessSources.map(id => businessSources.find(source => source.id === id))} onAddClick={() => setShowBusinessModal(true)} />
+              </div>
+              {/* Coding Standards */}
+              <Section title="Coding Standards" color="orange">
+                <ul className="list-disc pl-5 space-y-2">
+                  <li>Follow Airbnb JavaScript Style Guide</li>
+                  <li>Use functional components with hooks</li>
+                  <li>Implement strict TypeScript typing</li>
+                  <li>Write unit tests for all components and services</li>
+                  <li>Document functions/components with JSDoc</li>
+                  <li>Use semantic HTML and ensure accessibility (WCAG 2.1)</li>
+                  <li>Implement robust error handling</li>
+                </ul>
+              </Section>
+              {/* UI/UX Requirements */}
+              <Section title="UI/UX Requirements" color="blue">
+                <CodeBlock label="Color Palette" color="blue">
+                  <div className="flex gap-2 mb-4">
+                    {['#1a1a2e', '#16213e', '#0f3460', '#e94560', '#ffffff'].map(c => <div key={c} className="w-10 h-10 rounded flex items-center justify-center text-xs shadow-[0_0_10px_rgba(0,0,0,0.2)] transition-transform hover:scale-105" style={{
+                    background: c,
+                    color: c === '#ffffff' ? '#000' : '#fff'
+                  }}>
+                          {c}
+                        </div>)}
+                  </div>
+                </CodeBlock>
+                <CodeBlock label="Typography" color="purple">
+                  <li>Headings: Poppins (600, 700)</li>
+                  <li>Body: Inter (400, 500)</li>
+                  <li>Monospace: JetBrains Mono</li>
+                </CodeBlock>
+                <CodeBlock label="UI Components" color="pink">
+                  <li>Material UI as base component library</li>
+                  <li>Custom button and form components</li>
+                  <li>Responsive design (mobile → desktop)</li>
+                  <li>Dark-mode support</li>
+                </CodeBlock>
+              </Section>
+            </>
+          )}
+          
           {/* Technical and Business Knowledge in two columns */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             {/* Technical Knowledge */}
@@ -242,42 +376,6 @@ export const DocsTab = ({
             {/* Business Knowledge */}
             <KnowledgeSection title="Business Knowledge" color="purple" sources={selectedBusinessSources.map(id => businessSources.find(source => source.id === id))} onAddClick={() => setShowBusinessModal(true)} />
           </div>
-          {/* Coding Standards */}
-          <Section title="Coding Standards" color="orange">
-            <ul className="list-disc pl-5 space-y-2">
-              <li>Follow Airbnb JavaScript Style Guide</li>
-              <li>Use functional components with hooks</li>
-              <li>Implement strict TypeScript typing</li>
-              <li>Write unit tests for all components and services</li>
-              <li>Document functions/components with JSDoc</li>
-              <li>Use semantic HTML and ensure accessibility (WCAG 2.1)</li>
-              <li>Implement robust error handling</li>
-            </ul>
-          </Section>
-          {/* UI/UX Requirements */}
-          <Section title="UI/UX Requirements" color="blue">
-            <CodeBlock label="Color Palette" color="blue">
-              <div className="flex gap-2 mb-4">
-                {['#1a1a2e', '#16213e', '#0f3460', '#e94560', '#ffffff'].map(c => <div key={c} className="w-10 h-10 rounded flex items-center justify-center text-xs shadow-[0_0_10px_rgba(0,0,0,0.2)] transition-transform hover:scale-105" style={{
-                background: c,
-                color: c === '#ffffff' ? '#000' : '#fff'
-              }}>
-                      {c}
-                    </div>)}
-              </div>
-            </CodeBlock>
-            <CodeBlock label="Typography" color="purple">
-              <li>Headings: Poppins (600, 700)</li>
-              <li>Body: Inter (400, 500)</li>
-              <li>Monospace: JetBrains Mono</li>
-            </CodeBlock>
-            <CodeBlock label="UI Components" color="pink">
-              <li>Material UI as base component library</li>
-              <li>Custom button and form components</li>
-              <li>Responsive design (mobile → desktop)</li>
-              <li>Dark-mode support</li>
-            </CodeBlock>
-          </Section>
         </div>
         {/* Call-to-Action */}
       </div>

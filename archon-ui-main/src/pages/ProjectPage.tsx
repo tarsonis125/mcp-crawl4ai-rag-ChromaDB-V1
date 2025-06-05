@@ -403,7 +403,7 @@ export function ProjectPage({
               >
                 {activeTab === 'docs' && (
                   <TabsContent value="docs" className="mt-0">
-                    <DocsTab tasks={tasks} />
+                    <DocsTab tasks={tasks} project={selectedProject} />
                   </TabsContent>
                 )}
                 {activeTab === 'features' && (
