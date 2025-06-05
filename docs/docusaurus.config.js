@@ -1,7 +1,7 @@
 // @ts-check
 
-/** @type {import('@docusaurus/types').DocusaurusConfig} */
-module.exports = {
+/** @type {import('@docusaurus/types').Config} */
+export default {
   title: 'Archon',
   tagline: 'Knowledge Engine for AI Coding Assistants',
   url: 'https://your-domain.com',
@@ -11,6 +11,13 @@ module.exports = {
   favicon: 'img/favicon.ico',
   organizationName: 'your-org',
   projectName: 'archon',
+  
+  markdown: {
+    mermaid: true,
+  },
+  
+  themes: ['@docusaurus/theme-mermaid'],
+  
   presets: [
     [
       '@docusaurus/preset-classic',
@@ -19,64 +26,83 @@ module.exports = {
         docs: {
           path: 'docs',
           routeBasePath: '/',
-          sidebarPath: require.resolve('./sidebars.js'),
+          sidebarPath: './sidebars.js', // Enable proper sidebar
           editUrl: 'https://github.com/your-org/archon/edit/main/docs/',
+          showLastUpdateTime: true,
+          showLastUpdateAuthor: true,
         },
         blog: false,
         theme: {
-          customCss: require.resolve('./src/css/custom.css'),
+          customCss: './src/css/custom.css',
         },
       }),
     ],
   ],
-  themeConfig: {
-    colorMode: {
-      defaultMode: 'dark',
-      disableSwitch: true,
-      respectPrefersColorScheme: false,
-    },
-    navbar: {
-      title: 'Archon',
-      logo: {
-        alt: 'Archon Logo',
-        src: 'img/logo-neon.svg',
+  
+  themeConfig:
+    /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
+    ({
+      colorMode: {
+        defaultMode: 'dark',
+        disableSwitch: true,
+        respectPrefersColorScheme: false,
       },
-      items: [
-        { to: '/', label: 'Getting Started', position: 'left' },
-        { to: '/server', label: 'Server', position: 'left' },
-        { to: '/api-reference', label: 'API', position: 'left' },
-        { to: '/mcp-reference', label: 'MCP', position: 'left' },
-        { to: '/tasks', label: 'Tasks', position: 'left' },
-        { to: '/rag', label: 'RAG', position: 'left' },
-        { to: '/ui', label: 'UI', position: 'left' },
-        { to: '/testing', label: 'Testing', position: 'left' },
-        { to: '/deployment', label: 'Deployment', position: 'left' },
-        {
-          href: 'https://github.com/your-org/archon',
-          label: 'GitHub',
-          position: 'right',
+      navbar: {
+        title: 'Archon',
+        logo: {
+          alt: 'Archon Logo',
+          src: 'img/logo-neon.svg',
         },
-      ],
-    },
-    footer: {
-      style: 'dark',
-      links: [
-        {
-          title: 'Docs',
-          items: [
-            { label: 'Getting Started', to: '/' },
-            { label: 'Server', to: '/server' },
-            { label: 'API Reference', to: '/api-reference' },
-          ],
-        },
-        {
-          title: 'Community',
-          items: [
-            { label: 'GitHub', href: 'https://github.com/your-org/archon' },
-          ],
-        },
-      ],
-      copyright: `Copyright © ${new Date().getFullYear()} Archon Project`,
-    },
-  },
+        items: [
+          {
+            href: 'https://github.com/your-org/archon',
+            label: 'GitHub',
+            position: 'right',
+          },
+        ],
+      },
+
+      tableOfContents: {
+        minHeadingLevel: 2,
+        maxHeadingLevel: 4,
+      },
+      
+      footer: {
+        style: 'dark',
+        links: [
+          {
+            title: 'Getting Started',
+            items: [
+              { label: 'Installation', to: '/getting-started' },
+              { label: 'Quick Setup', to: '/getting-started#quick-start' },
+              { label: 'Configuration', to: '/configuration' },
+            ],
+          },
+          {
+            title: 'API & Integration',
+            items: [
+              { label: 'API Reference', to: '/api-reference' },
+              { label: 'MCP Integration', to: '/mcp-reference' },
+              { label: 'Task Management', to: '/tasks' },
+            ],
+          },
+          {
+            title: 'User Interface',
+            items: [
+              { label: 'Web Interface', to: '/ui' },
+              { label: 'Testing Guide', to: '/testing' },
+              { label: 'Deployment', to: '/deployment' },
+            ],
+          },
+          {
+            title: 'Community',
+            items: [
+              { label: 'GitHub', href: 'https://github.com/your-org/archon' },
+              { label: 'Issues', href: 'https://github.com/your-org/archon/issues' },
+            ],
+          },
+        ],
+        copyright: `Copyright © ${new Date().getFullYear()} Archon Project`,
+      },
+    }),
 };

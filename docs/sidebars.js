@@ -1,22 +1,44 @@
 module.exports = {
   docs: [
-    { type: 'doc', id: 'getting-started' },
     {
-      type: 'category', label: 'Server & API', items: [
+      type: 'doc',
+      id: 'intro',
+      label: 'Introduction',
+    },
+    {
+      type: 'category',
+      label: 'Getting Started',
+      items: [
+        'getting-started',
+        'configuration',
+        'deployment',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Core Features',
+      items: [
         'server',
-        'api-reference',
+        'rag',
+        'tasks',
         'websockets',
       ],
     },
     {
-      type: 'category', label: 'MCP & Tasks', items: [
+      type: 'category',
+      label: 'API Reference',
+      items: [
+        'api-reference',
         'mcp-reference',
-        'tasks',
       ],
     },
-    { type: 'doc', id: 'rag' },
-    { type: 'doc', id: 'ui' },
-    { type: 'doc', id: 'testing' },
-    { type: 'doc', id: 'deployment' },
+    {
+      type: 'category',
+      label: 'User Interface',
+      items: [
+        'ui',
+        'testing',
+      ],
+    },
   ],
 };

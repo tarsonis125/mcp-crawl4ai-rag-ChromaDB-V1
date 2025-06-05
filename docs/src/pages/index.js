@@ -15,7 +15,7 @@ function HomepageHeader() {
         <p className="hero__subtitle">Build Your AI's Knowledge Base with Web Crawling and Document Management</p>
         <div className={styles.buttons}>
           <Link
-            className="button button--secondary button--lg"
+            className="button button--green-neon button--lg"
             to="/getting-started">
             Get Started - Quick Setup ⏱️
           </Link>

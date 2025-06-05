@@ -3,11 +3,20 @@ title: Welcome to Archon
 sidebar_position: 1
 ---
 
-# Welcome to Archon Documentation
-
-<p align="center">
-  <em>Build Your AI's Knowledge Base with Web Crawling and Document Management</em>
-</p>
+<div className="hero hero--primary">
+  <div className="container">
+    <h1 className="hero__title">Archon</h1>
+    <p className="hero__subtitle">Supercharge your AI development workflow. Plug Cursor, Windsurf, or any AI IDE into Archon to unlock instant access to your business knowledge, technical docs, project requirements, and development tasks. Your AI gets smarter, your code gets better.</p>
+    <div>
+      <a 
+        className="button button--green-neon button--lg" 
+        href="/getting-started"
+      >
+        Get Started - Quick Setup ⚡
+      </a>
+    </div>
+  </div>
+</div>
 
 ## 🎯 What is Archon?
 
@@ -24,40 +33,59 @@ With Archon's web interface, you can **manage all your knowledge in one place** 
 
 ## ✨ Key Features
 
-### 📚 Knowledge Management
-- **Smart Web Crawling**: Intelligently crawl documentation sites, handling sitemaps, recursive crawling, and various content types
-- **Document Upload**: Upload and process PDFs, Word documents, markdown, and text files
-- **Organization**: Segment knowledge by technical documentation vs business/project documentation
-- **Source Filtering**: RAG queries can filter by specific domains or document sources
+<div className="row">
+  <div className="col col--4">
+    <div className="text--center">
+      <h3>▣ Knowledge Management</h3>
+      <p>
+        Intelligently crawl documentation sites, upload PDFs and documents, and organize knowledge by type (technical vs business). Advanced source filtering enables precise RAG queries across your entire knowledge base.
+      </p>
+    </div>
+  </div>
+  <div className="col col--4">
+    <div className="text--center">
+      <h3>◉ Advanced RAG Capabilities</h3>
+      <p>
+        Smart URL detection, contextual embeddings, hybrid search, and reranking deliver superior search results. Special handling for code snippets and technical documentation with AI-powered content understanding.
+      </p>
+    </div>
+  </div>
+  <div className="col col--4">
+    <div className="text--center">
+      <h3>⬢ MCP Integration</h3>
+      <p>
+        Universal compatibility with Cursor, Windsurf, Claude Desktop, and any MCP client. Dual transport support (SSE/stdio) with real-time access to your knowledge base directly from your AI coding assistants.
+      </p>
+    </div>
+  </div>
+</div>
 
-### 📄 Document Processing
-- **PDF Support**: Dual-engine extraction (PyPDF2 + pdfplumber) for reliable text extraction
-- **Word Documents**: Full support for .doc and .docx files via python-docx
-- **Markdown & Text**: Direct processing of .md and .txt files
-- **Smart Chunking**: Context-aware content chunking preserving structure
-- **AI-Generated Metadata**: Automatic title and description generation for uploaded documents
-
-### 🤖 Advanced RAG Capabilities
-- **Smart URL Detection**: Automatically detects and handles different URL types (regular webpages, sitemaps, text files)
-- **Contextual Embeddings**: Enhanced semantic understanding of technical content
-- **Hybrid Search**: Combines vector and keyword search for better results
-- **Code Example Extraction**: Special handling for code snippets in documentation
-- **Reranking**: Improves result relevance using cross-encoder models
-
-### 🔌 MCP Integration
-- **Universal Compatibility**: Works with any MCP-compatible client (Cursor, Windsurf, Claude Desktop, etc.)
-- **Dual Transport**: SSE for web clients, stdio for standard MCP clients
-- **Easy Connection**: Get connection details directly from the web UI
-- **Real-time Access**: Your AI agents get immediate access to newly added knowledge
-
-### 🖥 Web Interface
-- **MCP Dashboard**: Monitor server status, view real-time logs, and get connection configuration
-- **Server Management**: Start/stop the MCP server with one click, see uptime and status
-- **Settings Page**: Configure credentials (OpenAI API key) and RAG strategies through an intuitive UI
-- **Crawling Dashboard**: Initiate and monitor web crawling operations
-- **Document Management**: Upload and organize your documentation with drag-and-drop interface
-- **Knowledge Chat**: Test RAG queries through an interactive chat interface
-- **Real-time Log Streaming**: Watch server logs in real-time as operations execute
+<div className="row">
+  <div className="col col--4">
+    <div className="text--center">
+      <h3>▤ Document Processing</h3>
+      <p>
+        Dual-engine PDF extraction, Word document support, markdown processing, and smart chunking. AI-generated metadata and automatic code example extraction for comprehensive document understanding.
+      </p>
+    </div>
+  </div>
+  <div className="col col--4">
+    <div className="text--center">
+      <h3>▢ Web Interface</h3>
+      <p>
+        Complete web dashboard for MCP server management, document upload, crawling operations, and interactive knowledge chat. Real-time log streaming and progress tracking for all operations.
+      </p>
+    </div>
+  </div>
+  <div className="col col--4">
+    <div className="text--center">
+      <h3>▧ Task Management</h3>
+      <p>
+        Integrated project and task management with AI agent integration. Create, track, and organize development tasks with automatic linking to relevant documentation and code examples.
+      </p>
+    </div>
+  </div>
+</div>
 
 ## 🚀 Quick Start
 
@@ -70,6 +98,7 @@ Ready to get started? Follow our comprehensive setup guide:
 | Section | Description |
 |---------|-------------|
 | **[Getting Started](./getting-started)** | Complete setup guide from prerequisites to first crawl |
+| **[Configuration](./configuration)** | Environment variables, database setup, and service configuration |
 | **[MCP Integration](./mcp-reference)** | Connect AI clients like Cursor, Windsurf, Claude Desktop |
 | **[API Reference](./api-reference)** | Complete REST API documentation with examples |
 | **[WebSocket Communication](./websockets)** | Real-time updates, progress tracking, and troubleshooting |
@@ -134,4 +163,4 @@ Archon implements comprehensive real-time communication:
 
 ---
 
-**Transform your AI coding experience with Archon** - *Build once, query everywhere*
+**Transform your AI coding experience with Archon** - *Build once, query everywhere* 
