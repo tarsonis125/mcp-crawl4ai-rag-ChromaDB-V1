@@ -1,17 +1,335 @@
-import React from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import clsx from 'clsx';
 import Layout from '@theme/Layout';
 import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import styles from './index.module.css';
 import { 
-  Database, 
-  Zap, 
-  Plug, 
-  FileText, 
-  Globe, 
-  CheckSquare 
-} from 'lucide-react';
+    ArrowRight, 
+    Database, 
+    Zap, 
+    Globe, 
+    FileText, 
+    Cpu, 
+    CheckSquare,
+    Plug
+  } from 'lucide-react';
+import HomepageFeatures from '@site/src/components/HomepageFeatures';
+import Heading from '@theme/Heading';
+
+// Architecture Diagram Component
+const ArchitectureDiagram = () => {
+  const [reactFlowInstance, setReactFlowInstance] = useState(null);
+  const [lucideIcons, setLucideIcons] = useState(null);
+
+  useEffect(() => {
+    const loadComponents = async () => {
+      if (typeof window !== 'undefined') {
+        try {
+          // Import React Flow CSS first
+          await import('@xyflow/react/dist/style.css');
+          
+          const reactFlow = await import('@xyflow/react');
+          const lucide = await import('lucide-react');
+          setReactFlowInstance(reactFlow);
+          setLucideIcons(lucide);
+        } catch (error) {
+          console.error('Error loading components:', error);
+        }
+      }
+    };
+    loadComponents();
+  }, []);
+
+  if (!reactFlowInstance || !lucideIcons) {
+    return <div style={{ height: '600px', width: '100%' }}>Loading...</div>;
+  }
+
+  return <ReactFlowDiagram reactFlowInstance={reactFlowInstance} lucideIcons={lucideIcons} />;
+};
+
+// Separate component for React Flow diagram to ensure hooks are called consistently
+const ReactFlowDiagram = ({ reactFlowInstance, lucideIcons }) => {
+  const { ReactFlow, useNodesState, useEdgesState, addEdge, Handle, Position } = reactFlowInstance;
+  const { Database, Zap, Globe, FileText, CheckSquare } = lucideIcons;
+
+  // Node definitions with organized layout matching the screenshot
+  const initialNodes = [
+    // IDEs on the left (organized vertically)
+    {
+      id: 'cursor',
+      type: 'ide',
+      position: { x: 50, y: 50 },
+      data: { label: 'Cursor', icon: '/img/cursor.svg' },
+      draggable: false
+    },
+    {
+      id: 'claude',
+      type: 'ide', 
+      position: { x: 50, y: 150 },
+      data: { label: 'Claude Desktop', icon: '/img/claude-logo.svg' },
+      draggable: false
+    },
+    {
+      id: 'windsurf',
+      type: 'ide',
+      position: { x: 50, y: 250 },
+      data: { label: 'Windsurf', icon: '/img/windsurf-white-symbol.svg' },
+      draggable: false
+    },
+    {
+      id: 'vscode',
+      type: 'ide',
+      position: { x: 50, y: 350 },
+      data: { label: 'VS Code', icon: '/img/Visual_Studio_Code_1.35_icon.svg' },
+      draggable: false
+    },
+    
+    // Archon in the center (raised higher)
+    {
+      id: 'archon',
+      type: 'archon',
+      position: { x: 400, y: 100 },
+      data: { label: 'ARCHON', subtitle: 'Knowledge Engine' },
+      draggable: false
+    },
+    
+    // Archon UI Control below Archon
+    {
+      id: 'archon-ui',
+      type: 'ui-control',
+      position: { x: 400, y: 320 },
+      data: { 
+        title: 'Archon UI',
+        subtitle: 'Control all of Archon\'s Features'
+      },
+      draggable: false
+    },
+    
+    // Knowledge Sources container
+    {
+      id: 'knowledge-sources',
+      type: 'container',
+      position: { x: 700, y: 50 },
+      data: { 
+        title: 'Knowledge Sources',
+        type: 'knowledge',
+        items: [
+          { label: 'Web Crawling', icon: Globe },
+          { label: 'Document Upload', icon: FileText },
+          { label: 'Advanced RAG', icon: Zap },
+          { label: 'Semantic Search', icon: Database }
+        ]
+      },
+      draggable: false
+    },
+    
+    // Project Intelligence container
+    {
+      id: 'project-intelligence',
+      type: 'container',
+      position: { x: 700, y: 300 },
+      data: { 
+        title: 'Project Intelligence',
+        type: 'intelligence',
+        items: [
+          { label: 'PRD Management', icon: FileText },
+          { label: 'Feature Planning', icon: CheckSquare },
+          { label: 'Data Architecture', icon: Database },
+          { label: 'Task Management', icon: CheckSquare }
+        ]
+      },
+      draggable: false
+    }
+  ];
+
+  // Simplified edges - now 7 total connections (solid lines)
+  const initialEdges = [
+    // IDEs to Archon (4 purple lines)
+    { 
+      id: 'cursor-archon', 
+      source: 'cursor', 
+      target: 'archon', 
+      type: 'smoothstep',
+      style: { 
+        stroke: '#8b5cf6', 
+        strokeWidth: 3
+      }
+    },
+    { 
+      id: 'claude-archon', 
+      source: 'claude', 
+      target: 'archon', 
+      type: 'smoothstep',
+      style: { 
+        stroke: '#8b5cf6', 
+        strokeWidth: 3
+      }
+    },
+    { 
+      id: 'windsurf-archon', 
+      source: 'windsurf', 
+      target: 'archon', 
+      type: 'smoothstep',
+      style: { 
+        stroke: '#8b5cf6', 
+        strokeWidth: 3
+      }
+    },
+    { 
+      id: 'vscode-archon', 
+      source: 'vscode', 
+      target: 'archon', 
+      type: 'smoothstep',
+      style: { 
+        stroke: '#8b5cf6', 
+        strokeWidth: 3
+      }
+    },
+    
+    // Archon to Archon UI (1 blue line)
+    { 
+      id: 'archon-ui', 
+      source: 'archon', 
+      sourceHandle: 'bottom',
+      target: 'archon-ui', 
+      type: 'smoothstep',
+      style: { 
+        stroke: '#3b82f6', 
+        strokeWidth: 3
+      }
+    },
+    
+    // Archon to containers (2 lines)
+    { 
+      id: 'archon-knowledge', 
+      source: 'archon', 
+      sourceHandle: 'right',
+      target: 'knowledge-sources', 
+      type: 'smoothstep',
+      style: { 
+        stroke: '#10b981', 
+        strokeWidth: 3
+      }
+    },
+    { 
+      id: 'archon-intelligence', 
+      source: 'archon', 
+      sourceHandle: 'right',
+      target: 'project-intelligence', 
+      type: 'smoothstep',
+      style: { 
+        stroke: '#f59e0b', 
+        strokeWidth: 3
+      }
+    }
+  ];
+
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+
+  // Custom node components
+  const nodeTypes = {
+    ide: ({ data }) => (
+      <div className={styles.ideNode}>
+        <img src={data.icon} alt={data.label} className={styles.nodeIcon} />
+        <span className={styles.nodeLabel}>{data.label}</span>
+        <Handle
+          type="source"
+          position={Position.Right}
+          style={{ background: '#8b5cf6', border: '2px solid #8b5cf6' }}
+        />
+      </div>
+    ),
+    archon: ({ data }) => (
+      <div className={styles.archonNode}>
+        <Handle
+          type="target"
+          position={Position.Left}
+          id="left"
+          style={{ background: '#8b5cf6', border: '2px solid #8b5cf6' }}
+        />
+        <img src="/img/logo-neon.svg" alt="Archon" className={styles.archonIcon} />
+        <div className={styles.archonText}>
+          <h3>{data.label}</h3>
+          <p>{data.subtitle}</p>
+        </div>
+        <Handle
+          type="source"
+          position={Position.Right}
+          id="right"
+          style={{ background: '#10b981', border: '2px solid #10b981' }}
+        />
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          id="bottom"
+          style={{ background: '#3b82f6', border: '2px solid #3b82f6' }}
+        />
+      </div>
+    ),
+    'ui-control': ({ data }) => (
+      <div className={styles.uiControlNode}>
+        <Handle
+          type="target"
+          position={Position.Top}
+          style={{ background: '#3b82f6', border: '2px solid #3b82f6' }}
+        />
+        <h3 className={styles.uiControlTitle}>{data.title}</h3>
+        <p className={styles.uiControlSubtitle}>{data.subtitle}</p>
+      </div>
+    ),
+    container: ({ data }) => (
+      <div className={styles.containerNode} data-type={data.type}>
+        <h3 className={styles.containerTitle}>{data.title}</h3>
+        <div className={styles.containerGrid}>
+          {data.items.map((item, index) => (
+            <div key={index} className={styles.containerItem}>
+              <item.icon size={16} className={styles.itemIcon} />
+              <span className={styles.itemLabel}>{item.label}</span>
+            </div>
+          ))}
+        </div>
+        <Handle
+          type="target"
+          position={Position.Left}
+          style={{ background: '#10b981', border: '2px solid #10b981' }}
+        />
+      </div>
+    )
+  };
+
+  return (
+    <div style={{ height: '550px', width: '100%', position: 'relative' }}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        nodeTypes={nodeTypes}
+        fitView={false}
+        nodesDraggable={false}
+        nodesConnectable={false}
+        elementsSelectable={false}
+        panOnDrag={false}
+        panOnScroll={false}
+        zoomOnScroll={false}
+        zoomOnPinch={false}
+        zoomOnDoubleClick={false}
+        preventScrolling={false}
+        proOptions={{ hideAttribution: true }}
+        style={{ background: 'transparent' }}
+        minZoom={1}
+        maxZoom={1}
+        defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+        translateExtent={[
+          [0, 0],
+          [1000, 550],
+        ]}
+      />
+    </div>
+  );
+};
 
 function HomepageHeader() {
   const {siteConfig} = useDocusaurusContext();
@@ -35,6 +353,46 @@ function HomepageHeader() {
 }
 
 function HomepageContent() {
+  const [lucideIcons, setLucideIcons] = useState(null);
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+    
+    // Dynamically import Lucide React only on client side
+    const loadLucideIcons = async () => {
+      try {
+        const { Database, Zap, Globe, FileText, CheckSquare, Plug } = await import('lucide-react');
+        setLucideIcons({ Database, Zap, Globe, FileText, CheckSquare, Plug });
+      } catch (error) {
+        console.error('Error loading Lucide icons:', error);
+      }
+    };
+
+    loadLucideIcons();
+  }, []);
+
+  if (!isClient || !lucideIcons) {
+    return (
+      <main>
+        <section className={styles.features}>
+          <div className="container">
+            <h2 className="text--center margin-bottom--xl">✨ Key Features</h2>
+            <div className="row">
+              <div className="col col--12">
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px', color: '#ffffff' }}>
+                  Loading Features...
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  const { Database, Zap, Globe, FileText, CheckSquare, Plug } = lucideIcons;
+
   const features = [
     {
       title: 'Knowledge Management',
@@ -70,98 +428,6 @@ function HomepageContent() {
 
   return (
     <main>
-      <section className={styles.architectureSection}>
-        <div className="container">
-          <div className="row">
-            <div className="col col--12">
-              <h2 className="text--center">🎯 How Archon Supercharges Your IDE</h2>
-              <p className="text--center" style={{ fontSize: '1.2rem', marginBottom: '3rem', color: '#e5e7eb' }}>
-                Connect any MCP-compatible IDE to unlock instant access to your entire knowledge ecosystem
-              </p>
-              
-              <div className={styles.diagramContainer}>
-                <div className={styles.archonDiagram}>
-                  <div className="row">
-                    <div className="col col--12 text--center">
-                      <div className={styles.diagramNode} style={{ background: 'linear-gradient(135deg, #1a1a2e 0%, #16a085 100%)', marginBottom: '2rem' }}>
-                        <h3>🎯 AI Development IDEs</h3>
-                        <div className="row">
-                          <div className="col col--3">
-                            <div className={styles.ideBox}>🎯 Cursor<br/>AI-First IDE</div>
-                          </div>
-                          <div className="col col--3">
-                            <div className={styles.ideBox}>🏄 Windsurf<br/>AI-Enhanced</div>
-                          </div>
-                          <div className="col col--3">
-                            <div className={styles.ideBox}>📝 VS Code<br/>Extensions</div>
-                          </div>
-                          <div className="col col--3">
-                            <div className={styles.ideBox}>🔌 Any MCP Client<br/>Compatible IDE</div>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className={styles.connectionArrow}>⬇️ MCP Protocol ⬇️</div>
-                      
-                      <div className={styles.diagramNode} style={{ background: 'linear-gradient(135deg, #0f3460 0%, #a855f7 100%)', margin: '2rem 0' }}>
-                        <h3>🏛️ ARCHON Knowledge Engine</h3>
-                        <p>MCP Server • Knowledge Engine • Real-time Access</p>
-                      </div>
-                      
-                      <div className={styles.connectionArrow}>⬇️ Powers Two Main Systems ⬇️</div>
-                      
-                      <div className="row" style={{ marginTop: '2rem' }}>
-                        <div className="col col--6">
-                          <div className={styles.diagramNode} style={{ background: 'linear-gradient(135deg, #16213e 0%, #3b82f6 100%)' }}>
-                            <h3>📚 Knowledge Sources</h3>
-                            <div className={styles.featureList}>
-                              <div>🌐 Crawl Websites</div>
-                              <div>📄 Upload Documents</div>
-                              <div>⚡ Advanced RAG</div>
-                              <div>🔍 Semantic Search</div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="col col--6">
-                          <div className={styles.diagramNode} style={{ background: 'linear-gradient(135deg, #1a1a2e 0%, #ec4899 100%)' }}>
-                            <h3>📋 Project Intelligence</h3>
-                            <div className={styles.featureList}>
-                              <div>📋 PRD Management</div>
-                              <div>🎯 Feature Planning</div>
-                              <div>📊 Data Architecture</div>
-                              <div>✅ Task Management</div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="row" style={{ marginTop: '3rem' }}>
-                <div className="col col--6">
-                  <div className={styles.powerFeature}>
-                    <h3>🚀 Instant Knowledge Access</h3>
-                    <p>
-                      Your AI assistant gets immediate access to crawled documentation, uploaded files, and semantic search across your entire knowledge base. No more context switching or manual file hunting.
-                    </p>
-                  </div>
-                </div>
-                <div className="col col--6">
-                  <div className={styles.powerFeature}>
-                    <h3>⚡ Project Intelligence</h3>
-                    <p>
-                      Automatically link development tasks to relevant documentation, PRDs, and feature plans. Your AI understands your project context and can make intelligent suggestions.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <section className={styles.features}>
         <div className="container">
           <h2 className="text--center margin-bottom--xl">✨ Key Features</h2>
@@ -238,12 +504,20 @@ function HomepageContent() {
 
 export default function Home() {
   const {siteConfig} = useDocusaurusContext();
+
   return (
     <Layout
-      title={`${siteConfig.title} - Knowledge Engine`}
-      description="MCP server for web crawling and document management with RAG capabilities for AI coding assistants">
+      title={`Hello from ${siteConfig.title}`}
+      description="Description will go into a meta tag in <head />">
       <HomepageHeader />
-      <HomepageContent />
+      <main>
+        {/* Architecture Diagram */}
+        <section className={styles.architectureSection}>
+          <ArchitectureDiagram />
+        </section>
+
+        <HomepageContent />
+      </main>
     </Layout>
   );
 }

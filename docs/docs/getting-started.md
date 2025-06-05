@@ -34,13 +34,6 @@ Before you begin, ensure you have the following:
 git clone https://github.com/coleam00/archon.git
 cd archon
 
-# Check available branches
-git branch -a
-
-# Switch to the latest feature branch if needed
-git checkout feature/docusauraus
-```
-
 ### Step 2: Supabase Database Setup
 
 Archon uses Supabase as its primary database with pgvector for embeddings.
