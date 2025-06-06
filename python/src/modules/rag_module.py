@@ -32,6 +32,7 @@ from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 from ..logfire_config import rag_logger, mcp_logger, search_logger
 
 from src.utils import (
+    get_supabase_client,
     add_documents_to_supabase, 
     search_documents,
     extract_code_blocks,
@@ -874,20 +875,20 @@ def register_rag_tools(mcp: FastMCP):
                                match_count=match_count)
                 
                 # Get Supabase client
-                with span.nested("get_client"):
+                with rag_logger.span("get_client"):
                     client = get_supabase_client()
                     span.set_attribute("client_obtained", True)
                 
                 # Build filter metadata if source is provided
                 filter_metadata = None
                 if source:
-                    with span.nested("build_filter"):
+                    with rag_logger.span("build_filter"):
                         filter_metadata = {"source": source}
                         rag_logger.debug("Built filter metadata", source=source)
                         span.set_attribute("filter_applied", True)
                 
                 # Perform vector search
-                with span.nested("vector_search"):
+                with rag_logger.span("vector_search"):
                     results = search_documents(
                         client=client,
                         query=query,
@@ -897,7 +898,7 @@ def register_rag_tools(mcp: FastMCP):
                     span.set_attribute("raw_results_count", len(results))
                 
                 # Format results for MCP response
-                with span.nested("format_response"):
+                with rag_logger.span("format_response"):
                     formatted_results = []
                     for i, result in enumerate(results):
                         try:

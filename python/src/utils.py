@@ -439,7 +439,7 @@ def search_documents(
                               filter_metadata=filter_metadata)
             
             # Create embedding for the query
-            with span.nested("create_embedding"):
+            with search_logger.span("create_embedding"):
                 query_embedding = create_embedding(query, cached_api_key)
                 
                 if not query_embedding:
@@ -449,7 +449,7 @@ def search_documents(
                 span.set_attribute("embedding_dimensions", len(query_embedding))
             
             # Build the filter for the RPC call
-            with span.nested("prepare_rpc_params"):
+            with search_logger.span("prepare_rpc_params"):
                 rpc_params = {
                     "query_embedding": query_embedding,
                     "match_threshold": threshold,
@@ -465,7 +465,7 @@ def search_documents(
                     span.set_attribute("filter_keys", list(filter_metadata.keys()) if filter_metadata else [])
             
             # Call the RPC function
-            with span.nested("supabase_rpc_call"):
+            with search_logger.span("supabase_rpc_call"):
                 search_logger.debug("Calling Supabase RPC function", 
                                   function_name="match_crawled_pages",
                                   rpc_params_keys=list(rpc_params.keys()))

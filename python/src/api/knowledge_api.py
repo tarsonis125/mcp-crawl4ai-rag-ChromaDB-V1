@@ -674,7 +674,7 @@ async def perform_rag_query(request: RagQueryRequest):
             # Use simple text matching for FastAPI direct query
             supabase = get_supabase_client()
             
-            with span.nested("database_query"):
+            with rag_logger.span("database_query"):
                 query_builder = supabase.table("crawled_pages").select("*")
                 
                 # Apply source filter if provided
@@ -691,7 +691,7 @@ async def perform_rag_query(request: RagQueryRequest):
             results = response.data if response.data else []
             
             # Format results consistently
-            with span.nested("format_results"):
+            with rag_logger.span("format_results"):
                 formatted_results = []
                 for result in results:
                     formatted_results.append({
