@@ -452,17 +452,28 @@ def search_documents(
             with search_logger.span("prepare_rpc_params"):
                 rpc_params = {
                     "query_embedding": query_embedding,
-                    "match_threshold": threshold,
                     "match_count": match_count
                 }
                 
                 # Add filter to RPC params if provided
                 if filter_metadata:
                     search_logger.debug("Adding filter to RPC params", filter_metadata=filter_metadata)
-                    # The RPC function expects a 'filter' parameter
-                    rpc_params["filter"] = filter_metadata
+                    
+                    # Check if we have a source filter specifically
+                    if "source" in filter_metadata:
+                        # Use the version with source_filter parameter
+                        rpc_params["source_filter"] = filter_metadata["source"]
+                        # Also add the general filter as empty jsonb to satisfy the function signature
+                        rpc_params["filter"] = {}
+                    else:
+                        # Use the general filter parameter
+                        rpc_params["filter"] = filter_metadata
+                    
                     span.set_attribute("filter_applied", True)
                     span.set_attribute("filter_keys", list(filter_metadata.keys()) if filter_metadata else [])
+                else:
+                    # No filter provided - use empty jsonb for filter parameter
+                    rpc_params["filter"] = {}
             
             # Call the RPC function
             with search_logger.span("supabase_rpc_call"):
