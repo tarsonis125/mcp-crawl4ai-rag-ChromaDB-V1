@@ -4,12 +4,12 @@
 export default {
   title: 'Archon',
   tagline: 'Knowledge Engine for AI Coding Assistants',
-  url: 'https://your-domain.com',
+  url: 'http://localhost:3838',
   baseUrl: '/',
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',
-  favicon: 'img/favicon.ico',
-  organizationName: 'your-org',
+  favicon: 'img/favicon.svg',
+  organizationName: 'archon',
   projectName: 'archon',
   
   markdown: {
@@ -27,7 +27,7 @@ export default {
           path: 'docs',
           routeBasePath: '/',
           sidebarPath: './sidebars.js', // Enable proper sidebar
-          editUrl: 'https://github.com/your-org/archon/edit/main/docs/',
+          editUrl: 'https://github.com/coleam00/archon/edit/main/docs/',
           showLastUpdateTime: true,
           showLastUpdateAuthor: true,
         },
@@ -55,7 +55,7 @@ export default {
         },
         items: [
           {
-            href: 'https://github.com/your-org/archon',
+            href: 'https://github.com/coleam00/archon',
             label: 'GitHub',
             position: 'right',
           },
@@ -97,8 +97,8 @@ export default {
           {
             title: 'Community',
             items: [
-              { label: 'GitHub', href: 'https://github.com/your-org/archon' },
-              { label: 'Issues', href: 'https://github.com/your-org/archon/issues' },
+              { label: 'GitHub', href: 'https://github.com/coleam00/archon' },
+              { label: 'Issues', href: 'https://github.com/coleam00/archon/issues' },
             ],
           },
         ],
