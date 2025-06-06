@@ -26,6 +26,7 @@ dependencies = [
     "slowapi>=0.1.9",
     "httpx>=0.24.0",
     "pydantic-ai>=0.0.13",
+    "logfire>=0.30.0",
 ]
 
 [project.optional-dependencies]

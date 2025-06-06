@@ -142,6 +142,35 @@ async def archon_lifespan(server: FastMCP) -> AsyncIterator[ArchonContext]:
     """
     logger.info("🚀 Starting Archon MCP server lifespan...")
     
+    # FIRST THING: CACHE OPENAI KEY IN MEMORY!
+    cached_openai_key = None
+    logger.info("🔑 CACHING OPENAI API KEY IN MEMORY...")
+    try:
+        from src.credential_service import credential_service
+        
+        # Get OpenAI API key and cache it
+        if hasattr(credential_service, '_cache') and credential_service._cache_initialized:
+            cached_value = credential_service._cache.get("OPENAI_API_KEY")
+            if isinstance(cached_value, dict) and cached_value.get("is_encrypted"):
+                encrypted_value = cached_value.get("encrypted_value")
+                if encrypted_value:
+                    try:
+                        cached_openai_key = credential_service._decrypt_value(encrypted_value)
+                    except Exception:
+                        pass
+            elif cached_value:
+                cached_openai_key = str(cached_value)
+        
+        # Fallback to environment variable
+        if not cached_openai_key:
+            cached_openai_key = os.getenv("OPENAI_API_KEY")
+        
+        logger.info(f"✓ OpenAI key cached in memory: {'YES' if cached_openai_key else 'NO'}")
+        
+    except Exception as e:
+        logger.warning(f"⚠ Failed to cache OpenAI key from credentials: {e} - using env fallback")
+        cached_openai_key = os.getenv("OPENAI_API_KEY")
+    
     # Initialize minimal resources needed for basic operation
     crawler = None
     supabase_client = None
@@ -160,9 +189,13 @@ async def archon_lifespan(server: FastMCP) -> AsyncIterator[ArchonContext]:
             reranking_model=reranking_model
         )
         
+        # STORE CACHED OPENAI KEY IN CONTEXT FOR DIRECT ACCESS
+        context.cached_openai_key = cached_openai_key
+        
         # Set ready status
         context.health_status["status"] = "ready"
         context.health_status["database_ready"] = True
+        context.health_status["openai_key_cached"] = bool(cached_openai_key)
         context.health_status["last_health_check"] = datetime.now().isoformat()
         
         logger.info("✓ Archon context ready - server can accept requests")

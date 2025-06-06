@@ -84,12 +84,13 @@ def get_supabase_client() -> Client:
     
     return create_client(url, key)
 
-def create_embeddings_batch(texts: List[str]) -> List[List[float]]:
+def create_embeddings_batch(texts: List[str], cached_api_key: str = None) -> List[List[float]]:
     """
     Create embeddings for multiple texts in a single API call.
     
     Args:
         texts: List of texts to create embeddings for
+        cached_api_key: Pre-cached OpenAI API key from context
         
     Returns:
         List of embeddings (each embedding is a list of floats)
@@ -97,14 +98,17 @@ def create_embeddings_batch(texts: List[str]) -> List[List[float]]:
     if not texts:
         return []
     
-    # Get the decrypted API key
-    api_key = get_openai_api_key_sync()
+    # FIRST TRY CACHED API KEY FROM CONTEXT!
+    api_key = cached_api_key
     if not api_key:
-        print("Error: No OpenAI API key available")
+        # Fallback to credential service
+        api_key = get_openai_api_key_sync()
+    if not api_key:
+        print("ERROR: No OpenAI API key available (neither cached nor from credentials)")
         return [[0.0] * 1536 for _ in texts]
     
     # Debug logging (redacted key)
-    print(f"Using OpenAI API key: {api_key[:8]}...{api_key[-4:] if len(api_key) > 8 else '***'}")
+    print(f"✓ Using {'CACHED' if cached_api_key else 'CREDENTIAL'} OpenAI API key: {api_key[:8]}...{api_key[-4:] if len(api_key) > 8 else '***'}")
     
     # Create OpenAI client with the decrypted key
     client = openai.OpenAI(api_key=api_key)
@@ -148,18 +152,19 @@ def create_embeddings_batch(texts: List[str]) -> List[List[float]]:
                 print(f"Successfully created {successful_count}/{len(texts)} embeddings individually")
                 return embeddings
 
-def create_embedding(text: str) -> List[float]:
+def create_embedding(text: str, cached_api_key: str = None) -> List[float]:
     """
     Create an embedding for a single text using OpenAI's API.
     
     Args:
         text: Text to create an embedding for
+        cached_api_key: Pre-cached OpenAI API key from context
         
     Returns:
         List of floats representing the embedding
     """
     try:
-        embeddings = create_embeddings_batch([text])
+        embeddings = create_embeddings_batch([text], cached_api_key=cached_api_key)
         return embeddings[0] if embeddings else [0.0] * 1536
     except Exception as e:
         print(f"Error creating embedding: {e}")
@@ -333,6 +338,7 @@ def add_documents_to_supabase(
             contextual_contents = batch_contents
         
         # Create embeddings for the entire batch at once
+        # TODO: Pass cached API key to this function when called from context
         batch_embeddings = create_embeddings_batch(contextual_contents)
         
         batch_data = []
@@ -394,7 +400,8 @@ def search_documents(
     client: Client, 
     query: str, 
     match_count: int = 10, 
-    filter_metadata: Optional[Dict[str, Any]] = None
+    filter_metadata: Optional[Dict[str, Any]] = None,
+    cached_api_key: str = None
 ) -> List[Dict[str, Any]]:
     """
     Search for documents in Supabase using vector similarity.
@@ -404,43 +411,70 @@ def search_documents(
         query: Query text
         match_count: Maximum number of results to return
         filter_metadata: Optional metadata filter
+        cached_api_key: Pre-cached OpenAI API key from context
         
     Returns:
         List of matching documents
     """
-    # Create embedding for the query
-    query_embedding = create_embedding(query)
-    print(f"DEBUG: Query embedding length: {len(query_embedding)}")
-    print(f"DEBUG: First 5 values: {query_embedding[:5]}")
+    print(f"\n=== SEARCH_DOCUMENTS DEBUG START ===\n")
+    print(f"SEARCH: Called with query='{query}', match_count={match_count}\n")
+    print(f"SEARCH: filter_metadata={filter_metadata}\n")
+    print(f"SEARCH: cached_api_key provided: {cached_api_key is not None}\n")
     
-    # Execute the search using the match_crawled_pages function
     try:
-        # Only include filter parameter if filter_metadata is provided and not empty
-        params = {
-            'query_embedding': query_embedding,
-            'match_count': match_count
-        }
+        # Create embedding for the query USING CACHED KEY!
+        print(f"SEARCH: Creating embedding for query...")
+        query_embedding = create_embedding(query, cached_api_key=cached_api_key)
+        print(f"SEARCH: Created embedding, length: {len(query_embedding) if query_embedding else 0}\n")
         
-        # Only add the filter if it's actually provided and not empty
-        if filter_metadata:
-            params['filter'] = filter_metadata  # Pass the dictionary directly, not JSON-encoded
-            print(f"DEBUG: Using filter: {filter_metadata}")
+        if not query_embedding:
+            print(f"SEARCH: ERROR - No embedding created!\n")
+            print(f"=== SEARCH_DOCUMENTS DEBUG END (NO EMBEDDING) ===\n")
+            return []
+        
+        # Extract source for direct filtering if provided
+        source_filter = None
+        if filter_metadata and "source" in filter_metadata:
+            source_filter = filter_metadata["source"]
+            print(f"SEARCH: Extracted source_filter: '{source_filter}'\n")
         else:
-            print("DEBUG: No filter applied")
-            
-        print(f"DEBUG: Calling match_crawled_pages with params keys: {list(params.keys())}")
+            print(f"SEARCH: No source filter to extract\n")
         
-        result = client.rpc('match_crawled_pages', params).execute()
+        print(f"SEARCH: About to call match_crawled_pages RPC...\n")
+        print(f"SEARCH: RPC params - embedding length: {len(query_embedding)}, match_count: {match_count}\n")
+        print(f"SEARCH: RPC params - filter: {filter_metadata}, source_filter: {source_filter}\n")
         
-        print(f"DEBUG: RPC result type: {type(result)}")
-        print(f"DEBUG: RPC result data: {result.data}")
-        print(f"DEBUG: Result count: {len(result.data) if result.data else 0}")
+        # Call the RPC function with BOTH filter types
+        response = client.rpc(
+            "match_crawled_pages",
+            {
+                "query_embedding": query_embedding,
+                "match_count": match_count,
+                "filter": filter_metadata,  # JSONB metadata filter
+                "source_filter": source_filter  # Direct source_id filter 
+            }
+        ).execute()
         
-        return result.data if result.data else []
+        print(f"SEARCH: RPC executed successfully\n")
+        print(f"SEARCH: Response data length: {len(response.data) if response.data else 0}\n")
+        
+        if response.data:
+            for i, item in enumerate(response.data[:3]):  # Log first 3 items
+                print(f"SEARCH: Item {i}: id={item.get('id')}, url={item.get('url')}, similarity={item.get('similarity')}, source_id={item.get('source_id')}\n")
+        else:
+            print(f"SEARCH: No data returned from RPC\n")
+        
+        result = response.data or []
+        print(f"SEARCH: Returning {len(result)} results\n")
+        print(f"=== SEARCH_DOCUMENTS DEBUG END ===\n")
+        
+        return result
+        
     except Exception as e:
-        print(f"ERROR in search_documents: {e}")
+        print(f"SEARCH: Exception in search_documents: {type(e).__name__}: {str(e)}\n")
         import traceback
-        print(f"ERROR traceback: {traceback.format_exc()}")
+        print(f"SEARCH: Traceback: {traceback.format_exc()}\n")
+        print(f"=== SEARCH_DOCUMENTS DEBUG END (ERROR) ===\n")
         return []
 
 

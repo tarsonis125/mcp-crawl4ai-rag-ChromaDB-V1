@@ -478,14 +478,14 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
                 knowledge_metadata = getattr(ctx, 'knowledge_metadata', {})
                 
                 document_metadata = {
-                    "source_id": urlparse(page_url).netloc,
+                    "source": urlparse(page_url).netloc or page_url,
                     "title": f"Page {i+1} from {crawl_type}",
                     "headers": section_info["headers"],
                     "char_count": section_info["char_count"],
                     "word_count": section_info["word_count"],
                     "crawl_type": crawl_type,
                     "source_type": "url",
-                    **knowledge_metadata  # Add any additional metadata from context
+                    **knowledge_metadata
                 }
                 
                 all_documents.append({
@@ -496,19 +496,20 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
                 })
             
             # Extract code examples if enabled
-            if os.getenv("USE_AGENTIC_RAG", "false") == "true":
+            if get_bool_setting("USE_AGENTIC_RAG", False):
                 code_blocks = extract_code_blocks(markdown_content)
-                if code_blocks:
-                    # Process code examples in parallel
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-                        code_summaries = list(executor.map(process_code_example, code_blocks))
-                    
-                    for code_block, summary in zip(code_blocks, code_summaries):
-                        all_code_examples.append({
-                            'code_block': code_block,
-                            'summary': summary,
-                            'url': page_url
-                        })
+                if not code_blocks:
+                    continue
+                # Process code examples in parallel
+                with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                    code_summaries = list(executor.map(process_code_example, code_blocks))
+                
+                for code_block, summary in zip(code_blocks, code_summaries):
+                    all_code_examples.append({
+                        'code_block': code_block,
+                        'summary': summary,
+                        'url': page_url
+                    })
             
             # Report progress during processing
             progress_pct = 65 + int((i + 1) / len(results) * 15)  # 65-80%
@@ -533,7 +534,7 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
         
         # Calculate word counts per source
         for doc in all_documents:
-            source_id = doc['metadata']['source_id']
+            source_id = doc['metadata']['source']
             word_count = doc['metadata']['word_count']
             
             if source_id not in source_word_counts:
@@ -735,7 +736,7 @@ def register_rag_tools(mcp: FastMCP):
             
             # Process code examples if enabled
             code_examples_stored = 0
-            if os.getenv("USE_AGENTIC_RAG", "false") == "true":
+            if get_bool_setting("USE_AGENTIC_RAG", False):
                 code_blocks = extract_code_blocks(markdown_content)
                 if code_blocks:
                     # Process code examples in parallel
@@ -853,126 +854,86 @@ def register_rag_tools(mcp: FastMCP):
         Returns:
             JSON string with search results
         """
+        print(f"\n=== MCP RAG QUERY DEBUG START ===\n")
+        print(f"MCP RAG: perform_rag_query called with query='{query}', source='{source}', match_count={match_count}\n")
+        
         try:
             # Get the Supabase client from the context
             supabase_client = ctx.request_context.lifespan_context.supabase_client
+            print(f"MCP RAG: Got supabase_client: {supabase_client is not None}")
+            
+            # Get the cached OpenAI API key from the context
+            cached_api_key = getattr(ctx.request_context.lifespan_context, 'openai_api_key', None)
+            print(f"MCP RAG: Got cached_api_key: {cached_api_key is not None and len(cached_api_key) > 0 if cached_api_key else False}")
             
             # Check if hybrid search is enabled
             use_hybrid_search = get_bool_setting("USE_HYBRID_SEARCH", False)
+            print(f"MCP RAG: use_hybrid_search: {use_hybrid_search}")
             
             # Prepare filter if source is provided and not empty
             filter_metadata = None
             if source and source.strip():
-                filter_metadata = {"source": source}  # Use "source" not "source_id" to match original
-            
-            if use_hybrid_search:
-                # Hybrid search: combine vector and keyword search
-                
-                # 1. Get vector search results (get more to account for filtering)
-                vector_results = search_documents(
-                    client=supabase_client,
-                    query=query,
-                    match_count=match_count * 2,  # Get double to have room for filtering
-                    filter_metadata=filter_metadata
-                )
-                
-                # 2. Get keyword search results using ILIKE
-                keyword_query = supabase_client.from_('crawled_pages')\
-                    .select('id, url, chunk_number, content, metadata, source_id')\
-                    .ilike('content', f'%{query}%')
-                
-                # Apply source filter if provided
-                if source and source.strip():
-                    keyword_query = keyword_query.eq('source_id', source)
-                
-                # Execute keyword search
-                keyword_response = keyword_query.limit(match_count * 2).execute()
-                keyword_results = keyword_response.data if keyword_response.data else []
-                
-                # 3. Combine results with preference for items appearing in both
-                seen_ids = set()
-                combined_results = []
-                
-                # First, add items that appear in both searches (these are the best matches)
-                vector_ids = {r.get('id') for r in vector_results if r.get('id')}
-                for kr in keyword_results:
-                    if kr['id'] in vector_ids and kr['id'] not in seen_ids:
-                        # Find the vector result to get similarity score
-                        for vr in vector_results:
-                            if vr.get('id') == kr['id']:
-                                # Boost similarity score for items in both results
-                                vr['similarity'] = min(1.0, vr.get('similarity', 0) * 1.2)
-                                combined_results.append(vr)
-                                seen_ids.add(kr['id'])
-                                break
-                
-                # Then add remaining vector results (semantic matches without exact keyword)
-                for vr in vector_results:
-                    if vr.get('id') and vr['id'] not in seen_ids and len(combined_results) < match_count:
-                        combined_results.append(vr)
-                        seen_ids.add(vr['id'])
-                
-                # Finally, add pure keyword matches if we still need more results
-                for kr in keyword_results:
-                    if kr['id'] not in seen_ids and len(combined_results) < match_count:
-                        # Convert keyword result to match vector result format
-                        combined_results.append({
-                            'id': kr['id'],
-                            'url': kr['url'],
-                            'chunk_number': kr['chunk_number'],
-                            'content': kr['content'],
-                            'metadata': kr['metadata'],
-                            'source_id': kr['source_id'],
-                            'similarity': 0.5  # Default similarity for keyword-only matches
-                        })
-                        seen_ids.add(kr['id'])
-                
-                # Use combined results
-                results = combined_results[:match_count]
-                
+                filter_metadata = {"source": source}
+                print(f"MCP RAG: Created filter_metadata: {filter_metadata}")
             else:
-                # Standard vector search only
-                results = search_documents(
-                    client=supabase_client,
-                    query=query,
-                    match_count=match_count,
-                    filter_metadata=filter_metadata
-                )
+                print(f"MCP RAG: No source filter applied")
             
-            # Apply reranking if enabled
-            use_reranking = get_bool_setting("USE_RERANKING", False)
-            if use_reranking and ctx.request_context.lifespan_context.reranking_model:
-                results = rerank_results(ctx.request_context.lifespan_context.reranking_model, query, results, content_key="content")
+            print(f"MCP RAG: About to call search_documents with cached_api_key={cached_api_key is not None}...")
+            
+            # Standard vector search only (simplified for debugging)
+            results = search_documents(
+                client=supabase_client,
+                query=query,
+                match_count=match_count,
+                filter_metadata=filter_metadata,
+                cached_api_key=cached_api_key
+            )
+            
+            print(f"MCP RAG: search_documents returned {len(results) if results else 0} results")
+            if results:
+                for i, result in enumerate(results[:3]):  # Log first 3 results
+                    print(f"MCP RAG: Result {i}: url={result.get('url')}, similarity={result.get('similarity')}, content_length={len(result.get('content', ''))}")
             
             # Format the results
             formatted_results = []
-            for result in results:
+            for i, result in enumerate(results):
+                print(f"MCP RAG: Processing result {i}: {type(result)}")
                 formatted_result = {
                     "url": result.get("url"),
                     "content": result.get("content"),
                     "metadata": result.get("metadata"),
                     "similarity": result.get("similarity")
                 }
-                # Include rerank score if available
-                if "rerank_score" in result:
-                    formatted_result["rerank_score"] = result["rerank_score"]
                 formatted_results.append(formatted_result)
             
-            return json.dumps({
+            print(f"MCP RAG: Formatted {len(formatted_results)} results, returning success")
+            
+            result_data = {
                 "success": True,
                 "query": query,
                 "source_filter": source,
-                "search_mode": "hybrid" if use_hybrid_search else "vector",
-                "reranking_applied": use_reranking and ctx.request_context.lifespan_context.reranking_model is not None,
+                "search_mode": "vector",
+                "reranking_applied": False,
                 "results": formatted_results,
                 "count": len(formatted_results)
-            }, indent=2)
+            }
+            
+            print(f"MCP RAG: Final result data keys: {list(result_data.keys())}")
+            print(f"=== MCP RAG QUERY DEBUG END ===\n")
+            
+            return json.dumps(result_data)
+            
         except Exception as e:
+            print(f"MCP RAG: Exception occurred: {type(e).__name__}: {str(e)}")
+            import traceback
+            print(f"MCP RAG: Traceback: {traceback.format_exc()}")
+            print(f"=== MCP RAG QUERY DEBUG END (ERROR) ===\n")
+            
             return json.dumps({
                 "success": False,
                 "query": query,
                 "error": str(e)
-            }, indent=2)
+            })
     
     @mcp.tool()
     async def delete_source_tool(ctx: Context, source_id: str) -> str:

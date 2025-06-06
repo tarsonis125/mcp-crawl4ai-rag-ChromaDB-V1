@@ -103,6 +103,11 @@ class CrawlRequest(BaseModel):
     tags: List[str] = []
     update_frequency: int = 7
 
+class RagQueryRequest(BaseModel):
+    query: str
+    source: Optional[str] = None
+    match_count: int = 5
+
 # Progress Manager for crawling operations
 class CrawlProgressManager:
     """Manages crawling progress tracking and WebSocket streaming."""
@@ -651,28 +656,38 @@ async def upload_document(
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.post("/rag/query")
-async def perform_rag_query(
-    query: str, 
-    source: Optional[str] = None, 
-    match_count: int = 5
-):
+async def perform_rag_query(request: RagQueryRequest):
     """Perform a RAG query on the knowledge base."""
+    print(f"\n=== FastAPI RAG QUERY DEBUG START ===\n")
+    print(f"RAG API: Received request: {request}\n")
+    print(f"RAG API: Query: '{request.query}'\n")
+    print(f"RAG API: Source: '{request.source}'\n")
+    print(f"RAG API: Match count: {request.match_count}\n")
+    
     try:
         supabase_client = get_supabase_client()
+        print(f"RAG API: Got Supabase client: {supabase_client is not None}\n")
         
         # Simple search implementation (in production, you'd use vector search)
         query_builder = supabase_client.table("crawled_pages").select("*")
+        print(f"RAG API: Created query builder\n")
         
-        if source:
-            query_builder = query_builder.eq("source_id", source)
+        if request.source:
+            query_builder = query_builder.eq("source_id", request.source)
+            print(f"RAG API: Applied source filter: {request.source}\n")
+        else:
+            print(f"RAG API: No source filter applied\n")
         
-        response = query_builder.limit(match_count).execute()
+        print(f"RAG API: About to execute query with limit {request.match_count}\n")
+        response = query_builder.limit(request.match_count).execute()
+        print(f"RAG API: Query executed, got {len(response.data) if response.data else 0} total records\n")
         
         # Filter results by query relevance (simple text matching)
         results = []
-        for item in response.data:
+        for i, item in enumerate(response.data):
             content = item.get("content", "")
-            if query.lower() in content.lower():
+            if request.query.lower() in content.lower():
+                print(f"RAG API: Found match in record {i}, content length: {len(content)}\n")
                 results.append({
                     "id": item["id"],
                     "title": item.get("title", ""),
@@ -681,14 +696,29 @@ async def perform_rag_query(
                     "source_id": item.get("source_id", ""),
                     "relevance_score": 0.8  # Dummy score
                 })
+            else:
+                if i < 5:  # Only log first 5 non-matches to avoid spam
+                    print(f"RAG API: No match in record {i}, source_id: {item.get('source_id')}, content preview: {content[:100]}...\n")
         
-        return {
-            "results": results[:match_count],
-            "query": query,
+        print(f"RAG API: Found {len(results)} matching results after filtering\n")
+        
+        final_results = results[:request.match_count]
+        result_data = {
+            "results": final_results,
+            "query": request.query,
             "total_results": len(results)
         }
         
+        print(f"RAG API: Returning {len(final_results)} results\n")
+        print(f"=== FastAPI RAG QUERY DEBUG END ===\n")
+        
+        return result_data
+        
     except Exception as e:
+        print(f"RAG API: Exception occurred: {type(e).__name__}: {str(e)}\n")
+        import traceback
+        print(f"RAG API: Traceback: {traceback.format_exc()}\n")
+        print(f"=== FastAPI RAG QUERY DEBUG END (ERROR) ===\n")
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.get("/rag/sources")
