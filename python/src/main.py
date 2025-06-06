@@ -27,6 +27,7 @@ from .api.mcp_api import router as mcp_router
 from .api.knowledge_api import router as knowledge_router  
 from .api.projects_api import router as projects_router
 from .api.tests_api import router as tests_router
+from .api.agent_chat_api import router as agent_chat_router
 
 # Import utilities and core classes
 from .credential_service import initialize_credentials
@@ -197,6 +198,7 @@ app.include_router(mcp_router)
 app.include_router(knowledge_router)
 app.include_router(projects_router)
 app.include_router(tests_router)
+app.include_router(agent_chat_router)
 
 # Root endpoint
 @app.get("/")

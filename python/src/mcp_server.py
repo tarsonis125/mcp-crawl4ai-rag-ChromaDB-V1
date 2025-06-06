@@ -137,61 +137,35 @@ async def perform_health_checks(context: ArchonContext):
 @asynccontextmanager
 async def archon_lifespan(server: FastMCP) -> AsyncIterator[ArchonContext]:
     """
-    Manages the shared resources lifecycle for all modules.
-    
-    Initializes and cleans up resources that are shared across
-    all MCP tool modules in the Archon system.
+    Manages the shared resources lifecycle - yields immediately for fast startup.
+    Following official MCP patterns from the Python SDK documentation.
     """
+    logger.info("🚀 Starting Archon MCP server lifespan...")
+    
+    # Initialize minimal resources needed for basic operation
     crawler = None
     supabase_client = None
     reranking_model = None
     
     try:
-        logger.info("🚀 Starting Archon MCP server lifespan...")
+        # Initialize essential services (fast operations only)
+        logger.info("🗄️ Initializing Supabase client...")
+        supabase_client = get_supabase_client()
+        logger.info("✓ Supabase client initialized")
         
-        # Create browser configuration
-        browser_config = BrowserConfig(
-            headless=True,
-            verbose=False
-        )
-        
-        # Initialize the crawler with error handling
-        try:
-            crawler = AsyncWebCrawler(config=browser_config)
-            await crawler.__aenter__()
-            logger.info("✓ AsyncWebCrawler initialized successfully")
-        except Exception as e:
-            logger.error(f"✗ Failed to initialize AsyncWebCrawler: {e}")
-            raise
-        
-        # Initialize Supabase client with error handling
-        try:
-            supabase_client = get_supabase_client()
-            # Test the connection
-            supabase_client.table("projects").select("count", count="exact").execute()
-            logger.info("✓ Supabase client initialized and connected successfully")
-        except Exception as e:
-            logger.error(f"✗ Failed to initialize Supabase client: {e}")
-            raise
-        
-        # Initialize cross-encoder model for reranking if enabled
-        if os.getenv("USE_RERANKING", "false") == "true":
-            try:
-                reranking_model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
-                logger.info("✓ Reranking model loaded successfully")
-            except Exception as e:
-                logger.warning(f"⚠ Failed to load reranking model: {e} - continuing without reranking")
-                reranking_model = None
-        else:
-            logger.info("📝 Reranking disabled")
-        
+        # Create context and yield immediately  
         context = ArchonContext(
             crawler=crawler,
             supabase_client=supabase_client,
             reranking_model=reranking_model
         )
         
-        logger.info("🎉 Archon context initialized successfully")
+        # Set ready status
+        context.health_status["status"] = "ready"
+        context.health_status["database_ready"] = True
+        context.health_status["last_health_check"] = datetime.now().isoformat()
+        
+        logger.info("✓ Archon context ready - server can accept requests")
         yield context
         
     except Exception as e:
@@ -199,7 +173,7 @@ async def archon_lifespan(server: FastMCP) -> AsyncIterator[ArchonContext]:
         logger.error(traceback.format_exc())
         raise
     finally:
-        # Clean up resources
+        # Clean up resources  
         logger.info("🧹 Cleaning up Archon resources...")
         try:
             if crawler:
@@ -228,27 +202,48 @@ except Exception as e:
 @mcp.tool()
 async def health_check(ctx: Context) -> str:
     """
-    Perform a comprehensive health check of all MCP server components.
+    Perform a lightweight health check that can respond immediately.
     
     Returns:
-        JSON string with health status of all services
+        JSON string with current health status
     """
     import json
     
     try:
-        context = ctx.request_context.lifespan_context
+        # Try to get the lifespan context (may not be ready during startup)
+        context = getattr(ctx.request_context, 'lifespan_context', None)
         
-        # Run the health check (FIXED: removed asyncio.run() call)
-        await perform_health_checks(context)
+        if context is None:
+            # Server starting up - return basic status
+            return json.dumps({
+                "success": True,
+                "status": "starting",
+                "message": "MCP server is initializing...",
+                "timestamp": datetime.now().isoformat()
+            })
         
-        return json.dumps({
-            "success": True,
-            "health": context.health_status,
-            "uptime_seconds": time.time() - context.startup_time,
-            "timestamp": datetime.now().isoformat()
-        })
+        # Server is ready - return full health status
+        if hasattr(context, 'health_status') and context.health_status:
+            # Perform quick health checks without blocking
+            await perform_health_checks(context)
+            
+            return json.dumps({
+                "success": True,
+                "health": context.health_status,
+                "uptime_seconds": time.time() - context.startup_time,
+                "timestamp": datetime.now().isoformat()
+            })
+        else:
+            return json.dumps({
+                "success": True,
+                "status": "ready",
+                "message": "MCP server is running",
+                "timestamp": datetime.now().isoformat()
+            })
+            
     except Exception as e:
         logger.error(f"Health check failed: {e}")
+        # Always return something - never crash
         return json.dumps({
             "success": False,
             "error": f"Health check failed: {str(e)}",

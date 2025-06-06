@@ -39,36 +39,54 @@ from src.utils import (
     search_code_examples
 )
 
+# Helper functions to get settings from credential service
+def get_setting(key: str, default: str = "false") -> str:
+    """Get a setting from the credential service or fall back to environment variable."""
+    try:
+        from src.credential_service import credential_service
+        if hasattr(credential_service, '_cache') and credential_service._cache_initialized:
+            cached_value = credential_service._cache.get(key)
+            if isinstance(cached_value, dict) and cached_value.get("is_encrypted"):
+                encrypted_value = cached_value.get("encrypted_value")
+                if encrypted_value:
+                    try:
+                        return credential_service._decrypt_value(encrypted_value)
+                    except Exception:
+                        pass
+            elif cached_value:
+                return str(cached_value)
+        # Fallback to environment variable
+        return os.getenv(key, default)
+    except Exception:
+        return os.getenv(key, default)
+
+def get_bool_setting(key: str, default: bool = False) -> bool:
+    """Get a boolean setting from credential service."""
+    value = get_setting(key, "false" if not default else "true")
+    return value.lower() in ("true", "1", "yes", "on")
+
 # Setup logging for the RAG module
 logger = logging.getLogger(__name__)
 
-def safe_rerank_results(model: CrossEncoder, query: str, results: List[Dict[str, Any]], content_key: str = "content") -> List[Dict[str, Any]]:
+def rerank_results(model: CrossEncoder, query: str, results: List[Dict[str, Any]], content_key: str = "content") -> List[Dict[str, Any]]:
     """
-    Safely rerank search results using a cross-encoder model with comprehensive error handling.
+    Rerank search results using a cross-encoder model.
     
-    This function takes search results from vector/keyword search and re-scores them
-    using a cross-encoder model that directly compares the query with each result.
-    Falls back gracefully if reranking fails for any reason.
+    Args:
+        model: The cross-encoder model to use for reranking
+        query: The search query
+        results: List of search results
+        content_key: The key in each result dict that contains the text content
+        
+    Returns:
+        Reranked list of results
     """
     if not model or not results:
-        logger.debug("No model or results provided for reranking")
         return results
     
     try:
-        logger.debug(f"Attempting to rerank {len(results)} results")
-        
-        # Extract content from results with error handling
-        texts = []
-        for i, result in enumerate(results):
-            try:
-                content = result.get(content_key, "")
-                if not content:
-                    logger.warning(f"Result {i} has no content for key '{content_key}'")
-                    content = str(result)  # Fallback to string representation
-                texts.append(content)
-            except Exception as e:
-                logger.warning(f"Error extracting content from result {i}: {e}")
-                texts.append("")  # Empty fallback
+        # Extract content from results
+        texts = [result.get(content_key, "") for result in results]
         
         # Create pairs of [query, document] for the cross-encoder
         pairs = [[query, text] for text in texts]
@@ -77,27 +95,15 @@ def safe_rerank_results(model: CrossEncoder, query: str, results: List[Dict[str,
         scores = model.predict(pairs)
         
         # Add scores to results and sort by score (descending)
-        reranked_results = []
         for i, result in enumerate(results):
-            try:
-                result_copy = result.copy()  # Don't modify original
-                result_copy["rerank_score"] = float(scores[i])
-                reranked_results.append(result_copy)
-            except Exception as e:
-                logger.warning(f"Error adding rerank score to result {i}: {e}")
-                # Keep original result without score
-                reranked_results.append(result)
+            result["rerank_score"] = float(scores[i])
         
-        # Sort by rerank score (highest first)
-        reranked_results.sort(key=lambda x: x.get("rerank_score", 0), reverse=True)
+        # Sort by rerank score
+        reranked = sorted(results, key=lambda x: x.get("rerank_score", 0), reverse=True)
         
-        logger.debug(f"Successfully reranked {len(reranked_results)} results")
-        return reranked_results
-        
+        return reranked
     except Exception as e:
-        logger.error(f"Error during reranking: {e}")
-        logger.error(traceback.format_exc())
-        # Return original results on any error
+        print(f"Error during reranking: {e}")
         return results
 
 
@@ -270,8 +276,7 @@ async def safe_crawl_markdown_file(crawler: AsyncWebCrawler, url: str) -> List[D
         return []
 
 
-# Update function names to use safe_ prefix for consistency
-rerank_results = safe_rerank_results
+# Function aliases to match original naming conventions
 parse_sitemap = safe_parse_sitemap
 crawl_markdown_file = safe_crawl_markdown_file
 process_code_example = safe_process_code_example
@@ -836,51 +841,138 @@ def register_rag_tools(mcp: FastMCP):
         """
         Perform a RAG (Retrieval Augmented Generation) query on stored content.
         
-        Searches the vector database for content relevant to the query.
+        This tool searches the vector database for content relevant to the query and returns
+        the matching documents. Optionally filter by source domain.
+        Get the source by using the get_available_sources tool before calling this search!
         
         Args:
             query: The search query
-            source: Optional source domain to filter results
+            source: Optional source domain to filter results (e.g., 'example.com')
             match_count: Maximum number of results to return (default: 5)
         
         Returns:
-            JSON string with search results and metadata
+            JSON string with search results
         """
         try:
             # Get the Supabase client from the context
             supabase_client = ctx.request_context.lifespan_context.supabase_client
-            reranking_model = ctx.request_context.lifespan_context.reranking_model
             
-            # Build filter_metadata if source is provided
+            # Check if hybrid search is enabled
+            use_hybrid_search = get_bool_setting("USE_HYBRID_SEARCH", False)
+            
+            # Prepare filter if source is provided and not empty
             filter_metadata = None
-            if source:
-                filter_metadata = {"source_id": source}
+            if source and source.strip():
+                filter_metadata = {"source": source}  # Use "source" not "source_id" to match original
             
-            # Perform the search (search_documents is not async)
-            results = search_documents(
-                supabase_client, 
-                query, 
-                match_count=match_count,
-                filter_metadata=filter_metadata
-            )
+            if use_hybrid_search:
+                # Hybrid search: combine vector and keyword search
+                
+                # 1. Get vector search results (get more to account for filtering)
+                vector_results = search_documents(
+                    client=supabase_client,
+                    query=query,
+                    match_count=match_count * 2,  # Get double to have room for filtering
+                    filter_metadata=filter_metadata
+                )
+                
+                # 2. Get keyword search results using ILIKE
+                keyword_query = supabase_client.from_('crawled_pages')\
+                    .select('id, url, chunk_number, content, metadata, source_id')\
+                    .ilike('content', f'%{query}%')
+                
+                # Apply source filter if provided
+                if source and source.strip():
+                    keyword_query = keyword_query.eq('source_id', source)
+                
+                # Execute keyword search
+                keyword_response = keyword_query.limit(match_count * 2).execute()
+                keyword_results = keyword_response.data if keyword_response.data else []
+                
+                # 3. Combine results with preference for items appearing in both
+                seen_ids = set()
+                combined_results = []
+                
+                # First, add items that appear in both searches (these are the best matches)
+                vector_ids = {r.get('id') for r in vector_results if r.get('id')}
+                for kr in keyword_results:
+                    if kr['id'] in vector_ids and kr['id'] not in seen_ids:
+                        # Find the vector result to get similarity score
+                        for vr in vector_results:
+                            if vr.get('id') == kr['id']:
+                                # Boost similarity score for items in both results
+                                vr['similarity'] = min(1.0, vr.get('similarity', 0) * 1.2)
+                                combined_results.append(vr)
+                                seen_ids.add(kr['id'])
+                                break
+                
+                # Then add remaining vector results (semantic matches without exact keyword)
+                for vr in vector_results:
+                    if vr.get('id') and vr['id'] not in seen_ids and len(combined_results) < match_count:
+                        combined_results.append(vr)
+                        seen_ids.add(vr['id'])
+                
+                # Finally, add pure keyword matches if we still need more results
+                for kr in keyword_results:
+                    if kr['id'] not in seen_ids and len(combined_results) < match_count:
+                        # Convert keyword result to match vector result format
+                        combined_results.append({
+                            'id': kr['id'],
+                            'url': kr['url'],
+                            'chunk_number': kr['chunk_number'],
+                            'content': kr['content'],
+                            'metadata': kr['metadata'],
+                            'source_id': kr['source_id'],
+                            'similarity': 0.5  # Default similarity for keyword-only matches
+                        })
+                        seen_ids.add(kr['id'])
+                
+                # Use combined results
+                results = combined_results[:match_count]
+                
+            else:
+                # Standard vector search only
+                results = search_documents(
+                    client=supabase_client,
+                    query=query,
+                    match_count=match_count,
+                    filter_metadata=filter_metadata
+                )
             
-            # Apply reranking if available
-            if reranking_model and results:
-                results = rerank_results(reranking_model, query, results, "content")
+            # Apply reranking if enabled
+            use_reranking = get_bool_setting("USE_RERANKING", False)
+            if use_reranking and ctx.request_context.lifespan_context.reranking_model:
+                results = rerank_results(ctx.request_context.lifespan_context.reranking_model, query, results, content_key="content")
+            
+            # Format the results
+            formatted_results = []
+            for result in results:
+                formatted_result = {
+                    "url": result.get("url"),
+                    "content": result.get("content"),
+                    "metadata": result.get("metadata"),
+                    "similarity": result.get("similarity")
+                }
+                # Include rerank score if available
+                if "rerank_score" in result:
+                    formatted_result["rerank_score"] = result["rerank_score"]
+                formatted_results.append(formatted_result)
             
             return json.dumps({
                 "success": True,
                 "query": query,
                 "source_filter": source,
-                "results": results,
-                "count": len(results)
-            })
-            
+                "search_mode": "hybrid" if use_hybrid_search else "vector",
+                "reranking_applied": use_reranking and ctx.request_context.lifespan_context.reranking_model is not None,
+                "results": formatted_results,
+                "count": len(formatted_results)
+            }, indent=2)
         except Exception as e:
             return json.dumps({
                 "success": False,
-                "error": f"Error performing RAG query: {str(e)}"
-            })
+                "query": query,
+                "error": str(e)
+            }, indent=2)
     
     @mcp.tool()
     async def delete_source_tool(ctx: Context, source_id: str) -> str:
@@ -901,42 +993,156 @@ def register_rag_tools(mcp: FastMCP):
         """
         Search for code examples relevant to the query.
         
-        Searches the vector database for code examples with their summaries.
+        This tool searches the vector database for code examples relevant to the query and returns
+        the matching examples with their summaries. Optionally filter by source_id.
+        Get the source_id by using the get_available_sources tool before calling this search!
+
+        Use the get_available_sources tool first to see what sources are available for filtering.
         
         Args:
             query: The search query
-            source_id: Optional source ID to filter results
+            source_id: Optional source ID to filter results (e.g., 'example.com')
             match_count: Maximum number of results to return (default: 5)
         
         Returns:
             JSON string with search results
         """
+        # Check if code example extraction is enabled
+        extract_code_examples_enabled = get_bool_setting("USE_AGENTIC_RAG", False)
+        if not extract_code_examples_enabled:
+            return json.dumps({
+                "success": False,
+                "error": "Code example extraction is disabled. Perform a normal RAG search."
+            }, indent=2)
+        
         try:
             # Get the Supabase client from the context
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             
-            # Call the utils function (not the MCP tool itself) 
-            from src.utils import search_code_examples as utils_search_code_examples
-            results = utils_search_code_examples(
-                supabase_client,
-                query,
-                source_id=source_id,
-                match_count=match_count
-            )
+            # Check if hybrid search is enabled
+            use_hybrid_search = get_bool_setting("USE_HYBRID_SEARCH", False)
+            
+            # Prepare filter if source is provided and not empty
+            filter_metadata = None
+            if source_id and source_id.strip():
+                filter_metadata = {"source": source_id}  # Use "source" to match original
+            
+            if use_hybrid_search:
+                # Hybrid search: combine vector and keyword search
+                
+                # Import the search function from utils
+                from src.utils import search_code_examples as search_code_examples_impl
+                
+                # 1. Get vector search results (get more to account for filtering)
+                vector_results = search_code_examples_impl(
+                    client=supabase_client,
+                    query=query,
+                    match_count=match_count * 2,  # Get double to have room for filtering
+                    filter_metadata=filter_metadata
+                )
+                
+                # 2. Get keyword search results using ILIKE on both content and summary
+                keyword_query = supabase_client.from_('code_examples')\
+                    .select('id, url, chunk_number, content, summary, metadata, source_id')\
+                    .or_(f'content.ilike.%{query}%,summary.ilike.%{query}%')
+                
+                # Apply source filter if provided
+                if source_id and source_id.strip():
+                    keyword_query = keyword_query.eq('source_id', source_id)
+                
+                # Execute keyword search
+                keyword_response = keyword_query.limit(match_count * 2).execute()
+                keyword_results = keyword_response.data if keyword_response.data else []
+                
+                # 3. Combine results with preference for items appearing in both
+                seen_ids = set()
+                combined_results = []
+                
+                # First, add items that appear in both searches (these are the best matches)
+                vector_ids = {r.get('id') for r in vector_results if r.get('id')}
+                for kr in keyword_results:
+                    if kr['id'] in vector_ids and kr['id'] not in seen_ids:
+                        # Find the vector result to get similarity score
+                        for vr in vector_results:
+                            if vr.get('id') == kr['id']:
+                                # Boost similarity score for items in both results
+                                vr['similarity'] = min(1.0, vr.get('similarity', 0) * 1.2)
+                                combined_results.append(vr)
+                                seen_ids.add(kr['id'])
+                                break
+                
+                # Then add remaining vector results (semantic matches without exact keyword)
+                for vr in vector_results:
+                    if vr.get('id') and vr['id'] not in seen_ids and len(combined_results) < match_count:
+                        combined_results.append(vr)
+                        seen_ids.add(vr['id'])
+                
+                # Finally, add pure keyword matches if we still need more results
+                for kr in keyword_results:
+                    if kr['id'] not in seen_ids and len(combined_results) < match_count:
+                        # Convert keyword result to match vector result format
+                        combined_results.append({
+                            'id': kr['id'],
+                            'url': kr['url'],
+                            'chunk_number': kr['chunk_number'],
+                            'content': kr['content'],
+                            'summary': kr['summary'],
+                            'metadata': kr['metadata'],
+                            'source_id': kr['source_id'],
+                            'similarity': 0.5  # Default similarity for keyword-only matches
+                        })
+                        seen_ids.add(kr['id'])
+                
+                # Use combined results
+                results = combined_results[:match_count]
+                
+            else:
+                # Standard vector search only
+                from src.utils import search_code_examples as search_code_examples_impl
+                
+                results = search_code_examples_impl(
+                    client=supabase_client,
+                    query=query,
+                    match_count=match_count,
+                    filter_metadata=filter_metadata
+                )
+            
+            # Apply reranking if enabled
+            use_reranking = get_bool_setting("USE_RERANKING", False)
+            if use_reranking and ctx.request_context.lifespan_context.reranking_model:
+                results = rerank_results(ctx.request_context.lifespan_context.reranking_model, query, results, content_key="content")
+            
+            # Format the results
+            formatted_results = []
+            for result in results:
+                formatted_result = {
+                    "url": result.get("url"),
+                    "code": result.get("content"),
+                    "summary": result.get("summary"),
+                    "metadata": result.get("metadata"),
+                    "source_id": result.get("source_id"),
+                    "similarity": result.get("similarity")
+                }
+                # Include rerank score if available
+                if "rerank_score" in result:
+                    formatted_result["rerank_score"] = result["rerank_score"]
+                formatted_results.append(formatted_result)
             
             return json.dumps({
                 "success": True,
                 "query": query,
                 "source_filter": source_id,
-                "results": results,
-                "count": len(results)
-            })
-            
+                "search_mode": "hybrid" if use_hybrid_search else "vector",
+                "reranking_applied": use_reranking and ctx.request_context.lifespan_context.reranking_model is not None,
+                "results": formatted_results,
+                "count": len(formatted_results)
+            }, indent=2)
         except Exception as e:
             return json.dumps({
                 "success": False,
-                "error": f"Error searching code examples: {str(e)}"
-            })
+                "query": query,
+                "error": str(e)
+            }, indent=2)
     
     @mcp.tool()
     async def upload_document(ctx: Context,

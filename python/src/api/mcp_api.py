@@ -388,7 +388,16 @@ async def stop_server():
 @router.get("/status")
 async def get_status():
     """Get MCP server status."""
-    return mcp_manager.get_status()
+    import logging
+    
+    status_response = mcp_manager.get_status()
+    current_status = status_response.get('status', 'unknown')
+    
+    # Log the actual status for debugging
+    logger = logging.getLogger(__name__)
+    logger.info(f"MCP Status Check: {current_status}")
+    
+    return status_response
 
 @router.get("/logs")
 async def get_logs(limit: int = 100):
