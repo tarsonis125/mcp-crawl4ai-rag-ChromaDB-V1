@@ -1,0 +1,545 @@
+---
+title: 🧠 RAG System & Vector Search
+sidebar_position: 7
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import Admonition from '@theme/Admonition';
+
+# 🧠 RAG System & Intelligent Vector Search
+
+<div className="hero hero--primary">
+  <div className="container">
+    <h2 className="hero__subtitle">
+      **Production-ready RAG** with real-time Logfire monitoring, intelligent vector search, and comprehensive debugging capabilities
+    </h2>
+  </div>
+</div>
+
+Archon's Retrieval-Augmented Generation (RAG) system combines semantic search with configurable enhancement strategies, now featuring **comprehensive Logfire monitoring** for real-time debugging and performance optimization.
+
+<Admonition type="tip" icon="🎉" title="Fully Operational RAG System">
+The RAG system is **now fully functional** with 25 MCP tools enabled, comprehensive error handling, and real-time monitoring via Logfire dashboard.
+</Admonition>
+
+## 🏗️ RAG Architecture with Monitoring
+
+```mermaid
+sequenceDiagram
+    participant Client as 🤖 AI Agent
+    participant MCP as 🔧 MCP Server
+    participant RAG as 🧠 RAG Module
+    participant Logfire as 🔥 Logfire
+    participant Vector as 🗄️ Supabase Vector
+    participant OpenAI as 🤖 OpenAI API
+
+    Client->>MCP: RAG Query Request
+    MCP->>Logfire: Start Query Span
+    MCP->>RAG: Process Query
+    
+    RAG->>Logfire: Log Query Processing
+    RAG->>OpenAI: Generate Embeddings
+    OpenAI-->>RAG: Query Embedding Vector
+    
+    RAG->>Logfire: Log Embedding Generation
+    RAG->>Vector: Vector Similarity Search
+    Note over Vector: match_crawled_pages RPC
+    Vector-->>RAG: Matching Documents
+    
+    RAG->>Logfire: Log Search Results
+    RAG->>RAG: Filter & Rank Results
+    RAG-->>MCP: Formatted Results
+    
+    MCP->>Logfire: Complete Query Span
+    MCP-->>Client: RAG Response with Sources
+
+    style Logfire fill:#ff6b6b,stroke:#ff4757,stroke-width:3px
+    style RAG fill:#4834d4,stroke:#686de0,stroke-width:2px
+    style Vector fill:#00d2d3,stroke:#01a3a4,stroke-width:2px
+```
+
+## ✅ Current RAG System Status
+
+<Tabs>
+<TabItem value="working" label="✅ Working Features" default>
+
+### Fully Operational Components
+
+- **🔧 MCP Server**: 25 tools enabled with green cursor status
+- **🧠 Vector Search**: `match_crawled_pages` RPC function optimized
+- **🎯 Source Filtering**: Filter by domain (e.g., `ai.pydantic.dev`)
+- **📊 Real-time Monitoring**: Complete Logfire integration
+- **🔍 Semantic Search**: OpenAI embeddings with similarity scoring
+- **📝 Document Chunking**: Intelligent content segmentation
+- **⚡ Error Handling**: Comprehensive error recovery and logging
+
+### Recent Fixes Applied
+
+- **PGRST202 Error**: Removed invalid `match_threshold` parameter
+- **PGRST203 Error**: Fixed function overloading with proper `source_filter` parameter
+- **Logfire Integration**: Added comprehensive monitoring and debugging
+- **Span API Issues**: Corrected Logfire span methodology
+- **Import Dependencies**: Fixed missing imports in RAG module
+
+</TabItem>
+<TabItem value="monitoring" label="🔥 Monitoring">
+
+### Logfire Dashboard Metrics
+
+**RAG Query Performance**
+- Query processing time breakdown
+- Embedding generation latency
+- Vector search performance
+- Result filtering and ranking timing
+
+**Error Tracking**
+- Database connection issues
+- API rate limit monitoring
+- Vector search failures
+- Import and dependency errors
+
+**Success Metrics**
+- Query success rate
+- Result quality scores
+- Source coverage analysis
+- Response time percentiles
+
+### Real-Time Debugging
+
+Access your monitoring at: `https://logfire-us.pydantic.dev/your-username/your-project`
+
+</TabItem>
+</Tabs>
+
+## 🚀 RAG System Usage
+
+### Basic Query Examples
+
+<Tabs>
+<TabItem value="python" label="🐍 Python MCP">
+
+```python
+# Basic RAG query
+result = await mcp_archon_perform_rag_query(
+    query="What is Pydantic AI and how does it work?",
+    match_count=5
+)
+
+# Source-filtered query
+result = await mcp_archon_perform_rag_query(
+    query="agent decorators and instructions",
+    source="ai.pydantic.dev",
+    match_count=3
+)
+
+# Code-specific search
+code_results = await mcp_archon_search_code_examples(
+    query="async agent with context",
+    source_id="ai.pydantic.dev"
+)
+```
+
+</TabItem>
+<TabItem value="curl" label="🌐 REST API">
+
+```bash
+# Basic RAG query via REST API
+curl -X POST http://localhost:8080/api/rag/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "What is Pydantic AI?",
+    "match_count": 5
+  }'
+
+# Source-filtered query
+curl -X POST http://localhost:8080/api/rag/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "agent decorators",
+    "source": "ai.pydantic.dev",
+    "match_count": 3
+  }'
+```
+
+</TabItem>
+<TabItem value="response" label="📄 Response Format">
+
+```json
+{
+  "success": true,
+  "results": [
+    {
+      "content": "# Agent Instructions and Decorators\n\nPydantic AI agents use decorators to define behavior...",
+      "source": "ai.pydantic.dev",
+      "url": "https://ai.pydantic.dev/agents/#decorators",
+      "title": "Agent Decorators - Pydantic AI",
+      "similarity_score": 0.89,
+      "chunk_index": 2
+    }
+  ],
+  "query_metadata": {
+    "total_results": 5,
+    "processing_time_ms": 245,
+    "embedding_time_ms": 89,
+    "search_time_ms": 156
+  }
+}
+```
+
+</TabItem>
+</Tabs>
+
+## 🗄️ Vector Database Schema
+
+### Supabase Functions
+
+<Admonition type="info" icon="🛠️" title="Function Overloading Resolution">
+The system now correctly handles Supabase function overloading by using the appropriate `source_filter` parameter when filtering by source domain.
+</Admonition>
+
+**Primary Search Function**
+```sql
+-- Basic vector similarity search
+match_crawled_pages(
+  query_embedding vector,
+  match_count integer,
+  filter jsonb
+)
+
+-- Source-filtered search (used when source parameter provided)
+match_crawled_pages(
+  query_embedding vector,
+  match_count integer,  
+  filter jsonb,
+  source_filter text
+)
+```
+
+### Database Tables
+
+<Tabs>
+<TabItem value="crawled_pages" label="📄 crawled_pages">
+
+```sql
+CREATE TABLE crawled_pages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  url text NOT NULL,
+  title text,
+  content text NOT NULL,
+  content_vector vector(1536), -- OpenAI embedding dimension
+  source text NOT NULL,
+  crawled_at timestamp WITH time zone DEFAULT now(),
+  chunk_index integer DEFAULT 0,
+  metadata jsonb DEFAULT '{}'::jsonb
+);
+
+-- Vector similarity index
+CREATE INDEX crawled_pages_content_vector_idx 
+ON crawled_pages 
+USING ivfflat (content_vector vector_cosine_ops);
+```
+
+</TabItem>
+<TabItem value="sources" label="🌐 sources">
+
+```sql
+CREATE TABLE sources (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  domain text UNIQUE NOT NULL,
+  name text NOT NULL,
+  description text,
+  last_crawled timestamp WITH time zone,
+  total_pages integer DEFAULT 0,
+  status text DEFAULT 'active'
+);
+```
+
+</TabItem>
+<TabItem value="code_examples" label="💻 code_examples">
+
+```sql
+CREATE TABLE code_examples (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_url text NOT NULL,
+  language text NOT NULL,
+  code_content text NOT NULL,
+  summary text,
+  embedding vector(1536),
+  source_id uuid REFERENCES sources(id),
+  created_at timestamp WITH time zone DEFAULT now()
+);
+```
+
+</TabItem>
+</Tabs>
+
+## 🎯 Advanced RAG Strategies
+
+### 1. Contextual Embeddings
+
+**Enhanced semantic understanding through document context enrichment**
+
+```python
+# Configuration for contextual embeddings
+contextual_config = {
+    "contextual_embeddings": True,
+    "context_window_size": 500,  # characters before/after chunk
+    "context_overlap": 0.2       # overlap between contexts
+}
+```
+
+**Benefits:**
+- 🎯 Improved understanding of technical concepts
+- 🔗 Better handling of cross-references
+- 📚 Enhanced domain-specific terminology recognition
+
+### 2. Intelligent Source Filtering
+
+**Domain-specific knowledge retrieval with source attribution**
+
+```python
+# Available sources can be retrieved
+sources = await mcp_archon_get_available_sources()
+
+# Filter by specific source
+filtered_results = await mcp_archon_perform_rag_query(
+    query="async programming patterns",
+    source="ai.pydantic.dev"  # Only search Pydantic AI docs
+)
+```
+
+### 3. Code-Specific Search
+
+**Specialized search for code examples and implementations**
+
+```python
+# Search specifically for code examples
+code_results = await mcp_archon_search_code_examples(
+    query="dependency injection with agents",
+    source_id="ai.pydantic.dev",
+    match_count=5
+)
+```
+
+**Features:**
+- 💻 Language-specific code extraction
+- 📝 AI-generated code summaries
+- 🔍 Implementation pattern recognition
+
+## ⚡ Performance Optimization
+
+### Query Performance Metrics
+
+<Admonition type="success" icon="📊" title="Current Performance">
+- **Average Query Time**: 200-300ms
+- **Embedding Generation**: 80-120ms  
+- **Vector Search**: 100-150ms
+- **Result Processing**: 20-30ms
+</Admonition>
+
+### Optimization Strategies
+
+<Tabs>
+<TabItem value="indexing" label="📊 Database Indexing">
+
+```sql
+-- Optimize vector similarity search
+CREATE INDEX CONCURRENTLY crawled_pages_vector_cosine_idx 
+ON crawled_pages 
+USING ivfflat (content_vector vector_cosine_ops)
+WITH (lists = 100);
+
+-- Source filtering optimization
+CREATE INDEX crawled_pages_source_idx ON crawled_pages(source);
+
+-- Full-text search support
+CREATE INDEX crawled_pages_content_gin_idx 
+ON crawled_pages 
+USING gin(to_tsvector('english', content));
+```
+
+</TabItem>
+<TabItem value="caching" label="🗄️ Caching Strategies">
+
+**Embedding Cache**
+- Cache frequently used query embeddings
+- Reduce OpenAI API calls for repeated queries
+- Implement LRU eviction policy
+
+**Result Cache**
+- Cache popular query results
+- Time-based invalidation for fresh content
+- Source-specific cache segments
+
+</TabItem>
+<TabItem value="scaling" label="📈 Scaling">
+
+**Horizontal Scaling**
+- Multiple MCP server instances
+- Load balancing for query distribution
+- Supabase connection pooling
+
+**Vertical Optimization**
+- Optimized embedding dimensions
+- Efficient vector storage formats
+- Query batch processing
+
+</TabItem>
+</Tabs>
+
+## 🔧 Troubleshooting Guide
+
+### Common Issues and Solutions
+
+<Tabs>
+<TabItem value="connection" label="🔌 Connection Issues">
+
+**MCP Server Connection Failed**
+```bash
+# Check server status
+curl http://localhost:8051/health
+
+# Verify environment variables
+docker-compose exec backend env | grep -E "(SUPABASE|OPENAI)"
+
+# Check Logfire dashboard for connection errors
+```
+
+**Solution**: Verify all required environment variables are set and containers are running.
+
+</TabItem>
+<TabItem value="empty-results" label="📭 Empty Results">
+
+**RAG Query Returns No Results**
+
+**Debugging Steps:**
+1. **Check Available Sources**
+   ```python
+   sources = await mcp_archon_get_available_sources()
+   print(sources)
+   ```
+
+2. **Verify Source Filter**
+   ```python
+   # Try without source filter first
+   results = await mcp_archon_perform_rag_query("test query")
+   ```
+
+3. **Check Logfire Dashboard**
+   - Monitor embedding generation
+   - Verify vector search execution
+   - Check similarity scores
+
+</TabItem>
+<TabItem value="performance" label="⚡ Performance Issues">
+
+**Slow Query Response Times**
+
+**Monitoring via Logfire:**
+- Embedding generation latency
+- Database query performance
+- Network request timing
+
+**Optimization Actions:**
+- Check database connection pool
+- Monitor OpenAI API response times
+- Verify vector index usage
+
+</TabItem>
+</Tabs>
+
+## 📚 Integration Examples
+
+### MCP Client Integration
+
+```python
+# Complete RAG workflow example
+async def intelligent_search(question: str, domain: str = None):
+    """Perform intelligent RAG search with comprehensive error handling"""
+    
+    try:
+        # Get available sources if domain not specified
+        if not domain:
+            sources = await mcp_archon_get_available_sources()
+            print("Available sources:", [s["domain"] for s in sources["sources"]])
+        
+        # Perform RAG query
+        results = await mcp_archon_perform_rag_query(
+            query=question,
+            source=domain,
+            match_count=5
+        )
+        
+        # Check for code examples
+        if results["success"] and len(results["results"]) > 0:
+            code_results = await mcp_archon_search_code_examples(
+                query=question,
+                source_id=domain
+            )
+            
+            return {
+                "documents": results["results"],
+                "code_examples": code_results.get("results", []),
+                "total_sources": len(set(r["source"] for r in results["results"]))
+            }
+            
+    except Exception as e:
+        print(f"RAG search error: {e}")
+        return {"error": str(e)}
+
+# Usage example
+result = await intelligent_search(
+    "How to create async agents with dependency injection?",
+    domain="ai.pydantic.dev"
+)
+```
+
+### Real-Time Monitoring Integration
+
+```python
+# Monitor RAG performance in real-time
+async def monitored_rag_query(query: str):
+    """RAG query with comprehensive Logfire monitoring"""
+    
+    with logfire.span("rag_query", query=query) as span:
+        start_time = time.time()
+        
+        try:
+            # Log query start
+            span.set_attribute("query_length", len(query))
+            
+            # Perform search
+            results = await mcp_archon_perform_rag_query(query=query)
+            
+            # Log results
+            span.set_attribute("results_count", len(results.get("results", [])))
+            span.set_attribute("success", results.get("success", False))
+            
+            processing_time = time.time() - start_time
+            span.set_attribute("processing_time_seconds", processing_time)
+            
+            return results
+            
+        except Exception as e:
+            span.record_exception(e)
+            span.set_attribute("error", str(e))
+            raise
+```
+
+## 🔮 Future Enhancements
+
+### Planned Features
+
+- **🤖 Multi-Model Support**: Integration with Claude, Gemini, and local models
+- **🔄 Incremental Updates**: Real-time document synchronization
+- **📊 Analytics Dashboard**: Query patterns and performance insights  
+- **🎯 Personalization**: User-specific search preferences and history
+- **🌐 Multi-Language**: Support for non-English content and queries
+
+### Advanced RAG Strategies
+
+- **🧠 Agentic RAG**: AI-powered content extraction and specialized search
+- **🔄 Hybrid Search**: Combining vector similarity with keyword matching
+- **🎯 Reranking**: Cross-encoder models for improved result relevance
+- **📚 Graph RAG**: Knowledge graph integration for relationship understanding 

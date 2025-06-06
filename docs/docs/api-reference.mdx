@@ -3,9 +3,13 @@ title: API Reference
 sidebar_position: 4
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import Admonition from '@theme/Admonition';
+
 # API Reference
 
-Archon provides a comprehensive REST API built with FastAPI for all knowledge management, document processing, and system administration operations. This reference covers all endpoints with detailed examples, request/response schemas, and integration patterns.
+Archon provides a comprehensive REST API built with FastAPI for knowledge management, document processing, and project automation. This reference covers all endpoints with detailed examples, request/response schemas, and integration patterns.
 
 ## 🌐 Base URL & Authentication
 
@@ -21,11 +25,12 @@ Archon provides a comprehensive REST API built with FastAPI for all knowledge ma
 
 Archon uses a modular FastAPI architecture with separate routers for different functionalities:
 
-- **`knowledge_api.py`**: Knowledge items, web crawling, and document management
-- **`mcp_api.py`**: MCP server control and WebSocket communications  
-- **`settings_api.py`**: Application settings and credential management
-- **`projects_api.py`**: Project and task management
-- **`main.py`**: Application entry point and router mounting
+- **`knowledge_api.py`**: Knowledge items, web crawling, and document management (891 lines)
+- **`mcp_api.py`**: MCP server control and WebSocket communications (705 lines)
+- **`settings_api.py`**: Application settings and credential management (345 lines)
+- **`projects_api.py`**: Project and task management (528 lines)
+- **`agent_chat_api.py`**: AI agent chat interface (516 lines)
+- **`tests_api.py`**: Testing endpoints (525 lines)
 
 All routers are mounted with the `/api` prefix and provide comprehensive OpenAPI documentation.
 
@@ -35,23 +40,21 @@ All routers are mounted with the `/api` prefix and provide comprehensive OpenAPI
 
 **GET** `/api/knowledge-items`
 
-Retrieve all knowledge items with optional filtering.
+Retrieve all knowledge items with optional filtering and pagination.
 
 #### Query Parameters
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `source_type` | string | ❌ | Filter by source type (`web`, `document`, `upload`) |
+| `page` | integer | ❌ | Page number (default: 1) |
+| `per_page` | integer | ❌ | Items per page (default: 20, max: 100) |
 | `knowledge_type` | string | ❌ | Filter by knowledge type (`technical`, `business`, `general`) |
-| `tags` | string[] | ❌ | Filter by tags (comma-separated) |
-| `limit` | integer | ❌ | Maximum results (default: 50, max: 1000) |
-| `offset` | integer | ❌ | Pagination offset (default: 0) |
 | `search` | string | ❌ | Text search in title and content |
 
 #### Example Request
 
 ```bash
-curl -X GET "http://localhost:8080/api/knowledge-items?source_type=web&knowledge_type=technical&limit=10" \
+curl -X GET "http://localhost:8080/api/knowledge-items?page=1&per_page=10&knowledge_type=technical" \
   -H "Accept: application/json"
 ```
 
@@ -65,42 +68,27 @@ curl -X GET "http://localhost:8080/api/knowledge-items?source_type=web&knowledge
       "url": "https://docs.python.org/3/tutorial/",
       "title": "Python Tutorial",
       "content": "Python is an easy to learn, powerful programming language...",
-      "source_type": "web",
       "knowledge_type": "technical",
       "tags": ["python", "tutorial", "programming"],
       "metadata": {
-        "crawl_date": "2024-01-15T10:30:00Z",
+        "source_id": "docs.python.org",
+        "char_count": 5234,
         "word_count": 1250,
-        "language": "en"
+        "headers": ["Introduction", "Getting Started"]
       },
       "created_at": "2024-01-15T10:30:00Z",
       "updated_at": "2024-01-15T10:30:00Z"
     }
   ],
-  "total": 1,
-  "limit": 10,
-  "offset": 0,
-  "has_more": false
+  "pagination": {
+    "page": 1,
+    "per_page": 20,
+    "total": 156,
+    "total_pages": 8,
+    "has_next": true,
+    "has_prev": false
+  }
 }
-```
-
-### Get Knowledge Item
-
-**GET** `/api/knowledge-items/{item_id}`
-
-Retrieve a specific knowledge item by ID.
-
-#### Path Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `item_id` | integer | ✅ | Knowledge item ID |
-
-#### Example Request
-
-```bash
-curl -X GET "http://localhost:8080/api/knowledge-items/123" \
-  -H "Accept: application/json"
 ```
 
 ### Delete Knowledge Source
@@ -113,12 +101,12 @@ Delete all knowledge items from a specific source.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `source_id` | string | ✅ | Source identifier (URL or document name) |
+| `source_id` | string | ✅ | Source identifier (URL domain or document name) |
 
 #### Example Request
 
 ```bash
-curl -X DELETE "http://localhost:8080/api/knowledge-items/https%3A%2F%2Fdocs.python.org" \
+curl -X DELETE "http://localhost:8080/api/knowledge-items/docs.python.org" \
   -H "Accept: application/json"
 ```
 
@@ -126,9 +114,10 @@ curl -X DELETE "http://localhost:8080/api/knowledge-items/https%3A%2F%2Fdocs.pyt
 
 ```json
 {
+  "success": true,
   "message": "Successfully deleted 45 items from source",
   "deleted_count": 45,
-  "source_id": "https://docs.python.org"
+  "source_id": "docs.python.org"
 }
 ```
 
@@ -182,34 +171,14 @@ curl -X POST "http://localhost:8080/api/knowledge-items/crawl" \
   }'
 ```
 
-#### Additional Example URLs
-
-```bash
-# Crawl a sitemap (automatically detected)
-curl -X POST "http://localhost:8080/api/knowledge-items/crawl" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://example.com/sitemap.xml",
-    "knowledge_type": "technical"
-  }'
-
-# Process a text file (automatically detected)  
-curl -X POST "http://localhost:8080/api/knowledge-items/crawl" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://raw.githubusercontent.com/user/repo/main/README.txt",
-    "knowledge_type": "technical"
-  }'
-```
-
 #### Example Response
 
 ```json
 {
   "success": true,
-  "progressId": "183e2615-fca4-4a71-a051-ab5a0292f9ff",
+  "progress_id": "183e2615-fca4-4a71-a051-ab5a0292f9ff",
   "message": "Crawling started",
-  "estimatedDuration": "3-5 minutes"
+  "estimated_duration": "3-5 minutes"
 }
 ```
 
@@ -259,22 +228,6 @@ ws.onmessage = function(event) {
 }
 ```
 
-#### Crawl Completion Message
-
-```json
-{
-  "type": "crawl_completed", 
-  "data": {
-    "progressId": "183e2615-fca4-4a71-a051-ab5a0292f9ff",
-    "status": "completed",
-    "percentage": 100,
-    "chunksStored": 89,
-    "wordCount": 25000,
-    "log": "Successfully crawled 12 pages with 89 chunks stored"
-  }
-}
-```
-
 ## 📄 Document Management API
 
 ### Upload Document
@@ -288,10 +241,8 @@ Upload and process documents (PDF, Word, Markdown, Text).
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `file` | file | ✅ | Document file to upload |
-| `knowledge_type` | string | ✅ | Knowledge classification |
+| `knowledge_type` | string | ❌ | Knowledge classification (default: "technical") |
 | `tags` | string | ❌ | JSON array of tags |
-| `title` | string | ❌ | Custom title (auto-generated if not provided) |
-| `description` | string | ❌ | Document description |
 
 #### Supported File Types
 
@@ -309,69 +260,26 @@ Upload and process documents (PDF, Word, Markdown, Text).
 curl -X POST "http://localhost:8080/api/documents/upload" \
   -F "file=@python-guide.pdf" \
   -F "knowledge_type=technical" \
-  -F "tags=[\"python\", \"guide\", \"programming\"]" \
-  -F "title=Python Programming Guide" \
-  -F "description=Comprehensive guide to Python programming"
+  -F "tags=[\"python\", \"guide\", \"programming\"]"
 ```
 
 #### Example Response
 
 ```json
 {
+  "success": true,
   "message": "Document uploaded and processed successfully",
   "document": {
     "id": 456,
     "filename": "python-guide.pdf",
-    "title": "Python Programming Guide",
-    "description": "Comprehensive guide to Python programming",
     "knowledge_type": "technical",
     "tags": ["python", "guide", "programming"],
-    "source_type": "document",
     "file_size": 2048576,
-    "page_count": 150,
-    "word_count": 45000,
-    "processing_time": 12.5,
     "chunks_created": 89,
+    "processing_time": 12.5,
     "created_at": "2024-01-15T10:45:00Z"
   }
 }
-```
-
-### List Documents
-
-**GET** `/api/documents`
-
-Retrieve uploaded documents with metadata.
-
-#### Query Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `knowledge_type` | string | ❌ | Filter by knowledge type |
-| `tags` | string[] | ❌ | Filter by tags |
-| `limit` | integer | ❌ | Maximum results (default: 50) |
-| `offset` | integer | ❌ | Pagination offset |
-| `sort_by` | string | ❌ | Sort field (`created_at`, `title`, `file_size`) |
-| `sort_order` | string | ❌ | Sort order (`asc`, `desc`) |
-
-#### Example Request
-
-```bash
-curl -X GET "http://localhost:8080/api/documents?knowledge_type=technical&sort_by=created_at&sort_order=desc" \
-  -H "Accept: application/json"
-```
-
-### Delete Document
-
-**DELETE** `/api/documents/{document_id}`
-
-Delete a document and all associated knowledge items.
-
-#### Example Request
-
-```bash
-curl -X DELETE "http://localhost:8080/api/documents/456" \
-  -H "Accept: application/json"
 ```
 
 ## 🔍 RAG (Retrieval-Augmented Generation) API
@@ -387,18 +295,8 @@ Perform semantic search across the knowledge base.
 ```json
 {
   "query": "How to handle exceptions in Python?",
-  "limit": 10,
-  "filters": {
-    "knowledge_type": ["technical"],
-    "tags": ["python"],
-    "source_domains": ["docs.python.org"]
-  },
-  "options": {
-    "use_reranking": true,
-    "include_metadata": true,
-    "similarity_threshold": 0.7,
-    "hybrid_search": true
-  }
+  "source": "docs.python.org",
+  "match_count": 10
 }
 ```
 
@@ -407,14 +305,8 @@ Perform semantic search across the knowledge base.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `query` | string | ✅ | Search query text |
-| `limit` | integer | ❌ | Maximum results (default: 10, max: 100) |
-| `filters.knowledge_type` | string[] | ❌ | Filter by knowledge types |
-| `filters.tags` | string[] | ❌ | Filter by tags |
-| `filters.source_domains` | string[] | ❌ | Filter by source domains |
-| `options.use_reranking` | boolean | ❌ | Enable result reranking (default: true) |
-| `options.include_metadata` | boolean | ❌ | Include metadata in results (default: true) |
-| `options.similarity_threshold` | float | ❌ | Minimum similarity score (0.0-1.0) |
-| `options.hybrid_search` | boolean | ❌ | Combine vector and keyword search |
+| `source` | string | ❌ | Filter by specific source domain |
+| `match_count` | integer | ❌ | Maximum results (default: 5, max: 50) |
 
 #### Example Request
 
@@ -423,15 +315,8 @@ curl -X POST "http://localhost:8080/api/rag/query" \
   -H "Content-Type: application/json" \
   -d '{
     "query": "How to handle exceptions in Python?",
-    "limit": 5,
-    "filters": {
-      "knowledge_type": ["technical"],
-      "tags": ["python"]
-    },
-    "options": {
-      "use_reranking": true,
-      "hybrid_search": true
-    }
+    "source": "docs.python.org",
+    "match_count": 5
   }'
 ```
 
@@ -439,6 +324,7 @@ curl -X POST "http://localhost:8080/api/rag/query" \
 
 ```json
 {
+  "success": true,
   "query": "How to handle exceptions in Python?",
   "results": [
     {
@@ -447,24 +333,16 @@ curl -X POST "http://localhost:8080/api/rag/query" \
       "content": "Python uses try-except blocks to handle exceptions. When an error occurs...",
       "url": "https://docs.python.org/3/tutorial/errors.html",
       "similarity_score": 0.92,
-      "rerank_score": 0.89,
-      "knowledge_type": "technical",
-      "tags": ["python", "exceptions", "error-handling"],
       "metadata": {
-        "source_domain": "docs.python.org",
-        "section": "Tutorial",
-        "word_count": 450,
-        "last_updated": "2024-01-10T00:00:00Z"
-      },
-      "highlights": [
-        "Python uses <mark>try-except</mark> blocks to <mark>handle exceptions</mark>",
-        "When an <mark>error occurs</mark> during execution, Python raises an exception"
-      ]
+        "source_id": "docs.python.org",
+        "char_count": 450,
+        "word_count": 89,
+        "headers": ["Exception Handling", "Try-Except Blocks"]
+      }
     }
   ],
   "total_results": 1,
-  "processing_time": 0.245,
-  "search_strategy": "hybrid_with_reranking"
+  "processing_time": 0.245
 }
 ```
 
@@ -478,35 +356,24 @@ Retrieve all available knowledge sources for filtering.
 
 ```json
 {
-  "sources": {
-    "domains": [
-      "docs.python.org",
-      "fastapi.tiangolo.com",
-      "supabase.com"
-    ],
-    "knowledge_types": [
-      "technical",
-      "business",
-      "general"
-    ],
-    "tags": [
-      "python",
-      "fastapi",
-      "database",
-      "tutorial",
-      "api"
-    ],
-    "source_types": [
-      "web",
-      "document",
-      "upload"
-    ]
-  },
-  "statistics": {
-    "total_items": 1250,
-    "total_sources": 15,
-    "last_updated": "2024-01-15T10:45:00Z"
-  }
+  "success": true,
+  "sources": [
+    {
+      "source_id": "docs.python.org",
+      "title": "Python Official Documentation",
+      "description": "Official Python documentation and tutorials",
+      "created_at": "2024-01-10T00:00:00Z",
+      "last_updated": "2024-01-15T10:45:00Z"
+    },
+    {
+      "source_id": "fastapi.tiangolo.com",
+      "title": "FastAPI Documentation",
+      "description": "FastAPI framework documentation",
+      "created_at": "2024-01-12T00:00:00Z",
+      "last_updated": "2024-01-14T08:30:00Z"
+    }
+  ],
+  "total_count": 2
 }
 ```
 
@@ -526,23 +393,16 @@ Retrieve current MCP server status and configuration.
   "pid": 12345,
   "port": 8051,
   "uptime": 3600,
-  "connections": {
-    "active": 2,
-    "total": 15
-  },
-  "capabilities": [
-    "tools",
-    "resources",
-    "prompts"
-  ],
-  "tools": [
-    "search_knowledge",
-    "create_task",
-    "update_task",
-    "list_projects"
-  ],
+  "transport": "sse",
+  "tools_available": 25,
   "last_activity": "2024-01-15T10:44:30Z",
-  "version": "1.0.0"
+  "version": "1.0.0",
+  "health": {
+    "status": "healthy",
+    "database_ready": true,
+    "crawler_ready": true,
+    "reranking_ready": false
+  }
 }
 ```
 
@@ -557,7 +417,7 @@ Start the MCP server if not running.
 ```json
 {
   "port": 8051,
-  "transport": "stdio",
+  "transport": "sse",
   "options": {
     "enable_logging": true,
     "log_level": "INFO"
@@ -569,12 +429,13 @@ Start the MCP server if not running.
 
 ```json
 {
+  "success": true,
   "message": "MCP server started successfully",
   "pid": 12345,
   "port": 8051,
   "status": "running",
   "connection_info": {
-          "stdio_command": "python python/src/mcp_server.py",
+    "stdio_command": "python python/src/mcp_server.py",
     "sse_endpoint": "http://localhost:8080/api/mcp/sse"
   }
 }
@@ -590,6 +451,7 @@ Stop the running MCP server.
 
 ```json
 {
+  "success": true,
   "message": "MCP server stopped successfully",
   "previous_status": "running",
   "uptime": 3600
@@ -629,7 +491,7 @@ ws.onmessage = function(event) {
 }
 ```
 
-## 📋 Task Management API
+## 📋 Project Management API
 
 ### List Projects
 
@@ -649,30 +511,17 @@ Retrieve all projects with optional filtering.
 
 ```json
 {
+  "success": true,
   "projects": [
     {
       "id": "550e8400-e29b-41d4-a716-446655440000",
       "title": "Archon Documentation",
-      "prd": {
-        "overview": "Create comprehensive documentation for Archon",
-        "goals": ["User-friendly docs", "API reference", "Tutorials"]
-      },
-      "docs": [
-        {"name": "README.md", "url": "https://github.com/repo/README.md"},
-        {"name": "API Spec", "url": "https://api.example.com/docs"}
-      ],
-      "features": [
-        {"name": "Getting Started Guide", "status": "completed"},
-        {"name": "API Reference", "status": "in_progress"}
-      ],
       "github_repo": "https://github.com/user/archon",
       "created_at": "2024-01-15T10:00:00Z",
       "updated_at": "2024-01-15T10:45:00Z"
     }
   ],
-  "total": 1,
-  "limit": 50,
-  "offset": 0
+  "total_count": 1
 }
 ```
 
@@ -680,7 +529,7 @@ Retrieve all projects with optional filtering.
 
 **POST** `/api/projects`
 
-Create a new project.
+Create a new project with optional PRD document.
 
 #### Request Body
 
@@ -691,13 +540,26 @@ Create a new project.
     "overview": "Project overview",
     "goals": ["Goal 1", "Goal 2"]
   },
-  "docs": [
-    {"name": "Requirements", "url": "https://example.com/requirements"}
-  ],
-  "features": [
-    {"name": "Feature 1", "status": "planned"}
-  ],
   "github_repo": "https://github.com/user/project"
+}
+```
+
+#### Example Response
+
+```json
+{
+  "success": true,
+  "project": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "title": "New Documentation Project",
+    "github_repo": "https://github.com/user/project",
+    "created_at": "2024-01-15T10:00:00Z"
+  },
+  "default_document": {
+    "id": "doc-uuid-here",
+    "title": "New Documentation Project - Requirements",
+    "document_type": "prd"
+  }
 }
 ```
 
@@ -714,13 +576,12 @@ Retrieve tasks with filtering options.
 | `project_id` | string | ❌ | Filter by project ID |
 | `status` | string | ❌ | Filter by status (`todo`, `doing`, `blocked`, `done`) |
 | `parent_task_id` | string | ❌ | Filter by parent task |
-| `limit` | integer | ❌ | Maximum results |
-| `offset` | integer | ❌ | Pagination offset |
 
 #### Example Response
 
 ```json
 {
+  "success": true,
   "tasks": [
     {
       "id": "660e8400-e29b-41d4-a716-446655440001",
@@ -742,7 +603,7 @@ Retrieve tasks with filtering options.
       "updated_at": "2024-01-15T10:30:00Z"
     }
   ],
-  "total": 1
+  "total_count": 1
 }
 ```
 
@@ -750,7 +611,7 @@ Retrieve tasks with filtering options.
 
 **POST** `/api/tasks`
 
-Create a new task.
+Create a new task under a project.
 
 #### Request Body
 
@@ -785,57 +646,105 @@ Update an existing task.
 
 ## ⚙️ Settings Management API
 
-### Get Settings
+### Get All Credentials
 
-**GET** `/api/settings`
+**GET** `/api/credentials`
 
-Retrieve current application settings.
+Retrieve all stored credentials (values masked for security).
 
 #### Example Response
 
 ```json
 {
-  "openai_api_key_configured": true,
-  "rag_strategies": {
-    "contextual_embeddings": false,
-    "hybrid_search": true,
-    "agentic_rag": false,
-    "reranking": true
-  },
-  "crawling_defaults": {
-    "max_pages": 100,
-    "max_depth": 2,
-    "delay_between_requests": 1.0,
-    "respect_robots_txt": true
-  },
-  "upload_limits": {
-    "max_file_size": 52428800,
-    "allowed_extensions": [".pdf", ".docx", ".doc", ".md", ".txt"]
-  }
+  "success": true,
+  "credentials": [
+    {
+      "key": "OPENAI_API_KEY",
+      "category": "api_keys",
+      "description": "OpenAI API key for embeddings and chat",
+      "is_encrypted": true,
+      "value_preview": "sk-proj-****",
+      "created_at": "2024-01-15T10:00:00Z"
+    }
+  ]
 }
 ```
 
-### Update Settings
+### Set Credential
 
-**POST** `/api/settings`
+**POST** `/api/credentials`
 
-Update application settings.
+Store or update a credential.
 
 #### Request Body
 
 ```json
 {
-  "openai_api_key": "sk-...",
-  "rag_strategies": {
-    "contextual_embeddings": true,
-    "hybrid_search": true,
-    "agentic_rag": true,
-    "reranking": true
-  },
-  "crawling_defaults": {
-    "max_pages": 200,
-    "max_depth": 3
+  "key": "OPENAI_API_KEY",
+  "value": "sk-proj-...",
+  "category": "api_keys",
+  "description": "OpenAI API key for RAG functionality",
+  "encrypt": true
+}
+```
+
+### Delete Credential
+
+**DELETE** `/api/credentials/{key}`
+
+Delete a stored credential.
+
+#### Example Response
+
+```json
+{
+  "success": true,
+  "message": "Credential 'OPENAI_API_KEY' deleted successfully"
+}
+```
+
+## 💬 Agent Chat API
+
+### Send Chat Message
+
+**POST** `/api/agent-chat/message`
+
+Send a message to the AI agent for processing.
+
+#### Request Body
+
+```json
+{
+  "message": "Help me implement authentication in my API",
+  "context": {
+    "project_id": "550e8400-e29b-41d4-a716-446655440000",
+    "use_rag": true,
+    "include_tasks": true
   }
+}
+```
+
+#### Example Response
+
+```json
+{
+  "success": true,
+  "response": "I'll help you implement authentication. Based on your project context, here's what I recommend...",
+  "sources_used": [
+    {
+      "title": "JWT Authentication Guide",
+      "url": "https://jwt.io/introduction",
+      "relevance": 0.92
+    }
+  ],
+  "tasks_referenced": [
+    {
+      "id": "task-uuid",
+      "title": "Implement user authentication",
+      "status": "todo"
+    }
+  ],
+  "processing_time": 1.234
 }
 ```
 
@@ -852,71 +761,35 @@ System health and status check.
 ```json
 {
   "status": "healthy",
-  "timestamp": "2024-01-15T10:45:00Z",
-  "version": "1.0.0",
-  "services": {
-    "database": {
-      "status": "connected",
-      "response_time": 0.012,
-      "connection_pool": {
-        "active": 5,
-        "idle": 15,
-        "total": 20
-      }
-    },
-    "openai": {
-      "status": "available",
-      "api_key_valid": true,
-      "rate_limit_remaining": 4500
-    },
-    "mcp_server": {
-      "status": "running",
-      "port": 8051,
-      "active_connections": 2
-    }
-  },
-  "system": {
-    "memory_usage": {
-      "used": "512MB",
-      "available": "1.5GB",
-      "percentage": 25.6
-    },
-    "disk_usage": {
-      "used": "2.1GB",
-      "available": "47.9GB",
-      "percentage": 4.2
-    }
-  }
+  "service": "archon-backend",
+  "timestamp": "2024-01-15T10:45:00Z"
 }
 ```
 
-### System Metrics
+### Database Metrics
 
-**GET** `/metrics`
+**GET** `/api/database/metrics`
 
-Prometheus-compatible metrics endpoint.
+Get database statistics and health information.
 
 #### Example Response
 
-```
-# HELP http_requests_total Total HTTP requests
-# TYPE http_requests_total counter
-http_requests_total{method="GET",endpoint="/api/knowledge-items"} 1250
-http_requests_total{method="POST",endpoint="/api/documents/upload"} 45
-
-# HELP http_request_duration_seconds HTTP request duration
-# TYPE http_request_duration_seconds histogram
-http_request_duration_seconds_bucket{le="0.1"} 1000
-http_request_duration_seconds_bucket{le="0.5"} 1200
-http_request_duration_seconds_bucket{le="1.0"} 1250
-
-# HELP documents_uploaded_total Total documents uploaded
-# TYPE documents_uploaded_total counter
-documents_uploaded_total 45
-
-# HELP rag_queries_total Total RAG queries
-# TYPE rag_queries_total counter
-rag_queries_total 890
+```json
+{
+  "success": true,
+  "metrics": {
+    "total_documents": 1250,
+    "total_sources": 15,
+    "total_projects": 5,
+    "total_tasks": 42,
+    "storage_used_mb": 512,
+    "last_crawl": "2024-01-15T10:30:00Z"
+  },
+  "health": {
+    "database_connected": true,
+    "response_time_ms": 12
+  }
+}
 ```
 
 ## 🚨 Error Handling
@@ -927,35 +800,24 @@ All API errors follow a consistent format:
 
 ```json
 {
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Invalid request parameters",
-    "details": {
-      "field": "knowledge_type",
-      "issue": "Must be one of: technical, business, general"
-    },
-    "timestamp": "2024-01-15T10:45:00Z",
-    "request_id": "req_abc123def456"
-  }
+  "success": false,
+  "error": "Invalid request parameters",
+  "details": {
+    "field": "knowledge_type",
+    "message": "Must be one of: technical, business, general"
+  },
+  "timestamp": "2024-01-15T10:45:00Z"
 }
 ```
 
 ### Common Error Codes
 
-| HTTP Status | Error Code | Description |
+| HTTP Status | Error Type | Description |
 |-------------|------------|-------------|
-| 400 | `VALIDATION_ERROR` | Invalid request parameters |
-| 401 | `AUTHENTICATION_ERROR` | Missing or invalid API key |
-| 403 | `AUTHORIZATION_ERROR` | Insufficient permissions |
-| 404 | `NOT_FOUND` | Resource not found |
-| 409 | `CONFLICT` | Resource already exists |
-| 413 | `FILE_TOO_LARGE` | Uploaded file exceeds size limit |
-| 415 | `UNSUPPORTED_MEDIA_TYPE` | Unsupported file format |
-| 422 | `PROCESSING_ERROR` | Document processing failed |
-| 429 | `RATE_LIMIT_EXCEEDED` | Too many requests |
-| 500 | `INTERNAL_ERROR` | Server error |
-| 502 | `EXTERNAL_SERVICE_ERROR` | External service unavailable |
-| 503 | `SERVICE_UNAVAILABLE` | Service temporarily unavailable |
+| 400 | `Bad Request` | Invalid request parameters |
+| 404 | `Not Found` | Resource not found |
+| 422 | `Unprocessable Entity` | Validation error |
+| 500 | `Internal Server Error` | Server error |
 
 ## 📊 Rate Limiting
 
@@ -967,17 +829,6 @@ All API errors follow a consistent format:
 | RAG Queries | 100 requests | 1 minute |
 | Crawling | 5 requests | 5 minutes |
 | General API | 1000 requests | 1 hour |
-
-### Rate Limit Headers
-
-All responses include rate limiting headers:
-
-```
-X-RateLimit-Limit: 100
-X-RateLimit-Remaining: 95
-X-RateLimit-Reset: 1642248000
-X-RateLimit-Window: 60
-```
 
 ## 🔧 SDK & Integration Examples
 
@@ -1005,20 +856,19 @@ class ArchonClient:
             response.raise_for_status()
             return response.json()
     
-    def query_knowledge(self, query: str, limit: int = 10, filters: Dict[str, Any] = None) -> Dict[str, Any]:
+    def query_knowledge(self, query: str, source: str = None, match_count: int = 5) -> Dict[str, Any]:
         """Query the knowledge base"""
         payload = {
             "query": query,
-            "limit": limit,
-            "filters": filters or {},
-            "options": {"use_reranking": True, "hybrid_search": True}
+            "source": source,
+            "match_count": match_count
         }
         response = self.session.post(f"{self.base_url}/api/rag/query", json=payload)
         response.raise_for_status()
         return response.json()
     
     def start_crawl(self, url: str, knowledge_type: str, tags: List[str] = None, update_frequency: int = 7) -> Dict[str, Any]:
-        """Start smart crawling a website with automatic content type detection"""
+        """Start smart crawling a website"""
         payload = {
             "url": url,
             "knowledge_type": knowledge_type,
@@ -1040,19 +890,19 @@ result = client.upload_document(
 )
 print(f"Document uploaded: {result['document']['id']}")
 
-# Start smart crawling (automatically detects sitemap, text file, or webpage)
+# Start smart crawling
 crawl_result = client.start_crawl(
     url="https://docs.python.org/3/tutorial/",
     knowledge_type="technical", 
     tags=["python", "tutorial"],
     update_frequency=7
 )
-print(f"Crawling started with progress ID: {crawl_result['progressId']}")
+print(f"Crawling started with progress ID: {crawl_result['progress_id']}")
 
 # Query knowledge
 results = client.query_knowledge(
     query="How to handle exceptions in Python?",
-    filters={"tags": ["python"]}
+    source="docs.python.org"
 )
 print(f"Found {len(results['results'])} relevant documents")
 ```
@@ -1083,16 +933,11 @@ class ArchonClient {
     return response.json();
   }
 
-  async queryKnowledge(query, options = {}) {
+  async queryKnowledge(query, source = null, matchCount = 5) {
     const payload = {
       query,
-      limit: options.limit || 10,
-      filters: options.filters || {},
-      options: {
-        use_reranking: true,
-        hybrid_search: true,
-        ...options.searchOptions
-      }
+      source,
+      match_count: matchCount
     };
 
     const response = await fetch(`${this.baseUrl}/api/rag/query`, {
@@ -1155,13 +1000,13 @@ class ArchonClient {
 // Usage example
 const client = new ArchonClient();
 
-// Start smart crawling (automatically detects content type)
+// Start smart crawling
 client.startCrawl('https://docs.python.org/3/tutorial/', 'technical', ['python', 'tutorial'], 7)
   .then(result => {
-    console.log('Crawl started:', result.progressId);
+    console.log('Crawl started:', result.progress_id);
     
     // Connect to progress updates
-    const ws = client.connectToProgress(result.progressId, (progress) => {
+    const ws = client.connectToProgress(result.progress_id, (progress) => {
       console.log(`Progress: ${progress.percentage}% - ${progress.currentUrl}`);
       console.log(`Status: ${progress.status} - ${progress.log}`);
       
@@ -1171,10 +1016,6 @@ client.startCrawl('https://docs.python.org/3/tutorial/', 'technical', ['python',
       }
     });
   });
-
-// Examples of different URL types
-client.startCrawl('https://example.com/sitemap.xml', 'technical', ['docs']);  // Sitemap
-client.startCrawl('https://raw.githubusercontent.com/user/repo/main/README.txt', 'technical', ['readme']);  // Text file
 ```
 
 ---
@@ -1182,5 +1023,5 @@ client.startCrawl('https://raw.githubusercontent.com/user/repo/main/README.txt',
 **Next Steps**: 
 - Explore [MCP Integration](./mcp-reference) to connect AI clients
 - Learn about [RAG Strategies](./rag) for optimal search performance  
-- Check [WebSocket Communication](./websockets) for real-time features and troubleshooting
-- Review [Testing Guide](./testing) for API testing examples
+- Check [WebSocket Communication](./websockets) for real-time features
+- Review [Testing Guide](./testing) for API testing examples 

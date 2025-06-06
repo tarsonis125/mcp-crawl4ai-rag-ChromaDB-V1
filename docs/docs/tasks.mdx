@@ -3,6 +3,10 @@ title: Task Management (Archon)
 sidebar_position: 6
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import Admonition from '@theme/Admonition';
+
 # Task Management System (Archon)
 
 Archon includes a comprehensive project and task management system that integrates seamlessly with your knowledge base and AI coding assistants. This system enables structured project organization, task tracking, and autonomous task management through MCP integration.
@@ -23,15 +27,14 @@ The Archon task management system provides:
 ```mermaid
 graph TB
     subgraph "Frontend (React)"
-        TaskUI["Task Management UI"]
+        TaskUI["Project Management UI"]
         ProjectUI["Project Dashboard"]
-        KanbanUI["Kanban Board"]
     end
     
     subgraph "Backend API"
-        ProjectAPI["Projects Router"]
-        TaskAPI["Tasks Router"]
-        MCPTools["MCP Task Tools"]
+        ProjectAPI["projects_api.py<br/>528 lines"]
+        TaskAPI["Task Management<br/>Endpoints"]
+        MCPTools["MCP Project Tools<br/>17 tools"]
     end
     
     subgraph "Database (Supabase)"
@@ -46,12 +49,10 @@ graph TB
     end
     
     TaskUI --> ProjectAPI
-    TaskUI --> TaskAPI
     ProjectUI --> ProjectAPI
-    KanbanUI --> TaskAPI
     
     ProjectAPI --> ProjectsTable
-    TaskAPI --> TasksTable
+    ProjectAPI --> TasksTable
     TasksTable --> ProjectsTable
     
     Cursor --> MCPTools
@@ -59,7 +60,9 @@ graph TB
     Claude --> MCPTools
     
     MCPTools --> ProjectAPI
-    MCPTools --> TaskAPI
+    
+    style MCPTools fill:#4ecdc4
+    style ProjectAPI fill:#ffd93d
 ```
 
 ## 📊 Database Schema
@@ -73,7 +76,7 @@ CREATE TABLE projects (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title TEXT NOT NULL,
   prd JSONB DEFAULT '{}'::jsonb,           -- Product Requirements Document
-  docs JSONB DEFAULT '[]'::jsonb,          -- Reference documentation
+  docs JSONB DEFAULT '[]'::jsonb,          -- Reference documentation array
   features JSONB DEFAULT '[]'::jsonb,      -- Feature list with status
   data JSONB DEFAULT '[]'::jsonb,          -- Sample datasets or resources
   github_repo TEXT,                        -- GitHub repository URL
@@ -89,7 +92,7 @@ CREATE TABLE projects (
 | `id` | UUID | Unique project identifier | `550e8400-e29b-41d4-a716-446655440000` |
 | `title` | TEXT | Project name | "API Documentation Overhaul" |
 | `prd` | JSONB | Product Requirements Document | `{"overview": "...", "goals": [...]}` |
-| `docs` | JSONB | Reference documentation links | `[{"name": "API Spec", "url": "..."}]` |
+| `docs` | JSONB | Reference documentation array | `[{"id": "uuid", "title": "API Spec", "content": {...}}]` |
 | `features` | JSONB | Feature list with status | `[{"name": "Auth", "status": "done"}]` |
 | `data` | JSONB | Sample data or resources | `[{"name": "Test Data", "url": "..."}]` |
 | `github_repo` | TEXT | Repository URL | `https://github.com/user/repo` |
@@ -138,7 +141,7 @@ CREATE INDEX idx_tasks_status ON tasks(status);
 #### Via Web Interface
 
 1. **Open Archon**: Navigate to http://localhost:3737
-2. **Go to Tasks**: Click the "Tasks" tab
+2. **Go to Projects**: Click the "Projects" tab in the navigation
 3. **Create Project**: Click "New Project"
 4. **Fill Details**:
    - **Title**: "My Documentation Project"
@@ -165,37 +168,25 @@ curl -X POST "http://localhost:8080/api/projects" \
         "Increase API adoption by 50%"
       ]
     },
-    "docs": [
-      {
-        "name": "Current API Docs",
-        "url": "https://api.example.com/docs"
-      },
-      {
-        "name": "Design System",
-        "url": "https://design.example.com"
-      }
-    ],
-    "features": [
-      {
-        "name": "Authentication Examples",
-        "status": "planned",
-        "priority": "high"
-      },
-      {
-        "name": "Error Handling Guide",
-        "status": "planned",
-        "priority": "medium"
-      }
-    ],
     "github_repo": "https://github.com/company/api-docs"
   }'
+```
+
+#### Via MCP (AI Agent)
+
+AI agents can autonomously create projects:
+
+```
+User: "I need to start a new project to improve our API documentation"
+AI: [Uses create_project MCP tool] 
+    "I've created a new project 'API Documentation Improvement' with a comprehensive PRD..."
 ```
 
 ### Creating Tasks
 
 #### Via Web Interface
 
-1. **Select Project**: Choose your project from the dropdown
+1. **Select Project**: Choose your project from the project list
 2. **Add Task**: Click "New Task"
 3. **Fill Details**:
    - **Title**: Clear, actionable task name
@@ -231,11 +222,6 @@ curl -X POST "http://localhost:8080/api/tasks" \
         "language": "python",
         "description": "JWT token generation",
         "code": "import jwt\nfrom datetime import datetime, timedelta\n\ndef create_token(user_id: str) -> str:\n    payload = {\n        'user_id': user_id,\n        'exp': datetime.utcnow() + timedelta(hours=24)\n    }\n    return jwt.encode(payload, SECRET_KEY, algorithm='HS256')"
-      },
-      {
-        "language": "javascript",
-        "description": "Client-side token usage",
-        "code": "const response = await fetch('/api/protected', {\n  headers: {\n    'Authorization': `Bearer ${token}`\n  }\n});"
       }
     ],
     "status": "todo"
@@ -248,6 +234,9 @@ curl -X POST "http://localhost:8080/api/tasks" \
 
 Create subtasks to break down complex work:
 
+<Tabs>
+<TabItem value="api" label="API Example">
+
 ```bash
 # Create parent task
 curl -X POST "http://localhost:8080/api/tasks" \
@@ -259,7 +248,7 @@ curl -X POST "http://localhost:8080/api/tasks" \
     "status": "todo"
   }'
 
-# Create subtasks
+# Create subtasks (using parent_task_id from response)
 curl -X POST "http://localhost:8080/api/tasks" \
   -H "Content-Type: application/json" \
   -d '{
@@ -271,9 +260,29 @@ curl -X POST "http://localhost:8080/api/tasks" \
   }'
 ```
 
+</TabItem>
+<TabItem value="mcp" label="MCP (AI) Example">
+
+```
+User: "Break down the authentication task into smaller pieces"
+AI: [Uses create_task MCP tool multiple times]
+    "I've broken down your authentication task into 5 subtasks:
+    1. Design JWT token structure
+    2. Implement token generation
+    3. Create middleware for validation
+    4. Add authentication endpoints
+    5. Write comprehensive tests"
+```
+
+</TabItem>
+</Tabs>
+
 ### Status Management
 
 Update task status as work progresses:
+
+<Tabs>
+<TabItem value="api" label="API Status Update">
 
 ```bash
 # Update task status
@@ -281,9 +290,21 @@ curl -X PATCH "http://localhost:8080/api/tasks/task-uuid-here" \
   -H "Content-Type: application/json" \
   -d '{
     "status": "doing",
-    "description": "Updated description with current progress notes"
+    "description": "Started implementing JWT token generation. Updated payload structure to include user roles and permissions."
   }'
 ```
+
+</TabItem>
+<TabItem value="mcp" label="MCP Status Update">
+
+```
+User: "I finished implementing the authentication middleware"
+AI: [Uses update_task_status MCP tool]
+    "Great! I've updated the authentication middleware task to 'done' and added your completion notes."
+```
+
+</TabItem>
+</Tabs>
 
 #### Status Workflow
 
@@ -321,51 +342,51 @@ curl "http://localhost:8080/api/tasks?parent_task_id=parent-uuid-here"
 #### Advanced Filtering
 
 ```bash
-# Get high-priority blocked tasks
-curl "http://localhost:8080/api/tasks?status=blocked&limit=10&sort_by=created_at&sort_order=desc"
+# Get tasks by status with project filter
+curl "http://localhost:8080/api/tasks?project_id=550e8400-e29b-41d4-a716-446655440000&status=blocked"
 ```
 
 ## 🤖 MCP Integration
 
 AI coding assistants can autonomously manage tasks through MCP tools:
 
-### Available MCP Tools
+### Available MCP Tools (17 Project Tools)
 
-#### `create_project`
-AI agents can create new projects based on conversation context.
+<Admonition type="info" title="MCP Tools Overview">
+  The project module (`project_module.py` - 1065 lines) provides 17 MCP tools for complete project and task management automation.
+</Admonition>
 
-**Example AI Usage**:
-```
-User: "I want to start a new project to improve our API documentation"
-AI: Uses create_project tool to set up the project with appropriate PRD
-```
+#### Core Project Tools
 
-#### `create_task`
-AI agents can break down work into actionable tasks.
+| Tool | Purpose | AI Usage Example |
+|------|---------|------------------|
+| `create_project` | Create new projects with PRD | "Start a new project for user management features" |
+| `list_projects` | Query existing projects | "What projects do we have?" |
+| `get_project` | Get detailed project info | "Show me details of the authentication project" |
+| `delete_project` | Remove completed projects | "Archive the completed migration project" |
 
-**Example AI Usage**:
-```
-User: "We need to implement authentication"
-AI: Creates tasks for JWT implementation, documentation, testing, etc.
-```
+#### Task Management Tools
 
-#### `update_task`
-AI agents can update task status and add progress notes.
+| Tool | Purpose | AI Usage Example |
+|------|---------|------------------|
+| `create_task` | Create new tasks with context | "Create tasks for implementing OAuth login" |
+| `list_tasks_by_project` | Get all project tasks | "Show me all tasks for the API project" |
+| `get_task` | Get detailed task info | "What's the status of the authentication task?" |
+| `update_task_status` | Change task status | "Mark the login feature as completed" |
+| `update_task` | Modify task details | "Update the task description with new requirements" |
+| `delete_task` | Remove obsolete tasks | "Remove the deprecated API task" |
+| `get_task_subtasks` | Get child tasks | "What subtasks are under the authentication epic?" |
+| `get_tasks_by_status` | Filter by status | "Show me all blocked tasks" |
 
-**Example AI Usage**:
-```
-User: "I finished the authentication implementation"
-AI: Updates task status to "done" and adds completion notes
-```
+#### Document Management Tools
 
-#### `list_projects` & `list_tasks`
-AI agents can query existing work to provide context.
-
-**Example AI Usage**:
-```
-User: "What tasks do I have in progress?"
-AI: Queries tasks with status="doing" and provides summary
-```
+| Tool | Purpose | AI Usage Example |
+|------|---------|------------------|
+| `add_project_document` | Add documentation | "Create a technical spec document" |
+| `list_project_documents` | Get all project docs | "What documentation exists for this project?" |
+| `get_project_document` | Retrieve specific doc | "Show me the API specification document" |
+| `update_project_document` | Modify documents | "Update the PRD with new requirements" |
+| `delete_project_document` | Remove outdated docs | "Remove the old design mockups" |
 
 ### AI-Driven Task Management Examples
 
@@ -378,9 +399,14 @@ Create a project and break it down into tasks.
 ```
 
 **AI Actions**:
-1. Uses `search_knowledge` to find existing user management patterns
-2. Uses `create_project` with comprehensive PRD
-3. Uses `create_task` multiple times to create structured task breakdown
+1. `create_project` - Creates "User Profile Management" project with comprehensive PRD
+2. `search_knowledge` - Finds existing user management patterns in knowledge base
+3. `create_task` (multiple calls) - Creates structured task breakdown:
+   - Design user profile schema
+   - Implement profile CRUD endpoints
+   - Add profile validation
+   - Create profile UI components
+   - Write integration tests
 4. Links relevant documentation in task sources
 
 #### Scenario 2: Progress Tracking
@@ -392,36 +418,42 @@ Update my tasks and suggest what to work on next.
 ```
 
 **AI Actions**:
-1. Uses `list_tasks` to find registration-related tasks
-2. Uses `update_task` to mark completed tasks as "done"
-3. Uses `list_tasks` to find next priority tasks
-4. Provides recommendations based on task dependencies
+1. `list_tasks_by_project` - Gets current project tasks
+2. `get_tasks_by_status` - Finds tasks with status "doing"
+3. `update_task_status` - Marks registration task as "done"
+4. `update_task` - Adds completion notes and implementation details
+5. `get_task_subtasks` - Checks for dependent tasks
+6. Provides recommendations for next priority tasks
 
 #### Scenario 3: Code Review Integration
 
 **User Prompt**:
 ```
-Review this code and create tasks for any improvements needed:
+Review this authentication code and create tasks for any improvements needed:
 [code snippet]
 ```
 
 **AI Actions**:
-1. Uses `search_knowledge` to find coding standards
-2. Analyzes code against documented patterns
-3. Uses `create_task` for each improvement needed
-4. Links relevant documentation in task sources
-5. Adds code examples showing correct patterns
+1. `search_knowledge` - Finds coding standards and security patterns
+2. Analyzes code against documented best practices
+3. `create_task` - Creates improvement tasks:
+   - Add input validation
+   - Implement rate limiting
+   - Add comprehensive error handling
+   - Improve test coverage
+4. Links relevant documentation and code examples
+5. Sets appropriate priorities and dependencies
 
 ## 📊 Project Management Patterns
 
 ### PRD (Product Requirements Document) Structure
 
-Structure your PRD for maximum clarity:
+When creating projects, Archon automatically generates a structured PRD:
 
 ```json
 {
   "prd": {
-    "overview": "Brief project description and goals",
+    "overview": "Clear description of what we're building and why",
     "problem_statement": "What problem are we solving?",
     "goals": [
       "Specific, measurable objectives",
@@ -437,17 +469,11 @@ Structure your PRD for maximum clarity:
       "in_scope": ["Features to include"],
       "out_of_scope": ["Features explicitly excluded"]
     },
-    "timeline": {
-      "start_date": "2024-01-15",
-      "target_completion": "2024-03-15",
-      "milestones": [
-        {
-          "name": "MVP Complete",
-          "date": "2024-02-15",
-          "deliverables": ["Core functionality"]
-        }
-      ]
-    },
+    "technical_requirements": [
+      "Performance requirements",
+      "Security requirements",
+      "Scalability requirements"
+    ],
     "stakeholders": [
       {
         "name": "Product Manager",
@@ -456,6 +482,47 @@ Structure your PRD for maximum clarity:
       }
     ]
   }
+}
+```
+
+### Project Document Management
+
+The `docs` JSONB field stores structured documents:
+
+```json
+{
+  "docs": [
+    {
+      "id": "doc-uuid-1",
+      "document_type": "prd",
+      "title": "Product Requirements Document",
+      "content": {
+        "overview": "...",
+        "goals": ["..."],
+        "requirements": ["..."]
+      },
+      "status": "approved",
+      "tags": ["default", "prd"],
+      "version": "1.0",
+      "author": "AI Assistant",
+      "created_at": "2024-01-15T10:00:00Z",
+      "updated_at": "2024-01-15T10:00:00Z"
+    },
+    {
+      "id": "doc-uuid-2", 
+      "document_type": "technical_spec",
+      "title": "Authentication Technical Specification",
+      "content": {
+        "architecture": "...",
+        "apis": ["..."],
+        "security": "..."
+      },
+      "status": "draft",
+      "tags": ["auth", "technical"],
+      "version": "0.1",
+      "created_at": "2024-01-16T09:00:00Z"
+    }
+  ]
 }
 ```
 
@@ -490,208 +557,30 @@ Track feature development progress:
 }
 ```
 
-### Documentation Links
-
-Organize project documentation:
-
-```json
-{
-  "docs": [
-    {
-      "name": "API Specification",
-      "url": "https://api.company.com/docs",
-      "type": "api_spec",
-      "description": "OpenAPI specification for all endpoints"
-    },
-    {
-      "name": "Design Mockups",
-      "url": "https://figma.com/project-mockups",
-      "type": "design",
-      "description": "UI/UX designs and user flows"
-    },
-    {
-      "name": "Database Schema",
-      "url": "https://dbdocs.io/project-schema",
-      "type": "technical",
-      "description": "Database design and relationships"
-    },
-    {
-      "name": "Security Requirements",
-      "url": "https://wiki.company.com/security",
-      "type": "requirements",
-      "description": "Security standards and compliance requirements"
-    }
-  ]
-}
-```
-
 ## 🎨 Frontend Integration
 
-The React frontend provides intuitive task management interfaces:
+The React frontend (`ProjectPage.tsx` - 593 lines) provides intuitive task management interfaces:
 
-### Task Dashboard
+### Project Dashboard Features
 
-```jsx
-import React, { useState, useEffect } from 'react';
-import { TaskCard } from './TaskCard';
-import { ProjectSelector } from './ProjectSelector';
+- **Project Overview**: Title, description, GitHub integration
+- **Task Summary**: Status breakdown, progress indicators
+- **Document Management**: PRD viewer, document creation
+- **Feature Tracking**: Feature status and dependencies
 
-const TaskDashboard = () => {
-  const [projects, setProjects] = useState([]);
-  const [selectedProject, setSelectedProject] = useState(null);
-  const [tasks, setTasks] = useState([]);
-  const [filter, setFilter] = useState('all');
+### Task Management Interface
 
-  useEffect(() => {
-    fetchProjects();
-  }, []);
+- **Task List**: Filterable by status, searchable
+- **Task Details**: Full task information, sources, code examples
+- **Status Updates**: Drag-and-drop status changes
+- **Subtask Management**: Hierarchical task display
 
-  useEffect(() => {
-    if (selectedProject) {
-      fetchTasks(selectedProject.id, filter);
-    }
-  }, [selectedProject, filter]);
+### Real-time Updates
 
-  const fetchProjects = async () => {
-    const response = await fetch('/api/projects');
-    const data = await response.json();
-    setProjects(data.projects);
-  };
-
-  const fetchTasks = async (projectId, status = 'all') => {
-    const params = new URLSearchParams({ project_id: projectId });
-    if (status !== 'all') {
-      params.append('status', status);
-    }
-    
-    const response = await fetch(`/api/tasks?${params}`);
-    const data = await response.json();
-    setTasks(data.tasks);
-  };
-
-  const updateTaskStatus = async (taskId, newStatus) => {
-    await fetch(`/api/tasks/${taskId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: newStatus })
-    });
-    
-    // Refresh tasks
-    fetchTasks(selectedProject.id, filter);
-  };
-
-  return (
-    <div className="task-dashboard">
-      <div className="dashboard-header">
-        <ProjectSelector 
-          projects={projects}
-          selected={selectedProject}
-          onSelect={setSelectedProject}
-        />
-        
-        <div className="task-filters">
-          {['all', 'todo', 'doing', 'blocked', 'done'].map(status => (
-            <button
-              key={status}
-              className={filter === status ? 'active' : ''}
-              onClick={() => setFilter(status)}
-            >
-              {status.charAt(0).toUpperCase() + status.slice(1)}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="tasks-grid">
-        {tasks.map(task => (
-          <TaskCard
-            key={task.id}
-            task={task}
-            onStatusChange={updateTaskStatus}
-          />
-        ))}
-      </div>
-    </div>
-  );
-};
-
-export default TaskDashboard;
-```
-
-### Kanban Board
-
-```jsx
-import React from 'react';
-import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
-
-const KanbanBoard = ({ tasks, onTaskMove }) => {
-  const columns = {
-    todo: { title: 'To Do', tasks: tasks.filter(t => t.status === 'todo') },
-    doing: { title: 'In Progress', tasks: tasks.filter(t => t.status === 'doing') },
-    blocked: { title: 'Blocked', tasks: tasks.filter(t => t.status === 'blocked') },
-    done: { title: 'Done', tasks: tasks.filter(t => t.status === 'done') }
-  };
-
-  const handleDragEnd = (result) => {
-    if (!result.destination) return;
-
-    const { source, destination, draggableId } = result;
-    
-    if (source.droppableId !== destination.droppableId) {
-      onTaskMove(draggableId, destination.droppableId);
-    }
-  };
-
-  return (
-    <DragDropContext onDragEnd={handleDragEnd}>
-      <div className="kanban-board">
-        {Object.entries(columns).map(([columnId, column]) => (
-          <div key={columnId} className="kanban-column">
-            <h3>{column.title}</h3>
-            <Droppable droppableId={columnId}>
-              {(provided) => (
-                <div
-                  {...provided.droppableProps}
-                  ref={provided.innerRef}
-                  className="task-list"
-                >
-                  {column.tasks.map((task, index) => (
-                    <Draggable key={task.id} draggableId={task.id} index={index}>
-                      {(provided) => (
-                        <div
-                          ref={provided.innerRef}
-                          {...provided.draggableProps}
-                          {...provided.dragHandleProps}
-                          className="task-card"
-                        >
-                          <h4>{task.title}</h4>
-                          <p>{task.description}</p>
-                          {task.sources.length > 0 && (
-                            <div className="task-sources">
-                              {task.sources.map((source, idx) => (
-                                <a key={idx} href={source.url} target="_blank" rel="noopener noreferrer">
-                                  {source.name}
-                                </a>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </Draggable>
-                  ))}
-                  {provided.placeholder}
-                </div>
-              )}
-            </Droppable>
-          </div>
-        ))}
-      </div>
-    </DragDropContext>
-  );
-};
-
-export default KanbanBoard;
-```
+The frontend receives real-time updates via WebSocket connections when:
+- Tasks are created or updated by AI agents
+- Project status changes
+- Documents are added or modified
 
 ## 📈 Analytics and Reporting
 
@@ -743,130 +632,6 @@ WHERE t.status = 'blocked'
 ORDER BY blocked_duration DESC;
 ```
 
-## 🔧 Advanced Features
-
-### Task Templates
-
-Create reusable task templates for common workflows:
-
-```json
-{
-  "templates": {
-    "feature_development": {
-      "name": "Feature Development",
-      "tasks": [
-        {
-          "title": "Design and Planning",
-          "description": "Create technical design and implementation plan",
-          "sources": [
-            {"name": "Architecture Guidelines", "url": "internal://arch-guide"}
-          ]
-        },
-        {
-          "title": "Implementation",
-          "description": "Implement the feature according to design",
-          "parent": "Design and Planning"
-        },
-        {
-          "title": "Testing",
-          "description": "Write and execute comprehensive tests",
-          "parent": "Implementation"
-        },
-        {
-          "title": "Documentation",
-          "description": "Update documentation and examples",
-          "parent": "Implementation"
-        },
-        {
-          "title": "Code Review",
-          "description": "Peer review and address feedback",
-          "parent": "Testing"
-        }
-      ]
-    }
-  }
-}
-```
-
-### Automated Task Creation
-
-Integrate with GitHub webhooks to automatically create tasks:
-
-```python
-# webhook_handler.py
-from fastapi import APIRouter, Request
-import json
-
-router = APIRouter()
-
-@router.post("/webhooks/github")
-async def github_webhook(request: Request):
-    payload = await request.json()
-    event_type = request.headers.get("X-GitHub-Event")
-    
-    if event_type == "issues" and payload["action"] == "opened":
-        # Create task from GitHub issue
-        issue = payload["issue"]
-        
-        task_data = {
-            "title": issue["title"],
-            "description": issue["body"],
-            "sources": [
-                {
-                    "name": f"GitHub Issue #{issue['number']}",
-                    "url": issue["html_url"]
-                }
-            ],
-            "status": "todo"
-        }
-        
-        # Find or create project based on repository
-        project = await find_or_create_project_for_repo(
-            payload["repository"]["full_name"]
-        )
-        task_data["project_id"] = project["id"]
-        
-        # Create the task
-        await create_task(task_data)
-        
-    return {"status": "processed"}
-```
-
-### Task Dependencies
-
-Implement task dependencies for complex workflows:
-
-```sql
--- Add dependencies table
-CREATE TABLE task_dependencies (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-  depends_on_task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-  dependency_type VARCHAR(50) DEFAULT 'blocks', -- 'blocks', 'related', 'subtask'
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Prevent circular dependencies
-CREATE UNIQUE INDEX idx_task_dependencies_unique 
-ON task_dependencies(task_id, depends_on_task_id);
-```
-
-```python
-# Check if task can be started (all dependencies completed)
-async def can_start_task(task_id: str) -> bool:
-    query = """
-    SELECT COUNT(*) as blocked_dependencies
-    FROM task_dependencies td
-    JOIN tasks t ON td.depends_on_task_id = t.id
-    WHERE td.task_id = $1 
-      AND td.dependency_type = 'blocks'
-      AND t.status != 'done'
-    """
-    
-    result = await database.fetch_one(query, task_id)
-    return result["blocked_dependencies"] == 0
-```
-
 ## 🔍 Best Practices
 
 ### Task Writing Guidelines
@@ -878,7 +643,7 @@ async def can_start_task(task_id: str) -> bool:
 - Clear deliverable
 - Actionable
 
-✅ **Good**: "Write unit tests for user registration endpoint covering happy path and error cases"
+✅ **Good**: "Write unit tests for user registration endpoint covering happy path and validation errors"
 - Specific scope
 - Clear acceptance criteria
 - Testable outcome
@@ -956,30 +721,35 @@ AI Response:
 I'll help you plan the authentication implementation. Let me create a project and break this down into manageable tasks.
 
 [AI uses MCP tools to:]
-1. search_knowledge("FastAPI authentication JWT")
-2. create_project with authentication project details
+1. create_project with authentication project details
+2. search_knowledge("FastAPI authentication JWT")
 3. create_task for each implementation step
 4. Link relevant documentation from knowledge base
 
 I've created a project "User Authentication System" with the following tasks:
 
 1. ✅ Design JWT token structure
+   - Status: todo
    - Sources: FastAPI Security docs, JWT.io guide
    - Code examples: Token generation and validation
 
 2. ✅ Implement authentication middleware
+   - Status: todo  
    - Sources: FastAPI middleware documentation
    - Code examples: Dependency injection patterns
 
 3. ✅ Create login/logout endpoints
+   - Status: todo
    - Sources: FastAPI routing documentation
    - Code examples: Request/response models
 
 4. ✅ Add password hashing
+   - Status: todo
    - Sources: Security best practices
    - Code examples: bcrypt implementation
 
 5. ✅ Write authentication tests
+   - Status: todo
    - Sources: FastAPI testing guide
    - Code examples: Test fixtures and mocks
 
@@ -988,19 +758,11 @@ Would you like me to start with any specific task?
 
 ### GitHub Integration
 
-Automatic task creation from GitHub issues:
+While not directly implemented yet, the system is designed for GitHub integration:
 
 ```python
-# github_integration.py
-import asyncio
-from github import Github
-from typing import List, Dict
-
+# Future GitHub integration example
 class GitHubTaskSync:
-    def __init__(self, github_token: str, repo_name: str):
-        self.github = Github(github_token)
-        self.repo = self.github.get_repo(repo_name)
-    
     async def sync_issues_to_tasks(self, project_id: str) -> List[Dict]:
         """Sync GitHub issues to Archon tasks"""
         issues = self.repo.get_issues(state='open')
@@ -1022,40 +784,14 @@ class GitHubTaskSync:
                             "description": "Original GitHub issue"
                         }
                     ],
-                    "status": "todo",
-                    "metadata": {
-                        "github_issue_number": issue.number,
-                        "github_issue_id": issue.id,
-                        "labels": [label.name for label in issue.labels]
-                    }
+                    "status": "todo"
                 }
                 
-                # Add assignee if available
-                if issue.assignee:
-                    task_data["assignee"] = issue.assignee.login
-                
-                # Create task
+                # Create task via MCP tool
                 task = await self.create_task(task_data)
                 created_tasks.append(task)
         
         return created_tasks
-    
-    async def update_github_from_tasks(self, project_id: str):
-        """Update GitHub issues based on task status changes"""
-        tasks = await self.get_tasks_with_github_issues(project_id)
-        
-        for task in tasks:
-            github_issue_number = task["metadata"].get("github_issue_number")
-            if github_issue_number:
-                issue = self.repo.get_issue(github_issue_number)
-                
-                # Update issue based on task status
-                if task["status"] == "done" and issue.state == "open":
-                    issue.edit(state="closed")
-                    issue.create_comment(
-                        f"Task completed in Archon: {task['title']}\n\n"
-                        f"Task ID: {task['id']}"
-                    )
 ```
 
 ## 🔮 Future Enhancements
@@ -1067,12 +803,12 @@ class GitHubTaskSync:
 - **Advanced Dependencies**: Complex dependency graphs with visualization
 - **Team Collaboration**: Multi-user task assignment and collaboration
 - **Reporting Dashboard**: Advanced analytics and progress reporting
-- **Integration Hub**: Pre-built integrations with popular tools
+- **GitHub Integration**: Bidirectional sync with GitHub issues
 
 ### Experimental Features
 
 - **AI Task Estimation**: Automatic effort estimation based on historical data
-- **Smart Task Suggestions**: AI-powered task recommendations
+- **Smart Task Suggestions**: AI-powered task recommendations based on code changes
 - **Automated Testing Integration**: Automatic task creation from failing tests
 - **Code Change Tracking**: Link tasks to specific code changes and commits
 
@@ -1082,3 +818,4 @@ class GitHubTaskSync:
 - Learn about [RAG System](./rag) for knowledge-driven task creation
 - Explore [User Interface](./ui) for task management workflows
 - Check [API Reference](./api-reference) for programmatic task management
+- Review [MCP Integration](./mcp-reference) for AI client setup 
