@@ -38,7 +38,6 @@ class TestStatus(str, Enum):
 class TestType(str, Enum):
     MCP = "mcp"
     UI = "ui"
-    ALL = "all"
 
 # Pydantic models for API requests/responses
 class TestExecutionRequest(BaseModel):
@@ -129,29 +128,36 @@ websocket_manager = TestWebSocketManager()
 
 # Test execution functions
 async def execute_mcp_tests(execution_id: str) -> TestExecution:
-    """Execute MCP tool tests directly inside the container."""
+    """Execute Python tests using pytest with real-time streaming."""
     execution = test_executions[execution_id]
     
     try:
-        # Run tests directly using uv run python
+        # Use pytest directly for all Python tests with verbose output and real-time streaming
         cmd = [
-            "uv", "run", "python", "tests/run_mcp_tests.py"
+            "python", "-m", "pytest", 
+            "-v",  # verbose output
+            "-s",  # don't capture stdout, allows real-time output
+            "--tb=short",  # shorter traceback format
+            "tests/",  # run all tests in tests directory
+            "--no-header",  # cleaner output
+            "--disable-warnings"  # cleaner output
         ]
         
-        logger.info(f"Starting MCP test execution: {' '.join(cmd)}")
+        logger.info(f"Starting Python test execution: {' '.join(cmd)}")
         
-        # Start process
+        # Start process with line buffering for real-time output
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
-            cwd="/app"  # Use the app directory inside the container
+            cwd="/app",  # Use the app directory inside the container
+            env={**os.environ, "PYTHONUNBUFFERED": "1"}  # Ensure unbuffered output
         )
         
         execution.process = process
         execution.status = TestStatus.RUNNING
         
-        # Stream output
+        # Stream output in real-time
         await stream_process_output(execution_id, process)
         
         # Wait for completion
@@ -161,15 +167,15 @@ async def execute_mcp_tests(execution_id: str) -> TestExecution:
         
         if exit_code == 0:
             execution.status = TestStatus.COMPLETED
-            execution.summary = {"result": "All tests passed", "exit_code": exit_code}
+            execution.summary = {"result": "All Python tests passed", "exit_code": exit_code}
         else:
             execution.status = TestStatus.FAILED
-            execution.summary = {"result": "Some tests failed", "exit_code": exit_code}
+            execution.summary = {"result": "Some Python tests failed", "exit_code": exit_code}
         
-        logger.info(f"MCP tests completed with exit code: {exit_code}")
+        logger.info(f"Python tests completed with exit code: {exit_code}")
         
     except Exception as e:
-        logger.error(f"Error executing MCP tests: {e}")
+        logger.error(f"Error executing Python tests: {e}")
         execution.status = TestStatus.FAILED
         execution.completed_at = datetime.now()
         execution.summary = {"error": str(e)}
@@ -193,34 +199,62 @@ async def execute_mcp_tests(execution_id: str) -> TestExecution:
     return execution
 
 async def execute_ui_tests(execution_id: str) -> TestExecution:
-    """Execute UI tests using vitest (placeholder for now)."""
+    """Execute React UI tests using vitest in the frontend container."""
     execution = test_executions[execution_id]
     
     try:
-        # For now, this is a placeholder since we haven't set up vitest yet
-        # In the future, this would run vitest in the archon-ui-main directory
+        # Execute React tests inside the frontend container using docker exec
+        # The frontend container has Node.js and all dependencies installed
+        cmd = [
+            "docker", "exec", "archon-frontend-1",
+            "npm", "run", "test", 
+            "--", 
+            "--reporter=verbose",  # verbose output
+            "--run"  # run once, don't watch
+        ]
         
+        logger.info(f"Starting React UI test execution: {' '.join(cmd)}")
+        
+        # Start process with line buffering for real-time output
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            env={**os.environ, "DOCKER_HOST": "unix:///var/run/docker.sock"}
+        )
+        
+        execution.process = process
         execution.status = TestStatus.RUNNING
         
-        # Simulate test execution
-        await websocket_manager.broadcast_to_execution(execution_id, {
-            "type": "output",
-            "message": "UI testing infrastructure not yet implemented",
-            "timestamp": datetime.now().isoformat()
-        })
+        # Stream output in real-time
+        await stream_process_output(execution_id, process)
         
-        await asyncio.sleep(2)  # Simulate some processing time
-        
-        execution.status = TestStatus.COMPLETED
+        # Wait for completion
+        exit_code = await process.wait()
+        execution.exit_code = exit_code
         execution.completed_at = datetime.now()
-        execution.exit_code = 0
-        execution.summary = {"result": "UI tests not yet implemented", "note": "Vitest setup pending"}
+        
+        if exit_code == 0:
+            execution.status = TestStatus.COMPLETED
+            execution.summary = {"result": "All React UI tests passed", "exit_code": exit_code}
+        else:
+            execution.status = TestStatus.FAILED
+            execution.summary = {"result": "Some React UI tests failed", "exit_code": exit_code}
+        
+        logger.info(f"React UI tests completed with exit code: {exit_code}")
         
     except Exception as e:
-        logger.error(f"Error executing UI tests: {e}")
+        logger.error(f"Error executing React UI tests: {e}")
         execution.status = TestStatus.FAILED
         execution.completed_at = datetime.now()
         execution.summary = {"error": str(e)}
+        
+        # Broadcast error
+        await websocket_manager.broadcast_to_execution(execution_id, {
+            "type": "error",
+            "message": f"Test execution failed: {str(e)}",
+            "timestamp": datetime.now().isoformat()
+        })
     
     # Broadcast completion
     await websocket_manager.broadcast_to_execution(execution_id, {
@@ -234,40 +268,59 @@ async def execute_ui_tests(execution_id: str) -> TestExecution:
     return execution
 
 async def stream_process_output(execution_id: str, process: asyncio.subprocess.Process):
-    """Stream process output to WebSocket clients."""
+    """Stream process output to WebSocket clients with improved real-time handling."""
     execution = test_executions[execution_id]
+    
+    # Send initial status update
+    await websocket_manager.broadcast_to_execution(execution_id, {
+        "type": "status",
+        "data": {"status": "running"},
+        "message": "Test execution started",
+        "timestamp": datetime.now().isoformat()
+    })
     
     while True:
         try:
-            line = await process.stdout.readline()
+            # Use a timeout to prevent hanging
+            line = await asyncio.wait_for(process.stdout.readline(), timeout=30.0)
             if not line:
                 break
             
             decoded_line = line.decode('utf-8').rstrip()
-            execution.output_lines.append(decoded_line)
+            if decoded_line:  # Only add non-empty lines
+                execution.output_lines.append(decoded_line)
+                
+                # Broadcast to WebSocket clients immediately
+                await websocket_manager.broadcast_to_execution(execution_id, {
+                    "type": "output",
+                    "message": decoded_line,
+                    "timestamp": datetime.now().isoformat()
+                })
             
-            # Broadcast to WebSocket clients
+        except asyncio.TimeoutError:
+            # Check if process is still alive
+            if process.returncode is not None:
+                break
+            # Send heartbeat to keep connection alive
             await websocket_manager.broadcast_to_execution(execution_id, {
-                "type": "output",
-                "message": decoded_line,
+                "type": "status",
+                "data": {"status": "running"},
+                "message": "Tests still running...",
                 "timestamp": datetime.now().isoformat()
             })
-            
         except Exception as e:
             logger.error(f"Error streaming output: {e}")
             break
 
 async def execute_tests_background(execution_id: str, test_type: TestType):
-    """Background task for test execution."""
+    """Background task for test execution - removed ALL type."""
     try:
         if test_type == TestType.MCP:
             await execute_mcp_tests(execution_id)
         elif test_type == TestType.UI:
             await execute_ui_tests(execution_id)
-        elif test_type == TestType.ALL:
-            # Execute both test types
-            await execute_mcp_tests(execution_id)
-            # Could execute UI tests here too when implemented
+        else:
+            raise ValueError(f"Unknown test type: {test_type}")
             
     except Exception as e:
         logger.error(f"Background test execution failed: {e}")
@@ -283,7 +336,7 @@ async def run_mcp_tests(
     request: TestExecutionRequest,
     background_tasks: BackgroundTasks
 ):
-    """Execute MCP tool tests with real-time streaming output."""
+    """Execute Python tests using pytest with real-time streaming output."""
     execution_id = str(uuid.uuid4())
     
     # Create test execution record
@@ -304,7 +357,7 @@ async def run_mcp_tests(
         test_type=TestType.MCP,
         status=TestStatus.PENDING,
         started_at=execution.started_at,
-        message="MCP test execution started"
+        message="Python test execution started"
     )
 
 @router.post("/ui/run", response_model=TestExecutionResponse)
@@ -312,7 +365,7 @@ async def run_ui_tests(
     request: TestExecutionRequest,
     background_tasks: BackgroundTasks
 ):
-    """Execute UI tests with real-time streaming output."""
+    """Execute React UI tests using vitest with real-time streaming output."""
     execution_id = str(uuid.uuid4())
     
     # Create test execution record
@@ -333,36 +386,7 @@ async def run_ui_tests(
         test_type=TestType.UI,
         status=TestStatus.PENDING,
         started_at=execution.started_at,
-        message="UI test execution started (placeholder)"
-    )
-
-@router.post("/all/run", response_model=TestExecutionResponse)
-async def run_all_tests(
-    request: TestExecutionRequest,
-    background_tasks: BackgroundTasks
-):
-    """Execute all tests (MCP and UI) with real-time streaming output."""
-    execution_id = str(uuid.uuid4())
-    
-    # Create test execution record
-    execution = TestExecution(
-        execution_id=execution_id,
-        test_type=TestType.ALL,
-        status=TestStatus.PENDING,
-        started_at=datetime.now()
-    )
-    
-    test_executions[execution_id] = execution
-    
-    # Start background task
-    background_tasks.add_task(execute_tests_background, execution_id, TestType.ALL)
-    
-    return TestExecutionResponse(
-        execution_id=execution_id,
-        test_type=TestType.ALL,
-        status=TestStatus.PENDING,
-        started_at=execution.started_at,
-        message="All tests execution started"
+        message="React UI test execution started"
     )
 
 @router.get("/status/{execution_id}", response_model=TestStatusResponse)
