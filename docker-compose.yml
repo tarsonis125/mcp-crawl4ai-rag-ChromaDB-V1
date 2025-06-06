@@ -16,6 +16,7 @@ services:
       - USE_HYBRID_SEARCH=${USE_HYBRID_SEARCH:-false}
       - USE_AGENTIC_RAG=${USE_AGENTIC_RAG:-false}
       - USE_RERANKING=${USE_RERANKING:-false}
+      - LOGFIRE_TOKEN=${LOGFIRE_TOKEN}
     networks:
       - app-network
     healthcheck:

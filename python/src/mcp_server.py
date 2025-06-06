@@ -34,6 +34,9 @@ from crawl4ai import AsyncWebCrawler, BrowserConfig
 # Add the project root to Python path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# Import Logfire configuration
+from src.logfire_config import setup_logfire, mcp_logger
+
 try:
     from src.utils import get_supabase_client
 except ImportError as e:
@@ -353,17 +356,21 @@ except Exception as e:
 async def main():
     """Main entry point for the MCP server."""
     try:
+        # Initialize Logfire first
+        setup_logfire(service_name="archon-mcp-server")
+        
         transport = os.getenv("TRANSPORT", "sse")
         host = os.getenv("HOST", "localhost")
         port = int(os.getenv("PORT", "8051"))
         
         # Only print when not using stdio to avoid contaminating JSON-RPC stream
         if transport != "stdio":
-            logger.info(f"🌟 Starting Archon MCP server with transport: {transport}")
+            mcp_logger.info("🔥 Logfire initialized for MCP server")
+            mcp_logger.info("🌟 Starting Archon MCP server", transport=transport)
         
         if transport == 'sse':
             if transport != "stdio":
-                logger.info(f"🌐 SSE server will be available at: http://{host}:{port}/sse")
+                mcp_logger.info("🌐 SSE server starting", url=f"http://{host}:{port}/sse")
             await mcp.run_sse_async()
         elif transport == 'stdio':
             # No prints in stdio mode - client expects pure JSON-RPC
@@ -372,6 +379,7 @@ async def main():
             raise ValueError(f"Unsupported transport: {transport}. Use 'sse' or 'stdio'")
             
     except Exception as e:
+        mcp_logger.error("💥 Fatal error in main", error=str(e), error_type=type(e).__name__)
         logger.error(f"💥 Fatal error in main: {e}")
         logger.error(traceback.format_exc())
         raise

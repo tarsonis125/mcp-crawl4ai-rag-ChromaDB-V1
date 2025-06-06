@@ -28,6 +28,9 @@ import traceback
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, MemoryAdaptiveDispatcher
 
+# Import Logfire
+from ..logfire_config import rag_logger, mcp_logger, search_logger
+
 from src.utils import (
     add_documents_to_supabase, 
     search_documents,
@@ -838,7 +841,12 @@ def register_rag_tools(mcp: FastMCP):
             })
     
     @mcp.tool()
-    async def perform_rag_query(ctx: Context, query: str, source: str = None, match_count: int = 5) -> str:
+    async def perform_rag_query(
+        ctx: Context,
+        query: str,
+        source: str = None,
+        match_count: int = 5
+    ) -> str:
         """
         Perform a RAG (Retrieval Augmented Generation) query on stored content.
         
@@ -854,86 +862,98 @@ def register_rag_tools(mcp: FastMCP):
         Returns:
             JSON string with search results
         """
-        print(f"\n=== MCP RAG QUERY DEBUG START ===\n")
-        print(f"MCP RAG: perform_rag_query called with query='{query}', source='{source}', match_count={match_count}\n")
-        
-        try:
-            # Get the Supabase client from the context
-            supabase_client = ctx.request_context.lifespan_context.supabase_client
-            print(f"MCP RAG: Got supabase_client: {supabase_client is not None}")
-            
-            # Get the cached OpenAI API key from the context
-            cached_api_key = getattr(ctx.request_context.lifespan_context, 'openai_api_key', None)
-            print(f"MCP RAG: Got cached_api_key: {cached_api_key is not None and len(cached_api_key) > 0 if cached_api_key else False}")
-            
-            # Check if hybrid search is enabled
-            use_hybrid_search = get_bool_setting("USE_HYBRID_SEARCH", False)
-            print(f"MCP RAG: use_hybrid_search: {use_hybrid_search}")
-            
-            # Prepare filter if source is provided and not empty
-            filter_metadata = None
-            if source and source.strip():
-                filter_metadata = {"source": source}
-                print(f"MCP RAG: Created filter_metadata: {filter_metadata}")
-            else:
-                print(f"MCP RAG: No source filter applied")
-            
-            print(f"MCP RAG: About to call search_documents with cached_api_key={cached_api_key is not None}...")
-            
-            # Standard vector search only (simplified for debugging)
-            results = search_documents(
-                client=supabase_client,
-                query=query,
-                match_count=match_count,
-                filter_metadata=filter_metadata,
-                cached_api_key=cached_api_key
-            )
-            
-            print(f"MCP RAG: search_documents returned {len(results) if results else 0} results")
-            if results:
-                for i, result in enumerate(results[:3]):  # Log first 3 results
-                    print(f"MCP RAG: Result {i}: url={result.get('url')}, similarity={result.get('similarity')}, content_length={len(result.get('content', ''))}")
-            
-            # Format the results
-            formatted_results = []
-            for i, result in enumerate(results):
-                print(f"MCP RAG: Processing result {i}: {type(result)}")
-                formatted_result = {
-                    "url": result.get("url"),
-                    "content": result.get("content"),
-                    "metadata": result.get("metadata"),
-                    "similarity": result.get("similarity")
+        with rag_logger.span("mcp_rag_query",
+                            query_length=len(query),
+                            source=source,
+                            match_count=match_count,
+                            client_type="mcp") as span:
+            try:
+                rag_logger.info("MCP RAG query started",
+                               query=query[:100] + "..." if len(query) > 100 else query,
+                               source=source,
+                               match_count=match_count)
+                
+                # Get Supabase client
+                with span.nested("get_client"):
+                    client = get_supabase_client()
+                    span.set_attribute("client_obtained", True)
+                
+                # Build filter metadata if source is provided
+                filter_metadata = None
+                if source:
+                    with span.nested("build_filter"):
+                        filter_metadata = {"source": source}
+                        rag_logger.debug("Built filter metadata", source=source)
+                        span.set_attribute("filter_applied", True)
+                
+                # Perform vector search
+                with span.nested("vector_search"):
+                    results = search_documents(
+                        client=client,
+                        query=query,
+                        match_count=match_count,
+                        filter_metadata=filter_metadata
+                    )
+                    span.set_attribute("raw_results_count", len(results))
+                
+                # Format results for MCP response
+                with span.nested("format_response"):
+                    formatted_results = []
+                    for i, result in enumerate(results):
+                        try:
+                            formatted_result = {
+                                "id": result.get("id", f"result_{i}"),
+                                "content": result.get("content", "")[:1000],  # Limit content
+                                "metadata": result.get("metadata", {}),
+                                "similarity_score": result.get("similarity", 0.0)
+                            }
+                            formatted_results.append(formatted_result)
+                        except Exception as format_error:
+                            rag_logger.warning("Failed to format result", 
+                                             result_index=i, 
+                                             error=str(format_error))
+                            continue
+                
+                response_data = {
+                    "success": True,
+                    "results": formatted_results,
+                    "query": query,
+                    "source": source,
+                    "match_count": match_count,
+                    "total_found": len(formatted_results),
+                    "execution_path": "mcp_vector_search"
                 }
-                formatted_results.append(formatted_result)
-            
-            print(f"MCP RAG: Formatted {len(formatted_results)} results, returning success")
-            
-            result_data = {
-                "success": True,
-                "query": query,
-                "source_filter": source,
-                "search_mode": "vector",
-                "reranking_applied": False,
-                "results": formatted_results,
-                "count": len(formatted_results)
-            }
-            
-            print(f"MCP RAG: Final result data keys: {list(result_data.keys())}")
-            print(f"=== MCP RAG QUERY DEBUG END ===\n")
-            
-            return json.dumps(result_data)
-            
-        except Exception as e:
-            print(f"MCP RAG: Exception occurred: {type(e).__name__}: {str(e)}")
-            import traceback
-            print(f"MCP RAG: Traceback: {traceback.format_exc()}")
-            print(f"=== MCP RAG QUERY DEBUG END (ERROR) ===\n")
-            
-            return json.dumps({
-                "success": False,
-                "query": query,
-                "error": str(e)
-            })
+                
+                span.set_attribute("final_results_count", len(formatted_results))
+                span.set_attribute("success", True)
+                
+                rag_logger.info("MCP RAG query completed successfully",
+                               results_count=len(formatted_results),
+                               execution_path="mcp_vector_search")
+                
+                return json.dumps(response_data, indent=2)
+                
+            except Exception as e:
+                span.record_exception(e)
+                span.set_attribute("success", False)
+                span.set_attribute("error_type", type(e).__name__)
+                
+                rag_logger.exception("MCP RAG query failed",
+                                    error=str(e),
+                                    error_type=type(e).__name__,
+                                    query=query[:50],
+                                    source=source)
+                
+                # Return error as JSON for graceful handling
+                error_response = {
+                    "success": False,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "query": query,
+                    "source": source,
+                    "execution_path": "mcp_vector_search"
+                }
+                return json.dumps(error_response, indent=2)
     
     @mcp.tool()
     async def delete_source_tool(ctx: Context, source_id: str) -> str:

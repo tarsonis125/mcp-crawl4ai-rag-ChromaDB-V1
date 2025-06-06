@@ -21,6 +21,9 @@ from dataclasses import dataclass
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+# Import Logfire configuration
+from .logfire_config import setup_logfire, api_logger
+
 # Import modular API routers
 from .api.settings_api import router as settings_router
 from .api.mcp_api import router as mcp_router
@@ -139,41 +142,45 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Starting Archon backend...")
     
     try:
+        # Initialize Logfire first
+        setup_logfire(service_name="archon-backend")
+        api_logger.info("🔥 Logfire initialized for backend")
+        
         # Initialize credentials from database
         await initialize_credentials()
-        logger.info("✅ Credentials initialized")
+        api_logger.info("✅ Credentials initialized")
         
         # Initialize crawling context
         try:
             await crawling_context.initialize()
         except Exception as e:
-            logger.warning(f"Could not fully initialize crawling context: {e}")
+            api_logger.warning("Could not fully initialize crawling context", error=str(e))
         
         # Make crawling context available to modules
         app.state.crawling_context = crawling_context
         
-        logger.info("🎉 Archon backend started successfully!")
+        api_logger.info("🎉 Archon backend started successfully!")
         
     except Exception as e:
-        logger.error(f"❌ Failed to start backend: {e}")
+        api_logger.error("❌ Failed to start backend", error=str(e))
         raise
     
     yield
     
     # Shutdown
-    logger.info("🛑 Shutting down Archon backend...")
+    api_logger.info("🛑 Shutting down Archon backend...")
     
     try:
         # Cleanup crawling context
         try:
             await crawling_context.cleanup()
         except Exception as e:
-            logger.warning(f"Could not cleanup crawling context: {e}")
+            api_logger.warning("Could not cleanup crawling context", error=str(e))
         
-        logger.info("✅ Cleanup completed")
+        api_logger.info("✅ Cleanup completed")
         
     except Exception as e:
-        logger.error(f"❌ Error during shutdown: {e}")
+        api_logger.error("❌ Error during shutdown", error=str(e))
 
 # Create FastAPI application
 app = FastAPI(

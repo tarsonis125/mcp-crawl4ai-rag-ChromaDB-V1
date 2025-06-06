@@ -22,6 +22,9 @@ import traceback
 
 from ..utils import get_supabase_client
 
+# Import Logfire
+from ..logfire_config import api_logger, rag_logger
+
 # Create router
 router = APIRouter(prefix="/api", tags=["knowledge"])
 
@@ -658,68 +661,72 @@ async def upload_document(
 @router.post("/rag/query")
 async def perform_rag_query(request: RagQueryRequest):
     """Perform a RAG query on the knowledge base."""
-    print(f"\n=== FastAPI RAG QUERY DEBUG START ===\n")
-    print(f"RAG API: Received request: {request}\n")
-    print(f"RAG API: Query: '{request.query}'\n")
-    print(f"RAG API: Source: '{request.source}'\n")
-    print(f"RAG API: Match count: {request.match_count}\n")
-    
-    try:
-        supabase_client = get_supabase_client()
-        print(f"RAG API: Got Supabase client: {supabase_client is not None}\n")
-        
-        # Simple search implementation (in production, you'd use vector search)
-        query_builder = supabase_client.table("crawled_pages").select("*")
-        print(f"RAG API: Created query builder\n")
-        
-        if request.source:
-            query_builder = query_builder.eq("source_id", request.source)
-            print(f"RAG API: Applied source filter: {request.source}\n")
-        else:
-            print(f"RAG API: No source filter applied\n")
-        
-        print(f"RAG API: About to execute query with limit {request.match_count}\n")
-        response = query_builder.limit(request.match_count).execute()
-        print(f"RAG API: Query executed, got {len(response.data) if response.data else 0} total records\n")
-        
-        # Filter results by query relevance (simple text matching)
-        results = []
-        for i, item in enumerate(response.data):
-            content = item.get("content", "")
-            if request.query.lower() in content.lower():
-                print(f"RAG API: Found match in record {i}, content length: {len(content)}\n")
-                results.append({
-                    "id": item["id"],
-                    "title": item.get("title", ""),
-                    "content": content[:500] + "..." if len(content) > 500 else content,
-                    "url": item.get("url", ""),
-                    "source_id": item.get("source_id", ""),
-                    "relevance_score": 0.8  # Dummy score
-                })
-            else:
-                if i < 5:  # Only log first 5 non-matches to avoid spam
-                    print(f"RAG API: No match in record {i}, source_id: {item.get('source_id')}, content preview: {content[:100]}...\n")
-        
-        print(f"RAG API: Found {len(results)} matching results after filtering\n")
-        
-        final_results = results[:request.match_count]
-        result_data = {
-            "results": final_results,
-            "query": request.query,
-            "total_results": len(results)
-        }
-        
-        print(f"RAG API: Returning {len(final_results)} results\n")
-        print(f"=== FastAPI RAG QUERY DEBUG END ===\n")
-        
-        return result_data
-        
-    except Exception as e:
-        print(f"RAG API: Exception occurred: {type(e).__name__}: {str(e)}\n")
-        import traceback
-        print(f"RAG API: Traceback: {traceback.format_exc()}\n")
-        print(f"=== FastAPI RAG QUERY DEBUG END (ERROR) ===\n")
-        raise HTTPException(status_code=500, detail={'error': str(e)})
+    with rag_logger.span("rag_query", 
+                        query_length=len(request.query), 
+                        source=request.source, 
+                        match_count=request.match_count) as span:
+        try:
+            rag_logger.info("RAG query started", 
+                           query=request.query[:100] + "..." if len(request.query) > 100 else request.query,
+                           source=request.source,
+                           match_count=request.match_count)
+            
+            # Use simple text matching for FastAPI direct query
+            supabase = get_supabase_client()
+            
+            with span.nested("database_query"):
+                query_builder = supabase.table("crawled_pages").select("*")
+                
+                # Apply source filter if provided
+                if request.source:
+                    rag_logger.debug("Applying source filter", source=request.source)
+                    query_builder = query_builder.ilike("source", f"%{request.source}%")
+                
+                # Apply text search
+                query_builder = query_builder.ilike("content", f"%{request.query}%")
+                query_builder = query_builder.limit(request.match_count)
+                
+                response = query_builder.execute()
+            
+            results = response.data if response.data else []
+            
+            # Format results consistently
+            with span.nested("format_results"):
+                formatted_results = []
+                for result in results:
+                    formatted_results.append({
+                        "id": result.get("id"),
+                        "content": result.get("content", "")[:1000],  # Limit content length
+                        "metadata": {
+                            "source": result.get("source"),
+                            "url": result.get("url"),
+                            "title": result.get("title"),
+                            "chunk_index": result.get("chunk_index", 0)
+                        },
+                        "score": 0.8  # Mock similarity score for text matching
+                    })
+            
+            span.set_attribute("results_count", len(formatted_results))
+            rag_logger.info("RAG query completed successfully", 
+                           results_count=len(formatted_results),
+                           execution_path="fastapi_direct")
+            
+            return {
+                "success": True,
+                "results": formatted_results,
+                "query": request.query,
+                "source": request.source,
+                "match_count": request.match_count,
+                "execution_path": "fastapi_direct"
+            }
+            
+        except Exception as e:
+            span.record_exception(e)
+            rag_logger.exception("RAG query failed", 
+                                error=str(e),
+                                query=request.query[:50],
+                                source=request.source)
+            raise HTTPException(status_code=500, detail=f"RAG query failed: {str(e)}")
 
 @router.get("/rag/sources")
 async def get_available_sources():

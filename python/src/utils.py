@@ -11,6 +11,12 @@ import openai
 import re
 import time
 import asyncio
+import logging
+import uuid
+from datetime import datetime
+
+# Import Logfire
+from .logfire_config import search_logger
 
 # OpenAI client will be configured dynamically when needed
 
@@ -397,85 +403,103 @@ def add_documents_to_supabase(
                         print(f"Successfully inserted {successful_inserts}/{len(batch_data)} records individually")
 
 def search_documents(
-    client: Client, 
-    query: str, 
-    match_count: int = 10, 
-    filter_metadata: Optional[Dict[str, Any]] = None,
+    client: Client,
+    query: str,
+    match_count: int = 5,
+    threshold: float = 0.7,
+    filter_metadata: dict = None,
+    use_hybrid_search: bool = False,
     cached_api_key: str = None
 ) -> List[Dict[str, Any]]:
     """
-    Search for documents in Supabase using vector similarity.
+    Search for documents in the database using semantic search.
     
     Args:
         client: Supabase client
-        query: Query text
-        match_count: Maximum number of results to return
-        filter_metadata: Optional metadata filter
-        cached_api_key: Pre-cached OpenAI API key from context
-        
+        query: Search query string
+        match_count: Number of results to return
+        threshold: Similarity threshold for results
+        filter_metadata: Optional metadata filter dict
+        use_hybrid_search: Whether to use hybrid keyword + semantic search
+        cached_api_key: Cached OpenAI API key for embeddings
+    
     Returns:
         List of matching documents
     """
-    print(f"\n=== SEARCH_DOCUMENTS DEBUG START ===\n")
-    print(f"SEARCH: Called with query='{query}', match_count={match_count}\n")
-    print(f"SEARCH: filter_metadata={filter_metadata}\n")
-    print(f"SEARCH: cached_api_key provided: {cached_api_key is not None}\n")
-    
-    try:
-        # Create embedding for the query USING CACHED KEY!
-        print(f"SEARCH: Creating embedding for query...")
-        query_embedding = create_embedding(query, cached_api_key=cached_api_key)
-        print(f"SEARCH: Created embedding, length: {len(query_embedding) if query_embedding else 0}\n")
-        
-        if not query_embedding:
-            print(f"SEARCH: ERROR - No embedding created!\n")
-            print(f"=== SEARCH_DOCUMENTS DEBUG END (NO EMBEDDING) ===\n")
+    with search_logger.span("vector_search", 
+                           query_length=len(query),
+                           match_count=match_count,
+                           threshold=threshold,
+                           has_filter=filter_metadata is not None) as span:
+        try:
+            search_logger.info("Document search started", 
+                              query=query[:100] + "..." if len(query) > 100 else query,
+                              match_count=match_count,
+                              threshold=threshold,
+                              filter_metadata=filter_metadata)
+            
+            # Create embedding for the query
+            with span.nested("create_embedding"):
+                query_embedding = create_embedding(query, cached_api_key)
+                
+                if not query_embedding:
+                    search_logger.error("Failed to create embedding for query")
+                    return []
+                
+                span.set_attribute("embedding_dimensions", len(query_embedding))
+            
+            # Build the filter for the RPC call
+            with span.nested("prepare_rpc_params"):
+                rpc_params = {
+                    "query_embedding": query_embedding,
+                    "match_threshold": threshold,
+                    "match_count": match_count
+                }
+                
+                # Add filter to RPC params if provided
+                if filter_metadata:
+                    search_logger.debug("Adding filter to RPC params", filter_metadata=filter_metadata)
+                    # The RPC function expects a 'filter' parameter
+                    rpc_params["filter"] = filter_metadata
+                    span.set_attribute("filter_applied", True)
+                    span.set_attribute("filter_keys", list(filter_metadata.keys()) if filter_metadata else [])
+            
+            # Call the RPC function
+            with span.nested("supabase_rpc_call"):
+                search_logger.debug("Calling Supabase RPC function", 
+                                  function_name="match_crawled_pages",
+                                  rpc_params_keys=list(rpc_params.keys()))
+                
+                response = client.rpc("match_crawled_pages", rpc_params).execute()
+                span.set_attribute("rpc_success", True)
+                span.set_attribute("raw_results_count", len(response.data) if response.data else 0)
+            
+            results_count = len(response.data) if response.data else 0
+            
+            span.set_attribute("success", True)
+            span.set_attribute("final_results_count", results_count)
+            
+            if results_count > 0:
+                search_logger.debug("Search results preview",
+                                  first_result_url=response.data[0].get('url') if response.data else None,
+                                  first_result_similarity=response.data[0].get('similarity') if response.data else None)
+            
+            search_logger.info("Document search completed successfully", 
+                              final_results_count=results_count)
+            
+            return response.data or []
+            
+        except Exception as e:
+            span.record_exception(e)
+            span.set_attribute("success", False)
+            span.set_attribute("error_type", type(e).__name__)
+            
+            search_logger.exception("Document search failed",
+                                   error=str(e),
+                                   error_type=type(e).__name__,
+                                   query=query[:50])
+            # Return empty list on error instead of raising
             return []
-        
-        # Extract source for direct filtering if provided
-        source_filter = None
-        if filter_metadata and "source" in filter_metadata:
-            source_filter = filter_metadata["source"]
-            print(f"SEARCH: Extracted source_filter: '{source_filter}'\n")
-        else:
-            print(f"SEARCH: No source filter to extract\n")
-        
-        print(f"SEARCH: About to call match_crawled_pages RPC...\n")
-        print(f"SEARCH: RPC params - embedding length: {len(query_embedding)}, match_count: {match_count}\n")
-        print(f"SEARCH: RPC params - filter: {filter_metadata}, source_filter: {source_filter}\n")
-        
-        # Call the RPC function with BOTH filter types
-        response = client.rpc(
-            "match_crawled_pages",
-            {
-                "query_embedding": query_embedding,
-                "match_count": match_count,
-                "filter": filter_metadata,  # JSONB metadata filter
-                "source_filter": source_filter  # Direct source_id filter 
-            }
-        ).execute()
-        
-        print(f"SEARCH: RPC executed successfully\n")
-        print(f"SEARCH: Response data length: {len(response.data) if response.data else 0}\n")
-        
-        if response.data:
-            for i, item in enumerate(response.data[:3]):  # Log first 3 items
-                print(f"SEARCH: Item {i}: id={item.get('id')}, url={item.get('url')}, similarity={item.get('similarity')}, source_id={item.get('source_id')}\n")
-        else:
-            print(f"SEARCH: No data returned from RPC\n")
-        
-        result = response.data or []
-        print(f"SEARCH: Returning {len(result)} results\n")
-        print(f"=== SEARCH_DOCUMENTS DEBUG END ===\n")
-        
-        return result
-        
-    except Exception as e:
-        print(f"SEARCH: Exception in search_documents: {type(e).__name__}: {str(e)}\n")
-        import traceback
-        print(f"SEARCH: Traceback: {traceback.format_exc()}\n")
-        print(f"=== SEARCH_DOCUMENTS DEBUG END (ERROR) ===\n")
-        return []
 
 
 def extract_code_blocks(markdown_content: str, min_length: int = 1000) -> List[Dict[str, Any]]:
