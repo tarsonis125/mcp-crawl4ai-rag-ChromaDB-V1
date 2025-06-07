@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowRight, Plus, X, Search, Upload, Link as LinkIcon, Check, Filter, BoxIcon, Brain } from 'lucide-react';
+import { Plus, X, Search, Upload, Link as LinkIcon, Check, Filter, Brain, Edit3, Save, Trash2, FileText, Layout, BookOpen } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '../ui/Button';
 import { knowledgeBaseService, KnowledgeItem } from '../../services/knowledgeBaseService';
@@ -10,13 +10,87 @@ import { Badge } from '../ui/Badge';
 import { Select } from '../ui/Select';
 import { CrawlProgressData, crawlProgressService } from '../../services/crawlProgressService';
 
-// Define Task interface locally to fix linter errors
+// Notion-like Block structure
+interface NotionBlock {
+  id: string;
+  type: 'paragraph' | 'heading_1' | 'heading_2' | 'heading_3' | 'bulleted_list' | 'numbered_list' | 'to_do' | 'callout' | 'divider' | 'quote';
+  content: any;
+  properties?: {
+    title?: string;
+    color?: string;
+    checked?: boolean;
+  };
+}
+
+interface ProjectDoc {
+  id: string;
+  title: string;
+  blocks: NotionBlock[];
+  created_at: string;
+  updated_at: string;
+}
+
 interface Task {
   id: string;
   title: string;
   feature: string;
   status: 'backlog' | 'in-progress' | 'testing' | 'complete';
 }
+
+// Document Templates
+const DOCUMENT_TEMPLATES = {
+  'prd': {
+    name: 'PRD Template',
+    icon: '📋',
+    blocks: [
+      { id: '1', type: 'heading_1' as const, content: 'Product Requirements Document', properties: { title: 'Product Requirements Document' } },
+      { id: '2', type: 'heading_2' as const, content: 'Project Overview', properties: { title: 'Project Overview' } },
+      { id: '3', type: 'paragraph' as const, content: 'Describe the project overview here...', properties: {} },
+      { id: '4', type: 'heading_2' as const, content: 'Goals', properties: { title: 'Goals' } },
+      { id: '5', type: 'bulleted_list' as const, content: ['Goal 1', 'Goal 2', 'Goal 3'], properties: {} },
+      { id: '6', type: 'heading_2' as const, content: 'Success Criteria', properties: { title: 'Success Criteria' } },
+      { id: '7', type: 'bulleted_list' as const, content: ['Criteria 1', 'Criteria 2'], properties: {} },
+      { id: '8', type: 'heading_2' as const, content: 'Requirements', properties: { title: 'Requirements' } },
+      { id: '9', type: 'numbered_list' as const, content: ['Requirement 1', 'Requirement 2'], properties: {} }
+    ]
+  },
+  'technical_spec': {
+    name: 'Technical Spec',
+    icon: '⚙️',
+    blocks: [
+      { id: '1', type: 'heading_1' as const, content: 'Technical Specification', properties: { title: 'Technical Specification' } },
+      { id: '2', type: 'heading_2' as const, content: 'Architecture', properties: { title: 'Architecture' } },
+      { id: '3', type: 'paragraph' as const, content: 'Describe the technical architecture...', properties: {} },
+      { id: '4', type: 'heading_2' as const, content: 'Tech Stack', properties: { title: 'Tech Stack' } },
+      { id: '5', type: 'bulleted_list' as const, content: ['Frontend: React + TypeScript', 'Backend: Node.js + Express', 'Database: PostgreSQL'], properties: {} },
+      { id: '6', type: 'heading_2' as const, content: 'Implementation Plan', properties: { title: 'Implementation Plan' } },
+      { id: '7', type: 'numbered_list' as const, content: ['Phase 1: Setup', 'Phase 2: Core Features', 'Phase 3: Testing'], properties: {} }
+    ]
+  },
+  'meeting_notes': {
+    name: 'Meeting Notes',
+    icon: '📝',
+    blocks: [
+      { id: '1', type: 'heading_1' as const, content: 'Meeting Notes', properties: { title: 'Meeting Notes' } },
+      { id: '2', type: 'paragraph' as const, content: 'Date: ' + new Date().toLocaleDateString(), properties: {} },
+      { id: '3', type: 'heading_2' as const, content: 'Attendees', properties: { title: 'Attendees' } },
+      { id: '4', type: 'bulleted_list' as const, content: ['Person 1', 'Person 2'], properties: {} },
+      { id: '5', type: 'heading_2' as const, content: 'Agenda', properties: { title: 'Agenda' } },
+      { id: '6', type: 'numbered_list' as const, content: ['Topic 1', 'Topic 2'], properties: {} },
+      { id: '7', type: 'heading_2' as const, content: 'Action Items', properties: { title: 'Action Items' } },
+      { id: '8', type: 'to_do' as const, content: ['Task 1', 'Task 2'], properties: {} }
+    ]
+  },
+  'blank': {
+    name: 'Blank Document',
+    icon: '📄',
+    blocks: [
+      { id: '1', type: 'heading_1' as const, content: 'Untitled', properties: { title: 'Untitled' } },
+      { id: '2', type: 'paragraph' as const, content: 'Start writing...', properties: {} }
+    ]
+  }
+};
+
 /* ——————————————————————————————————————————— */
 /* Main component                                 */
 /* ——————————————————————————————————————————— */
@@ -28,11 +102,19 @@ export const DocsTab = ({
   project?: {
     id: string;
     title: string;
-    prd?: any;
     created_at?: string;
     updated_at?: string;
   } | null;
 }) => {
+  // Document state
+  const [documents, setDocuments] = useState<ProjectDoc[]>([]);
+  const [selectedDocument, setSelectedDocument] = useState<ProjectDoc | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  
+  // Knowledge management state
   const [showTechnicalModal, setShowTechnicalModal] = useState(false);
   const [showBusinessModal, setShowBusinessModal] = useState(false);
   const [selectedTechnicalSources, setSelectedTechnicalSources] = useState<string[]>([]);
@@ -40,17 +122,203 @@ export const DocsTab = ({
   const [showAddSourceModal, setShowAddSourceModal] = useState(false);
   const [sourceType, setSourceType] = useState<'technical' | 'business'>('technical');
   const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>([]);
-  const [loading, setLoading] = useState(false);
   const [progressItems, setProgressItems] = useState<CrawlProgressData[]>([]);
   const { showToast } = useToast();
 
-  // Editable PRD state
-  const [editablePRD, setEditablePRD] = useState<any>({});
-  const [isEditing, setIsEditing] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [autoSaveTimeout, setAutoSaveTimeout] = useState<NodeJS.Timeout | null>(null);
+  // Load project documents from database
+  const loadProjectDocuments = async () => {
+    if (!project?.id) return;
+    
+    try {
+      setLoading(true);
+      const response = await fetch(`http://localhost:8080/api/projects/${project.id}`);
+      if (!response.ok) throw new Error('Failed to load project documents');
+      
+      const data = await response.json();
+      const docs = data.docs || [];
+      
+      // Transform docs to ProjectDoc format
+      const projectDocuments: ProjectDoc[] = docs.map((doc: any) => ({
+        id: doc.id || `doc-${Date.now()}`,
+        title: doc.title || 'Untitled Document',
+        blocks: doc.blocks || [],
+        created_at: doc.created_at || new Date().toISOString(),
+        updated_at: doc.updated_at || new Date().toISOString()
+      }));
+      
+      setDocuments(projectDocuments);
+      
+      // Auto-select first document if available
+      if (projectDocuments.length > 0) {
+        setSelectedDocument(projectDocuments[0]);
+      }
+    } catch (error) {
+      console.error('Failed to load documents:', error);
+      showToast('Failed to load documents', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  // Load knowledge items from the service
+  // Create new document from template
+  const createDocumentFromTemplate = async (templateKey: string) => {
+    if (!project?.id) return;
+    
+    const template = DOCUMENT_TEMPLATES[templateKey as keyof typeof DOCUMENT_TEMPLATES];
+    if (!template) return;
+
+    const newDoc: ProjectDoc = {
+      id: `doc-${Date.now()}`,
+      title: template.name,
+      blocks: template.blocks.map(block => ({
+        ...block,
+        id: `${Date.now()}-${block.id}`
+      })),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    try {
+      setIsSaving(true);
+      
+      // Get current project data
+      const projectResponse = await fetch(`http://localhost:8080/api/projects/${project.id}`);
+      if (!projectResponse.ok) throw new Error('Failed to load project');
+      
+      const projectData = await projectResponse.json();
+      const currentDocs = projectData.docs || [];
+      
+      // Add new document
+      const updatedDocs = [...currentDocs, newDoc];
+
+      // Save updated docs back to project
+      const response = await fetch(`http://localhost:8080/api/projects/${project.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ docs: updatedDocs })
+      });
+
+      if (!response.ok) throw new Error('Failed to create document');
+      
+      showToast('Document created successfully', 'success');
+      setShowTemplateModal(false);
+      loadProjectDocuments();
+    } catch (error) {
+      console.error('Failed to create document:', error);
+      showToast('Failed to create document', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Save document changes
+  const saveDocument = async () => {
+    if (!selectedDocument || !project?.id) return;
+
+    try {
+      setIsSaving(true);
+      
+      // Get current project data
+      const projectResponse = await fetch(`http://localhost:8080/api/projects/${project.id}`);
+      if (!projectResponse.ok) throw new Error('Failed to load project');
+      
+      const projectData = await projectResponse.json();
+      const currentDocs = projectData.docs || [];
+      
+      // Update the specific document
+      const updatedDocs = currentDocs.map((doc: any) => 
+        doc.id === selectedDocument.id ? {
+          ...selectedDocument,
+          updated_at: new Date().toISOString()
+        } : doc
+      );
+
+      // Save updated docs back to project
+      const response = await fetch(`http://localhost:8080/api/projects/${project.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ docs: updatedDocs })
+      });
+
+      if (!response.ok) throw new Error('Failed to save document');
+      
+      showToast('Document saved successfully', 'success');
+      setIsEditing(false);
+      loadProjectDocuments();
+    } catch (error) {
+      console.error('Failed to save document:', error);
+      showToast('Failed to save document', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Add new block
+  const addBlock = (type: NotionBlock['type'] = 'paragraph') => {
+    if (!selectedDocument) return;
+
+    const newBlock: NotionBlock = {
+      id: `block-${Date.now()}`,
+      type,
+      content: type === 'divider' ? null : '',
+      properties: {}
+    };
+
+    const updatedDoc = {
+      ...selectedDocument,
+      blocks: [...selectedDocument.blocks, newBlock]
+    };
+
+    setSelectedDocument(updatedDoc);
+    setIsEditing(true);
+  };
+
+  // Update block
+  const updateBlock = (blockId: string, updates: Partial<NotionBlock>) => {
+    if (!selectedDocument) return;
+
+    const updatedDoc = {
+      ...selectedDocument,
+      blocks: selectedDocument.blocks.map(block => 
+        block.id === blockId ? { ...block, ...updates } : block
+      )
+    };
+
+    setSelectedDocument(updatedDoc);
+    setIsEditing(true);
+  };
+
+  // Delete block
+  const deleteBlock = (blockId: string) => {
+    if (!selectedDocument) return;
+
+    const updatedDoc = {
+      ...selectedDocument,
+      blocks: selectedDocument.blocks.filter(block => block.id !== blockId)
+    };
+
+    setSelectedDocument(updatedDoc);
+    setIsEditing(true);
+  };
+
+  // Update document title
+  const updateDocumentTitle = (newTitle: string) => {
+    if (!selectedDocument) return;
+
+    setSelectedDocument({
+      ...selectedDocument,
+      title: newTitle
+    });
+    setIsEditing(true);
+  };
+
+  // Load knowledge items and documents on mount
+  useEffect(() => {
+    loadKnowledgeItems();
+    loadProjectDocuments();
+  }, [project?.id]);
+
+  // Existing knowledge loading function
   const loadKnowledgeItems = async (knowledgeType?: 'technical' | 'business') => {
     try {
       setLoading(true);
@@ -69,72 +337,7 @@ export const DocsTab = ({
     }
   };
 
-  // Load knowledge items on component mount
-  useEffect(() => {
-    loadKnowledgeItems();
-  }, []);
-
-  // Initialize editable PRD from project data
-  useEffect(() => {
-    if (project?.prd) {
-      setEditablePRD(project.prd);
-    }
-  }, [project?.prd]);
-
-  // Autosave function
-  const autoSavePRD = async (updatedPRD: any) => {
-    if (!project?.id) return;
-    
-    try {
-      setIsSaving(true);
-      
-      // Make API call to update project PRD
-      const response = await fetch(`http://localhost:8080/api/projects/${project.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ prd: updatedPRD })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      showToast('Changes saved automatically', 'success');
-    } catch (error) {
-      console.error('Failed to save PRD:', error);
-      showToast('Failed to save changes', 'error');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  // Handle PRD field changes with debounced autosave
-  const handlePRDChange = (sectionKey: string, value: any) => {
-    const updatedPRD = {
-      ...editablePRD,
-      [sectionKey]: value
-    };
-    
-    setEditablePRD(updatedPRD);
-    setIsEditing(true);
-
-    // Clear existing timeout
-    if (autoSaveTimeout) {
-      clearTimeout(autoSaveTimeout);
-    }
-
-    // Set new timeout for autosave (debounced by 2 seconds)
-    const newTimeout = setTimeout(() => {
-      autoSavePRD(updatedPRD);
-      setIsEditing(false);
-    }, 2000);
-    
-    setAutoSaveTimeout(newTimeout);
-  };
-
-  // Transform KnowledgeItem to legacy format for compatibility
+  // Knowledge management helper functions (simplified for brevity)
   const transformToLegacyFormat = (items: KnowledgeItem[]) => {
     return items.map(item => ({
       id: item.id,
@@ -144,7 +347,6 @@ export const DocsTab = ({
     }));
   };
 
-  // Filter knowledge items by type
   const technicalSources = transformToLegacyFormat(
     knowledgeItems.filter(item => item.metadata.knowledge_type === 'technical')
   );
@@ -152,29 +354,26 @@ export const DocsTab = ({
   const businessSources = transformToLegacyFormat(
     knowledgeItems.filter(item => item.metadata.knowledge_type === 'business')
   );
-  // Toggle selection of a source
+
   const toggleTechnicalSource = (id: string) => {
     setSelectedTechnicalSources(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
   };
   const toggleBusinessSource = (id: string) => {
     setSelectedBusinessSources(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
   };
-  // Save selected sources
   const saveTechnicalSources = () => {
-    // Here you would handle saving the selected sources
     console.log('Saving technical sources:', selectedTechnicalSources);
     setShowTechnicalModal(false);
   };
   const saveBusinessSources = () => {
-    // Here you would handle saving the selected sources
     console.log('Saving business sources:', selectedBusinessSources);
     setShowBusinessModal(false);
   };
-  // Progress handling functions
+
   const handleProgressComplete = (data: CrawlProgressData) => {
     console.log('Crawl completed:', data);
     setProgressItems(prev => prev.filter(item => item.progressId !== data.progressId));
-    loadKnowledgeItems(); // Reload knowledge items
+    loadKnowledgeItems();
     showToast('Crawling completed successfully', 'success');
   };
 
@@ -224,129 +423,104 @@ export const DocsTab = ({
     });
   };
 
-  // Open add source modal with the correct type
   const openAddSourceModal = (type: 'technical' | 'business') => {
     setSourceType(type);
     setShowAddSourceModal(true);
   };
 
-  // Dynamic PRD rendering functions
-  const renderEditablePRDSection = (sectionKey: string, sectionData: any, color: 'blue' | 'purple' | 'pink' | 'orange' = 'blue') => {
-    if (!sectionData) return null;
-    
-    const formatSectionTitle = (key: string) => {
-      return key
-        .split('_')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(' ');
-    };
-
-    const currentValue = editablePRD[sectionKey] || sectionData;
-
-    if (typeof currentValue === 'string') {
-      return (
-        <EditableSection key={sectionKey} title={formatSectionTitle(sectionKey)} color={color}>
-          <textarea
-            value={currentValue}
-            onChange={(e) => handlePRDChange(sectionKey, e.target.value)}
-            className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-md p-3 focus:outline-none focus:border-blue-400 focus:shadow-[0_0_10px_rgba(59,130,246,0.2)] transition-all duration-300 font-mono text-sm resize-vertical min-h-[100px]"
-            placeholder={`Enter ${formatSectionTitle(sectionKey).toLowerCase()}...`}
-          />
-        </EditableSection>
-      );
-    }
-
-    if (Array.isArray(currentValue)) {
-      return (
-        <EditableSection key={sectionKey} title={formatSectionTitle(sectionKey)} color={color}>
-          <EditableList 
-            items={currentValue}
-            onChange={(newItems) => handlePRDChange(sectionKey, newItems)}
-            placeholder={`Add ${formatSectionTitle(sectionKey).toLowerCase()}...`}
-          />
-        </EditableSection>
-      );
-    }
-
-    if (typeof currentValue === 'object') {
-      return (
-        <EditableSection key={sectionKey} title={formatSectionTitle(sectionKey)} color={color}>
-          <div className="space-y-4">
-            {Object.entries(currentValue).map(([subKey, subValue]: [string, any]) => (
-              <div key={subKey}>
-                <h4 className="text-blue-400 mb-2 font-semibold">
-                  {formatSectionTitle(subKey)}
-                </h4>
-                {Array.isArray(subValue) ? (
-                  <EditableList 
-                    items={subValue}
-                    onChange={(newItems) => handlePRDChange(sectionKey, {
-                      ...currentValue,
-                      [subKey]: newItems
-                    })}
-                    placeholder={`Add ${formatSectionTitle(subKey).toLowerCase()}...`}
-                  />
-                ) : (
-                  <textarea
-                    value={typeof subValue === 'string' ? subValue : JSON.stringify(subValue, null, 2)}
-                    onChange={(e) => {
-                      let newValue;
-                      try {
-                        newValue = JSON.parse(e.target.value);
-                      } catch {
-                        newValue = e.target.value;
-                      }
-                      handlePRDChange(sectionKey, {
-                        ...currentValue,
-                        [subKey]: newValue
-                      });
-                    }}
-                    className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-md p-3 focus:outline-none focus:border-blue-400 focus:shadow-[0_0_10px_rgba(59,130,246,0.2)] transition-all duration-300 font-mono text-sm resize-vertical min-h-[80px]"
-                    placeholder={`Enter ${formatSectionTitle(subKey).toLowerCase()}...`}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-        </EditableSection>
-      );
-    }
-
-    return null;
-  };
-
-  // Get dynamic PRD data or fallback to static
-  const prdData = project?.prd || {};
-  const hasCustomPRD = Object.keys(prdData).length > 0;
-  const projectTitle = project?.title || 'E-commerce Platform v1.0';
-  return <div className="relative bg-white/30 dark:bg-black/50 backdrop-blur-lg border border-gray-200 dark:border-gray-800 rounded-lg p-8 min-h-[70vh]">
+  return (
+    <div className="relative bg-white/30 dark:bg-black/50 backdrop-blur-lg border border-gray-200 dark:border-gray-800 rounded-lg p-8 min-h-[70vh]">
       {/* Background effects */}
       <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(to_bottom,rgba(59,130,246,0.01)_50%,transparent_50%)] bg-[length:100%_4px]" />
       <div className="absolute inset-0 pointer-events-none shadow-[inset_0_0_30px_rgba(59,130,246,0.05)]" />
       <div className="absolute inset-0 rounded-lg overflow-hidden pointer-events-none">
         <div className="absolute top-0 left-0 right-0 h-[2px] bg-blue-500 shadow-[0_0_10px_2px_rgba(59,130,246,0.4)] dark:shadow-[0_0_20px_5px_rgba(59,130,246,0.7)]"></div>
       </div>
+
       <div className="max-w-6xl mx-auto">
-        {/* Project Overview Cards - Horizontally displayed at the top */}
+        {/* Project Overview Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-          <OverviewCard title="Project Status" value={calculateProjectStatus(tasks)} subtext={calculateProjectStatus(tasks) === 'Development' ? 'In active development' : calculateProjectStatus(tasks) === 'Complete' ? 'All tasks completed' : 'Planning phase'} color="blue" />
-          <OverviewCard title="Feature Progress" value={`${calculateFeatureCompletion(tasks)}%`} subtext={`${Object.keys(tasks.reduce((acc, task) => ({
-          ...acc,
-          [task.feature]: true
-        }), {})).length} features tracked`} color="purple" />
-          <OverviewCard title="Tasks Overview" value={`${tasks.filter(t => t.status === 'complete').length}/${tasks.length}`} subtext={`${tasks.filter(t => t.status === 'in-progress').length} in progress, ${tasks.filter(t => t.status === 'testing').length} in testing`} color="pink" />
+          <OverviewCard 
+            title="Project Status" 
+            value={calculateProjectStatus(tasks)} 
+            subtext={calculateProjectStatus(tasks) === 'Development' ? 'In active development' : calculateProjectStatus(tasks) === 'Complete' ? 'All tasks completed' : 'Planning phase'} 
+            color="blue" 
+          />
+          <OverviewCard 
+            title="Feature Progress" 
+            value={`${calculateFeatureCompletion(tasks)}%`} 
+            subtext={`${Object.keys(tasks.reduce((acc, task) => ({ ...acc, [task.feature]: true }), {})).length} features tracked`} 
+            color="purple" 
+          />
+          <OverviewCard 
+            title="Tasks Overview" 
+            value={`${tasks.filter(t => t.status === 'complete').length}/${tasks.length}`} 
+            subtext={`${tasks.filter(t => t.status === 'in-progress').length} in progress, ${tasks.filter(t => t.status === 'testing').length} in testing`} 
+            color="pink" 
+          />
         </div>
-        {/* Header */}
-        <header className="mb-8 text-center">
-          <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 text-transparent bg-clip-text mb-2">
-            Project Requirements Document (PRD)
-          </h2>
-          <p className="text-gray-400">{projectTitle}</p>
-        </header>
-        <div className="space-y-8">
-          {/* Save Status Indicator */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-2">
+
+        {/* Document Header */}
+        <header className="mb-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 text-transparent bg-clip-text mb-2">
+                Project Docs
+              </h2>
+              <p className="text-gray-400">{project?.title || 'No project selected'}</p>
+            </div>
+            
+            {/* Document selector and actions */}
+            <div className="flex items-center gap-4">
+              {documents.length > 0 && (
+                <select 
+                  value={selectedDocument?.id || ''} 
+                  onChange={(e) => {
+                    const doc = documents.find(d => d.id === e.target.value);
+                    if (doc) {
+                      setSelectedDocument(doc);
+                    }
+                  }}
+                  className="bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-md px-3 py-2 focus:outline-none focus:border-blue-400"
+                >
+                  {documents.map(doc => (
+                    <option key={doc.id} value={doc.id}>{doc.title}</option>
+                  ))}
+                </select>
+              )}
+              
+              {selectedDocument && (
+                <div className="flex items-center gap-2">
+                  {isEditing && (
+                    <Button 
+                      onClick={saveDocument} 
+                      disabled={isSaving}
+                      variant="primary" 
+                      accentColor="green"
+                      className="flex items-center gap-2"
+                    >
+                      <Save className="w-4 h-4" />
+                      {isSaving ? 'Saving...' : 'Save'}
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              <Button 
+                onClick={() => setShowTemplateModal(true)}
+                variant="primary" 
+                accentColor="blue"
+                className="flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                New Doc
+              </Button>
+            </div>
+          </div>
+
+          {/* Save Status */}
+          {selectedDocument && (
+            <div className="flex items-center gap-2 mt-4">
               {isSaving && (
                 <div className="flex items-center gap-2 text-blue-500">
                   <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
@@ -359,155 +533,454 @@ export const DocsTab = ({
                   <span className="text-sm">Unsaved changes</span>
                 </div>
               )}
-              {!isEditing && !isSaving && hasCustomPRD && (
+              {!isEditing && !isSaving && (
                 <div className="flex items-center gap-2 text-green-500">
                   <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                   <span className="text-sm">All changes saved</span>
                 </div>
               )}
             </div>
-          </div>
-
-          {hasCustomPRD ? (
-            // Render dynamic editable PRD sections
-            Object.entries(prdData).map(([sectionKey, sectionData], index) => {
-              const colors: ('blue' | 'purple' | 'pink' | 'orange')[] = ['blue', 'purple', 'pink', 'orange'];
-              const color = colors[index % colors.length];
-              return renderEditablePRDSection(sectionKey, sectionData, color);
-            })
-          ) : (
-            // Fallback to static content
-            <>
-              {/* Project Overview */}
-              <Section title="Project Overview" color="blue">
-                <p className="mb-3">
-                  A modern e-commerce platform built with React and Node.js,
-                  featuring a responsive UI, secure payment processing, and
-                  comprehensive product management.
-                </p>
-                <p>
-                  Target completion: <span className="text-blue-400">Q3 2024</span>
-                </p>
-              </Section>
-          {/* Architecture and Tech Packages in two columns */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Architecture Column */}
-            <Section title="Architecture" color="purple">
-              <CodeBlock label="Frontend" color="blue">
-                <li>React + TypeScript</li>
-                <li>Redux for state management</li>
-                <li>React Router for navigation</li>
-                <li>Tailwind CSS for styling</li>
-              </CodeBlock>
-              <CodeBlock label="Backend" color="purple">
-                <li>Node.js + Express</li>
-                <li>MongoDB for database</li>
-                <li>JWT for authentication</li>
-                <li>RESTful API architecture</li>
-              </CodeBlock>
-              <CodeBlock label="DevOps" color="pink">
-                <li>Docker for containerization</li>
-                <li>CI/CD with GitHub Actions</li>
-                <li>AWS for hosting</li>
-              </CodeBlock>
-            </Section>
-            {/* Tech Packages Column */}
-            <Section title="Tech Packages" color="pink">
-              <CodeBlock label="Frontend Dependencies" color="blue">
-                <li>react ^18.2.0</li>
-                <li>react-dom ^18.2.0</li>
-                <li>react-router-dom ^6.8.0</li>
-                <li>@reduxjs/toolkit ^1.9.2</li>
-                <li>axios ^1.3.0</li>
-                <li>tailwindcss ^3.2.4</li>
-                <li>stripe-js ^1.46.0</li>
-              </CodeBlock>
-              <CodeBlock label="Backend Dependencies" color="purple">
-                <li>express ^4.18.2</li>
-                <li>mongoose ^6.9.0</li>
-                <li>jsonwebtoken ^9.0.0</li>
-                <li>bcrypt ^5.1.0</li>
-                <li>stripe ^11.9.0</li>
-                <li>cors ^2.8.5</li>
-                <li>dotenv ^16.0.3</li>
-              </CodeBlock>
-            </Section>
-          </div>
-              {/* Technical and Business Knowledge in two columns */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* Technical Knowledge */}
-                <KnowledgeSection title="Technical Knowledge" color="blue" sources={selectedTechnicalSources.map(id => technicalSources.find(source => source.id === id))} onAddClick={() => setShowTechnicalModal(true)} />
-                {/* Business Knowledge */}
-                <KnowledgeSection title="Business Knowledge" color="purple" sources={selectedBusinessSources.map(id => businessSources.find(source => source.id === id))} onAddClick={() => setShowBusinessModal(true)} />
-              </div>
-              {/* Coding Standards */}
-              <Section title="Coding Standards" color="orange">
-                <ul className="list-disc pl-5 space-y-2">
-                  <li>Follow Airbnb JavaScript Style Guide</li>
-                  <li>Use functional components with hooks</li>
-                  <li>Implement strict TypeScript typing</li>
-                  <li>Write unit tests for all components and services</li>
-                  <li>Document functions/components with JSDoc</li>
-                  <li>Use semantic HTML and ensure accessibility (WCAG 2.1)</li>
-                  <li>Implement robust error handling</li>
-                </ul>
-              </Section>
-              {/* UI/UX Requirements */}
-              <Section title="UI/UX Requirements" color="blue">
-                <CodeBlock label="Color Palette" color="blue">
-                  <div className="flex gap-2 mb-4">
-                    {['#1a1a2e', '#16213e', '#0f3460', '#e94560', '#ffffff'].map(c => <div key={c} className="w-10 h-10 rounded flex items-center justify-center text-xs shadow-[0_0_10px_rgba(0,0,0,0.2)] transition-transform hover:scale-105" style={{
-                    background: c,
-                    color: c === '#ffffff' ? '#000' : '#fff'
-                  }}>
-                          {c}
-                        </div>)}
-                  </div>
-                </CodeBlock>
-                <CodeBlock label="Typography" color="purple">
-                  <li>Headings: Poppins (600, 700)</li>
-                  <li>Body: Inter (400, 500)</li>
-                  <li>Monospace: JetBrains Mono</li>
-                </CodeBlock>
-                <CodeBlock label="UI Components" color="pink">
-                  <li>Material UI as base component library</li>
-                  <li>Custom button and form components</li>
-                  <li>Responsive design (mobile → desktop)</li>
-                  <li>Dark-mode support</li>
-                </CodeBlock>
-              </Section>
-            </>
           )}
-          
-          {/* Technical and Business Knowledge in two columns */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Technical Knowledge */}
-            <KnowledgeSection title="Technical Knowledge" color="blue" sources={selectedTechnicalSources.map(id => technicalSources.find(source => source.id === id))} onAddClick={() => setShowTechnicalModal(true)} />
-            {/* Business Knowledge */}
-            <KnowledgeSection title="Business Knowledge" color="purple" sources={selectedBusinessSources.map(id => businessSources.find(source => source.id === id))} onAddClick={() => setShowBusinessModal(true)} />
+        </header>
+
+        {/* Document Content */}
+        {loading ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="text-gray-500">Loading documents...</div>
           </div>
+        ) : selectedDocument ? (
+          <NotionEditor
+            document={selectedDocument}
+            onUpdateTitle={updateDocumentTitle}
+            onUpdateBlock={updateBlock}
+            onDeleteBlock={deleteBlock}
+            onAddBlock={addBlock}
+          />
+        ) : (
+          <div className="flex flex-col items-center justify-center h-64 text-gray-500">
+            <Brain className="w-16 h-16 mb-4 opacity-50" />
+            <p className="text-lg mb-2">No documents found</p>
+            <p className="text-sm">Create a new document to get started</p>
+          </div>
+        )}
+
+        {/* Knowledge Sections */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-12">
+          <KnowledgeSection 
+            title="Technical Knowledge" 
+            color="blue" 
+            sources={selectedTechnicalSources.map(id => technicalSources.find(source => source.id === id))} 
+            onAddClick={() => setShowTechnicalModal(true)} 
+          />
+          <KnowledgeSection 
+            title="Business Knowledge" 
+            color="purple" 
+            sources={selectedBusinessSources.map(id => businessSources.find(source => source.id === id))} 
+            onAddClick={() => setShowBusinessModal(true)} 
+          />
         </div>
-        {/* Call-to-Action */}
       </div>
-      {/* Technical Sources Modal */}
-      {showTechnicalModal && <SourceSelectionModal title="Select Technical Knowledge Sources" sources={technicalSources} selectedSources={selectedTechnicalSources} onToggleSource={toggleTechnicalSource} onSave={saveTechnicalSources} onClose={() => setShowTechnicalModal(false)} onAddSource={() => openAddSourceModal('technical')} />}
-      {/* Business Sources Modal */}
-      {showBusinessModal && <SourceSelectionModal title="Select Business Knowledge Sources" sources={businessSources} selectedSources={selectedBusinessSources} onToggleSource={toggleBusinessSource} onSave={saveBusinessSources} onClose={() => setShowBusinessModal(false)} onAddSource={() => openAddSourceModal('business')} />}
-      {/* Add Source Modal */}
-      {showAddSourceModal && <AddKnowledgeModal 
-        sourceType={sourceType}
-        onClose={() => setShowAddSourceModal(false)} 
-        onSuccess={() => {
-          loadKnowledgeItems();
-          setShowAddSourceModal(false);
-        }}
-        onStartCrawl={handleStartCrawl}
-      />}
-    </div>;
+
+      {/* Template Selection Modal */}
+      {showTemplateModal && (
+        <TemplateModal
+          onClose={() => setShowTemplateModal(false)}
+          onSelectTemplate={createDocumentFromTemplate}
+          isCreating={isSaving}
+        />
+      )}
+
+      {/* Existing Modals (simplified for brevity) */}
+      {showTechnicalModal && (
+        <SourceSelectionModal 
+          title="Select Technical Knowledge Sources" 
+          sources={technicalSources} 
+          selectedSources={selectedTechnicalSources} 
+          onToggleSource={toggleTechnicalSource} 
+          onSave={saveTechnicalSources} 
+          onClose={() => setShowTechnicalModal(false)} 
+          onAddSource={() => openAddSourceModal('technical')} 
+        />
+      )}
+      
+      {showBusinessModal && (
+        <SourceSelectionModal 
+          title="Select Business Knowledge Sources" 
+          sources={businessSources} 
+          selectedSources={selectedBusinessSources} 
+          onToggleSource={toggleBusinessSource} 
+          onSave={saveBusinessSources} 
+          onClose={() => setShowBusinessModal(false)} 
+          onAddSource={() => openAddSourceModal('business')} 
+        />
+      )}
+      
+      {showAddSourceModal && (
+        <AddKnowledgeModal 
+          sourceType={sourceType}
+          onClose={() => setShowAddSourceModal(false)} 
+          onSuccess={() => {
+            loadKnowledgeItems();
+            setShowAddSourceModal(false);
+          }}
+          onStartCrawl={handleStartCrawl}
+        />
+      )}
+    </div>
+  );
 };
+
 /* ——————————————————————————————————————————— */
 /* Helper components                              */
 /* ——————————————————————————————————————————— */
+
+// Notion Editor Component
+const NotionEditor: React.FC<{
+  document: ProjectDoc;
+  onUpdateTitle: (title: string) => void;
+  onUpdateBlock: (blockId: string, updates: Partial<NotionBlock>) => void;
+  onDeleteBlock: (blockId: string) => void;
+  onAddBlock: (type?: NotionBlock['type']) => void;
+}> = ({ document, onUpdateTitle, onUpdateBlock, onDeleteBlock, onAddBlock }) => {
+  const renderBlock = (block: NotionBlock) => {
+    const blockClasses = "group relative p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors";
+    
+    switch (block.type) {
+      case 'heading_1':
+        return (
+          <div key={block.id} className={blockClasses}>
+            <input
+              type="text"
+              value={block.content || ''}
+              onChange={(e) => onUpdateBlock(block.id, { content: e.target.value })}
+              className="w-full text-3xl font-bold bg-transparent border-none outline-none text-gray-900 dark:text-white"
+              placeholder="Heading 1"
+            />
+            <button 
+              onClick={() => onDeleteBlock(block.id)}
+              className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-600"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        );
+      case 'heading_2':
+        return (
+          <div key={block.id} className={blockClasses}>
+            <input
+              type="text"
+              value={block.content || ''}
+              onChange={(e) => onUpdateBlock(block.id, { content: e.target.value })}
+              className="w-full text-2xl font-semibold bg-transparent border-none outline-none text-gray-900 dark:text-white"
+              placeholder="Heading 2"
+            />
+            <button 
+              onClick={() => onDeleteBlock(block.id)}
+              className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-600"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        );
+      case 'heading_3':
+        return (
+          <div key={block.id} className={blockClasses}>
+            <input
+              type="text"
+              value={block.content || ''}
+              onChange={(e) => onUpdateBlock(block.id, { content: e.target.value })}
+              className="w-full text-xl font-medium bg-transparent border-none outline-none text-gray-900 dark:text-white"
+              placeholder="Heading 3"
+            />
+            <button 
+              onClick={() => onDeleteBlock(block.id)}
+              className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-600"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        );
+      case 'paragraph':
+        return (
+          <div key={block.id} className={blockClasses}>
+            <textarea
+              value={block.content || ''}
+              onChange={(e) => onUpdateBlock(block.id, { content: e.target.value })}
+              className="w-full bg-transparent border-none outline-none resize-none text-gray-900 dark:text-white"
+              placeholder="Type something..."
+              rows={1}
+              style={{ minHeight: 'auto' }}
+              onInput={(e) => {
+                const target = e.target as HTMLTextAreaElement;
+                target.style.height = 'auto';
+                target.style.height = target.scrollHeight + 'px';
+              }}
+            />
+            <button 
+              onClick={() => onDeleteBlock(block.id)}
+              className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-600"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        );
+      case 'bulleted_list':
+      case 'numbered_list':
+        const items = Array.isArray(block.content) ? block.content : [block.content || ''];
+        return (
+          <div key={block.id} className={blockClasses}>
+            <div className="space-y-2">
+              {items.map((item, index) => (
+                <div key={index} className="flex items-start gap-2">
+                  <span className="text-gray-500 mt-1">
+                    {block.type === 'bulleted_list' ? '•' : `${index + 1}.`}
+                  </span>
+                  <input
+                    type="text"
+                    value={item || ''}
+                    onChange={(e) => {
+                      const newItems = [...items];
+                      newItems[index] = e.target.value;
+                      onUpdateBlock(block.id, { content: newItems });
+                    }}
+                    className="flex-1 bg-transparent border-none outline-none text-gray-900 dark:text-white"
+                    placeholder="List item"
+                  />
+                </div>
+              ))}
+              <button
+                onClick={() => {
+                  const newItems = [...items, ''];
+                  onUpdateBlock(block.id, { content: newItems });
+                }}
+                className="text-gray-500 hover:text-gray-700 text-sm flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" />
+                Add item
+              </button>
+            </div>
+            <button 
+              onClick={() => onDeleteBlock(block.id)}
+              className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-600"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        );
+      case 'to_do':
+        const todoItems = Array.isArray(block.content) ? block.content : [block.content || ''];
+        return (
+          <div key={block.id} className={blockClasses}>
+            <div className="space-y-2">
+              {todoItems.map((item, index) => (
+                <div key={index} className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    onChange={(e) => {
+                      // Handle checkbox state if needed
+                    }}
+                  />
+                  <input
+                    type="text"
+                    value={item || ''}
+                    onChange={(e) => {
+                      const newItems = [...todoItems];
+                      newItems[index] = e.target.value;
+                      onUpdateBlock(block.id, { content: newItems });
+                    }}
+                    className="flex-1 bg-transparent border-none outline-none text-gray-900 dark:text-white"
+                    placeholder="To-do item"
+                  />
+                </div>
+              ))}
+              <button
+                onClick={() => {
+                  const newItems = [...todoItems, ''];
+                  onUpdateBlock(block.id, { content: newItems });
+                }}
+                className="text-gray-500 hover:text-gray-700 text-sm flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" />
+                Add item
+              </button>
+            </div>
+            <button 
+              onClick={() => onDeleteBlock(block.id)}
+              className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-600"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        );
+      case 'divider':
+        return (
+          <div key={block.id} className={blockClasses}>
+            <hr className="border-gray-300 dark:border-gray-700" />
+            <button 
+              onClick={() => onDeleteBlock(block.id)}
+              className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-600"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        );
+      default:
+        return (
+          <div key={block.id} className={blockClasses}>
+            <textarea
+              value={block.content || ''}
+              onChange={(e) => onUpdateBlock(block.id, { content: e.target.value })}
+              className="w-full bg-transparent border-none outline-none resize-none text-gray-900 dark:text-white"
+              placeholder="Type something..."
+            />
+            <button 
+              onClick={() => onDeleteBlock(block.id)}
+              className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-600"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        );
+    }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto">
+      {/* Document Title */}
+      <div className="mb-8">
+        <input
+          type="text"
+          value={document.title}
+          onChange={(e) => onUpdateTitle(e.target.value)}
+          className="w-full text-4xl font-bold bg-transparent border-none outline-none text-gray-900 dark:text-white mb-2"
+          placeholder="Untitled"
+        />
+        <div className="text-sm text-gray-500">
+          Last updated: {new Date(document.updated_at).toLocaleDateString()}
+        </div>
+      </div>
+
+      {/* Blocks */}
+      <div className="space-y-1">
+        {document.blocks.map(renderBlock)}
+      </div>
+
+      {/* Add Block Buttons */}
+      <div className="mt-8 flex flex-wrap gap-2">
+        <button
+          onClick={() => onAddBlock('paragraph')}
+          className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded flex items-center gap-1"
+        >
+          <Plus className="w-3 h-3" />
+          Text
+        </button>
+        <button
+          onClick={() => onAddBlock('heading_1')}
+          className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded flex items-center gap-1"
+        >
+          <Plus className="w-3 h-3" />
+          Heading 1
+        </button>
+        <button
+          onClick={() => onAddBlock('heading_2')}
+          className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded flex items-center gap-1"
+        >
+          <Plus className="w-3 h-3" />
+          Heading 2
+        </button>
+        <button
+          onClick={() => onAddBlock('bulleted_list')}
+          className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded flex items-center gap-1"
+        >
+          <Plus className="w-3 h-3" />
+          Bullet List
+        </button>
+        <button
+          onClick={() => onAddBlock('numbered_list')}
+          className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded flex items-center gap-1"
+        >
+          <Plus className="w-3 h-3" />
+          Numbered List
+        </button>
+        <button
+          onClick={() => onAddBlock('to_do')}
+          className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded flex items-center gap-1"
+        >
+          <Plus className="w-3 h-3" />
+          To-do
+        </button>
+        <button
+          onClick={() => onAddBlock('divider')}
+          className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded flex items-center gap-1"
+        >
+          <Plus className="w-3 h-3" />
+          Divider
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// Template Modal Component
+const TemplateModal: React.FC<{
+  onClose: () => void;
+  onSelectTemplate: (templateKey: string) => void;
+  isCreating: boolean;
+}> = ({ onClose, onSelectTemplate, isCreating }) => {
+  const templates = Object.entries(DOCUMENT_TEMPLATES);
+
+  return (
+    <div className="fixed inset-0 bg-gray-500/50 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="relative p-6 rounded-md backdrop-blur-md w-full max-w-2xl
+          bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30
+          border border-gray-200 dark:border-zinc-800/50
+          shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)]
+          before:content-[''] before:absolute before:top-0 before:left-0 before:right-0 before:h-[2px] 
+          before:rounded-t-[4px] before:bg-blue-500 
+          before:shadow-[0_0_10px_2px_rgba(59,130,246,0.4)] dark:before:shadow-[0_0_20px_5px_rgba(59,130,246,0.7)]">
+        
+        <div className="relative z-10">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 text-transparent bg-clip-text">
+              Choose a Template
+            </h3>
+            <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {templates.map(([key, template]) => (
+              <button
+                key={key}
+                onClick={() => onSelectTemplate(key)}
+                disabled={isCreating}
+                className="p-4 text-left border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="text-2xl">{template.icon}</span>
+                  <h4 className="font-semibold text-gray-900 dark:text-white">{template.name}</h4>
+                </div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {template.blocks.length} blocks included
+                </p>
+              </button>
+            ))}
+          </div>
+
+          {isCreating && (
+            <div className="mt-4 flex items-center justify-center gap-2 text-blue-500">
+              <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+              <span className="text-sm">Creating document...</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const calculateProjectStatus = (tasks: Task[]) => {
   const hasInProgress = tasks.some(task => task.status === 'in-progress' || task.status === 'testing');
   const allComplete = tasks.every(task => task.status === 'complete');
@@ -515,6 +988,7 @@ const calculateProjectStatus = (tasks: Task[]) => {
   if (hasInProgress) return 'Development';
   return 'Planning';
 };
+
 const calculateFeatureCompletion = (tasks: Task[]) => {
   const featureStats = tasks.reduce((acc, task) => {
     if (!acc[task.feature]) {
@@ -539,6 +1013,7 @@ const calculateFeatureCompletion = (tasks: Task[]) => {
   }) => sum + complete / total, 0);
   return Math.round(completedFeatures / totalFeatures * 100);
 };
+
 const calculateTaskDistribution = (tasks: Task[]) => {
   const distribution = tasks.reduce((acc, task) => {
     acc[task.status] = (acc[task.status] || 0) + 1;
@@ -551,6 +1026,7 @@ const calculateTaskDistribution = (tasks: Task[]) => {
     complete: distribution.complete || 0
   };
 };
+
 const OverviewCard: React.FC<{
   title: string;
   value: string;
@@ -612,164 +1088,7 @@ const OverviewCard: React.FC<{
       </div>
     </div>;
 };
-const Section: React.FC<{
-  title: string;
-  children: React.ReactNode;
-  color: 'blue' | 'purple' | 'pink' | 'orange';
-}> = ({
-  title,
-  children,
-  color
-}) => {
-  const colorMap = {
-    blue: 'bg-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.6)] dark:shadow-[0_0_8px_rgba(59,130,246,0.6)]',
-    purple: 'bg-purple-400 shadow-[0_0_8px_rgba(168,85,247,0.6)] dark:shadow-[0_0_8px_rgba(168,85,247,0.6)]',
-    pink: 'bg-pink-400 shadow-[0_0_8px_rgba(236,72,153,0.6)] dark:shadow-[0_0_8px_rgba(236,72,153,0.6)]',
-    orange: 'bg-orange-400 shadow-[0_0_8px_rgba(249,115,22,0.6)] dark:shadow-[0_0_8px_rgba(249,115,22,0.6)]'
-  };
-  return <section>
-      <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-4 flex items-center">
-        <span className={`w-2 h-2 rounded-full ${colorMap[color]} mr-2`} />
-        {title}
-      </h3>
-      <div className="bg-white/50 dark:bg-black/30 border border-gray-200 dark:border-gray-800 rounded-lg p-4 font-mono text-sm text-gray-700 dark:text-gray-300 backdrop-blur-sm relative overflow-hidden">
-        <div className="absolute top-0 left-0 right-0 h-[1px] bg-blue-500/30"></div>
-        {children}
-      </div>
-    </section>;
-};
 
-const EditableSection: React.FC<{
-  title: string;
-  children: React.ReactNode;
-  color: 'blue' | 'purple' | 'pink' | 'orange';
-}> = ({
-  title,
-  children,
-  color
-}) => {
-  const colorMap = {
-    blue: 'bg-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.6)] dark:shadow-[0_0_8px_rgba(59,130,246,0.6)]',
-    purple: 'bg-purple-400 shadow-[0_0_8px_rgba(168,85,247,0.6)] dark:shadow-[0_0_8px_rgba(168,85,247,0.6)]',
-    pink: 'bg-pink-400 shadow-[0_0_8px_rgba(236,72,153,0.6)] dark:shadow-[0_0_8px_rgba(236,72,153,0.6)]',
-    orange: 'bg-orange-400 shadow-[0_0_8px_rgba(249,115,22,0.6)] dark:shadow-[0_0_8px_rgba(249,115,22,0.6)]'
-  };
-  return <section>
-      <h3 className="text-xl font-bold text-gray-800 dark:text-white mb-4 flex items-center">
-        <span className={`w-2 h-2 rounded-full ${colorMap[color]} mr-2`} />
-        {title}
-        <span className="ml-2 text-xs text-gray-500 dark:text-gray-400 font-normal">✏️ Editable</span>
-      </h3>
-      <div className="bg-white/20 dark:bg-black/20 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg p-4 backdrop-blur-sm relative overflow-hidden hover:border-blue-400 transition-colors">
-        <div className="absolute top-0 left-0 right-0 h-[1px] bg-blue-500/30"></div>
-        {children}
-      </div>
-    </section>;
-};
-
-const EditableList: React.FC<{
-  items: any[];
-  onChange: (newItems: any[]) => void;
-  placeholder: string;
-}> = ({
-  items,
-  onChange,
-  placeholder
-}) => {
-  const [newItem, setNewItem] = useState('');
-
-  const addItem = () => {
-    if (newItem.trim()) {
-      onChange([...items, newItem.trim()]);
-      setNewItem('');
-    }
-  };
-
-  const removeItem = (index: number) => {
-    onChange(items.filter((_, i) => i !== index));
-  };
-
-  const updateItem = (index: number, value: string) => {
-    const newItems = [...items];
-    newItems[index] = value;
-    onChange(newItems);
-  };
-
-  return (
-    <div className="space-y-3">
-      {items.map((item, index) => (
-        <div key={index} className="flex items-center gap-2">
-          <input
-            type="text"
-            value={typeof item === 'string' ? item : JSON.stringify(item)}
-            onChange={(e) => updateItem(index, e.target.value)}
-            className="flex-1 bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-md px-3 py-2 focus:outline-none focus:border-blue-400 focus:shadow-[0_0_10px_rgba(59,130,246,0.2)] transition-all duration-300 text-sm"
-          />
-          <button
-            onClick={() => removeItem(index)}
-            className="p-2 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      ))}
-      
-      <div className="flex items-center gap-2">
-        <input
-          type="text"
-          value={newItem}
-          onChange={(e) => setNewItem(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              addItem();
-            }
-          }}
-          placeholder={placeholder}
-          className="flex-1 bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-md px-3 py-2 focus:outline-none focus:border-blue-400 focus:shadow-[0_0_10px_rgba(59,130,246,0.2)] transition-all duration-300 text-sm"
-        />
-        <button
-          onClick={addItem}
-          className="p-2 text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-        </button>
-      </div>
-    </div>
-  );
-};
-const CodeBlock: React.FC<{
-  label: string;
-  children: React.ReactNode;
-  color: 'blue' | 'purple' | 'pink';
-}> = ({
-  label,
-  children,
-  color
-}) => {
-  const colorMap = {
-    blue: {
-      text: 'text-blue-400',
-      dot: 'bg-blue-400 shadow-[0_0_4px_rgba(59,130,246,0.6)]'
-    },
-    purple: {
-      text: 'text-purple-400',
-      dot: 'bg-purple-400 shadow-[0_0_4px_rgba(168,85,247,0.6)]'
-    },
-    pink: {
-      text: 'text-pink-400',
-      dot: 'bg-pink-400 shadow-[0_0_4px_rgba(236,72,153,0.6)]'
-    }
-  };
-  return <div className="mb-6">
-      <p className={`${colorMap[color].text} mb-2 flex items-center`}>
-        <span className={`w-1 h-1 rounded-full ${colorMap[color].dot} mr-2`}></span>
-        // {label}
-      </p>
-      <ul className="list-disc pl-5 space-y-1">{children}</ul>
-    </div>;
-};
-// Knowledge Section Component
 const KnowledgeSection: React.FC<{
   title: string;
   color: 'blue' | 'purple' | 'pink' | 'orange';
@@ -853,7 +1172,7 @@ const KnowledgeSection: React.FC<{
       </div>
     </section>;
 };
-// Source Selection Modal
+
 const SourceSelectionModal: React.FC<{
   title: string;
   sources: any[];
@@ -941,7 +1260,7 @@ const SourceSelectionModal: React.FC<{
       </div>
     </div>;
 };
-// Add Knowledge Modal Component (same as KnowledgeBasePage but with sourceType prop)
+
 interface AddKnowledgeModalProps {
   sourceType: 'technical' | 'business';
   onClose: () => void;

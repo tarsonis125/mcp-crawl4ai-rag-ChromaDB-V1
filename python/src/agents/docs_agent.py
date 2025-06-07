@@ -59,29 +59,117 @@ class DocsAgent:
             self._agent = Agent(
                 model="openai:gpt-4o-mini",
                 deps_type=DocsDependencies,
-                system_prompt="""You are a helpful documentation assistant.
+                system_prompt="""You are a proactive Documentation Assistant that helps users with their project documentation.
 
-You help users with project documentation tasks including:
-- Creating and reviewing documentation 
-- Answering questions about documentation
-- Providing guidance on best practices
-- General conversation about documentation needs
+**Your approach:**
+- When users ask about documents, projects, or what they have, IMMEDIATELY use your tools to look them up
+- Don't ask for project IDs - use project names and search with your tools
+- If someone mentions a project name (like "Archon Projects" or "The Archon Projects"), search for it right away
+- Be helpful and actually retrieve information instead of asking for more details
 
-Keep responses concise and helpful. For simple greetings like "hi", just respond naturally."""
+**Available tools:**
+- get_project_documents: Search for projects by name and list their documents
+- show_project_document_details: Show detailed content of specific documents
+
+**Examples:**
+- User: "What docs do I have?" → Use get_project_documents() to show all projects
+- User: "Docs for Archon Projects" → Use get_project_documents("Archon Projects") 
+- User: "Show me the PRD" → Use show_project_document_details() to find PRD documents
+
+Always try to be helpful by actually looking up information rather than asking for clarification."""
             )
             
-            # Add tools
+            # Add tools that actually work with your system
             @self._agent.tool
-            async def get_project_documents(ctx: RunContext[DocsDependencies], project_id: str) -> str:
-                """Get existing project documents."""
-                logger.info(f"Getting documents for project {project_id}")
-                return f"Retrieved documents for project {project_id}"
+            async def get_project_documents(ctx: RunContext[DocsDependencies], project_name: str = None) -> str:
+                """Get existing project documents. Can search by project name or ID."""
+                try:
+                    from ..utils import get_supabase_client
+                    supabase = get_supabase_client()
+                    
+                    if project_name:
+                        # First try to find project by name
+                        logger.info(f"Searching for project with name: {project_name}")
+                        response = supabase.table("projects").select("*").ilike("title", f"%{project_name}%").execute()
+                        
+                        if response.data:
+                            project = response.data[0]
+                            docs = project.get("docs", [])
+                            
+                            if docs:
+                                doc_list = []
+                                for doc in docs:
+                                    doc_list.append(f"- {doc.get('title', 'Untitled')} ({doc.get('document_type', 'unknown type')})")
+                                
+                                return f"Found project '{project['title']}' with {len(docs)} documents:\n" + "\n".join(doc_list)
+                            else:
+                                return f"Found project '{project['title']}' but it has no documents yet."
+                        else:
+                            # Try to list all projects
+                            all_projects = supabase.table("projects").select("id, title").execute()
+                            if all_projects.data:
+                                project_list = [f"- {p['title']}" for p in all_projects.data[:10]]
+                                return f"No project found matching '{project_name}'. Available projects:\n" + "\n".join(project_list)
+                            else:
+                                return "No projects found in the system."
+                    else:
+                        # List all projects if no specific name given
+                        response = supabase.table("projects").select("id, title, docs").execute()
+                        if response.data:
+                            project_list = []
+                            for project in response.data[:10]:  # Limit to first 10
+                                doc_count = len(project.get("docs", []))
+                                project_list.append(f"- {project['title']} ({doc_count} documents)")
+                            
+                            return f"Found {len(response.data)} projects:\n" + "\n".join(project_list)
+                        else:
+                            return "No projects found in the system."
+                            
+                except Exception as e:
+                    logger.error(f"Error getting project documents: {e}")
+                    return f"I encountered an error retrieving project documents: {str(e)}"
 
             @self._agent.tool  
-            async def create_document(ctx: RunContext[DocsDependencies], title: str, content: str) -> str:
-                """Create a new document."""
-                logger.info(f"Creating document: {title}")
-                return f"Created document '{title}' with content length {len(content)}"
+            async def show_project_document_details(ctx: RunContext[DocsDependencies], project_name: str, document_title: str = None) -> str:
+                """Show detailed content of a specific document in a project."""
+                try:
+                    from ..utils import get_supabase_client
+                    supabase = get_supabase_client()
+                    
+                    # Find project by name
+                    response = supabase.table("projects").select("*").ilike("title", f"%{project_name}%").execute()
+                    
+                    if not response.data:
+                        return f"No project found matching '{project_name}'"
+                    
+                    project = response.data[0]
+                    docs = project.get("docs", [])
+                    
+                    if not docs:
+                        return f"Project '{project['title']}' has no documents."
+                    
+                    if document_title:
+                        # Find specific document
+                        matching_docs = [doc for doc in docs if document_title.lower() in doc.get('title', '').lower()]
+                        if matching_docs:
+                            doc = matching_docs[0]
+                            content = doc.get('content', {})
+                            return f"Document: {doc.get('title', 'Untitled')}\nType: {doc.get('document_type', 'unknown')}\nContent: {str(content)[:500]}..."
+                        else:
+                            return f"No document found matching '{document_title}' in project '{project['title']}'"
+                    else:
+                        # Show summary of all documents
+                        doc_summaries = []
+                        for doc in docs[:5]:  # Limit to first 5
+                            title = doc.get('title', 'Untitled')
+                            doc_type = doc.get('document_type', 'unknown')
+                            doc_summaries.append(f"- {title} ({doc_type})")
+                        
+                        return f"Documents in '{project['title']}':\n" + "\n".join(doc_summaries)
+                        
+                except Exception as e:
+                    logger.error(f"Error showing document details: {e}")
+                    return f"I encountered an error retrieving document details: {str(e)}"
             
             print("DEBUG: DocsAgent PydanticAI agent initialized successfully")
         
