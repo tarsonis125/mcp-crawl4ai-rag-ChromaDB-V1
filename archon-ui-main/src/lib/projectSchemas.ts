@@ -12,12 +12,8 @@ export const UITaskStatusSchema = z.enum(['backlog', 'in-progress', 'testing', '
 export const TaskPrioritySchema = z.enum(['low', 'medium', 'high', 'critical']);
 export const ProjectColorSchema = z.enum(['cyan', 'purple', 'pink', 'blue', 'orange', 'green']);
 
-// Assignee schema
-export const AssigneeSchema = z.object({
-  name: z.string().min(1, 'Assignee name is required'),
-  avatar: z.string().url('Avatar must be a valid URL'),
-  email: z.string().email('Invalid email format').optional()
-});
+// Assignee schema - simplified to predefined options
+export const AssigneeSchema = z.enum(['User', 'Archon', 'AI IDE Agent']);
 
 // Project schemas
 export const CreateProjectSchema = z.object({
@@ -70,7 +66,8 @@ export const CreateTaskSchema = z.object({
     .max(2000, 'Task description must be less than 2000 characters')
     .default(''),
   status: DatabaseTaskStatusSchema.default('todo'),
-  assignee: AssigneeSchema.optional(),
+  assignee: AssigneeSchema.default('User'),
+  task_order: z.number().int().min(0).default(0),
   feature: z.string()
     .max(100, 'Feature name must be less than 100 characters')
     .optional(),
@@ -91,13 +88,14 @@ export const TaskSchema = z.object({
   title: z.string().min(1),
   description: z.string(),
   status: DatabaseTaskStatusSchema,
+  assignee: AssigneeSchema,
+  task_order: z.number().int().min(0),
   sources: z.array(z.any()).default([]),
   code_examples: z.array(z.any()).default([]),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
   
   // Extended UI properties
-  assignee: AssigneeSchema.optional(),
   feature: z.string().optional(),
   featureColor: z.string().optional(),
   priority: TaskPrioritySchema.optional(),

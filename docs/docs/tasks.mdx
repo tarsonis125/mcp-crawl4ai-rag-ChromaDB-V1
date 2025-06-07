@@ -192,6 +192,7 @@ AI: [Uses create_project MCP tool]
    - **Title**: Clear, actionable task name
    - **Description**: Detailed requirements
    - **Status**: Initial status (usually "todo")
+   - **Assignee**: Choose from User, Archon, or AI IDE Agent
    - **Sources**: Add reference documentation
    - **Code Examples**: Add relevant code snippets
 4. **Save Task**: Click "Create"
@@ -205,6 +206,7 @@ curl -X POST "http://localhost:8080/api/tasks" \
     "project_id": "550e8400-e29b-41d4-a716-446655440000",
     "title": "Create authentication examples",
     "description": "Write comprehensive examples showing how to implement JWT authentication with our API, including token generation, validation, and error handling.",
+    "assignee": "Archon",
     "sources": [
       {
         "name": "JWT.io Introduction",
@@ -369,7 +371,7 @@ AI coding assistants can autonomously manage tasks through MCP tools:
 
 | Tool | Purpose | AI Usage Example |
 |------|---------|------------------|
-| `create_task` | Create new tasks with context | "Create tasks for implementing OAuth login" |
+| `create_task` | Create new tasks with context and assignee | "Create tasks for implementing OAuth login assigned to Archon" |
 | `list_tasks_by_project` | Get all project tasks | "Show me all tasks for the API project" |
 | `get_task` | Get detailed task info | "What's the status of the authentication task?" |
 | `update_task_status` | Change task status | "Mark the login feature as completed" |

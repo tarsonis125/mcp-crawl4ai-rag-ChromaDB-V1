@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Moon, Sun, FileText, Layout, Bot, Settings } from 'lucide-react';
+import { Moon, Sun, FileText, Layout, Bot, Settings, Flame } from 'lucide-react';
 import { Toggle } from '../ui/Toggle';
 import { useTheme } from '../../contexts/ThemeContext';
 
@@ -12,6 +12,7 @@ export const FeaturesSection = () => {
   const [projectsEnabled, setProjectsEnabled] = useState(true);
   const [agUILibraryEnabled, setAgUILibraryEnabled] = useState(false);
   const [agentsEnabled, setAgentsEnabled] = useState(false);
+  const [logfireEnabled, setLogfireEnabled] = useState(false);
 
   const handleThemeToggle = (checked: boolean) => {
     setTheme(checked ? 'dark' : 'light');
@@ -26,77 +27,80 @@ export const FeaturesSection = () => {
         </h2>
       </div>
 
-      <div className="space-y-8">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2">
         {/* Theme Toggle */}
-        <div className="flex items-center justify-between p-4 rounded-lg bg-gradient-to-r from-purple-500/5 to-purple-500/0">
-          <div className="flex items-center gap-4">
-            <div className="p-2.5 rounded-md bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">
-              {isDarkMode ? <Moon className="w-6 h-6" /> : <Sun className="w-6 h-6" />}
-            </div>
-            <div>
-              <p className="font-medium text-gray-800 dark:text-white">
-                Dark Mode
-              </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Switch between light and dark themes
-              </p>
-            </div>
+        <div className="flex items-center gap-4 p-4 rounded-lg bg-gradient-to-r from-purple-500/5 to-purple-500/0">
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-gray-800 dark:text-white">
+              Dark Mode
+            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Switch between light and dark themes
+            </p>
           </div>
-          <Toggle checked={isDarkMode} onCheckedChange={handleThemeToggle} accentColor="purple" icon={isDarkMode ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />} />
+          <div className="flex-shrink-0">
+            <Toggle checked={isDarkMode} onCheckedChange={handleThemeToggle} accentColor="purple" icon={isDarkMode ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />} />
+          </div>
         </div>
 
         {/* Projects Toggle */}
-        <div className="flex items-center justify-between p-4 rounded-lg bg-gradient-to-r from-blue-500/5 to-blue-500/0">
-          <div className="flex items-center gap-4">
-            <div className="p-2.5 rounded-md bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
-              <FileText className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="font-medium text-gray-800 dark:text-white">
-                Projects
-              </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Enable Projects and Tasks functionality
-              </p>
-            </div>
+        <div className="flex items-center gap-4 p-4 rounded-lg bg-gradient-to-r from-blue-500/5 to-blue-500/0">
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-gray-800 dark:text-white">
+              Projects
+            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Enable Projects and Tasks functionality
+            </p>
           </div>
-          <Toggle checked={projectsEnabled} onCheckedChange={setProjectsEnabled} accentColor="blue" icon={<FileText className="w-5 h-5" />} />
+          <div className="flex-shrink-0">
+            <Toggle checked={projectsEnabled} onCheckedChange={setProjectsEnabled} accentColor="blue" icon={<FileText className="w-5 h-5" />} />
+          </div>
         </div>
 
         {/* AG-UI Library Toggle */}
-        <div className="flex items-center justify-between p-4 rounded-lg bg-gradient-to-r from-pink-500/5 to-pink-500/0">
-          <div className="flex items-center gap-4">
-            <div className="p-2.5 rounded-md bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400">
-              <Layout className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="font-medium text-gray-800 dark:text-white">
-                AG-UI Library
-              </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Enable component library functionality
-              </p>
-            </div>
+        <div className="flex items-center gap-4 p-4 rounded-lg bg-gradient-to-r from-pink-500/5 to-pink-500/0">
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-gray-800 dark:text-white">
+              AG-UI Library
+            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Enable component library functionality
+            </p>
           </div>
-          <Toggle checked={agUILibraryEnabled} onCheckedChange={setAgUILibraryEnabled} accentColor="pink" icon={<Layout className="w-5 h-5" />} />
+          <div className="flex-shrink-0">
+            <Toggle checked={agUILibraryEnabled} onCheckedChange={setAgUILibraryEnabled} accentColor="pink" icon={<Layout className="w-5 h-5" />} />
+          </div>
         </div>
 
         {/* Agents Toggle */}
-        <div className="flex items-center justify-between p-4 rounded-lg bg-gradient-to-r from-green-500/5 to-green-500/0">
-          <div className="flex items-center gap-4">
-            <div className="p-2.5 rounded-md bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
-              <Bot className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="font-medium text-gray-800 dark:text-white">
-                Agents
-              </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Enable AI agents for automated tasks
-              </p>
-            </div>
+        <div className="flex items-center gap-4 p-4 rounded-lg bg-gradient-to-r from-green-500/5 to-green-500/0">
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-gray-800 dark:text-white">
+              Agents
+            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Enable AI agents for automated tasks
+            </p>
           </div>
-          <Toggle checked={agentsEnabled} onCheckedChange={setAgentsEnabled} accentColor="green" icon={<Bot className="w-5 h-5" />} />
+          <div className="flex-shrink-0">
+            <Toggle checked={agentsEnabled} onCheckedChange={setAgentsEnabled} accentColor="green" icon={<Bot className="w-5 h-5" />} />
+          </div>
+        </div>
+
+        {/* Pydantic Logfire Toggle */}
+        <div className="flex items-center gap-4 p-4 rounded-lg bg-gradient-to-r from-orange-500/5 to-orange-500/0">
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-gray-800 dark:text-white">
+              Pydantic Logfire
+            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Structured logging and observability platform
+            </p>
+          </div>
+          <div className="flex-shrink-0">
+            <Toggle checked={logfireEnabled} onCheckedChange={setLogfireEnabled} accentColor="orange" icon={<Flame className="w-5 h-5" />} />
+          </div>
         </div>
       </div>
     </div>

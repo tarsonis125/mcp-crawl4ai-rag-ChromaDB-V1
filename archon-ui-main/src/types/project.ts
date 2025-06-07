@@ -13,12 +13,8 @@ export type TaskPriority = 'low' | 'medium' | 'high' | 'critical';
 // Project color themes (from existing UI)
 export type ProjectColor = 'cyan' | 'purple' | 'pink' | 'blue' | 'orange' | 'green';
 
-// Assignee interface
-export interface Assignee {
-  name: string;
-  avatar: string;
-  email?: string;
-}
+// Assignee type - simplified to predefined options
+export type Assignee = 'User' | 'Archon' | 'AI IDE Agent';
 
 // Base Project interface (matches database schema)
 export interface Project {
@@ -48,14 +44,15 @@ export interface Task {
   title: string;
   description: string;
   status: DatabaseTaskStatus;
+  assignee: Assignee; // Now a database column with enum constraint
+  task_order: number; // New database column for priority ordering
+  feature?: string; // New database column for feature name
   sources?: any[]; // JSONB field
   code_examples?: any[]; // JSONB field
   created_at: string;
   updated_at: string;
   
   // Extended UI properties (can be stored in sources JSONB)
-  assignee?: Assignee;
-  feature?: string;
   featureColor?: string;
   priority?: TaskPriority;
   
@@ -97,6 +94,7 @@ export interface CreateTaskRequest {
   description: string;
   status?: DatabaseTaskStatus;
   assignee?: Assignee;
+  task_order?: number;
   feature?: string;
   featureColor?: string;
   priority?: TaskPriority;
@@ -110,6 +108,7 @@ export interface UpdateTaskRequest {
   description?: string;
   status?: DatabaseTaskStatus;
   assignee?: Assignee;
+  task_order?: number;
   feature?: string;
   featureColor?: string;
   priority?: TaskPriority;

@@ -345,7 +345,7 @@ def register_project_tools(mcp: FastMCP):
             })
     
     @mcp.tool()
-    async def create_task(ctx: Context, project_id: str, title: str, description: str = "", parent_task_id: str = None, sources: List[Dict[str, Any]] = None, code_examples: List[Dict[str, Any]] = None) -> str:
+    async def create_task(ctx: Context, project_id: str, title: str, description: str = "", assignee: str = "User", task_order: int = 0, feature: str = None, parent_task_id: str = None, sources: List[Dict[str, Any]] = None, code_examples: List[Dict[str, Any]] = None) -> str:
         """
         Create a new task under a project.
         
@@ -353,6 +353,9 @@ def register_project_tools(mcp: FastMCP):
             project_id: UUID of the parent project
             title: Title of the task
             description: Optional detailed description
+            assignee: Task assignee - one of 'User', 'Archon', 'AI IDE Agent' (default: 'User')
+            task_order: Order/priority of the task (default: 0)
+            feature: Optional feature name/label this task belongs to
             parent_task_id: Optional UUID of parent task for subtasks
             sources: Optional list of source metadata dicts
             code_examples: Optional list of code example dicts
@@ -364,11 +367,21 @@ def register_project_tools(mcp: FastMCP):
             # Get the Supabase client from the context
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             
+            # Validate assignee
+            valid_assignees = ['User', 'Archon', 'AI IDE Agent']
+            if assignee not in valid_assignees:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Invalid assignee '{assignee}'. Must be one of: {', '.join(valid_assignees)}"
+                })
+            
             task_data = {
                 "project_id": project_id,
                 "title": title,
                 "description": description,
                 "status": "todo",
+                "assignee": assignee,
+                "task_order": task_order,
                 "sources": sources or [],
                 "code_examples": code_examples or [],
                 "created_at": datetime.now().isoformat(),
@@ -377,6 +390,9 @@ def register_project_tools(mcp: FastMCP):
             
             if parent_task_id:
                 task_data["parent_task_id"] = parent_task_id
+                
+            if feature:
+                task_data["feature"] = feature
             
             response = supabase_client.table("tasks").insert(task_data).execute()
             
@@ -391,6 +407,8 @@ def register_project_tools(mcp: FastMCP):
                         "title": task["title"],
                         "description": task["description"],
                         "status": task["status"],
+                        "assignee": task["assignee"],
+                        "task_order": task["task_order"],
                         "created_at": task["created_at"]
                     }
                 })
@@ -421,7 +439,7 @@ def register_project_tools(mcp: FastMCP):
             # Get the Supabase client from the context
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             
-            response = supabase_client.table("tasks").select("*").eq("project_id", project_id).order("created_at", desc=False).execute()
+            response = supabase_client.table("tasks").select("*").eq("project_id", project_id).order("task_order", desc=False).order("created_at", desc=False).execute()
             
             tasks = []
             for task in response.data:
@@ -432,6 +450,8 @@ def register_project_tools(mcp: FastMCP):
                     "title": task["title"],
                     "description": task["description"],
                     "status": task["status"],
+                    "assignee": task.get("assignee", "User"),
+                    "task_order": task.get("task_order", 0),
                     "created_at": task["created_at"],
                     "updated_at": task["updated_at"]
                 })
@@ -537,7 +557,7 @@ def register_project_tools(mcp: FastMCP):
             })
     
     @mcp.tool()
-    async def update_task(ctx: Context, task_id: str, title: str = None, description: str = None, status: str = None) -> str:
+    async def update_task(ctx: Context, task_id: str, title: str = None, description: str = None, status: str = None, assignee: str = None, task_order: int = None, feature: str = None) -> str:
         """
         Update task details.
         
@@ -547,6 +567,9 @@ def register_project_tools(mcp: FastMCP):
             title: Optional new title
             description: Optional new description  
             status: Optional new status - one of 'todo', 'doing', 'blocked', 'done'
+            assignee: Optional new assignee - one of 'User', 'Archon', 'AI IDE Agent'
+            task_order: Optional new order/priority
+            feature: Optional new feature name/label
         
         Returns:
             JSON string with update results
@@ -573,6 +596,21 @@ def register_project_tools(mcp: FastMCP):
                         "error": f"Invalid status '{status}'. Must be one of: {', '.join(valid_statuses)}"
                     })
                 update_data["status"] = status
+            
+            if assignee is not None:
+                valid_assignees = ['User', 'Archon', 'AI IDE Agent']
+                if assignee not in valid_assignees:
+                    return json.dumps({
+                        "success": False,
+                        "error": f"Invalid assignee '{assignee}'. Must be one of: {', '.join(valid_assignees)}"
+                    })
+                update_data["assignee"] = assignee
+            
+            if task_order is not None:
+                update_data["task_order"] = task_order
+            
+            if feature is not None:
+                update_data["feature"] = feature
             
             response = supabase_client.table("tasks").update(update_data).eq("id", task_id).execute()
             
@@ -649,7 +687,7 @@ def register_project_tools(mcp: FastMCP):
         try:
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             
-            response = supabase_client.table("tasks").select("*").eq("parent_task_id", parent_task_id).order("created_at", desc=False).execute()
+            response = supabase_client.table("tasks").select("*").eq("parent_task_id", parent_task_id).order("task_order", desc=False).order("created_at", desc=False).execute()
             
             subtasks = []
             for task in response.data:
@@ -660,6 +698,8 @@ def register_project_tools(mcp: FastMCP):
                     "title": task["title"],
                     "description": task["description"],
                     "status": task["status"],
+                    "assignee": task.get("assignee", "User"),
+                    "task_order": task.get("task_order", 0),
                     "created_at": task["created_at"],
                     "updated_at": task["updated_at"]
                 })
@@ -701,7 +741,7 @@ def register_project_tools(mcp: FastMCP):
                     "error": f"Invalid status '{status}'. Must be one of: {', '.join(valid_statuses)}"
                 })
             
-            response = supabase_client.table("tasks").select("*").eq("project_id", project_id).eq("status", status).order("created_at", desc=False).execute()
+            response = supabase_client.table("tasks").select("*").eq("project_id", project_id).eq("status", status).order("task_order", desc=False).order("created_at", desc=False).execute()
             
             tasks = []
             for task in response.data:
@@ -712,6 +752,8 @@ def register_project_tools(mcp: FastMCP):
                     "title": task["title"],
                     "description": task["description"],
                     "status": task["status"],
+                    "assignee": task.get("assignee", "User"),
+                    "task_order": task.get("task_order", 0),
                     "created_at": task["created_at"],
                     "updated_at": task["updated_at"]
                 })
@@ -728,6 +770,49 @@ def register_project_tools(mcp: FastMCP):
             return json.dumps({
                 "success": False,
                 "error": f"Error getting tasks by status: {str(e)}"
+            })
+
+    @mcp.tool()
+    async def get_project_features(ctx: Context, project_id: str) -> str:
+        """
+        Get features from a project's features JSONB field.
+        
+        Args:
+            project_id: UUID of the project
+        
+        Returns:
+            JSON string with list of features
+        """
+        try:
+            supabase_client = ctx.request_context.lifespan_context.supabase_client
+            
+            response = supabase_client.table("projects").select("features").eq("id", project_id).single().execute()
+            
+            if not response.data:
+                return json.dumps({"success": False, "error": "Project not found"})
+            
+            features = response.data.get("features", [])
+            
+            # Extract feature labels for dropdown options
+            feature_options = []
+            for feature in features:
+                if isinstance(feature, dict) and "data" in feature and "label" in feature["data"]:
+                    feature_options.append({
+                        "id": feature.get("id", ""),
+                        "label": feature["data"]["label"],
+                        "type": feature["data"].get("type", ""),
+                        "feature_type": feature.get("type", "page")
+                    })
+            
+            return json.dumps({
+                "success": True, 
+                "features": feature_options,
+                "count": len(feature_options)
+            })
+        except Exception as e:
+            return json.dumps({
+                "success": False,
+                "error": f"Error getting project features: {str(e)}"
             })
 
     # Document Operations for docs JSONB field

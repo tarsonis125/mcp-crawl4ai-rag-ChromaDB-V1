@@ -110,9 +110,9 @@ export function ProjectPage({
          title: task.title,
          description: task.description,
          status: (task.uiStatus || 'backlog') as Task['status'],
-         assignee: task.assignee || {
-           name: 'Unassigned',
-           avatar: 'https://randomuser.me/api/portraits/lego/1.jpg'
+         assignee: {
+           name: task.assignee || 'User',
+           avatar: ''
          },
          feature: task.feature || 'General',
          featureColor: task.featureColor || '#6366f1',
@@ -440,7 +440,7 @@ export function ProjectPage({
                         </div>
                       </div>
                     ) : (
-                      <TasksTab initialTasks={tasks} onTasksChange={setTasks} />
+                      <TasksTab initialTasks={tasks} onTasksChange={setTasks} projectId={selectedProject.id} />
                     )}
                   </TabsContent>
                 )}

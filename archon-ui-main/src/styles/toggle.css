@@ -105,6 +105,21 @@
 .toggle-blue.toggle-checked .toggle-thumb {
   box-shadow: 0 0 20px rgba(59, 130, 246, 0.7);
 }
+.toggle-orange {
+  --accent-color-rgb: 249, 115, 22;
+}
+.toggle-orange.toggle-checked {
+  background: rgba(249, 115, 22, 0.2);
+  border-color: rgba(249, 115, 22, 0.5);
+  box-shadow: 0 0 18px rgba(249, 115, 22, 0.5);
+  animation: toggleGlow 2s ease-in-out infinite;
+}
+.toggle-orange .toggle-thumb {
+  box-shadow: 0 0 10px rgba(249, 115, 22, 0.3);
+}
+.toggle-orange.toggle-checked .toggle-thumb {
+  box-shadow: 0 0 20px rgba(249, 115, 22, 0.7);
+}
 /* Dark mode adjustments */
 .dark .toggle-switch {
   background: rgba(255, 255, 255, 0.1);

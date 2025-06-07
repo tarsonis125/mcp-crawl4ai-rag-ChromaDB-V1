@@ -37,6 +37,9 @@ class CreateTaskRequest(BaseModel):
     title: str
     description: Optional[str] = None
     status: Optional[str] = 'todo'
+    assignee: Optional[str] = 'User'
+    task_order: Optional[int] = 0
+    feature: Optional[str] = None
 
 class ProjectCreationProgressData(BaseModel):
     progressId: str
@@ -419,13 +422,47 @@ async def delete_project(project_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
+@router.get("/projects/{project_id}/features")
+async def get_project_features(project_id: str):
+    """Get features from a project's features JSONB field."""
+    try:
+        supabase_client = get_supabase_client()
+        
+        response = supabase_client.table("projects").select("features").eq("id", project_id).single().execute()
+        
+        if not response.data:
+            raise HTTPException(status_code=404, detail={'error': 'Project not found'})
+        
+        features = response.data.get("features", [])
+        
+        # Extract feature labels for dropdown options
+        feature_options = []
+        for feature in features:
+            if isinstance(feature, dict) and "data" in feature and "label" in feature["data"]:
+                feature_options.append({
+                    "id": feature.get("id", ""),
+                    "label": feature["data"]["label"],
+                    "type": feature["data"].get("type", ""),
+                    "feature_type": feature.get("type", "page")
+                })
+        
+        return {
+            "features": feature_options,
+            "count": len(feature_options)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
 @router.get("/projects/{project_id}/tasks")
 async def list_project_tasks(project_id: str):
     """List all tasks for a specific project."""
     try:
         supabase_client = get_supabase_client()
         
-        response = supabase_client.table("tasks").select("*").eq("project_id", project_id).order("created_at", desc=True).execute()
+        response = supabase_client.table("tasks").select("*").eq("project_id", project_id).order("task_order", desc=False).order("created_at", desc=False).execute()
         
         return response.data
         
@@ -438,11 +475,29 @@ async def create_task(request: CreateTaskRequest):
     try:
         supabase_client = get_supabase_client()
         
+        # Validate assignee
+        valid_assignees = ['User', 'Archon', 'AI IDE Agent']
+        if request.assignee not in valid_assignees:
+            raise HTTPException(
+                status_code=400, 
+                detail={'error': f"Invalid assignee '{request.assignee}'. Must be one of: {', '.join(valid_assignees)}"}
+            )
+        
+        # Validate status
+        valid_statuses = ['todo', 'doing', 'blocked', 'done']
+        if request.status not in valid_statuses:
+            raise HTTPException(
+                status_code=400, 
+                detail={'error': f"Invalid status '{request.status}'. Must be one of: {', '.join(valid_statuses)}"}
+            )
+        
         task_data = {
             "project_id": request.project_id,
             "title": request.title,
             "description": request.description or "",
             "status": request.status,
+            "assignee": request.assignee,
+            "task_order": request.task_order,
             "sources": [],
             "code_examples": [],
             "created_at": datetime.now().isoformat(),
@@ -451,6 +506,9 @@ async def create_task(request: CreateTaskRequest):
         
         if request.parent_task_id:
             task_data["parent_task_id"] = request.parent_task_id
+            
+        if request.feature:
+            task_data["feature"] = request.feature
         
         response = supabase_client.table("tasks").insert(task_data).execute()
         
@@ -462,20 +520,46 @@ async def create_task(request: CreateTaskRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
+class UpdateTaskRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    assignee: Optional[str] = None
+    task_order: Optional[int] = None
+    feature: Optional[str] = None
+
 @router.put("/tasks/{task_id}")
-async def update_task(task_id: str, title: Optional[str] = None, description: Optional[str] = None, status: Optional[str] = None):
+async def update_task(task_id: str, request: UpdateTaskRequest):
     """Update a task."""
     try:
         supabase_client = get_supabase_client()
         
         update_data = {"updated_at": datetime.now().isoformat()}
         
-        if title is not None:
-            update_data["title"] = title
-        if description is not None:
-            update_data["description"] = description
-        if status is not None:
-            update_data["status"] = status
+        if request.title is not None:
+            update_data["title"] = request.title
+        if request.description is not None:
+            update_data["description"] = request.description
+        if request.status is not None:
+            valid_statuses = ['todo', 'doing', 'blocked', 'done']
+            if request.status not in valid_statuses:
+                raise HTTPException(
+                    status_code=400, 
+                    detail={'error': f"Invalid status '{request.status}'. Must be one of: {', '.join(valid_statuses)}"}
+                )
+            update_data["status"] = request.status
+        if request.assignee is not None:
+            valid_assignees = ['User', 'Archon', 'AI IDE Agent']
+            if request.assignee not in valid_assignees:
+                raise HTTPException(
+                    status_code=400, 
+                    detail={'error': f"Invalid assignee '{request.assignee}'. Must be one of: {', '.join(valid_assignees)}"}
+                )
+            update_data["assignee"] = request.assignee
+        if request.task_order is not None:
+            update_data["task_order"] = request.task_order
+        if request.feature is not None:
+            update_data["feature"] = request.feature
         
         response = supabase_client.table("tasks").update(update_data).eq("id", task_id).execute()
         

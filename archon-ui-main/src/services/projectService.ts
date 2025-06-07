@@ -285,6 +285,19 @@ export const projectService = {
     }
   },
 
+  /**
+   * Get features from a project's features JSONB field
+   */
+  async getProjectFeatures(projectId: string): Promise<{ features: any[]; count: number }> {
+    try {
+      const response = await callAPI<{ features: any[]; count: number }>(`/api/projects/${projectId}/features`);
+      return response;
+    } catch (error) {
+      console.error(`Failed to get features for project ${projectId}:`, error);
+      throw error;
+    }
+  },
+
   // ==================== TASK OPERATIONS ====================
 
   /**
@@ -326,9 +339,12 @@ export const projectService = {
     }
 
     try {
+      // The validation.data already has defaults from schema
+      const requestData = validation.data;
+
       const task = await callAPI<Task>('/api/tasks', {
         method: 'POST',
-        body: JSON.stringify(validation.data)
+        body: JSON.stringify(requestData)
       });
       
       // Broadcast creation event
@@ -381,12 +397,9 @@ export const projectService = {
     }
 
     try {
-      const task = await callAPI<Task>(`/api/tasks/${taskId}/status`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: `status=${dbStatus}`
+      // Use the standard update task endpoint with status parameter
+      const task = await callAPI<Task>(`/api/tasks/${taskId}?status=${dbStatus}`, {
+        method: 'PUT'
       });
       
       // Broadcast move event
@@ -431,12 +444,9 @@ export const projectService = {
       
       for (const project of projects) {
         const projectTasks = await this.getTasksByProject(project.id);
-        // Since tasks from getTasksByProject are already UI tasks, we need to compare properly
-        // The task.status is already a UITaskStatus from dbTaskToUITask conversion
+        // Filter tasks by database status - task.status should be DatabaseTaskStatus from database
         allTasks.push(...projectTasks.filter(task => {
-          // Convert UI status back to DB status for comparison
-          const taskDbStatus = uiStatusToDBStatus(task.status);
-          return taskDbStatus === status;
+          return task.status === status;
         }));
       }
       

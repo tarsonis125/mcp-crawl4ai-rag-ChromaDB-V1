@@ -38,6 +38,13 @@ export const KnowledgeChatPanel: React.FC<KnowledgeChatPanelProps> = props => {
   useEffect(() => {
     const initializeChat = async () => {
       try {
+        // Temporarily disable chat to prevent WebSocket errors
+        console.warn('⚠️ Agent chat temporarily disabled due to WebSocket connection issues');
+        setConnectionError('Agent chat temporarily unavailable');
+        setIsInitialized(true);
+        return;
+        
+        // TODO: Re-enable once agent chat WebSocket service is fixed
         // Create a new chat session
         const { session_id } = await agentChatService.createSession();
         setSessionId(session_id);

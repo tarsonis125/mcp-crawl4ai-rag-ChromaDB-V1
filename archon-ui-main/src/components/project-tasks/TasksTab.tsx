@@ -1,37 +1,121 @@
-import React, { useState, useRef, Component } from 'react';
-import { X, Edit, Check, Trash2, User, Tag, Table, LayoutGrid, ChevronDown, ChevronUp, AlertTriangle, ArrowRightCircle, RefreshCw, Plus } from 'lucide-react';
+import React, { useState, useRef, Component, useEffect } from 'react';
+import { X, Edit, Check, Trash2, User, Tag, Table, LayoutGrid, ChevronDown, ChevronUp, AlertTriangle, ArrowRightCircle, RefreshCw, Plus, Bot } from 'lucide-react';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { Button } from '../ui/Button';
+import { projectService } from '../../services/projectService';
+import type { CreateTaskRequest, UpdateTaskRequest, DatabaseTaskStatus } from '../../types/project';
 export interface Task {
   id: string;
   title: string;
   description: string;
   status: 'backlog' | 'in-progress' | 'testing' | 'complete';
   assignee: {
-    name: string;
+    name: 'User' | 'Archon' | 'AI IDE Agent';
     avatar: string;
   };
   feature: string;
   featureColor: string;
   priority?: 'low' | 'medium' | 'high' | 'critical';
 }
+
+// Assignee utilities
+const ASSIGNEE_OPTIONS = ['User', 'Archon', 'AI IDE Agent'] as const;
+
+// Mapping functions for status and priority conversion
+const mapUIStatusToDBStatus = (uiStatus: Task['status']): DatabaseTaskStatus => {
+  switch (uiStatus) {
+    case 'backlog': return 'todo';
+    case 'in-progress': return 'doing';
+    case 'testing': return 'blocked'; 
+    case 'complete': return 'done';
+    default: return 'todo';
+  }
+};
+
+const mapDBStatusToUIStatus = (dbStatus: DatabaseTaskStatus): Task['status'] => {
+  switch (dbStatus) {
+    case 'todo': return 'backlog';
+    case 'doing': return 'in-progress';
+    case 'blocked': return 'testing';
+    case 'done': return 'complete';
+    default: return 'backlog';
+  }
+};
+
+const mapTaskOrderToPriority = (taskOrder: number): Task['priority'] => {
+  if (taskOrder === 0) return 'critical';
+  if (taskOrder === 1) return 'high';
+  if (taskOrder === 2) return 'medium';
+  return 'low';
+};
+
+const getAssigneeIcon = (assigneeName: 'User' | 'Archon' | 'AI IDE Agent') => {
+  switch (assigneeName) {
+    case 'User':
+      return <User className="w-4 h-4 text-blue-400" />;
+    case 'AI IDE Agent':
+      return <Bot className="w-4 h-4 text-purple-400" />;
+    case 'Archon':
+      return <img src="/logo-neon.svg" alt="Archon" className="w-4 h-4" />;
+    default:
+      return <User className="w-4 h-4 text-blue-400" />;
+  }
+};
+
+const getAssigneeGlow = (assigneeName: 'User' | 'Archon' | 'AI IDE Agent') => {
+  switch (assigneeName) {
+    case 'User':
+      return 'shadow-[0_0_10px_rgba(59,130,246,0.4)]';
+    case 'AI IDE Agent':
+      return 'shadow-[0_0_10px_rgba(168,85,247,0.4)]';
+    case 'Archon':
+      return 'shadow-[0_0_10px_rgba(34,211,238,0.4)]';
+    default:
+      return 'shadow-[0_0_10px_rgba(59,130,246,0.4)]';
+  }
+};
 // Item types for drag and drop
 const ItemTypes = {
   TASK: 'task'
 };
 export const TasksTab = ({
   initialTasks,
-  onTasksChange
+  onTasksChange,
+  projectId
 }: {
   initialTasks: Task[];
   onTasksChange: (tasks: Task[]) => void;
+  projectId: string;
 }) => {
   // Change default view to 'board' instead of 'table'
   const [viewMode, setViewMode] = useState<'table' | 'board'>('board');
   const [tasks, setTasks] = useState(initialTasks);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [projectFeatures, setProjectFeatures] = useState<any[]>([]);
+  const [isLoadingFeatures, setIsLoadingFeatures] = useState(false);
+
+  // Load project features on component mount
+  useEffect(() => {
+    loadProjectFeatures();
+  }, [projectId]);
+
+  const loadProjectFeatures = async () => {
+    if (!projectId) return;
+    
+    setIsLoadingFeatures(true);
+    try {
+      const response = await projectService.getProjectFeatures(projectId);
+      setProjectFeatures(response.features || []);
+    } catch (error) {
+      console.error('Failed to load project features:', error);
+      setProjectFeatures([]);
+    } finally {
+      setIsLoadingFeatures(false);
+    }
+  };
+
   // Add missing modal management functions
   const openEditModal = (task: Task) => {
     setEditingTask(task);
@@ -41,11 +125,85 @@ export const TasksTab = ({
     setIsModalOpen(false);
     setEditingTask(null);
   };
-  const saveTask = () => {
+  const saveTask = async () => {
     if (!editingTask) return;
-    const newTasks = editingTask.id ? tasks.map(t => t.id === editingTask.id ? editingTask : t) : [...tasks, editingTask];
-    updateTasks(newTasks);
-    closeModal();
+    
+    console.log('💾 Starting saveTask...', { editingTask, projectId });
+    
+    try {
+      if (editingTask.id) {
+        // Update existing task
+        const updateData: UpdateTaskRequest = {
+          title: editingTask.title,
+          description: editingTask.description,
+          status: mapUIStatusToDBStatus(editingTask.status),
+          assignee: editingTask.assignee?.name || 'User',
+          // Convert priority to task_order (higher priority = lower number)
+          task_order: editingTask.priority === 'critical' ? 0 
+                    : editingTask.priority === 'high' ? 1 
+                    : editingTask.priority === 'medium' ? 2 
+                    : 3,
+          ...(editingTask.feature && { feature: editingTask.feature }),
+          ...(editingTask.featureColor && { featureColor: editingTask.featureColor })
+        };
+        
+        console.log('🔄 Updating task...', updateData);
+        const updatedTask = await projectService.updateTask(editingTask.id, updateData);
+        console.log('✅ Task updated:', updatedTask);
+      } else {
+        // Create new task
+        const createData: CreateTaskRequest = {
+          project_id: projectId,
+          title: editingTask.title,
+          description: editingTask.description,
+          status: mapUIStatusToDBStatus(editingTask.status),
+          assignee: editingTask.assignee?.name || 'User',
+          // Convert priority to task_order (higher priority = lower number)
+          task_order: editingTask.priority === 'critical' ? 0 
+                    : editingTask.priority === 'high' ? 1 
+                    : editingTask.priority === 'medium' ? 2 
+                    : 3,
+          ...(editingTask.feature && { feature: editingTask.feature }),
+          ...(editingTask.featureColor && { featureColor: editingTask.featureColor })
+        };
+        
+        console.log('🆕 Creating task...', createData);
+        const newTask = await projectService.createTask(createData);
+        console.log('✅ Task created:', newTask);
+      }
+      
+      // Reload tasks from backend to get updated data
+      console.log('🔄 Reloading tasks from backend...');
+      const updatedTasks = await projectService.getTasksByProject(projectId);
+      console.log('📋 Raw tasks from backend:', updatedTasks);
+      
+      const uiTasks: Task[] = updatedTasks.map(task => ({
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        status: mapDBStatusToUIStatus(task.status),
+        assignee: {
+          name: task.assignee || 'User',
+          avatar: ''
+        },
+        feature: task.feature || 'General',
+        featureColor: task.featureColor || '#6366f1',
+        priority: mapTaskOrderToPriority(task.task_order || 0)
+      }));
+      
+      console.log('🎨 Converted UI tasks:', uiTasks);
+      updateTasks(uiTasks);
+      closeModal();
+      console.log('✅ saveTask completed successfully');
+    } catch (error) {
+      console.error('❌ Failed to save task:', error);
+      // Show detailed error information
+      if (error instanceof Error) {
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+      }
+      alert(`Failed to save task: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   };
   // Update setTasks to also call onTasksChange
   const updateTasks = (newTasks: Task[]) => {
@@ -53,18 +211,39 @@ export const TasksTab = ({
     onTasksChange(newTasks);
   };
   // Update all task modification functions to use updateTasks
-  const moveTask = (taskId: string, newStatus: Task['status']) => {
-    const newTasks = tasks.map(task => task.id === taskId ? {
-      ...task,
-      status: newStatus
-    } : task);
-    updateTasks(newTasks);
+  const moveTask = async (taskId: string, newStatus: Task['status']) => {
+    try {
+      // Update task status in backend
+      await projectService.updateTask(taskId, {
+        status: mapUIStatusToDBStatus(newStatus)
+      });
+      
+      // Update local state
+      const newTasks = tasks.map(task => task.id === taskId ? {
+        ...task,
+        status: newStatus
+      } : task);
+      updateTasks(newTasks);
+    } catch (error) {
+      console.error('Failed to move task:', error);
+      // TODO: Show error toast
+    }
   };
   const completeTask = (taskId: string) => {
     moveTask(taskId, 'complete');
   };
-  const deleteTask = (taskId: string) => {
-    setTasks(tasks.filter(task => task.id !== taskId));
+  const deleteTask = async (taskId: string) => {
+    try {
+      // Delete task from backend
+      await projectService.deleteTask(taskId);
+      
+      // Update local state
+      const newTasks = tasks.filter(task => task.id !== taskId);
+      updateTasks(newTasks);
+    } catch (error) {
+      console.error('Failed to delete task:', error);
+      // TODO: Show error toast
+    }
   };
   const getTasksByStatus = (status: Task['status']) => {
     return tasks.filter(task => task.status === status);
@@ -130,7 +309,22 @@ export const TasksTab = ({
         <div className="fixed bottom-6 left-0 right-0 flex justify-center z-50 pointer-events-none">
           <div className="flex items-center gap-4">
             {/* New Task Button - updated to glass style with neon edge */}
-            <button onClick={() => setIsModalOpen(true)} className="relative px-5 py-2.5 flex items-center gap-2 bg-white/80 dark:bg-black/90 border border-gray-200 dark:border-gray-800 rounded-lg shadow-[0_0_20px_rgba(0,0,0,0.1)] dark:shadow-[0_0_20px_rgba(0,0,0,0.5)] backdrop-blur-md pointer-events-auto text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 transition-all duration-300">
+            <button onClick={() => {
+              setEditingTask({
+                id: '',
+                title: '',
+                description: '',
+                status: 'backlog',
+                assignee: {
+                  name: 'User',
+                  avatar: ''
+                },
+                feature: '',
+                featureColor: '#3b82f6',
+                priority: 'medium'
+              });
+              setIsModalOpen(true);
+            }} className="relative px-5 py-2.5 flex items-center gap-2 bg-white/80 dark:bg-black/90 border border-gray-200 dark:border-gray-800 rounded-lg shadow-[0_0_20px_rgba(0,0,0,0.1)] dark:shadow-[0_0_20px_rgba(0,0,0,0.5)] backdrop-blur-md pointer-events-auto text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 transition-all duration-300">
               <Plus className="w-4 h-4 mr-1" />
               <span>New Task</span>
               {/* Neon bottom edge */}
@@ -183,29 +377,29 @@ export const TasksTab = ({
                     <label className="block text-gray-700 dark:text-gray-300 mb-1">
                       Title
                     </label>
-                    <input type="text" value={editingTask?.title || ''} onChange={e => setEditingTask({
+                    <input type="text" value={editingTask?.title || ''} onChange={e => setEditingTask(editingTask ? {
                   ...editingTask,
                   title: e.target.value
-                })} className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-md py-2 px-3 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all duration-300" />
+                } : null)} className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-md py-2 px-3 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all duration-300" />
                   </div>
                   <div>
                     <label className="block text-gray-700 dark:text-gray-300 mb-1">
                       Description
                     </label>
-                    <textarea value={editingTask?.description || ''} onChange={e => setEditingTask({
+                    <textarea value={editingTask?.description || ''} onChange={e => setEditingTask(editingTask ? {
                   ...editingTask,
                   description: e.target.value
-                })} rows={5} className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-white rounded-md py-2 px-3 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all duration-300" />
+                } : null)} rows={5} className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-white rounded-md py-2 px-3 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all duration-300" />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-gray-700 dark:text-gray-300 mb-1">
                         Status
                       </label>
-                      <select value={editingTask?.status || 'backlog'} onChange={e => setEditingTask({
+                      <select value={editingTask?.status || 'backlog'} onChange={e => setEditingTask(editingTask ? {
                     ...editingTask,
                     status: e.target.value as Task['status']
-                  })} className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-white rounded-md py-2 px-3 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all duration-300">
+                  } : null)} className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-white rounded-md py-2 px-3 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all duration-300">
                         <option value="backlog">Backlog</option>
                         <option value="in-progress">In Process</option>
                         <option value="testing">Ready for Testing</option>
@@ -216,10 +410,36 @@ export const TasksTab = ({
                       <label className="block text-gray-700 dark:text-gray-300 mb-1">
                         Feature
                       </label>
-                      <input type="text" value={editingTask?.feature || ''} onChange={e => setEditingTask({
-                    ...editingTask,
-                    feature: e.target.value
-                  })} className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-white rounded-md py-2 px-3 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all duration-300" />
+                      <div className="relative">
+                        <input 
+                          type="text" 
+                          value={editingTask?.feature || ''} 
+                          onChange={e => setEditingTask(editingTask ? {
+                            ...editingTask,
+                            feature: e.target.value
+                          } : null)} 
+                          placeholder="Type feature name or select from list"
+                          className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-white rounded-md py-2 px-3 pr-10 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all duration-300" 
+                          list="features-list"
+                        />
+                        <datalist id="features-list">
+                          {projectFeatures.map((feature) => (
+                            <option key={feature.id} value={feature.label}>
+                              {feature.label} ({feature.type})
+                            </option>
+                          ))}
+                        </datalist>
+                        {isLoadingFeatures && (
+                          <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                            <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" />
+                          </div>
+                        )}
+                      </div>
+                      {projectFeatures.length > 0 && (
+                        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                          Available features: {projectFeatures.map(f => f.label).join(', ')}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
@@ -227,21 +447,32 @@ export const TasksTab = ({
                       <label className="block text-gray-700 dark:text-gray-300 mb-1">
                         Assignee
                       </label>
-                      <div className="flex items-center gap-2 bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 rounded-md py-2 px-3">
-                        <img src={editingTask?.assignee.avatar || ''} alt={editingTask?.assignee.name || ''} className="w-6 h-6 rounded-full" />
-                        <span className="text-gray-700 dark:text-white">
-                          {editingTask?.assignee.name || ''}
-                        </span>
-                      </div>
+                      <select 
+                        value={editingTask?.assignee?.name || 'User'} 
+                        onChange={e => setEditingTask(editingTask ? {
+                          ...editingTask,
+                          assignee: {
+                            name: e.target.value as 'User' | 'Archon' | 'AI IDE Agent',
+                            avatar: ''
+                          }
+                        } : null)} 
+                        className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-white rounded-md py-2 px-3 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all duration-300"
+                      >
+                        {ASSIGNEE_OPTIONS.map(option => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div>
                       <label className="block text-gray-700 dark:text-gray-300 mb-1">
                         Priority
                       </label>
-                      <select value={editingTask?.priority || 'medium'} onChange={e => setEditingTask({
+                      <select value={editingTask?.priority || 'medium'} onChange={e => setEditingTask(editingTask ? {
                     ...editingTask,
                     priority: e.target.value as Task['priority']
-                  })} className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-white rounded-md py-2 px-3 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all duration-300">
+                  } : null)} className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-white rounded-md py-2 px-3 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all duration-300">
                         <option value="low">Low</option>
                         <option value="medium">Medium</option>
                         <option value="high">High</option>
@@ -374,9 +605,11 @@ const TableView = ({
               </td>
               <td className="p-3">
                 <div className="flex items-center gap-2">
-                  <img src={task.assignee.avatar} alt={task.assignee.name} className="w-6 h-6 rounded-full border border-gray-300 dark:border-gray-700 group-hover:border-cyan-500/50 transition-colors" />
+                  <div className="flex items-center justify-center w-6 h-6 rounded-full bg-white/80 dark:bg-black/70 border border-gray-300 dark:border-gray-700 group-hover:border-cyan-500/50 transition-colors backdrop-blur-md" style={{boxShadow: getAssigneeGlow(task.assignee?.name || 'User')}}>
+                    {getAssigneeIcon(task.assignee?.name || 'User')}
+                  </div>
                   <span className="text-sm text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white transition-colors">
-                    {task.assignee.name}
+                    {task.assignee?.name || 'User'}
                   </span>
                 </div>
               </td>
@@ -561,9 +794,11 @@ const DraggableTaskCard = ({
             {task.title}
           </h4>
           <div className="flex items-center text-gray-500 text-xs absolute bottom-3 left-3 pl-1.5">
-            <div className="flex items-center gap-1">
-              <User className="w-3 h-3" />
-              <span>{task.assignee.name}</span>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center justify-center w-5 h-5 rounded-full bg-white/80 dark:bg-black/70 border border-gray-300/50 dark:border-gray-700/50 backdrop-blur-md" style={{boxShadow: getAssigneeGlow(task.assignee?.name || 'User')}}>
+                {getAssigneeIcon(task.assignee?.name || 'User')}
+              </div>
+              <span className="text-gray-600 dark:text-gray-400">{task.assignee?.name || 'User'}</span>
             </div>
           </div>
         </div>
