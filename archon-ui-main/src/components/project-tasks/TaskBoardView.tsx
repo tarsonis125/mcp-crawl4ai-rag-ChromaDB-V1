@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { useDrag, useDrop } from 'react-dnd';
-import { Edit, Trash2, RefreshCw, Tag, User, Bot } from 'lucide-react';
+import { Edit, Trash2, RefreshCw, Tag, User, Bot, Clipboard } from 'lucide-react';
 
 export interface Task {
   id: string;
@@ -160,15 +160,33 @@ const DraggableTaskCard = ({
             {task.title}
           </h4>
           
-          <div className="flex items-center text-gray-500 text-xs absolute bottom-3 left-3 pl-1.5">
+          <div className="flex items-center justify-between absolute bottom-3 left-3 right-3 pl-1.5">
             <div className="flex items-center gap-2">
               <div className="flex items-center justify-center w-5 h-5 rounded-full bg-white/80 dark:bg-black/70 border border-gray-300/50 dark:border-gray-700/50 backdrop-blur-md" 
                    style={{boxShadow: getAssigneeGlow(task.assignee?.name || 'User')}}
               >
                 {getAssigneeIcon(task.assignee?.name || 'User')}
               </div>
-              <span className="text-gray-600 dark:text-gray-400">{task.assignee?.name || 'User'}</span>
+              <span className="text-gray-600 dark:text-gray-400 text-xs">{task.assignee?.name || 'User'}</span>
             </div>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                navigator.clipboard.writeText(task.id);
+                // Optional: Add a small toast or visual feedback here
+                const button = e.currentTarget;
+                const originalHTML = button.innerHTML;
+                button.innerHTML = '<span class="text-green-500">Copied!</span>';
+                setTimeout(() => {
+                  button.innerHTML = originalHTML;
+                }, 2000);
+              }}
+              className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+              title="Copy Task ID to clipboard"
+            >
+              <Clipboard className="w-3 h-3" />
+              <span>Task ID</span>
+            </button>
           </div>
         </div>
         
