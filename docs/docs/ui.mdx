@@ -4,16 +4,25 @@ Built with React and Vite.
 
 ## Directory Structure
 
-```bash
-tree archon-ui-main/src -L 2
-```
-
 ```text
 src/
 ├── components/
-├── pages/
+│   ├── animations/
+│   ├── layouts/
+│   ├── project-tasks/
+│   ├── settings/
+│   └── ui/
+├── contexts/
 ├── hooks/
-└── App.jsx
+├── lib/
+├── pages/
+│   ├── KnowledgeBasePage.tsx
+│   ├── MCPPage.tsx
+│   ├── ProjectPage.tsx
+│   ├── SettingsPage.tsx
+│   └── SettingsPageNew.tsx
+├── services/
+└── types/
 ```
 
 ## Environment Variables
@@ -21,6 +30,7 @@ src/
 | Variable                  | Description                       |
 |---------------------------|-----------------------------------|
 | VITE_API_URL              | Backend API base URL              |
+| VITE_API_BASE_URL         | Base URL used by some services    |
 
 ## Running Locally
 
@@ -55,9 +65,7 @@ Archon UI provides a comprehensive dashboard for managing your AI's knowledge ba
 
 - **📊 MCP Dashboard**: Monitor and control the MCP server
 - **⚙️ Settings Management**: Configure credentials and RAG strategies
-- **🕷️ Web Crawling**: Crawl documentation sites and build knowledge base
 - **📚 Knowledge Management**: Browse, search, and organize knowledge items
-- **💬 Interactive Chat**: Test RAG queries with real-time responses
 - **📈 Real-time Updates**: WebSocket-based live updates across the UI
 
 ## 🏗️ Architecture
@@ -72,55 +80,40 @@ Archon UI provides a comprehensive dashboard for managing your AI's knowledge ba
 - **Lucide Icons**: Beautiful and consistent iconography
 - **React Router**: Client-side routing
 
-### Project Structure
-
-```
-archon-ui-main/
-├── src/
-│   ├── components/          # Reusable UI components
-│   │   ├── ui/             # Base UI components (Button, Card, etc.)
-│   │   ├── layouts/        # Layout components (Sidebar, Header)
-│   │   └── animations/     # Animation components
-│   ├── pages/              # Page components
-│   │   ├── MCPPage.tsx     # MCP Dashboard
-│   │   ├── Settings.tsx    # Settings page
-│   │   ├── Crawl.tsx       # Web crawling interface
-│   │   ├── KnowledgeBase.tsx # Knowledge management
-│   │   └── Chat.tsx        # RAG chat interface
-│   ├── services/           # API and service layers
-│   │   ├── api.ts          # Base API configuration
-│   │   ├── mcpService.ts   # MCP server communication
-│   │   └── chatService.ts  # Chat/RAG service
-│   ├── contexts/           # React contexts
-│   │   └── ToastContext.tsx # Toast notifications
-│   ├── hooks/              # Custom React hooks
-│   │   └── useStaggeredEntrance.ts # Animation hook
-│   ├── types/              # TypeScript type definitions
-│   └── lib/                # Utility functions
-├── public/                 # Static assets
-└── test/                   # Test files
-```
 
 ## 📄 Pages Documentation
 
-### 1. MCP Dashboard (`/mcp`)
+### 1. Knowledge Base (`/`)
 
-The central control panel for the MCP server.
+Browse and manage your knowledge items.
 
 **Components:**
-- **Server Control Panel**: Start/stop server, view status, select transport mode
-- **Server Logs Viewer**: Real-time log streaming with auto-scroll
-- **Available Tools Table**: Dynamic tool discovery and documentation
-- **MCP Test Panel**: Interactive tool testing interface
+- **Knowledge Grid**: Card-based knowledge display
+- **Search/Filter**: Search by title, type, tags
+- **Knowledge Details**: View full item details
+- **Actions**: Delete, refresh, organize
 
 **Features:**
-- Dual transport support (SSE/stdio)
-- Real-time status polling (5-second intervals)
-- WebSocket-based log streaming
-- Copy-to-clipboard configuration
-- Tool parameter validation
+- Pagination support
+- Real-time updates via WebSocket
+- Type-based filtering (technical/business)
+- Metadata display
 
-### 2. Settings (`/settings`)
+### 2. Projects (`/projects`)
+
+Project dashboard with task management and documentation tabs.
+
+**Components:**
+- **Project List**: Create and select projects
+- **Task Tabs**: Manage tasks, features, docs and data
+- **Progress Cards**: Real-time project creation status
+
+**Features:**
+- Hierarchical tasks
+- GitHub repository links
+- WebSocket project progress
+
+### 3. Settings (`/settings`)
 
 Comprehensive configuration management.
 
@@ -141,23 +134,22 @@ Comprehensive configuration management.
 - Toast notifications for actions
 - Default value management
 
-### 3. Web Crawling (`/crawl`)
+### 4. MCP Dashboard (`/mcp`)
 
-Interface for crawling documentation sites.
+Central control panel for the MCP server.
 
 **Components:**
-- **URL Input**: Smart URL validation
-- **Crawl Options**: Max depth, concurrent sessions
-- **Progress Monitoring**: Real-time crawl status
-- **Results Summary**: Pages crawled, chunks stored
+- **Server Control Panel**: Start/stop server, view status, select transport mode
+- **Server Logs Viewer**: Real-time log streaming with auto-scroll
+- **Available Tools Table**: Dynamic tool discovery and documentation
+- **MCP Test Panel**: Interactive tool testing interface
 
 **Features:**
-- Intelligent URL type detection
-- Sitemap support
-- Recursive crawling
-- Batch processing
-
-### 4. Knowledge Base (`/knowledge`)
+- Dual transport support (SSE/stdio)
+- Real-time status polling (5-second intervals)
+- WebSocket-based log streaming
+- Copy-to-clipboard configuration
+- Tool parameter validation
 
 Browse and manage your knowledge items.
 
@@ -173,21 +165,6 @@ Browse and manage your knowledge items.
 - Type-based filtering (technical/business)
 - Metadata display
 
-### 5. RAG Chat (`/chat`)
-
-Interactive chat interface for testing RAG queries.
-
-**Components:**
-- **Chat Messages**: Threaded conversation view
-- **Input Area**: Query input with source selection
-- **Results Display**: Formatted RAG results
-- **Source Selector**: Filter by knowledge source
-
-**Features:**
-- Real-time streaming responses
-- Source attribution
-- Markdown rendering
-- Copy functionality
 
 ## 🧩 Component Library
 
@@ -301,6 +278,7 @@ npm test
 ### Environment Variables
 ```env
 VITE_API_URL=http://localhost:8080
+VITE_API_BASE_URL=http://localhost:8080
 ```
 
 ### Hot Module Replacement
