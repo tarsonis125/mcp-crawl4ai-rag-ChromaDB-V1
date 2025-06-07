@@ -433,6 +433,31 @@ export const projectService = {
   },
 
   /**
+   * Update task order for better drag-and-drop support
+   */
+  async updateTaskOrder(taskId: string, newOrder: number, newStatus?: DatabaseTaskStatus): Promise<Task> {
+    try {
+      const updates: UpdateTaskRequest = {
+        task_order: newOrder
+      };
+      
+      if (newStatus) {
+        updates.status = newStatus;
+      }
+      
+      const task = await this.updateTask(taskId, updates);
+      
+      // Broadcast order change event
+      this.broadcastTaskUpdate('TASK_MOVED', task.id, task.project_id, { task_order: newOrder, status: newStatus });
+      
+      return task;
+    } catch (error) {
+      console.error(`Failed to update task order for ${taskId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
    * Get tasks by status across all projects
    */
   async getTasksByStatus(status: DatabaseTaskStatus): Promise<Task[]> {

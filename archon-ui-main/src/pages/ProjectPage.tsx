@@ -12,7 +12,7 @@ import { ChevronRight, ShoppingCart, Code, Briefcase, Layers, Plus, X, AlertCirc
 // Import our service layer and types
 import { projectService } from '../services/projectService';
 import type { Project, CreateProjectRequest } from '../types/project';
-import type { Task } from '../components/project-tasks/TasksTab';
+import type { Task } from '../components/project-tasks/TaskTableView';
 import { ProjectCreationProgressCard } from '../components/ProjectCreationProgressCard';
 import { projectCreationProgressService, ProjectCreationProgressData } from '../services/projectCreationProgressService';
 
@@ -48,7 +48,7 @@ export function ProjectPage({
   const [tasksError, setTasksError] = useState<string | null>(null);
   
   // UI state
-  const [activeTab, setActiveTab] = useState('docs');
+  const [activeTab, setActiveTab] = useState('tasks');
   const [showProjectDetails, setShowProjectDetails] = useState(false);
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   
@@ -111,12 +111,12 @@ export function ProjectPage({
          description: task.description,
          status: (task.uiStatus || 'backlog') as Task['status'],
          assignee: {
-           name: task.assignee || 'User',
+           name: (task.assignee || 'User') as 'User' | 'Archon' | 'AI IDE Agent',
            avatar: ''
          },
          feature: task.feature || 'General',
          featureColor: task.featureColor || '#6366f1',
-         priority: (task.priority || 'medium') as Task['priority']
+         task_order: task.task_order || 0
        }));
        
        setTasks(uiTasks);

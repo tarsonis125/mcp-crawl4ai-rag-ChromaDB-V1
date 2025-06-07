@@ -5,7 +5,7 @@
 export type DatabaseTaskStatus = 'todo' | 'doing' | 'blocked' | 'done';
 
 // UI status enum (used in current TasksTab)
-export type UITaskStatus = 'backlog' | 'in-progress' | 'testing' | 'complete';
+export type UITaskStatus = 'backlog' | 'in-progress' | 'review' | 'complete';
 
 // Priority levels
 export type TaskPriority = 'low' | 'medium' | 'high' | 'critical';
@@ -159,18 +159,18 @@ export const statusMappings = {
   dbToUI: {
     'todo': 'backlog',
     'doing': 'in-progress', 
-    'blocked': 'testing', // Blocked tasks go to testing for review
+    'blocked': 'review', // Map database 'blocked' to UI 'review'
     'done': 'complete'
-  } as Record<DatabaseTaskStatus, UITaskStatus>,
+  } as const,
   
   // UI to Database status mapping
   uiToDB: {
     'backlog': 'todo',
     'in-progress': 'doing',
-    'testing': 'blocked', // Testing maps to blocked (needs review)
+    'review': 'blocked', // Map UI 'review' back to database 'blocked'
     'complete': 'done'
-  } as Record<UITaskStatus, DatabaseTaskStatus>
-};
+  } as const
+} as const;
 
 // Helper function to convert database task to UI task
 export function dbTaskToUITask(dbTask: Task): Task {
