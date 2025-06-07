@@ -30,6 +30,7 @@ interface WebSocketMessage {
   data?: any;
   content?: string;
   session_id?: string;
+  is_typing?: boolean;
 }
 
 class AgentChatService {
@@ -37,19 +38,157 @@ class AgentChatService {
   private wsConnections: Map<string, WebSocket> = new Map();
   private messageHandlers: Map<string, (message: ChatMessage) => void> = new Map();
   private typingHandlers: Map<string, (isTyping: boolean) => void> = new Map();
+  private streamHandlers: Map<string, (chunk: string) => void> = new Map();
+  private streamCompleteHandlers: Map<string, () => void> = new Map();
+  private errorHandlers: Map<string, (error: Event) => void> = new Map();
+  private closeHandlers: Map<string, (event: CloseEvent) => void> = new Map();
+  private reconnectTimeouts: Map<string, NodeJS.Timeout> = new Map();
+  private reconnectAttempts: Map<string, number> = new Map();
+  private readonly maxReconnectAttempts = 5;
+  private readonly reconnectDelay = 1000; // 1 second initial delay
 
   constructor() {
-    // Use the same pattern as projectService - backend is on port 8080
-    this.baseUrl = 'http://localhost:8080';
+    this.baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+  }
+
+  /**
+   * Get WebSocket URL for a session
+   */
+  private getWebSocketUrl(sessionId: string): string {
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = new URL(this.baseUrl).host;
+    return `${wsProtocol}//${host}/api/agent-chat/sessions/${sessionId}/ws`;
+  }
+
+  /**
+   * Clean up WebSocket connection and handlers for a session
+   */
+  private cleanupConnection(sessionId: string): void {
+    // Clear any pending reconnection attempt
+    const reconnectTimeout = this.reconnectTimeouts.get(sessionId);
+    if (reconnectTimeout) {
+      clearTimeout(reconnectTimeout);
+      this.reconnectTimeouts.delete(sessionId);
+    }
+    
+    // Close WebSocket if it exists
+    const ws = this.wsConnections.get(sessionId);
+    if (ws) {
+      // Be more careful about closing connections
+      if (ws.readyState === WebSocket.OPEN) {
+        console.log(`Closing WebSocket connection for session ${sessionId}`);
+        ws.close(1000, 'Client disconnected');
+      } else if (ws.readyState === WebSocket.CONNECTING) {
+        console.log(`Aborting connecting WebSocket for session ${sessionId}`);
+        // For connecting sockets, we need to wait or force close
+        ws.close();
+      }
+      this.wsConnections.delete(sessionId);
+    }
+    
+    // Remove all handlers
+    this.messageHandlers.delete(sessionId);
+    this.typingHandlers.delete(sessionId);
+    this.streamHandlers.delete(sessionId);
+    this.streamCompleteHandlers.delete(sessionId);
+    this.errorHandlers.delete(sessionId);
+    this.closeHandlers.delete(sessionId);
+    this.reconnectAttempts.delete(sessionId);
+  }
+
+  /**
+   * Schedule a reconnection attempt with exponential backoff
+   */
+  private scheduleReconnect(sessionId: string): void {
+    const attempts = this.reconnectAttempts.get(sessionId) || 0;
+    
+    if (attempts >= this.maxReconnectAttempts) {
+      console.error(`Max reconnection attempts (${this.maxReconnectAttempts}) reached for session ${sessionId}`);
+      this.cleanupConnection(sessionId);
+      return;
+    }
+
+    const delay = this.reconnectDelay * Math.pow(2, attempts);
+    console.log(`Attempting to reconnect in ${delay}ms (attempt ${attempts + 1}/${this.maxReconnectAttempts})`);
+    
+    const timeoutId = setTimeout(() => {
+      if (this.reconnectTimeouts.has(sessionId)) {
+        this.reconnectTimeouts.delete(sessionId);
+        this.connectWebSocket(
+          sessionId,
+          this.messageHandlers.get(sessionId)!,
+          this.typingHandlers.get(sessionId)!,
+          this.streamHandlers.get(sessionId),
+          this.streamCompleteHandlers.get(sessionId),
+          this.errorHandlers.get(sessionId),
+          this.closeHandlers.get(sessionId)
+        );
+      }
+    }, delay);
+
+    this.reconnectAttempts.set(sessionId, attempts + 1);
+    this.reconnectTimeouts.set(sessionId, timeoutId);
+  }
+
+  /**
+   * Handle incoming WebSocket messages
+   */
+  private handleIncomingMessage(
+    event: MessageEvent,
+    onMessage: (message: ChatMessage) => void,
+    onTyping: (isTyping: boolean) => void,
+    onStreamChunk?: (chunk: string) => void,
+    onStreamComplete?: () => void
+  ): void {
+    try {
+      const wsMessage = JSON.parse(event.data) as WebSocketMessage;
+      
+      switch (wsMessage.type) {
+        case 'message':
+          if (wsMessage.data) {
+            // Ensure timestamp is a Date object
+            if (typeof wsMessage.data.timestamp === 'string') {
+              wsMessage.data.timestamp = new Date(wsMessage.data.timestamp);
+            }
+            onMessage(wsMessage.data);
+          }
+          break;
+          
+        case 'typing':
+          // Handle both possible formats for typing status
+          const isTyping = wsMessage.is_typing === true || 
+                         (wsMessage.data && wsMessage.data.is_typing === true);
+          onTyping(isTyping);
+          break;
+          
+        case 'stream_chunk':
+          if (onStreamChunk && wsMessage.content) {
+            onStreamChunk(wsMessage.content);
+          }
+          break;
+          
+        case 'stream_complete':
+          if (onStreamComplete) {
+            onStreamComplete();
+          }
+          break;
+          
+        case 'ping':
+          // Keep connection alive - no action needed
+          break;
+          
+        default:
+          console.warn('Unknown WebSocket message type:', wsMessage.type);
+      }
+    } catch (error) {
+      console.error('Error processing WebSocket message:', error);
+    }
   }
 
   /**
    * Create a new chat session with an agent
    */
-  async createSession(
-    projectId?: string, 
-    agentType: string = 'docs'
-  ): Promise<{ session_id: string }> {
+  async createSession(projectId?: string, agentType: string = 'docs'): Promise<{ session_id: string }> {
     const response = await fetch(`${this.baseUrl}/api/agent-chat/sessions`, {
       method: 'POST',
       headers: {
@@ -66,7 +205,7 @@ class AgentChatService {
     }
 
     const data = await response.json();
-    return { session_id: data.session_id };
+    return { session_id: data.session_id || data.id };
   }
 
   /**
@@ -81,23 +220,30 @@ class AgentChatService {
 
     const data = await response.json();
     
-    // Convert timestamp strings back to Date objects
-    const session = data.session;
-    session.created_at = new Date(session.created_at);
-    session.messages = session.messages.map((msg: any) => ({
-      ...msg,
-      timestamp: new Date(msg.timestamp)
-    }));
+    // Handle different response formats
+    const session = data.session || data;
+    
+    // Convert timestamps to Date objects
+    if (typeof session.created_at === 'string') {
+      session.created_at = new Date(session.created_at);
+    }
+    
+    if (session.messages) {
+      session.messages = session.messages.map((msg: any) => ({
+        ...msg,
+        timestamp: typeof msg.timestamp === 'string' ? new Date(msg.timestamp) : msg.timestamp
+      }));
+    }
 
     return session;
   }
 
   /**
-   * Send a message to an agent
+   * Send a message in a chat session
    */
   async sendMessage(
-    sessionId: string, 
-    message: string, 
+    sessionId: string,
+    message: string,
     context?: Record<string, any>
   ): Promise<void> {
     const chatRequest: ChatRequest = {
@@ -105,13 +251,16 @@ class AgentChatService {
       context,
     };
 
-    const response = await fetch(`${this.baseUrl}/api/agent-chat/sessions/${sessionId}/messages`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(chatRequest),
-    });
+    const response = await fetch(
+      `${this.baseUrl}/api/agent-chat/sessions/${sessionId}/messages`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(chatRequest),
+      }
+    );
 
     if (!response.ok) {
       throw new Error(`Failed to send message: ${response.statusText}`);
@@ -119,7 +268,7 @@ class AgentChatService {
   }
 
   /**
-   * Connect to WebSocket for real-time chat
+   * Connect to WebSocket for real-time communication
    */
   connectWebSocket(
     sessionId: string,
@@ -130,95 +279,108 @@ class AgentChatService {
     onError?: (error: Event) => void,
     onClose?: (event: CloseEvent) => void
   ): void {
-    // Close existing connection if any
-    this.disconnectWebSocket(sessionId);
+    // Check and close any existing connection properly
+    const existingWs = this.wsConnections.get(sessionId);
+    if (existingWs) {
+      console.log(`🧹 Cleaning up existing WebSocket for session ${sessionId}, state: ${existingWs.readyState}`);
+      // Always close existing connection regardless of state
+      if (existingWs.readyState === WebSocket.OPEN || existingWs.readyState === WebSocket.CONNECTING) {
+        existingWs.close(1000, 'Reconnecting');
+      }
+      this.wsConnections.delete(sessionId);
+      
+             // If it was still connecting, we'll just proceed - the close() call above will handle it
+       if (existingWs.readyState === WebSocket.CONNECTING) {
+         console.log(`⚠️ Previous connection was still connecting, forced close initiated`);
+       }
+    }
 
-    const wsUrl = this.baseUrl.replace('http://', 'ws://').replace('https://', 'wss://');
-    const ws = new WebSocket(`${wsUrl}/api/agent-chat/sessions/${sessionId}/ws`);
+    // Store handlers for reconnection
+    this.messageHandlers.set(sessionId, onMessage);
+    this.typingHandlers.set(sessionId, onTyping);
+    
+    if (onStreamChunk) {
+      this.streamHandlers.set(sessionId, onStreamChunk);
+    }
+    
+    if (onStreamComplete) {
+      this.streamCompleteHandlers.set(sessionId, onStreamComplete);
+    }
+    
+    if (onError) {
+      this.errorHandlers.set(sessionId, onError);
+    }
+    
+    if (onClose) {
+      this.closeHandlers.set(sessionId, onClose);
+    }
+
+    // Reset reconnect attempts
+    this.reconnectAttempts.set(sessionId, 0);
+
+    // Create WebSocket connection
+    const wsUrl = this.getWebSocketUrl(sessionId);
+    console.log(`🔌 Attempting to connect WebSocket to: ${wsUrl}`);
+    
+    const ws = new WebSocket(wsUrl);
+    this.wsConnections.set(sessionId, ws);
 
     ws.onopen = () => {
-      console.log(`WebSocket connected for session ${sessionId}`);
+      console.log(`🚀 WebSocket connected for session ${sessionId}`);
+      // Reset reconnect attempts on successful connection
+      this.reconnectAttempts.set(sessionId, 0);
     };
 
     ws.onmessage = (event) => {
-      try {
-        const wsMessage: WebSocketMessage = JSON.parse(event.data);
-        
-        switch (wsMessage.type) {
-          case 'message':
-            const message = wsMessage.data;
-            // Convert timestamp string back to Date
-            message.timestamp = new Date(message.timestamp);
-            onMessage(message);
-            break;
-            
-          case 'typing':
-            onTyping(wsMessage.data.is_typing);
-            break;
-            
-          case 'stream_chunk':
-            if (onStreamChunk && wsMessage.content) {
-              onStreamChunk(wsMessage.content);
-            }
-            break;
-            
-          case 'stream_complete':
-            if (onStreamComplete) {
-              onStreamComplete();
-            }
-            break;
-            
-          case 'ping':
-            // Keep connection alive - no action needed
-            break;
-            
-          default:
-            console.log('Unknown WebSocket message type:', wsMessage.type);
-        }
-      } catch (error) {
-        console.error('Error parsing WebSocket message:', error);
-      }
+      console.log(`📨 WebSocket message received for session ${sessionId}:`, event.data);
+      this.handleIncomingMessage(
+        event,
+        onMessage,
+        onTyping,
+        onStreamChunk,
+        onStreamComplete
+      );
     };
 
     ws.onerror = (error) => {
-      console.error(`WebSocket error for session ${sessionId}:`, error);
-      onError?.(error);
+      console.error(`❌ WebSocket error for session ${sessionId}:`, error);
+      console.error(`WebSocket state at error: ${ws.readyState} (0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED)`);
+      if (onError) {
+        onError(error);
+      }
     };
 
     ws.onclose = (event) => {
-      console.log(`WebSocket closed for session ${sessionId}:`, event.code, event.reason);
+      console.log(`🔌 WebSocket closed for session ${sessionId}:`, event.code, event.reason);
+      console.log(`Close event details: wasClean=${event.wasClean}, code=${event.code}`);
       this.wsConnections.delete(sessionId);
-      onClose?.(event);
+      
+      // Only try to reconnect if this wasn't an intentional close
+      if (event.code !== 1000) { // 1000 is normal closure
+        console.log(`Scheduling reconnect for abnormal closure (code ${event.code})`);
+        this.scheduleReconnect(sessionId);
+      }
+      
+      if (onClose) {
+        onClose(event);
+      }
     };
-
-    this.wsConnections.set(sessionId, ws);
-    this.messageHandlers.set(sessionId, onMessage);
-    this.typingHandlers.set(sessionId, onTyping);
   }
 
   /**
    * Disconnect WebSocket for a session
    */
   disconnectWebSocket(sessionId: string): void {
-    const ws = this.wsConnections.get(sessionId);
-    if (ws) {
-      ws.close();
-      this.wsConnections.delete(sessionId);
-      this.messageHandlers.delete(sessionId);
-      this.typingHandlers.delete(sessionId);
-    }
+    this.cleanupConnection(sessionId);
   }
 
   /**
    * Disconnect all WebSocket connections
    */
   disconnectAll(): void {
-    this.wsConnections.forEach((ws, sessionId) => {
-      ws.close();
+    this.wsConnections.forEach((_, sessionId) => {
+      this.disconnectWebSocket(sessionId);
     });
-    this.wsConnections.clear();
-    this.messageHandlers.clear();
-    this.typingHandlers.clear();
   }
 
   /**
@@ -226,18 +388,18 @@ class AgentChatService {
    */
   isConnected(sessionId: string): boolean {
     const ws = this.wsConnections.get(sessionId);
-    return ws ? ws.readyState === WebSocket.OPEN : false;
+    return ws?.readyState === WebSocket.OPEN;
   }
 
   /**
-   * Get current WebSocket state for a session
+   * Get WebSocket connection state for a session
    */
   getConnectionState(sessionId: string): number | null {
     const ws = this.wsConnections.get(sessionId);
-    return ws ? ws.readyState : null;
+    return ws?.readyState ?? null;
   }
 }
 
 // Export singleton instance
 export const agentChatService = new AgentChatService();
-export type { ChatMessage, ChatSession, ChatRequest }; 
+export type { ChatMessage, ChatSession, ChatRequest };

@@ -38,54 +38,62 @@ export const KnowledgeChatPanel: React.FC<KnowledgeChatPanelProps> = props => {
   useEffect(() => {
     const initializeChat = async () => {
       try {
-        // Temporarily disable chat to prevent WebSocket errors
-        console.warn('⚠️ Agent chat temporarily disabled due to WebSocket connection issues');
-        setConnectionError('Agent chat temporarily unavailable');
-        setIsInitialized(true);
-        return;
+        // Check if WebSocket is enabled
+        const enableWebSocket = import.meta.env.VITE_ENABLE_WEBSOCKET !== 'false';
+        if (!enableWebSocket) {
+          console.warn('WebSocket connection is disabled by environment configuration');
+          setConnectionError('Agent chat is currently disabled');
+          setIsInitialized(true);
+          return;
+        }
         
-        // TODO: Re-enable once agent chat WebSocket service is fixed
         // Create a new chat session
-        const { session_id } = await agentChatService.createSession();
-        setSessionId(session_id);
-        
-        // Load session data to get initial messages
-        const session = await agentChatService.getSession(session_id);
-        setMessages(session.messages);
-        
-        // Connect WebSocket for real-time communication
-        agentChatService.connectWebSocket(
-          session_id,
-          (message: ChatMessage) => {
-            setMessages(prev => [...prev, message]);
-          },
-          (typing: boolean) => {
-            setIsTyping(typing);
-          },
-          (chunk: string) => {
-            // Handle streaming chunks
-            setStreamingMessage(prev => prev + chunk);
-            setIsStreaming(true);
-          },
-          () => {
-            // Handle stream completion
-            setIsStreaming(false);
-            setStreamingMessage('');
-          },
-          (error: Event) => {
-            console.error('WebSocket error:', error);
-            setConnectionError('Connection error. Trying to reconnect...');
-          },
-          (event: CloseEvent) => {
-            console.log('WebSocket closed:', event);
-            if (event.code !== 1000) { // Not a normal closure
-              setConnectionError('Connection lost. Please refresh the page.');
+        try {
+          const { session_id } = await agentChatService.createSession();
+          setSessionId(session_id);
+          
+          // Load session data to get initial messages
+          const session = await agentChatService.getSession(session_id);
+          setMessages(session.messages || []);
+          
+          // Connect WebSocket for real-time communication
+          agentChatService.connectWebSocket(
+            session_id,
+            (message: ChatMessage) => {
+              setMessages(prev => [...prev, message]);
+              setConnectionError(null); // Clear any previous errors on successful message
+            },
+            (typing: boolean) => {
+              setIsTyping(typing);
+            },
+            (chunk: string) => {
+              // Handle streaming chunks
+              setStreamingMessage(prev => prev + chunk);
+              setIsStreaming(true);
+            },
+            () => {
+              // Handle stream completion
+              setIsStreaming(false);
+              setStreamingMessage('');
+            },
+            (error: Event) => {
+              console.error('WebSocket error:', error);
+              setConnectionError('Connection error. Reconnecting...');
+            },
+            (event: CloseEvent) => {
+              console.log('WebSocket closed:', event);
+              if (event.code !== 1000) { // Not a normal closure
+                setConnectionError('Connection lost. Reconnecting...');
+              }
             }
-          }
-        );
-        
-        setIsInitialized(true);
-        setConnectionError(null);
+          );
+          
+          setIsInitialized(true);
+          setConnectionError(null);
+        } catch (error) {
+          console.error('Failed to initialize chat session:', error);
+          setConnectionError('Failed to initialize chat. Please try again.');
+        }
         
       } catch (error) {
         console.error('Failed to initialize chat:', error);

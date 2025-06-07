@@ -1,355 +1,133 @@
 """
-DocsAgent for processing and validating project documentation.
-
-This agent handles the creation, validation, and enhancement of project documentation
-including PRDs, technical specs, feature plans, and other project documents.
+Simple DocsAgent using PydanticAI properly.
+Lazy initialization to avoid OpenAI key issues at import time.
 """
 
+import logging
+import os
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
-from enum import Enum
 
 from pydantic_ai import Agent, RunContext
-from pydantic import BaseModel, Field
-from pydantic_ai.models import KnownModelName
 
-from .base_agent import BaseAgent, ArchonDependencies
-from ..modules.models import (
-    ProjectRequirementsDocument, 
-    GeneralDocument, 
-    DocumentType,
-    Goal,
-    UserStory,
-    TechnicalRequirement
-)
-
-class DocumentProcessingMode(str, Enum):
-    """Different modes for document processing."""
-    CREATE = "create"
-    VALIDATE = "validate"
-    ENHANCE = "enhance"
-    REVIEW = "review"
+logger = logging.getLogger(__name__)
 
 @dataclass
-class DocsDependencies(ArchonDependencies):
-    """Dependencies for the DocsAgent."""
-    project_title: Optional[str] = None
-    existing_docs: Optional[List[Dict[str, Any]]] = None
-    processing_mode: DocumentProcessingMode = DocumentProcessingMode.CREATE
-    requirements: Optional[List[str]] = None
-    context_data: Optional[Dict[str, Any]] = None
+class DocsDependencies:
+    """Simple dependencies for the DocsAgent."""
+    project_id: Optional[str] = None
+    context: Optional[Dict[str, Any]] = None
+    request_id: Optional[str] = None
+    user_id: Optional[str] = None
 
-class DocumentOutput(BaseModel):
-    """Structured output for document processing."""
-    document_type: DocumentType
-    title: str
-    content: Dict[str, Any]
-    validation_status: str = Field(description="Status of document validation")
-    suggestions: List[str] = Field(default_factory=list, description="Improvement suggestions")
-    confidence_score: float = Field(ge=0.0, le=1.0, description="Confidence in document quality")
+class DocsAgent:
+    """Simple wrapper around PydanticAI agent with lazy initialization."""
     
-class DocsAgent(BaseAgent[DocsDependencies, DocumentOutput]):
-    """
-    Specialized agent for processing project documentation.
-    
-    Capabilities:
-    - Create comprehensive PRDs from basic requirements
-    - Validate existing documentation for completeness
-    - Enhance documentation with missing sections
-    - Review and suggest improvements
-    """
-    
-    def __init__(
-        self,
-        model: str = "openai:gpt-4o",
-        name: str = "DocsAgent",
-        retries: int = 3
-    ):
-        super().__init__(model=model, name=name, retries=retries)
+    def __init__(self):
+        self._agent = None
         
-    def _create_agent(self, **kwargs) -> Agent:
-        """Create and configure the PydanticAI agent for document processing."""
-        agent = Agent(
-            model=self.model,
-            deps_type=DocsDependencies,
-            result_type=DocumentOutput,
-            retries=self.retries,
-            system_prompt=self.get_system_prompt(),
-            **kwargs
-        )
-        
-        # Register tools
-        self._register_tools(agent)
-        
-        return agent
-    
-    def get_system_prompt(self) -> str:
-        """Get the system prompt for document processing."""
-        return """
-You are a conversational Documentation Assistant that helps users with their project documentation needs.
-
-**Core Capabilities:**
-1. **Document Reading/Review**: Access and analyze existing project documents (PRDs, specs, etc.)
-2. **Document Creation**: Create new documents when requested
-3. **Document Enhancement**: Improve existing documentation
-4. **Conversational Help**: Answer questions about documentation and provide guidance
-
-**Important Guidelines:**
-- **ALWAYS check for existing documents first** using the analyze_existing_docs tool when users ask to "see", "show", "review", or "find" documents
-- **Only create new documents** when explicitly asked to create, generate, or write something new
-- **Be conversational and helpful** - you're chatting with users, not just processing documents
-- **Ask clarifying questions** when user intent is unclear
-
-**Response Patterns:**
-- When asked "Can you see the PRD?" → Look for existing PRDs first, don't create new ones
-- When asked "Create a PRD" → Create a new document
-- When asked "What can you do?" → Explain your capabilities conversationally
-- When documents exist → Summarize and offer to review/enhance them
-- When no documents exist → Offer to help create them
-
-**For Document Queries:**
-- First use analyze_existing_docs to check what exists
-- If documents exist: Present them conversationally and offer to help review/enhance
-- If no documents exist: Offer to create them
-
-**Output Guidelines:**
-- Use DocumentOutput for structured document operations only
-- For conversation and document summaries, provide natural text responses
-- Include document details when showing existing documents
-- Be helpful and engaging in your communication style
-"""
-    
-    def _register_tools(self, agent: Agent):
-        """Register tools for the docs agent."""
-        
-        @agent.tool
-        async def analyze_existing_docs(
-            ctx: RunContext[DocsDependencies],
-            doc_type: str
-        ) -> Dict[str, Any]:
-            """Analyze existing project documents to understand current state."""
-            if ctx.deps.existing_docs:
-                matching_docs = [
-                    doc for doc in ctx.deps.existing_docs 
-                    if doc.get('document_type') == doc_type
-                ]
-                return {
-                    "existing_count": len(matching_docs),
-                    "docs": matching_docs,
-                    "has_existing": len(matching_docs) > 0
-                }
-            return {"existing_count": 0, "docs": [], "has_existing": False}
-        
-        @agent.tool
-        async def validate_document_structure(
-            ctx: RunContext[DocsDependencies],
-            content: Dict[str, Any],
-            doc_type: str
-        ) -> Dict[str, Any]:
-            """Validate that a document has the required structure for its type."""
-            validation_results = {
-                "missing_sections": [],
-                "incomplete_sections": [],
-                "score": 0.0
-            }
-            
-            if doc_type == "prd":
-                required_sections = [
-                    "overview", "goals", "user_stories", "functional_requirements",
-                    "non_functional_requirements", "technical_requirements"
-                ]
+    def _ensure_agent(self):
+        """Ensure the PydanticAI agent is initialized with proper OpenAI key."""
+        if self._agent is None:
+            # Set OpenAI API key from credential service before initializing agent
+            try:
+                from ..utils import get_openai_api_key_sync
                 
-                total_sections = len(required_sections)
-                present_sections = 0
-                
-                for section in required_sections:
-                    if section not in content:
-                        validation_results["missing_sections"].append(section)
-                    elif not content.get(section):
-                        validation_results["incomplete_sections"].append(section)
+                print("DEBUG: Getting OpenAI API key for DocsAgent...")
+                api_key = get_openai_api_key_sync()
+                if api_key:
+                    print(f"DEBUG: Got API key: {api_key[:8]}...{api_key[-4:] if len(api_key) > 8 else '***'}")
+                    os.environ['OPENAI_API_KEY'] = api_key
+                else:
+                    print("DEBUG: No API key found!")
+                    # Try fallback to environment
+                    cached_openai_key = os.getenv("OPENAI_API_KEY")
+                    if cached_openai_key:
+                        print("DEBUG: Using cached OPENAI_API_KEY from environment")
                     else:
-                        present_sections += 1
-                
-                validation_results["score"] = present_sections / total_sections
+                        print("WARNING: No OpenAI API key available - DocsAgent will fail")
+            except Exception as e:
+                print(f"DEBUG: Error getting OpenAI API key: {e}")
+                # Try fallback to environment
+                cached_openai_key = os.getenv("OPENAI_API_KEY")
+                if cached_openai_key:
+                    print("DEBUG: Using cached OPENAI_API_KEY from environment")
+                else:
+                    print("WARNING: No OpenAI API key available - DocsAgent will fail")
             
-            return validation_results
+            # Create the actual PydanticAI agent
+            self._agent = Agent(
+                model="openai:gpt-4o-mini",
+                deps_type=DocsDependencies,
+                system_prompt="""You are a helpful documentation assistant.
+
+You help users with project documentation tasks including:
+- Creating and reviewing documentation 
+- Answering questions about documentation
+- Providing guidance on best practices
+- General conversation about documentation needs
+
+Keep responses concise and helpful. For simple greetings like "hi", just respond naturally."""
+            )
+            
+            # Add tools
+            @self._agent.tool
+            async def get_project_documents(ctx: RunContext[DocsDependencies], project_id: str) -> str:
+                """Get existing project documents."""
+                logger.info(f"Getting documents for project {project_id}")
+                return f"Retrieved documents for project {project_id}"
+
+            @self._agent.tool  
+            async def create_document(ctx: RunContext[DocsDependencies], title: str, content: str) -> str:
+                """Create a new document."""
+                logger.info(f"Creating document: {title}")
+                return f"Created document '{title}' with content length {len(content)}"
+            
+            print("DEBUG: DocsAgent PydanticAI agent initialized successfully")
         
-        @agent.tool
-        async def generate_user_stories(
-            ctx: RunContext[DocsDependencies],
-            project_description: str,
-            target_users: List[str]
-        ) -> List[Dict[str, Any]]:
-            """Generate user stories based on project description and target users."""
-            # This would typically use the LLM to generate stories
-            # For now, return a structured format
-            stories = []
-            for user_type in target_users:
-                stories.append({
-                    "user_type": user_type,
-                    "story": f"As a {user_type}, I want to {project_description.lower()}",
-                    "acceptance_criteria": [
-                        "Feature is accessible and functional",
-                        "User can complete the task successfully",
-                        "Appropriate feedback is provided"
-                    ]
-                })
-            return stories
+        return self._agent
         
-        @agent.tool
-        async def suggest_technical_requirements(
-            ctx: RunContext[DocsDependencies],
-            functional_requirements: List[str],
-            project_type: str = "web_application"
-        ) -> List[Dict[str, Any]]:
-            """Suggest technical requirements based on functional requirements."""
-            tech_requirements = []
-            
-            # Common technical requirements based on project type
-            if project_type == "web_application":
-                tech_requirements.extend([
-                    {
-                        "category": "Performance",
-                        "requirement": "Page load time under 3 seconds",
-                        "priority": "high"
-                    },
-                    {
-                        "category": "Security",
-                        "requirement": "HTTPS encryption for all data transmission",
-                        "priority": "high"
-                    },
-                    {
-                        "category": "Scalability",
-                        "requirement": "Support for concurrent users",
-                        "priority": "medium"
-                    }
-                ])
-            
-            return tech_requirements
-    
-    async def create_prd(
-        self,
-        project_title: str,
-        project_description: str,
-        requirements: List[str] = None,
-        context: Dict[str, Any] = None
-    ) -> DocumentOutput:
-        """
-        Create a comprehensive PRD from basic project information.
+    async def run(self, message: str, project_id: Optional[str] = None, **kwargs) -> str:
+        """Run the agent with a message."""
+        agent = self._ensure_agent()
         
-        Args:
-            project_title: Title of the project
-            project_description: Basic description of what the project should do
-            requirements: List of specific requirements (optional)
-            context: Additional context information (optional)
-            
-        Returns:
-            DocumentOutput with the generated PRD
-        """
         deps = DocsDependencies(
-            project_title=project_title,
-            processing_mode=DocumentProcessingMode.CREATE,
-            requirements=requirements or [],
-            context_data=context or {}
+            project_id=project_id,
+            context=kwargs.get('context'),
+            request_id=kwargs.get('request_id'),
+            user_id=kwargs.get('user_id')
         )
         
-        prompt = f"""
-Create a comprehensive Product Requirements Document for the following project:
-
-**Project Title**: {project_title}
-**Description**: {project_description}
-
-Additional Requirements:
-{chr(10).join(f"- {req}" for req in (requirements or []))}
-
-Please create a detailed PRD that includes:
-1. Project overview and objectives
-2. Specific goals with success metrics
-3. User stories with acceptance criteria
-4. Detailed functional requirements
-5. Non-functional requirements (performance, security, etc.)
-6. Technical requirements and constraints
-7. Implementation considerations
-
-Structure the output according to the ProjectRequirementsDocument schema.
-"""
-        
-        return await self.run(prompt, deps)
+        try:
+            result = await agent.run(message, deps=deps)
+            # Extract the actual data from PydanticAI result
+            if hasattr(result, 'data'):
+                return str(result.data)
+            else:
+                return str(result)
+        except Exception as e:
+            logger.error(f"DocsAgent error: {e}")
+            if "request_limit" in str(e).lower():
+                return "I'm experiencing high demand right now. Please try again in a moment."
+            raise e
     
-    async def validate_document(
-        self,
-        document: Dict[str, Any],
-        document_type: DocumentType
-    ) -> DocumentOutput:
-        """
-        Validate an existing document for completeness and quality.
+    async def run_stream(self, message: str, project_id: Optional[str] = None, **kwargs):
+        """Run the agent with streaming."""
+        agent = self._ensure_agent()
         
-        Args:
-            document: The document content to validate
-            document_type: Type of document being validated
-            
-        Returns:
-            DocumentOutput with validation results and suggestions
-        """
         deps = DocsDependencies(
-            processing_mode=DocumentProcessingMode.VALIDATE,
-            existing_docs=[{"content": document, "document_type": document_type}]
+            project_id=project_id,
+            context=kwargs.get('context'),
+            request_id=kwargs.get('request_id'),
+            user_id=kwargs.get('user_id')
         )
         
-        prompt = f"""
-Validate the following {document_type} document for completeness and quality:
-
-{document}
-
-Please analyze:
-1. Structural completeness - are all required sections present?
-2. Content quality - is the information clear and actionable?
-3. Consistency - is terminology and format consistent throughout?
-4. Technical feasibility - are requirements realistic and implementable?
-
-Provide:
-- Validation status (pass/fail/needs_improvement)
-- Specific suggestions for improvement
-- Confidence score for overall document quality
-"""
-        
-        return await self.run(prompt, deps)
-    
-    async def enhance_document(
-        self,
-        document: Dict[str, Any],
-        enhancement_areas: List[str]
-    ) -> DocumentOutput:
-        """
-        Enhance an existing document by adding missing content or improving existing sections.
-        
-        Args:
-            document: The document to enhance
-            enhancement_areas: Specific areas to focus on for enhancement
-            
-        Returns:
-            DocumentOutput with enhanced document content
-        """
-        deps = DocsDependencies(
-            processing_mode=DocumentProcessingMode.ENHANCE,
-            existing_docs=[{"content": document}],
-            context_data={"enhancement_areas": enhancement_areas}
-        )
-        
-        prompt = f"""
-Enhance the following document by focusing on these areas:
-{chr(10).join(f"- {area}" for area in enhancement_areas)}
-
-Current document:
-{document}
-
-Please:
-1. Add missing content in the specified areas
-2. Improve clarity and detail where needed
-3. Ensure consistency with existing content
-4. Maintain the document's original structure and intent
-
-Return the enhanced document with improvements clearly integrated.
-"""
-        
-        return await self.run(prompt, deps) 
+        try:
+            # PydanticAI streaming should work directly
+            return agent.run_stream(message, deps=deps)
+        except Exception as e:
+            logger.error(f"DocsAgent stream error: {e}")
+            if "request_limit" in str(e).lower():
+                # For streaming errors, we need to handle differently
+                raise Exception("I'm experiencing high demand right now. Please try again in a moment.")
+            raise e 

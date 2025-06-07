@@ -12,7 +12,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
-from ..agents.docs_agent import DocsAgent, DocsDependencies, DocumentProcessingMode
+from ..agents.docs_agent import DocsAgent
 from ..utils import get_supabase_client
 
 # Get the global crawling context from main.py (same pattern as knowledge_api)
@@ -90,6 +90,17 @@ class ChatSessionManager:
         self.sessions: Dict[str, ChatSession] = {}
         self.websockets: Dict[str, List[WebSocket]] = {}
         self._docs_agent = None
+        
+        # Add request queuing to prevent rate limit overload
+        self._processing_lock = asyncio.Lock()
+        self._request_queue = asyncio.Queue(maxsize=100)  # Limit queue size
+        self._processing_requests = 0
+        self._max_concurrent_requests = 3  # Limit concurrent OpenAI calls
+        
+        # Simple response cache to avoid repeat API calls
+        self._response_cache = {}
+        self._cache_ttl = 300  # 5 minutes cache TTL
+        self._max_cache_size = 100
     
     @property
     def docs_agent(self):
@@ -253,8 +264,81 @@ class ChatSessionManager:
         session.messages.append(user_message)
         await self.broadcast_message(session_id, user_message)
         
+        # Check if we're at capacity and queue the request
+        async with self._processing_lock:
+            if self._processing_requests >= self._max_concurrent_requests:
+                print(f"DEBUG: Rate limiting - queuing request for session {session_id}")
+                await self.broadcast_typing(session_id, True)
+                # Queue the request
+                try:
+                    await asyncio.wait_for(
+                        self._request_queue.put((session_id, message_content, context)),
+                        timeout=30.0  # Don't wait more than 30 seconds to queue
+                    )
+                    # Process queued requests
+                    asyncio.create_task(self._process_queued_requests())
+                    return
+                except asyncio.TimeoutError:
+                    error_message = ChatMessage(
+                        id=str(uuid.uuid4()),
+                        content="I'm currently handling many requests. Please try again in a moment.",
+                        sender="agent",
+                        timestamp=datetime.now(),
+                        agent_type=session.agent_type
+                    )
+                    session.messages.append(error_message)
+                    await self.broadcast_message(session_id, error_message)
+                    return
+            else:
+                self._processing_requests += 1
+        
         # Show typing indicator
         await self.broadcast_typing(session_id, True)
+        
+        try:
+            await self._process_single_request(session_id, message_content, context)
+        finally:
+            # Always decrement the processing counter
+            async with self._processing_lock:
+                self._processing_requests = max(0, self._processing_requests - 1)
+            
+            # Process any queued requests
+            if not self._request_queue.empty():
+                asyncio.create_task(self._process_queued_requests())
+    
+    async def _process_queued_requests(self):
+        """Process queued requests when capacity becomes available."""
+        try:
+            while not self._request_queue.empty():
+                async with self._processing_lock:
+                    if self._processing_requests >= self._max_concurrent_requests:
+                        break  # Still at capacity
+                    
+                    try:
+                        session_id, message_content, context = self._request_queue.get_nowait()
+                        self._processing_requests += 1
+                    except asyncio.QueueEmpty:
+                        break
+                
+                # Process the queued request
+                try:
+                    print(f"DEBUG: Processing queued request for session {session_id}")
+                    await self._process_single_request(session_id, message_content, context)
+                except Exception as e:
+                    print(f"Error processing queued request: {e}")
+                finally:
+                    async with self._processing_lock:
+                        self._processing_requests = max(0, self._processing_requests - 1)
+                        
+        except Exception as e:
+            print(f"Error in _process_queued_requests: {e}")
+    
+    async def _process_single_request(self, session_id: str, message_content: str, context: Optional[Dict[str, Any]] = None):
+        """Process a single request (used for both immediate and queued requests)."""
+        if session_id not in self.sessions:
+            return
+            
+        session = self.sessions[session_id]
         
         try:
             # Process with agent
@@ -293,7 +377,7 @@ class ChatSessionManager:
             # Send error message
             error_message = ChatMessage(
                 id=str(uuid.uuid4()),
-                content=f"I encountered an error processing your request: {str(e)}",
+                content=f"I encountered an error processing your request: {str(e)}. Let me know how else I can help with your documentation needs.",
                 sender="agent",
                 timestamp=datetime.now(),
                 agent_type=session.agent_type
@@ -302,134 +386,119 @@ class ChatSessionManager:
             session.messages.append(error_message)
             await self.broadcast_message(session_id, error_message)
     
+    def _get_cache_key(self, message: str, session_id: str) -> str:
+        """Generate cache key for message."""
+        import hashlib
+        key_data = f"{message.lower().strip()}:{session_id}"
+        return hashlib.md5(key_data.encode()).hexdigest()
+    
+    def _get_cached_response(self, cache_key: str) -> Optional[str]:
+        """Get cached response if available and not expired."""
+        import time
+        if cache_key in self._response_cache:
+            cached_time, response = self._response_cache[cache_key]
+            if time.time() - cached_time < self._cache_ttl:
+                print(f"DEBUG: Using cached response for key: {cache_key[:8]}...")
+                return response
+            else:
+                # Remove expired cache entry
+                del self._response_cache[cache_key]
+        return None
+    
+    def _cache_response(self, cache_key: str, response: str):
+        """Cache a response with timestamp."""
+        import time
+        # Clean cache if too large
+        if len(self._response_cache) >= self._max_cache_size:
+            # Remove oldest entries (simple LRU-like behavior)
+            oldest_keys = sorted(self._response_cache.keys(), 
+                               key=lambda k: self._response_cache[k][0])[:10]
+            for key in oldest_keys:
+                del self._response_cache[key]
+        
+        self._response_cache[cache_key] = (time.time(), response)
+        print(f"DEBUG: Cached response for key: {cache_key[:8]}...")
+
     async def _process_with_docs_agent(
         self,
         message: str,
         session: ChatSession,
         context: Optional[Dict[str, Any]] = None
     ) -> str:
-        """Process message with the DocsAgent using actual LLM conversation."""
+        """Process message with the simplified DocsAgent."""
         print(f"DEBUG: _process_with_docs_agent called with message: {message}")
+        
+        # Check cache first
+        cache_key = self._get_cache_key(message, session.session_id)
+        cached_response = self._get_cached_response(cache_key)
+        if cached_response:
+            return cached_response
+        
         try:
-            # Get project documents for context
-            existing_docs = []
-            if session.project_id:
-                try:
-                    # Get project documents directly from Supabase
-                    supabase_client = get_supabase_client()
-                    response = supabase_client.table("projects").select("docs").eq("id", session.project_id).execute()
-                    if response.data:
-                        existing_docs = response.data[0].get("docs", [])
-                        print(f"DEBUG: Found {len(existing_docs)} existing documents in project")
-                except Exception as e:
-                    print(f"Could not fetch project documents: {e}")
+            # Use the simplified DocsAgent - just run the message
+            print(f"DEBUG: Using simplified DocsAgent for message: {message}")
             
-            # Create dependencies with project context
-            from ..agents.docs_agent import DocsDependencies, DocumentProcessingMode
+            # First check if we should use streaming or regular response
+            should_stream = session.session_id in self.websockets and len(self.websockets[session.session_id]) > 0
             
-            # Determine processing mode based on user intent
-            message_lower = message.lower()
-            if any(word in message_lower for word in ['create', 'generate', 'write', 'new']):
-                mode = DocumentProcessingMode.CREATE
-            elif any(word in message_lower for word in ['review', 'validate', 'check', 'analyze']):
-                mode = DocumentProcessingMode.REVIEW
-            elif any(word in message_lower for word in ['see', 'show', 'find', 'look', 'view', 'read']):
-                mode = DocumentProcessingMode.REVIEW  # Reading is reviewing
-            else:
-                mode = DocumentProcessingMode.REVIEW  # Default to review for conversational queries
-            
-            deps = DocsDependencies(
-                project_title=context.get('project_title', 'Archon Project') if context else 'Archon Project',
-                existing_docs=existing_docs,
-                processing_mode=mode,
-                requirements=[message] if context else None,
-                context_data=context or {}
-            )
-            
-            print(f"DEBUG: Created dependencies with {len(existing_docs)} docs")
-            print(f"DEBUG: Calling DocsAgent.run() with user message...")
-            
-            # Use the DocsAgent as an actual conversational LLM with streaming
-            try:
-                # First check if we should use streaming or regular response
-                should_stream = session.id in self.websocket_connections and len(self.websocket_connections[session.id]) > 0
+            if should_stream:
+                print(f"DEBUG: Using streaming response for session {session.session_id}")
+                accumulated_response = ""
                 
-                if should_stream:
-                    print(f"DEBUG: Using streaming response for session {session.id}")
-                    # Use streaming with PydanticAI
-                    accumulated_response = ""
-                    
-                    async with self.docs_agent.run_stream(user_prompt=message, deps=deps) as response_stream:
+                try:
+                    async with self.docs_agent.run_stream(message, project_id=session.session_id) as response_stream:
                         async for chunk in response_stream:
                             if hasattr(chunk, 'delta') and chunk.delta:
-                                # Stream the delta to WebSocket clients
                                 accumulated_response += chunk.delta
-                                await self.broadcast_message(
-                                    session.id,
-                                    {
-                                        "type": "stream_chunk",
-                                        "content": chunk.delta,
-                                        "session_id": session.id
-                                    }
-                                )
-                        
-                        # Get the final result
-                        final_result = response_stream.get_result()
-                        print(f"DEBUG: Streaming completed. Final result type: {type(final_result)}")
-                        
-                        # Send completion signal
-                        await self.broadcast_message(
-                            session.id,
-                            {
-                                "type": "stream_complete",
-                                "session_id": session.id
-                            }
-                        )
-                        
-                        return accumulated_response or str(final_result)
-                else:
-                    print(f"DEBUG: Using regular response (no active WebSocket)")
-                    result = await self.docs_agent.run(
-                        user_prompt=message,
-                        deps=deps
-                    )
+                                # Send stream chunk via WebSocket
+                                if session.session_id in self.websockets:
+                                    for websocket in self.websockets[session.session_id]:
+                                        try:
+                                            await websocket.send_json({
+                                                "type": "stream_chunk",
+                                                "content": chunk.delta,
+                                                "session_id": session.session_id
+                                            })
+                                        except:
+                                            pass  # Handle disconnected websockets
                     
-                    print(f"DEBUG: DocsAgent returned result type: {type(result)}")
+                    # Send completion signal
+                    if session.session_id in self.websockets:
+                        for websocket in self.websockets[session.session_id]:
+                            try:
+                                await websocket.send_json({
+                                    "type": "stream_complete",
+                                    "session_id": session.session_id
+                                })
+                            except:
+                                pass
                     
-                    # Handle the result based on its type
-                    if hasattr(result, 'content') and isinstance(result.content, str):
-                        response = result.content
-                    elif hasattr(result, 'content') and isinstance(result.content, dict):
-                        # If it's a document output, format it nicely
-                        doc_type = result.document_type if hasattr(result, 'document_type') else 'document'
-                        title = result.title if hasattr(result, 'title') else 'Generated Document'
-                        confidence = result.confidence_score if hasattr(result, 'confidence_score') else 0.0
-                        
-                        response = f"I've created a {doc_type} titled '{title}' based on your request.\n\n"
-                        response += f"Confidence Score: {confidence:.1%}\n\n"
-                        
-                        if hasattr(result, 'suggestions') and result.suggestions:
-                            response += "Key insights:\n" + "\n".join([f"• {s}" for s in result.suggestions[:5]])
-                    else:
-                        response = str(result)
+                    response = accumulated_response
                     
-                    print(f"DEBUG: Formatted response: {response[:100]}...")
-                    return response
-                    
-            except Exception as stream_error:
-                print(f"DEBUG: Streaming failed, falling back to regular response: {stream_error}")
-                # Fallback to regular response
-                result = await self.docs_agent.run(
-                    user_prompt=message,
-                    deps=deps
-                )
-                return str(result)
+                except Exception as stream_error:
+                    print(f"DEBUG: Streaming failed, using regular response: {stream_error}")
+                    response = await self.docs_agent.run(message, project_id=session.session_id)
+            else:
+                print(f"DEBUG: Using regular response (no active WebSocket)")
+                response = await self.docs_agent.run(message, project_id=session.session_id)
+            
+            print(f"DEBUG: DocsAgent response: {response[:100]}...")
+            
+            # Cache the successful response
+            self._cache_response(cache_key, response)
+            return response
                            
         except Exception as e:
             print(f"Error in docs agent processing: {e}")
             import traceback
             traceback.print_exc()
-            return f"I encountered an error processing your request: {str(e)}. Let me know how else I can help with your documentation needs."
+            
+            # Check if it's a rate limit error and provide appropriate message
+            error_str = str(e).lower()
+            if "rate limit" in error_str or "429" in error_str or "request_limit" in error_str:
+                return "I'm currently experiencing high demand. Please try again in a moment."
+            else:
+                return f"I encountered an error processing your request: {str(e)}. Let me know how else I can help with your documentation needs."
 
 # Global session manager
 chat_manager = ChatSessionManager()
@@ -484,33 +553,86 @@ async def send_message(session_id: str, request: ChatRequest):
 @router.websocket("/sessions/{session_id}/ws")
 async def websocket_chat(websocket: WebSocket, session_id: str):
     """WebSocket endpoint for real-time chat communication."""
+    print(f"🔌 DEBUG: WebSocket connection attempt for session {session_id}")
+    print(f"DEBUG: WebSocket headers: {websocket.headers}")
+    
     try:
-        print(f"DEBUG: WebSocket connecting for session {session_id}")
+        print(f"DEBUG: About to accept WebSocket for session {session_id}")
         
         # CRITICAL: Accept WebSocket connection FIRST
         await websocket.accept()
-        print(f"DEBUG: WebSocket accepted for session {session_id}")
+        print(f"🚀 DEBUG: WebSocket accepted for session {session_id}")
         
         # Add to manager after accepting
         await chat_manager.add_websocket(session_id, websocket)
-        print(f"DEBUG: WebSocket registered for session {session_id}")
+        print(f"✅ DEBUG: WebSocket registered for session {session_id}")
+        
+        # Send initial connection confirmation
+        await websocket.send_json({
+            "type": "connection_confirmed",
+            "data": {"session_id": session_id, "status": "connected"}
+        })
         
         # Keep connection alive
         while True:
             try:
                 # Wait for messages from client (like ping)
                 message = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+                print(f"📨 DEBUG: Received message from client: {message}")
                 if message == "ping":
                     await websocket.send_json({"type": "pong"})
             except asyncio.TimeoutError:
                 # Send heartbeat every 30 seconds
+                print(f"💓 DEBUG: Sending heartbeat for session {session_id}")
                 await websocket.send_json({"type": "heartbeat"})
             except WebSocketDisconnect:
+                print(f"🔌 DEBUG: WebSocket disconnect received for session {session_id}")
                 break
                 
     except WebSocketDisconnect:
-        print(f"DEBUG: WebSocket disconnected for session {session_id}")
+        print(f"❌ DEBUG: WebSocket disconnected for session {session_id}")
     except Exception as e:
-        print(f"DEBUG: WebSocket error for session {session_id}: {e}")
+        print(f"💥 DEBUG: WebSocket error for session {session_id}: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
-        chat_manager.remove_websocket(session_id, websocket) 
+        print(f"🧹 DEBUG: Cleaning up WebSocket for session {session_id}")
+        chat_manager.remove_websocket(session_id, websocket)
+
+# Add new endpoint to monitor rate limiting status
+@router.get("/status")
+async def get_chat_status():
+    """Get current chat system status including rate limiting info."""
+    return {
+        "success": True,
+        "status": {
+            "active_sessions": len(chat_manager.sessions),
+            "active_websockets": sum(len(ws_list) for ws_list in chat_manager.websockets.values()),
+            "processing_requests": chat_manager._processing_requests,
+            "max_concurrent_requests": chat_manager._max_concurrent_requests,
+            "queued_requests": chat_manager._request_queue.qsize(),
+            "cached_responses": len(chat_manager._response_cache)
+        }
+    }
+
+@router.get("/debug/token-usage")
+async def debug_token_usage():
+    """Debug endpoint to show simplified agent info."""
+    return {
+        "success": True,
+        "info": {
+            "agent_type": "simplified_pydantic_ai",
+            "model": "openai:gpt-4o-mini",
+            "features": [
+                "Single agent instance",
+                "No complex inheritance",
+                "Direct PydanticAI usage",
+                "Built-in rate limit handling"
+            ]
+        },
+        "estimated_tokens": {
+            "simple_chat": "~100 tokens (system prompt + message + tools)",
+            "document_tasks": "~200-500 tokens (depending on complexity)",
+            "previous_broken_version": "~900+ tokens (with complex schemas and inheritance)"
+        }
+    } 
