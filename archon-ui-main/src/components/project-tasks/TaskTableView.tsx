@@ -277,32 +277,68 @@ export const TaskTableView = ({
   return (
     <div className="overflow-x-auto">
       {/* Status Filter */}
-      <div className="mb-4 flex gap-2">
+      <div className="mb-4 flex gap-2 flex-wrap py-2">
         <button
           onClick={() => setStatusFilter('all')}
-          className={`px-3 py-1 rounded text-sm transition-colors ${
-            statusFilter === 'all' 
-              ? 'bg-cyan-500 text-white' 
-              : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
-          }`}
+          className={`
+            px-3 py-1.5 rounded-full text-xs transition-all duration-200
+            ${statusFilter === 'all' 
+              ? 'bg-cyan-100 dark:bg-cyan-900/20 text-cyan-600 dark:text-cyan-400 ring-1 ring-cyan-500/50 shadow-[0_0_8px_rgba(34,211,238,0.3)]' 
+              : 'bg-gray-100/70 dark:bg-gray-800/50 text-gray-600 dark:text-gray-400 hover:bg-gray-200/70 dark:hover:bg-gray-700/50'
+            }
+          `}
         >
           All Tasks
         </button>
-        {statuses.map((status) => (
-          <button
-            key={status}
-            onClick={() => setStatusFilter(status)}
-            className={`px-3 py-1 rounded text-sm transition-colors ${
-              statusFilter === status 
-                ? 'bg-cyan-500 text-white' 
-                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
-            }`}
-          >
-            {status === 'backlog' ? 'Backlog' : 
-             status === 'in-progress' ? 'In Progress' : 
-             status === 'review' ? 'Review' : 'Complete'}
-          </button>
-        ))}
+        {statuses.map((status) => {
+          // Define colors for each status
+          const getStatusColors = (status: Task['status']) => {
+            switch (status) {
+              case 'backlog':
+                return {
+                  selected: 'bg-gray-100 dark:bg-gray-900/20 text-gray-600 dark:text-gray-400 ring-1 ring-gray-500/50 shadow-[0_0_8px_rgba(107,114,128,0.3)]',
+                  unselected: 'bg-gray-100/70 dark:bg-gray-800/50 text-gray-600 dark:text-gray-400 hover:bg-gray-200/70 dark:hover:bg-gray-700/50'
+                };
+              case 'in-progress':
+                return {
+                  selected: 'bg-blue-100 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 ring-1 ring-blue-500/50 shadow-[0_0_8px_rgba(59,130,246,0.3)]',
+                  unselected: 'bg-gray-100/70 dark:bg-gray-800/50 text-gray-600 dark:text-gray-400 hover:bg-blue-200/30 dark:hover:bg-blue-900/20'
+                };
+              case 'review':
+                return {
+                  selected: 'bg-purple-100 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 ring-1 ring-purple-500/50 shadow-[0_0_8px_rgba(168,85,247,0.3)]',
+                  unselected: 'bg-gray-100/70 dark:bg-gray-800/50 text-gray-600 dark:text-gray-400 hover:bg-purple-200/30 dark:hover:bg-purple-900/20'
+                };
+              case 'complete':
+                return {
+                  selected: 'bg-green-100 dark:bg-green-900/20 text-green-600 dark:text-green-400 ring-1 ring-green-500/50 shadow-[0_0_8px_rgba(34,197,94,0.3)]',
+                  unselected: 'bg-gray-100/70 dark:bg-gray-800/50 text-gray-600 dark:text-gray-400 hover:bg-green-200/30 dark:hover:bg-green-900/20'
+                };
+              default:
+                return {
+                  selected: 'bg-gray-100 dark:bg-gray-900/20 text-gray-600 dark:text-gray-400 ring-1 ring-gray-500/50 shadow-[0_0_8px_rgba(107,114,128,0.3)]',
+                  unselected: 'bg-gray-100/70 dark:bg-gray-800/50 text-gray-600 dark:text-gray-400 hover:bg-gray-200/70 dark:hover:bg-gray-700/50'
+                };
+            }
+          };
+
+          const colors = getStatusColors(status);
+          
+          return (
+            <button
+              key={status}
+              onClick={() => setStatusFilter(status)}
+              className={`
+                px-3 py-1.5 rounded-full text-xs transition-all duration-200
+                ${statusFilter === status ? colors.selected : colors.unselected}
+              `}
+            >
+              {status === 'backlog' ? 'Backlog' : 
+               status === 'in-progress' ? 'In Progress' : 
+               status === 'review' ? 'Review' : 'Complete'}
+            </button>
+          );
+        })}
       </div>
 
       <table className="w-full border-collapse">

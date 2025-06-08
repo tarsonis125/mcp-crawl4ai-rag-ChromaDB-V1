@@ -26,7 +26,7 @@ interface ChatRequest {
 }
 
 interface WebSocketMessage {
-  type: 'message' | 'typing' | 'ping' | 'stream_chunk' | 'stream_complete';
+  type: 'message' | 'typing' | 'ping' | 'stream_chunk' | 'stream_complete' | 'connection_confirmed' | 'heartbeat' | 'pong';
   data?: any;
   content?: string;
   session_id?: string;
@@ -175,6 +175,26 @@ class AgentChatService {
           
         case 'ping':
           // Keep connection alive - no action needed
+          break;
+          
+        case 'connection_confirmed':
+          // Connection established successfully
+          console.log('✅ Agent chat WebSocket connection confirmed');
+          break;
+          
+        case 'heartbeat':
+          // Server heartbeat - respond with ping
+          console.log('💓 Received heartbeat from server');
+          // Find the sessionId from the connection map
+          const currentSessionId = wsMessage.session_id || Array.from(this.wsConnections.entries()).find(([_, ws]) => ws === event.target)?.[0];
+          if (currentSessionId && this.wsConnections.get(currentSessionId)) {
+            this.wsConnections.get(currentSessionId)?.send('ping');
+          }
+          break;
+          
+        case 'pong':
+          // Response to our ping - connection is alive
+          console.log('🏓 Received pong from server');
           break;
           
         default:

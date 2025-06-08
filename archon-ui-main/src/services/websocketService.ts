@@ -98,7 +98,7 @@ export const crawlWebSocket = new WebSocketService();
 
 // Task Update WebSocket Service for real-time task updates
 interface TaskUpdateData {
-  type: 'task_created' | 'task_updated' | 'task_deleted' | 'task_archived' | 'connection_established';
+  type: 'task_created' | 'task_updated' | 'task_deleted' | 'task_archived' | 'connection_established' | 'initial_tasks' | 'tasks_updated' | 'heartbeat' | 'pong';
   data: any;
   timestamp: string;
   project_id: string;
@@ -110,6 +110,8 @@ interface TaskUpdateCallbacks {
   onTaskDeleted?: (task: any) => void;
   onTaskArchived?: (task: any) => void;
   onConnectionEstablished?: () => void;
+  onInitialTasks?: (tasks: any[]) => void;
+  onTasksChange?: (tasks: any[]) => void;
   onError?: (error: Event) => void;
   onClose?: (event: CloseEvent) => void;
 }
@@ -117,33 +119,37 @@ interface TaskUpdateCallbacks {
 class TaskUpdateService {
   private ws: WebSocket | null = null;
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
-  private reconnectInterval = 3000;
+  private maxReconnectAttempts = 3;  // Reduced from 5 to 3
+  private reconnectInterval = 5000;  // Increased from 3s to 5s
   private projectId: string | null = null;
+  private sessionId: string | null = null;
   private callbacks: TaskUpdateCallbacks = {};
 
-  connect(projectId: string, callbacks: TaskUpdateCallbacks) {
+  connect(projectId: string, callbacks: TaskUpdateCallbacks, sessionId?: string) {
     this.projectId = projectId;
+    this.sessionId = sessionId || this.generateSessionId();
     this.callbacks = callbacks;
     
     // Use the current host but with the backend port
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.hostname;
     const port = '8080'; // Backend WebSocket port
-    const wsUrl = `${protocol}//${host}:${port}/api/projects/${projectId}/tasks/updates`;
+    
+    // Include session ID as query parameter
+    const wsUrl = `${protocol}//${host}:${port}/api/projects/${projectId}/tasks/ws?session_id=${this.sessionId}`;
     
     console.log(`🔌 Connecting to Task Updates WebSocket: ${wsUrl}`);
     this.ws = new WebSocket(wsUrl);
     
     this.ws.onopen = () => {
-      console.log(`🚀 Task Updates WebSocket connected for project: ${projectId}`);
+      console.log(`🚀 Task Updates WebSocket connected for project: ${projectId}, session: ${this.sessionId}`);
       this.reconnectAttempts = 0;
     };
     
     this.ws.onmessage = (event) => {
       try {
         const data: TaskUpdateData = JSON.parse(event.data);
-        console.log(`📨 Task update received:`, data);
+        console.log(`📨 Task update received for session ${this.sessionId}:`, data);
         this.handleMessage(data);
       } catch (error) {
         console.error('Failed to parse Task Update WebSocket message:', error);
@@ -151,7 +157,7 @@ class TaskUpdateService {
     };
     
     this.ws.onclose = (event) => {
-      console.log(`🔌 Task Updates WebSocket disconnected for project: ${projectId}`, event);
+      console.log(`🔌 Task Updates WebSocket disconnected for project: ${projectId}, session: ${this.sessionId}`, event);
       this.attemptReconnect();
       
       if (this.callbacks.onClose) {
@@ -160,12 +166,16 @@ class TaskUpdateService {
     };
     
     this.ws.onerror = (error) => {
-      console.error('Task Updates WebSocket error:', error);
+      console.error(`Task Updates WebSocket error for session ${this.sessionId}:`, error);
       
       if (this.callbacks.onError) {
         this.callbacks.onError(error);
       }
     };
+  }
+
+  private generateSessionId(): string {
+    return 'task-session-' + Math.random().toString(36).substr(2, 9);
   }
 
   private handleMessage(data: TaskUpdateData) {
@@ -174,6 +184,20 @@ class TaskUpdateService {
         console.log('🎯 Task updates connection established');
         if (this.callbacks.onConnectionEstablished) {
           this.callbacks.onConnectionEstablished();
+        }
+        break;
+        
+      case 'initial_tasks':
+        console.log('📋 Initial tasks received:', data.data);
+        if (this.callbacks.onInitialTasks) {
+          this.callbacks.onInitialTasks(data.data.tasks || []);
+        }
+        break;
+        
+      case 'tasks_updated':
+        console.log('🔄 Tasks updated via MCP:', data.data);
+        if (this.callbacks.onTasksChange) {
+          this.callbacks.onTasksChange(data.data.updated_tasks || []);
         }
         break;
         
@@ -205,23 +229,34 @@ class TaskUpdateService {
         }
         break;
         
+      case 'heartbeat':
+        console.log('💓 Heartbeat received from server');
+        // Send ping response  
+        this.sendPing();
+        break;
+        
+      case 'pong':
+        console.log('🏓 Pong received from server');
+        // Connection is alive
+        break;
+        
       default:
         console.warn('Unknown task update message type:', data.type);
     }
   }
 
   private attemptReconnect() {
-    if (this.reconnectAttempts < this.maxReconnectAttempts && this.projectId) {
+    if (this.reconnectAttempts < this.maxReconnectAttempts && this.projectId && this.sessionId) {
       this.reconnectAttempts++;
-      console.log(`🔄 Attempting to reconnect Task Updates WebSocket (${this.reconnectAttempts}/${this.maxReconnectAttempts}) in ${this.reconnectInterval}ms`);
+      console.log(`🔄 Attempting to reconnect Task Updates WebSocket (${this.reconnectAttempts}/${this.maxReconnectAttempts}) for session ${this.sessionId} in ${this.reconnectInterval}ms`);
       
       setTimeout(() => {
-        if (this.projectId) {
-          this.connect(this.projectId, this.callbacks);
+        if (this.projectId && this.sessionId) {
+          this.connect(this.projectId, this.callbacks, this.sessionId);
         }
       }, this.reconnectInterval);
     } else {
-      console.error('❌ Max reconnection attempts reached for Task Updates WebSocket');
+      console.error(`❌ Max reconnection attempts reached for Task Updates WebSocket session ${this.sessionId}`);
     }
   }
 
@@ -238,6 +273,7 @@ class TaskUpdateService {
       this.ws = null;
     }
     this.projectId = null;
+    this.sessionId = null;
     this.callbacks = {};
     this.reconnectAttempts = 0;
   }

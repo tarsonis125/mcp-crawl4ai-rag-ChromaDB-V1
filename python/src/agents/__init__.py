@@ -10,7 +10,7 @@ This module contains various specialized agents for different tasks:
 All agents are built using PydanticAI for type safety and structured outputs.
 """
 
-from .docs_agent import DocsAgent
+from .document_agent import DocumentAgent
 from .base_agent import BaseAgent
 
-__all__ = ['BaseAgent', 'DocsAgent'] 
+__all__ = ['BaseAgent', 'DocumentAgent'] 

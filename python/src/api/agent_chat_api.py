@@ -12,7 +12,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
-from ..agents.docs_agent import DocsAgent
+from ..agents.document_agent import DocumentAgent
 from ..utils import get_supabase_client
 
 # Import logfire for comprehensive API logging  
@@ -96,7 +96,7 @@ class ChatSessionManager:
     def __init__(self):
         self.sessions: Dict[str, ChatSession] = {}
         self.websockets: Dict[str, List[WebSocket]] = {}
-        self._docs_agent = None
+        self._document_agent = None
         
         # Add request queuing to prevent rate limit overload
         self._processing_lock = asyncio.Lock()
@@ -110,10 +110,10 @@ class ChatSessionManager:
         self._max_cache_size = 100
     
     @property
-    def docs_agent(self):
-        """Lazy initialization of docs agent to avoid OpenAI key requirement at startup."""
-        if self._docs_agent is None:
-            print("DEBUG: Initializing DocsAgent...")
+    def document_agent(self):
+        """Lazy initialization of document agent to avoid OpenAI key requirement at startup."""
+        if self._document_agent is None:
+            print("DEBUG: Initializing DocumentAgent...")
             # Set OpenAI API key from credential service before initializing agent
             import os
             from ..utils import get_openai_api_key_sync
@@ -126,10 +126,10 @@ class ChatSessionManager:
             else:
                 print("DEBUG: No API key found!")
             
-            print("DEBUG: Creating DocsAgent instance...")
-            self._docs_agent = DocsAgent()
-            print("DEBUG: DocsAgent created successfully")
-        return self._docs_agent
+            print("DEBUG: Creating DocumentAgent instance...")
+            self._document_agent = DocumentAgent()
+            print("DEBUG: DocumentAgent created successfully")
+        return self._document_agent
     
     async def create_session(
         self, 
@@ -351,7 +351,7 @@ class ChatSessionManager:
             # Process with agent
             if session.agent_type == "docs":
                 print(f"DEBUG: Calling docs agent for message: {message_content}")
-                response_content = await self._process_with_docs_agent(
+                response_content = await self._process_with_document_agent(
                     message_content, 
                     session, 
                     context
@@ -426,14 +426,14 @@ class ChatSessionManager:
         self._response_cache[cache_key] = (time.time(), response)
         print(f"DEBUG: Cached response for key: {cache_key[:8]}...")
 
-    async def _process_with_docs_agent(
+    async def _process_with_document_agent(
         self,
         message: str,
         session: ChatSession,
         context: Optional[Dict[str, Any]] = None
     ) -> str:
-        """Process message with the simplified DocsAgent."""
-        print(f"DEBUG: _process_with_docs_agent called with message: {message}")
+        """Process message with the DocumentAgent."""
+        print(f"DEBUG: _process_with_document_agent called with message: {message}")
         
         # Check cache first
         cache_key = self._get_cache_key(message, session.session_id)
@@ -442,54 +442,27 @@ class ChatSessionManager:
             return cached_response
         
         try:
-            # Use the simplified DocsAgent - just run the message
-            print(f"DEBUG: Using simplified DocsAgent for message: {message}")
+            # Use the new DocumentAgent with conversational interface
+            print(f"DEBUG: Using DocumentAgent for message: {message}")
             
-            # First check if we should use streaming or regular response
-            should_stream = session.session_id in self.websockets and len(self.websockets[session.session_id]) > 0
+            # Use the new DocumentAgent API
+            result = await self.document_agent.run_conversation(
+                user_message=message,
+                project_id=session.project_id,  # Don't use "default" - let it be None if not set
+                user_id=session.session_id  # Use session_id as user identifier for now
+            )
             
-            if should_stream:
-                print(f"DEBUG: Using streaming response for session {session.session_id}")
-                accumulated_response = ""
-                
-                try:
-                    async with self.docs_agent.run_stream(message, project_id=session.session_id) as response_stream:
-                        async for chunk in response_stream:
-                            if hasattr(chunk, 'delta') and chunk.delta:
-                                accumulated_response += chunk.delta
-                                # Send stream chunk via WebSocket
-                                if session.session_id in self.websockets:
-                                    for websocket in self.websockets[session.session_id]:
-                                        try:
-                                            await websocket.send_json({
-                                                "type": "stream_chunk",
-                                                "content": chunk.delta,
-                                                "session_id": session.session_id
-                                            })
-                                        except:
-                                            pass  # Handle disconnected websockets
-                    
-                    # Send completion signal
-                    if session.session_id in self.websockets:
-                        for websocket in self.websockets[session.session_id]:
-                            try:
-                                await websocket.send_json({
-                                    "type": "stream_complete",
-                                    "session_id": session.session_id
-                                })
-                            except:
-                                pass
-                    
-                    response = accumulated_response
-                    
-                except Exception as stream_error:
-                    print(f"DEBUG: Streaming failed, using regular response: {stream_error}")
-                    response = await self.docs_agent.run(message, project_id=session.session_id)
+            # Format the response based on the structured output
+            if result.success:
+                response = result.message
+                if result.changes_made:
+                    response += f"\n\n**Changes Made:**\n" + "\n".join([f"- {change}" for change in result.changes_made])
+                if result.content_preview:
+                    response += f"\n\n**Preview:** {result.content_preview}"
             else:
-                print(f"DEBUG: Using regular response (no active WebSocket)")
-                response = await self.docs_agent.run(message, project_id=session.session_id)
+                response = f"I encountered an issue: {result.message}"
             
-            print(f"DEBUG: DocsAgent response: {response[:100]}...")
+            print(f"DEBUG: DocumentAgent response: {response[:100]}...")
             
             # Cache the successful response
             self._cache_response(cache_key, response)
@@ -614,9 +587,17 @@ async def send_message(session_id: str, request: ChatRequest):
 async def websocket_chat(websocket: WebSocket, session_id: str):
     """WebSocket endpoint for real-time chat communication."""
     print(f"🔌 DEBUG: WebSocket connection attempt for session {session_id}")
-    print(f"DEBUG: WebSocket headers: {websocket.headers}")
     
     try:
+        # CRITICAL: Validate session exists BEFORE accepting WebSocket
+        if session_id not in chat_manager.sessions:
+            print(f"❌ DEBUG: Session {session_id} not found in chat manager")
+            await websocket.close(code=4004, reason="Session not found")
+            return
+            
+        print(f"✅ DEBUG: Session {session_id} found, accepting WebSocket")
+        print(f"DEBUG: WebSocket headers: {websocket.headers}")
+        
         print(f"DEBUG: About to accept WebSocket for session {session_id}")
         
         # CRITICAL: Accept WebSocket connection FIRST

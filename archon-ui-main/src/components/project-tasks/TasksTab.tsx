@@ -94,8 +94,14 @@ export const TasksTab = ({
           console.log('🆕 Real-time task created:', newTask);
           const mappedTask = mapDatabaseTaskToUITask(newTask);
           setTasks(prev => {
+            // Check if task already exists to prevent duplicates
+            if (prev.some(task => task.id === newTask.id)) {
+              console.log('Task already exists, skipping create');
+              return prev;
+            }
             const updated = [...prev, mappedTask];
-            onTasksChange(updated);
+            // Use setTimeout to avoid setState during render
+            setTimeout(() => onTasksChange(updated), 0);
             return updated;
           });
         },
@@ -104,10 +110,18 @@ export const TasksTab = ({
           console.log('📝 Real-time task updated:', updatedTask);
           const mappedTask = mapDatabaseTaskToUITask(updatedTask);
           setTasks(prev => {
+            // Check if this is actually a change
+            const existingTask = prev.find(task => task.id === updatedTask.id);
+            if (existingTask && JSON.stringify(existingTask) === JSON.stringify(mappedTask)) {
+              console.log('No actual changes in task, skipping update');
+              return prev;
+            }
+            
             const updated = prev.map(task => 
               task.id === updatedTask.id ? mappedTask : task
             );
-            onTasksChange(updated);
+            // Use setTimeout to avoid setState during render
+            setTimeout(() => onTasksChange(updated), 0);
             return updated;
           });
         },
@@ -116,7 +130,8 @@ export const TasksTab = ({
           console.log('🗑️ Real-time task deleted:', deletedTask);
           setTasks(prev => {
             const updated = prev.filter(task => task.id !== deletedTask.id);
-            onTasksChange(updated);
+            // Use setTimeout to avoid setState during render
+            setTimeout(() => onTasksChange(updated), 0);
             return updated;
           });
         },
@@ -125,7 +140,8 @@ export const TasksTab = ({
           console.log('📦 Real-time task archived:', archivedTask);
           setTasks(prev => {
             const updated = prev.filter(task => task.id !== archivedTask.id);
-            onTasksChange(updated);
+            // Use setTimeout to avoid setState during render
+            setTimeout(() => onTasksChange(updated), 0);
             return updated;
           });
         },

@@ -8,13 +8,14 @@ Handles:
 - WebSocket progress updates for project creation
 """
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Query
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional, Set
 import asyncio
 import secrets
 from datetime import datetime, timedelta
 import json
+import uuid
 
 from ..utils import get_supabase_client
 import logging
@@ -226,85 +227,129 @@ project_creation_manager = ProjectCreationProgressManager()
 
 # WebSocket Connection Manager for Task Updates
 class TaskUpdateManager:
+    """
+    Manages WebSocket connections for task updates with session-based isolation.
+    Allows multiple chat sessions per project with independent WebSocket connections.
+    """
     def __init__(self):
-        self.project_connections: Dict[str, List[WebSocket]] = {}
-        self.task_connections: Dict[str, List[WebSocket]] = {}
-    
-    async def connect_to_project(self, websocket: WebSocket, project_id: str):
-        """Connect a WebSocket to receive updates for a specific project's tasks"""
+        # Changed to nested structure: project_id -> session_id -> websockets
+        self.session_connections: Dict[str, Dict[str, List[WebSocket]]] = {}
+
+    async def connect_to_session(self, websocket: WebSocket, project_id: str, session_id: str):
+        """Connect a WebSocket to receive updates for a specific project session"""
         with logfire_logger.span("task_websocket_connect") as span:
             span.set_attribute("project_id", project_id)
+            span.set_attribute("session_id", session_id)
             
             try:
-                await websocket.accept()
-                logfire_logger.info("Task WebSocket connected", project_id=project_id)
+                # WebSocket is already accepted in the endpoint, don't accept again
+                logfire_logger.info("Task WebSocket connected", project_id=project_id, session_id=session_id)
                 
-                if project_id not in self.project_connections:
-                    self.project_connections[project_id] = []
+                # Initialize nested structure if needed
+                if project_id not in self.session_connections:
+                    self.session_connections[project_id] = {}
                 
-                self.project_connections[project_id].append(websocket)
+                if session_id not in self.session_connections[project_id]:
+                    self.session_connections[project_id][session_id] = []
+                
+                self.session_connections[project_id][session_id].append(websocket)
                 span.set_attribute("success", True)
-                span.set_attribute("total_connections", len(self.project_connections[project_id]))
+                span.set_attribute("total_sessions", len(self.session_connections[project_id]))
+                span.set_attribute("session_connections", len(self.session_connections[project_id][session_id]))
                 
             except Exception as e:
-                logfire_logger.error("Failed to connect task WebSocket", project_id=project_id, error=str(e))
+                logfire_logger.error("Failed to connect task WebSocket", project_id=project_id, session_id=session_id, error=str(e))
                 span.set_attribute("success", False)
                 span.set_attribute("error", str(e))
                 raise
     
-    def disconnect_from_project(self, websocket: WebSocket, project_id: str):
-        """Disconnect a WebSocket from project task updates"""
-        if project_id in self.project_connections:
+    def disconnect_from_session(self, websocket: WebSocket, project_id: str, session_id: str):
+        """Disconnect a WebSocket from project session task updates"""
+        if (project_id in self.session_connections and 
+            session_id in self.session_connections[project_id]):
             try:
-                self.project_connections[project_id].remove(websocket)
-                if not self.project_connections[project_id]:
-                    del self.project_connections[project_id]
-                logfire_logger.info("Task WebSocket disconnected", project_id=project_id)
+                self.session_connections[project_id][session_id].remove(websocket)
+                
+                # Clean up empty structures
+                if not self.session_connections[project_id][session_id]:
+                    del self.session_connections[project_id][session_id]
+                    
+                if not self.session_connections[project_id]:
+                    del self.session_connections[project_id]
+                    
+                logfire_logger.info("Task WebSocket disconnected", project_id=project_id, session_id=session_id)
             except ValueError:
                 pass  # WebSocket not in list
-    
-    async def broadcast_task_update(self, project_id: str, event_type: str, task_data: Dict[str, Any]):
-        """Broadcast a task update to all connected clients for a project"""
+
+    async def broadcast_task_update(self, project_id: str, event_type: str, task_data: Dict[str, Any], target_session_id: str = None):
+        """Broadcast a task update to connected sessions for a project"""
         with logfire_logger.span("task_websocket_broadcast") as span:
             span.set_attribute("project_id", project_id)
             span.set_attribute("event_type", event_type)
             span.set_attribute("task_id", task_data.get("id"))
+            span.set_attribute("target_session_id", target_session_id)
             
-            if project_id not in self.project_connections:
-                span.set_attribute("connections", 0)
+            if project_id not in self.session_connections:
+                span.set_attribute("sessions", 0)
                 return
             
-            connections = self.project_connections[project_id][:]
-            message = {
-                "type": event_type,
-                "data": task_data,
-                "timestamp": datetime.now().isoformat(),
-                "project_id": project_id
-            }
-            
-            disconnected = []
             successful_broadcasts = 0
+            total_connections = 0
+            disconnected = []
             
-            for websocket in connections:
-                try:
-                    await websocket.send_json(message)
-                    successful_broadcasts += 1
-                except Exception as e:
-                    logfire_logger.warning("Failed to send task update to WebSocket", error=str(e))
-                    disconnected.append(websocket)
+            # Determine which sessions to broadcast to
+            sessions_to_broadcast = {}
+            if target_session_id and target_session_id in self.session_connections[project_id]:
+                # Broadcast to specific session only
+                sessions_to_broadcast[target_session_id] = self.session_connections[project_id][target_session_id]
+            else:
+                # Broadcast to all sessions for this project
+                sessions_to_broadcast = self.session_connections[project_id].copy()
+            
+            for session_id, websockets in sessions_to_broadcast.items():
+                connections = websockets[:]
+                total_connections += len(connections)
+                
+                message = {
+                    "type": event_type,
+                    "data": task_data,
+                    "timestamp": datetime.now().isoformat(),
+                    "project_id": project_id,
+                    "session_id": session_id
+                }
+                
+                for websocket in connections:
+                    try:
+                        # Check if WebSocket is still open before sending
+                        if websocket.client_state.name == "CONNECTED":
+                            await websocket.send_json(message)
+                            successful_broadcasts += 1
+                        else:
+                            disconnected.append((websocket, project_id, session_id))
+                    except Exception as e:
+                        # Only log as warning if it's not a normal connection close
+                        if "ConnectionClosed" not in str(e) and "close" not in str(e).lower():
+                            logfire_logger.warning("Failed to send task update to WebSocket", error=str(e), session_id=session_id)
+                        else:
+                            logfire_logger.debug("WebSocket connection closed normally", error=str(e), session_id=session_id)
+                        disconnected.append((websocket, project_id, session_id))
             
             # Remove disconnected WebSockets
-            for ws in disconnected:
-                self.disconnect_from_project(ws, project_id)
+            for ws, proj_id, sess_id in disconnected:
+                self.disconnect_from_session(ws, proj_id, sess_id)
             
             logfire_logger.info("Task update broadcasted", 
                           project_id=project_id, 
                           event_type=event_type,
                           successful_broadcasts=successful_broadcasts,
-                          failed_broadcasts=len(disconnected))
+                          failed_broadcasts=len(disconnected),
+                          total_sessions=len(sessions_to_broadcast),
+                          total_connections=total_connections)
             
             span.set_attribute("successful_broadcasts", successful_broadcasts)
             span.set_attribute("failed_broadcasts", len(disconnected))
+            span.set_attribute("total_sessions", len(sessions_to_broadcast))
+            span.set_attribute("total_connections", total_connections)
 
 # Global task update manager
 task_update_manager = TaskUpdateManager()
@@ -320,72 +365,132 @@ class DatabaseChangeDetector:
     def __init__(self):
         self.last_check_times: Dict[str, datetime] = {}
         self.polling_tasks: Dict[str, asyncio.Task] = {}
-        self.check_interval = 2.0  # Check every 2 seconds
-        self.is_running = False
+        self.check_interval = 5  # seconds (increased for better performance)
+        self.websocket_connections: Dict[str, List[Dict[str, Any]]] = {}
+        self.content_hashes: Dict[str, str] = {}  # Track content changes
     
     def start_monitoring(self, project_id: str):
-        """Start monitoring changes for a specific project"""
-        if project_id not in self.polling_tasks or self.polling_tasks[project_id].done():
-            logfire_logger.info("Starting database change monitoring", project_id=project_id)
-            self.last_check_times[project_id] = datetime.now()
-            self.polling_tasks[project_id] = asyncio.create_task(
-                self._monitor_project_changes(project_id)
-            )
+        """Start monitoring database changes for a project"""
+        if project_id in self.polling_tasks:
+            return  # Already monitoring
+        
+        self.last_check_times[project_id] = datetime.now()
+        
+        async def monitor_loop():
+            while project_id in self.websocket_connections and self.websocket_connections[project_id]:
+                try:
+                    await self._check_and_broadcast_changes(project_id)
+                    await asyncio.sleep(self.check_interval)
+                except Exception as e:
+                    logger.error(f"Error monitoring project {project_id}: {e}")
+                    await asyncio.sleep(self.check_interval)
+        
+        # Store the monitoring task
+        self.polling_tasks[project_id] = asyncio.create_task(monitor_loop())
+        logger.info(f"Started monitoring database changes for project {project_id}")
     
     def stop_monitoring(self, project_id: str):
-        """Stop monitoring changes for a specific project"""
+        """Stop monitoring database changes for a project"""
         if project_id in self.polling_tasks:
-            logfire_logger.info("Stopping database change monitoring", project_id=project_id)
             self.polling_tasks[project_id].cancel()
             del self.polling_tasks[project_id]
-            if project_id in self.last_check_times:
-                del self.last_check_times[project_id]
+        if project_id in self.last_check_times:
+            del self.last_check_times[project_id]
+        if project_id in self.content_hashes:
+            del self.content_hashes[project_id]
+        logger.info(f"Stopped monitoring database changes for project {project_id}")
     
-    async def _monitor_project_changes(self, project_id: str):
-        """Monitor database changes for a specific project"""
-        try:
-            while True:
-                await asyncio.sleep(self.check_interval)
-                await self._check_and_broadcast_changes(project_id)
-        except asyncio.CancelledError:
-            logfire_logger.info("Database monitoring cancelled", project_id=project_id)
-        except Exception as e:
-            logfire_logger.error("Error in database monitoring", project_id=project_id, error=str(e))
-            # Restart monitoring after brief delay
-            await asyncio.sleep(5)
+    async def add_websocket_connection(self, project_id: str, websocket: WebSocket, session_id: str = None):
+        """Add WebSocket connection and start monitoring if first connection for project"""
+        if project_id not in self.websocket_connections:
+            self.websocket_connections[project_id] = []
+        
+        # Store websocket with session context  
+        connection_info = {
+            "websocket": websocket,
+            "session_id": session_id or str(uuid.uuid4()),
+            "connected_at": datetime.now()
+        }
+        self.websocket_connections[project_id].append(connection_info)
+        
+        # Start monitoring this project if first connection
+        if len(self.websocket_connections[project_id]) == 1:
             self.start_monitoring(project_id)
     
+    def remove_websocket_connection(self, project_id: str, websocket: WebSocket, session_id: str = None):
+        """Remove WebSocket connection and stop monitoring if no connections left"""
+        if project_id in self.websocket_connections:
+            # Remove the specific websocket connection
+            self.websocket_connections[project_id] = [
+                conn for conn in self.websocket_connections[project_id] 
+                if conn["websocket"] != websocket
+            ]
+            
+            if not self.websocket_connections[project_id]:
+                # No more connections, stop monitoring
+                del self.websocket_connections[project_id]
+                self.stop_monitoring(project_id)
+    
     async def _check_and_broadcast_changes(self, project_id: str):
-        """Check for database changes since last check and broadcast updates"""
+        """Check for database changes and broadcast via WebSocket"""
+        last_check = self.last_check_times.get(project_id)
+        if not last_check:
+            return
+        
         try:
             supabase_client = get_supabase_client()
-            last_check = self.last_check_times.get(project_id, datetime.now() - timedelta(minutes=1))
             
-            # Check for task changes since last check
-            task_changes = supabase_client.table("tasks").select("*").eq(
-                "project_id", project_id
-            ).gt("updated_at", last_check.isoformat()).execute()
+            # Query for tasks updated since last check
+            response = supabase_client.table("tasks").select("*").eq("project_id", project_id).gte("updated_at", last_check.isoformat()).execute()
             
-            # Update last check time
-            self.last_check_times[project_id] = datetime.now()
+            changed_tasks = response.data if response.data else []
             
-            # Broadcast changes if any found
-            if task_changes.data:
-                logfire_logger.info("Detected task changes", 
-                                  project_id=project_id, 
-                                  changes_count=len(task_changes.data))
+            if changed_tasks:
+                # Update last check time
+                self.last_check_times[project_id] = datetime.now()
                 
-                for task in task_changes.data:
-                    await task_update_manager.broadcast_task_update(
-                        project_id=project_id,
-                        event_type="task_updated",
-                        task_data=task
-                    )
+                # Check for actual content changes using hashes
+                actual_changes = []
+                for task in changed_tasks:
+                    task_hash = hash(str(sorted(task.items())))
+                    old_hash = self.content_hashes.get(f"{project_id}:{task['id']}")
                     
+                    if old_hash != task_hash:
+                        self.content_hashes[f"{project_id}:{task['id']}"] = task_hash
+                        actual_changes.append(task)
+                
+                if actual_changes:
+                    # Broadcast changes to all connected WebSockets
+                    await self._broadcast_to_project(project_id, {
+                        "type": "tasks_updated",
+                        "data": {
+                            "project_id": project_id,
+                            "updated_tasks": actual_changes,
+                            "timestamp": datetime.now().isoformat()
+                        }
+                    })
+                    logger.info(f"Broadcast {len(actual_changes)} task changes for project {project_id}")
+        
         except Exception as e:
-            logfire_logger.error("Error checking database changes", 
-                               project_id=project_id, 
-                               error=str(e))
+            logger.error(f"Error checking database changes for project {project_id}: {e}")
+    
+    async def _broadcast_to_project(self, project_id: str, message: dict):
+        """Broadcast message to all WebSocket connections for a project"""
+        if project_id not in self.websocket_connections:
+            return
+        
+        disconnected = []
+        for conn in self.websocket_connections[project_id]:
+            websocket = conn["websocket"]
+            try:
+                await websocket.send_json(message)
+            except Exception as e:
+                logger.warning(f"Failed to send WebSocket message: {e}")
+                disconnected.append(conn)
+        
+        # Clean up disconnected WebSockets
+        for conn in disconnected:
+            self.remove_websocket_connection(project_id, conn["websocket"], conn["session_id"])
 
 # Global database change detector
 db_change_detector = DatabaseChangeDetector()
@@ -1343,41 +1448,66 @@ async def projects_health():
         
         return result
 
-# Enhanced WebSocket endpoint with change detection
-@router.websocket("/projects/{project_id}/tasks/updates")
-async def task_updates_websocket(websocket: WebSocket, project_id: str):
-    """WebSocket endpoint for real-time task updates with MCP change detection"""
-    await task_update_manager.connect_to_project(websocket, project_id)
-    
-    # Start monitoring database changes for this project
-    db_change_detector.start_monitoring(project_id)
-    
+# Enhanced WebSocket endpoint with session-based change detection
+@router.websocket("/projects/{project_id}/tasks/ws")
+async def task_updates_websocket(websocket: WebSocket, project_id: str, session_id: str = Query(None)):
+    """WebSocket endpoint for real-time task updates with session-based MCP change detection"""
     try:
-        # Send a connection confirmation message
+        await websocket.accept()
+        
+        # Use session_id if provided, otherwise generate one for this connection
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            
+        logfire_logger.info("Task WebSocket connected", project_id=project_id, session_id=session_id)
+        
+        # Add to both managers with session context
+        await task_update_manager.connect_to_session(websocket, project_id, session_id)
+        await db_change_detector.add_websocket_connection(project_id, websocket, session_id)
+        
+        # Send initial task state
+        supabase_client = get_supabase_client()
+        tasks_response = supabase_client.table("tasks").select("*").eq("project_id", project_id).eq("archived", False).order("task_order").execute()
+        
+        initial_data = {
+            "type": "initial_tasks",
+            "data": {
+                "project_id": project_id,
+                "session_id": session_id,
+                "tasks": tasks_response.data if tasks_response.data else []
+            }
+        }
+        await websocket.send_json(initial_data)
+        
+        # Send connection confirmation
         await websocket.send_json({
             "type": "connection_established",
             "data": {
                 "project_id": project_id,
-                "message": "Connected to task updates with MCP change detection"
+                "session_id": session_id,
+                "message": "Connected to task updates with session-based MCP change detection"
             },
             "timestamp": datetime.now().isoformat()
         })
         
-        # Keep connection alive - just wait for disconnection
+        # Keep connection alive
         while True:
-            await asyncio.sleep(1)  # Keep connection alive without expecting client messages
+            try:
+                message = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+                if message == "ping":
+                    await websocket.send_json({"type": "pong", "session_id": session_id})
+            except asyncio.TimeoutError:
+                await websocket.send_json({"type": "heartbeat", "session_id": session_id})
+            except WebSocketDisconnect:
+                break
                 
     except WebSocketDisconnect:
-        logfire_logger.info("Task updates WebSocket disconnected", project_id=project_id)
+        logfire_logger.info("Task updates WebSocket disconnected", project_id=project_id, session_id=session_id)
     except Exception as e:
-        logfire_logger.error("Unexpected error in task updates WebSocket", project_id=project_id, error=str(e))
+        logfire_logger.error("Unexpected error in task updates WebSocket", project_id=project_id, session_id=session_id, error=str(e))
     finally:
-        task_update_manager.disconnect_from_project(websocket, project_id)
-        
-        # Stop monitoring if no more connections for this project
-        if project_id not in task_update_manager.project_connections or \
-           not task_update_manager.project_connections[project_id]:
-            db_change_detector.stop_monitoring(project_id)
+        task_update_manager.disconnect_from_session(websocket, project_id, session_id)
+        db_change_detector.remove_websocket_connection(project_id, websocket, session_id)
 
 # MCP CONTEXT MANAGER FOR TASK UPDATES WITH WEBSOCKET BROADCASTING
 # Following the same pattern as RAG module

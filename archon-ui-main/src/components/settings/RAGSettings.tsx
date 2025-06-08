@@ -81,30 +81,41 @@ const CustomCheckbox = ({
   label,
   description
 }: CustomCheckboxProps) => {
-  return <div className="flex items-start group">
+  return (
+    <div className="flex items-start group">
       <div className="relative flex items-center h-5 mt-1">
-        <input type="checkbox" id={id} checked={checked} onChange={onChange} className="sr-only peer" />
-        <div className="relative w-5 h-5 rounded-md transition-all duration-200
-          bg-gradient-to-b from-white/80 to-white/60 dark:from-white/5 dark:to-black/40
-          border border-gray-300 dark:border-gray-700
-          peer-checked:border-green-500 dark:peer-checked:border-green-500/50
-          peer-checked:bg-gradient-to-b peer-checked:from-green-500/20 peer-checked:to-green-600/20
-          group-hover:border-green-500/50 dark:group-hover:border-green-500/30
-          peer-checked:shadow-[0_0_10px_rgba(34,197,94,0.2)] dark:peer-checked:shadow-[0_0_15px_rgba(34,197,94,0.3)]">
+        <input 
+          type="checkbox" 
+          id={id} 
+          checked={checked} 
+          onChange={onChange} 
+          className="sr-only peer" 
+        />
+        <label 
+          htmlFor={id}
+          className="relative w-5 h-5 rounded-md transition-all duration-200 cursor-pointer
+            bg-gradient-to-b from-white/80 to-white/60 dark:from-white/5 dark:to-black/40
+            border border-gray-300 dark:border-gray-700
+            peer-checked:border-green-500 dark:peer-checked:border-green-500/50
+            peer-checked:bg-gradient-to-b peer-checked:from-green-500/20 peer-checked:to-green-600/20
+            group-hover:border-green-500/50 dark:group-hover:border-green-500/30
+            peer-checked:shadow-[0_0_10px_rgba(34,197,94,0.2)] dark:peer-checked:shadow-[0_0_15px_rgba(34,197,94,0.3)]"
+        >
           <Check className={`
               w-3.5 h-3.5 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
-              transition-all duration-200 text-green-500
+              transition-all duration-200 text-green-500 pointer-events-none
               ${checked ? 'opacity-100 scale-100' : 'opacity-0 scale-50'}
             `} />
-        </div>
+        </label>
       </div>
       <div className="ml-3 flex-1">
-        <label htmlFor={id} className="text-gray-700 dark:text-zinc-300 font-medium cursor-pointer">
+        <label htmlFor={id} className="text-gray-700 dark:text-zinc-300 font-medium cursor-pointer block">
           {label}
         </label>
         <p className="text-sm text-gray-600 dark:text-zinc-400 mt-0.5">
           {description}
         </p>
       </div>
-    </div>;
+    </div>
+  );
 };
