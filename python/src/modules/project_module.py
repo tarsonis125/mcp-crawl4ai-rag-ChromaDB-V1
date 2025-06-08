@@ -288,6 +288,41 @@ def register_project_tools(mcp: FastMCP):
             
             if response.data:
                 project = response.data[0]
+                
+                # Get linked sources
+                technical_sources = []
+                business_sources = []
+                
+                try:
+                    # Get source IDs from project_sources table
+                    sources_response = supabase_client.table("project_sources").select("source_id, notes").eq("project_id", project["id"]).execute()
+                    
+                    # Collect source IDs by type
+                    technical_source_ids = []
+                    business_source_ids = []
+                    
+                    for source_link in sources_response.data:
+                        if source_link.get("notes") == "technical":
+                            technical_source_ids.append(source_link["source_id"])
+                        elif source_link.get("notes") == "business":
+                            business_source_ids.append(source_link["source_id"])
+                    
+                    # Fetch full source objects from sources table
+                    if technical_source_ids:
+                        tech_sources_response = supabase_client.table("sources").select("*").in_("source_id", technical_source_ids).execute()
+                        technical_sources = tech_sources_response.data
+                    
+                    if business_source_ids:
+                        biz_sources_response = supabase_client.table("sources").select("*").in_("source_id", business_source_ids).execute()
+                        business_sources = biz_sources_response.data
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to retrieve linked sources for project {project['id']}: {e}")
+                
+                # Add sources to project data
+                project["technical_sources"] = technical_sources
+                project["business_sources"] = business_sources
+                
                 return json.dumps({
                     "success": True,
                     "project": project

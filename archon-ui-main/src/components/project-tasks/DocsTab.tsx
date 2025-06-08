@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, X, Search, Upload, Link as LinkIcon, Check, Filter, Brain, Edit3, Save, FileText, Layout, BookOpen } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import { Button } from '../ui/Button';
 import { knowledgeBaseService, KnowledgeItem } from '../../services/knowledgeBaseService';
+import { projectService } from '../../services/projectService';
 import { useToast } from '../../contexts/ToastContext';
 import { Input } from '../ui/Input';
 import { Card } from '../ui/Card';
@@ -297,10 +297,38 @@ export const DocsTab = ({
 
   // Note: Block editing functions removed - now handled by BlockNoteEditor internally
 
+  // Load project data including linked sources
+  const loadProjectData = async () => {
+    if (!project?.id) return;
+    
+    try {
+      const response = await fetch(`http://localhost:8080/api/projects/${project.id}`);
+      if (!response.ok) throw new Error('Failed to load project data');
+      
+      const projectData = await response.json();
+      
+      // Initialize selected sources from saved project data
+      const technicalSourceIds = (projectData.technical_sources || []).map((source: any) => source.source_id);
+      const businessSourceIds = (projectData.business_sources || []).map((source: any) => source.source_id);
+      
+      setSelectedTechnicalSources(technicalSourceIds);
+      setSelectedBusinessSources(businessSourceIds);
+      
+      console.log('Loaded project sources:', {
+        technical: technicalSourceIds,
+        business: businessSourceIds
+      });
+    } catch (error) {
+      console.error('Failed to load project data:', error);
+      showToast('Failed to load project sources', 'error');
+    }
+  };
+
   // Load knowledge items and documents on mount
   useEffect(() => {
     loadKnowledgeItems();
     loadProjectDocuments();
+    loadProjectData(); // Load saved sources
   }, [project?.id]);
 
   // Clear selected document when project changes
@@ -351,13 +379,38 @@ export const DocsTab = ({
   const toggleBusinessSource = (id: string) => {
     setSelectedBusinessSources(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
   };
-  const saveTechnicalSources = () => {
-    console.log('Saving technical sources:', selectedTechnicalSources);
-    setShowTechnicalModal(false);
+  const saveTechnicalSources = async () => {
+    if (!project?.id) return;
+    
+    try {
+      await projectService.updateProject(project.id, {
+        technical_sources: selectedTechnicalSources
+      });
+      showToast('Technical sources updated successfully', 'success');
+      setShowTechnicalModal(false);
+      // Reload project data to reflect the changes
+      await loadProjectData();
+    } catch (error) {
+      console.error('Failed to save technical sources:', error);
+      showToast('Failed to update technical sources', 'error');
+    }
   };
-  const saveBusinessSources = () => {
-    console.log('Saving business sources:', selectedBusinessSources);
-    setShowBusinessModal(false);
+  
+  const saveBusinessSources = async () => {
+    if (!project?.id) return;
+    
+    try {
+      await projectService.updateProject(project.id, {
+        business_sources: selectedBusinessSources
+      });
+      showToast('Business sources updated successfully', 'success');
+      setShowBusinessModal(false);
+      // Reload project data to reflect the changes
+      await loadProjectData();
+    } catch (error) {
+      console.error('Failed to save business sources:', error);
+      showToast('Failed to update business sources', 'error');
+    }
   };
 
   const handleProgressComplete = (data: CrawlProgressData) => {

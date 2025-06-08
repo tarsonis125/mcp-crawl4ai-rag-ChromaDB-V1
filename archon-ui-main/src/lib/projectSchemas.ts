@@ -31,7 +31,9 @@ export const CreateProjectSchema = z.object({
   prd: z.record(z.any()).optional(),
   docs: z.array(z.any()).optional(),
   features: z.array(z.any()).optional(),
-  data: z.array(z.any()).optional()
+  data: z.array(z.any()).optional(),
+  technical_sources: z.array(z.string()).optional(),
+  business_sources: z.array(z.string()).optional()
 });
 
 export const UpdateProjectSchema = CreateProjectSchema.partial();
@@ -46,6 +48,8 @@ export const ProjectSchema = z.object({
   github_repo: z.string().url().optional().or(z.literal('')),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
+  technical_sources: z.array(z.any()).optional(), // Can be strings or full objects
+  business_sources: z.array(z.any()).optional(), // Can be strings or full objects
   
   // Extended UI properties
   description: z.string().optional(),

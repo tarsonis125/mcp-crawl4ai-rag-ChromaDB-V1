@@ -17,6 +17,13 @@ from datetime import datetime
 import json
 
 from ..utils import get_supabase_client
+import logging
+from ..logfire_config import get_logger
+
+# Get logfire logger for this module
+logfire_logger = get_logger("projects_api", module="projects_api", service="archon-backend")
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["projects"])
 
@@ -30,6 +37,8 @@ class CreateProjectRequest(BaseModel):
     docs: Optional[List[Any]] = None
     features: Optional[List[Any]] = None
     data: Optional[List[Any]] = None
+    technical_sources: Optional[List[str]] = None  # List of knowledge source IDs
+    business_sources: Optional[List[str]] = None   # List of knowledge source IDs
 
 class UpdateProjectRequest(BaseModel):
     title: Optional[str] = None
@@ -38,6 +47,8 @@ class UpdateProjectRequest(BaseModel):
     docs: Optional[List[Any]] = None
     features: Optional[List[Any]] = None
     data: Optional[List[Any]] = None
+    technical_sources: Optional[List[str]] = None  # List of knowledge source IDs
+    business_sources: Optional[List[str]] = None   # List of knowledge source IDs
 
 class CreateTaskRequest(BaseModel):
     project_id: str
@@ -222,6 +233,20 @@ async def list_projects():
         
         projects = []
         for project in response.data:
+            # Get linked sources for this project
+            technical_sources = []
+            business_sources = []
+            
+            try:
+                sources_response = supabase_client.table("project_sources").select("source_id, notes").eq("project_id", project["id"]).execute()
+                for source_link in sources_response.data:
+                    if source_link.get("notes") == "technical":
+                        technical_sources.append(source_link["source_id"])
+                    elif source_link.get("notes") == "business":
+                        business_sources.append(source_link["source_id"])
+            except Exception as e:
+                logger.warning(f"Failed to retrieve linked sources for project {project['id']}: {e}")
+            
             projects.append({
                 "id": project["id"],
                 "title": project["title"],
@@ -231,7 +256,9 @@ async def list_projects():
                 "prd": project.get("prd", {}),
                 "docs": project.get("docs", []),
                 "features": project.get("features", []),
-                "data": project.get("data", [])
+                "data": project.get("data", []),
+                "technical_sources": technical_sources,
+                "business_sources": business_sources
             })
         
         return projects
@@ -366,6 +393,55 @@ async def _create_project_background(progress_id: str, request: CreateProjectReq
         
         if response.data:
             project = response.data[0]
+            project_id = project["id"]
+            
+            # Save technical and business sources to project_sources table
+            if request.technical_sources or request.business_sources:
+                await project_creation_manager.update_progress(progress_id, {
+                    'percentage': 97,
+                    'step': 'linking_sources',
+                    'log': '🔗 Linking knowledge sources...'
+                })
+                
+                # Insert technical sources
+                if request.technical_sources:
+                    for source_id in request.technical_sources:
+                        try:
+                            supabase_client.table("project_sources").insert({
+                                "project_id": project_id,
+                                "source_id": source_id,
+                                "created_by": "system",
+                                "notes": "technical"
+                            }).execute()
+                        except Exception as e:
+                            logger.warning(f"Failed to link technical source {source_id}: {e}")
+                
+                # Insert business sources  
+                if request.business_sources:
+                    for source_id in request.business_sources:
+                        try:
+                            supabase_client.table("project_sources").insert({
+                                "project_id": project_id,
+                                "source_id": source_id,
+                                "created_by": "system", 
+                                "notes": "business"
+                            }).execute()
+                        except Exception as e:
+                            logger.warning(f"Failed to link business source {source_id}: {e}")
+            
+            # Get linked sources for response
+            technical_sources = []
+            business_sources = []
+            
+            try:
+                sources_response = supabase_client.table("project_sources").select("source_id, notes").eq("project_id", project_id).execute()
+                for source_link in sources_response.data:
+                    if source_link.get("notes") == "technical":
+                        technical_sources.append(source_link["source_id"])
+                    elif source_link.get("notes") == "business":
+                        business_sources.append(source_link["source_id"])
+            except Exception as e:
+                logger.warning(f"Failed to retrieve linked sources: {e}")
             
             # Complete the creation process
             await project_creation_manager.complete_creation(progress_id, {
@@ -378,7 +454,9 @@ async def _create_project_background(progress_id: str, request: CreateProjectReq
                     "prd": project.get("prd", {}),
                     "docs": project.get("docs", []),
                     "features": project.get("features", []),
-                    "data": project.get("data", [])
+                    "data": project.get("data", []),
+                    "technical_sources": technical_sources,
+                    "business_sources": business_sources
                 }
             })
         else:
@@ -397,6 +475,37 @@ async def get_project(project_id: str):
         
         if response.data:
             project = response.data[0]
+            
+            # Get linked sources
+            technical_sources = []
+            business_sources = []
+            
+            try:
+                # Get source IDs from project_sources table
+                sources_response = supabase_client.table("project_sources").select("source_id, notes").eq("project_id", project["id"]).execute()
+                
+                # Collect source IDs by type
+                technical_source_ids = []
+                business_source_ids = []
+                
+                for source_link in sources_response.data:
+                    if source_link.get("notes") == "technical":
+                        technical_source_ids.append(source_link["source_id"])
+                    elif source_link.get("notes") == "business":
+                        business_source_ids.append(source_link["source_id"])
+                
+                # Fetch full source objects from sources table
+                if technical_source_ids:
+                    tech_sources_response = supabase_client.table("sources").select("*").in_("source_id", technical_source_ids).execute()
+                    technical_sources = tech_sources_response.data
+                
+                if business_source_ids:
+                    biz_sources_response = supabase_client.table("sources").select("*").in_("source_id", business_source_ids).execute()
+                    business_sources = biz_sources_response.data
+                    
+            except Exception as e:
+                logger.warning(f"Failed to retrieve linked sources for project {project['id']}: {e}")
+            
             return {
                 "id": project["id"],
                 "title": project["title"],
@@ -406,7 +515,9 @@ async def get_project(project_id: str):
                 "prd": project.get("prd", {}),
                 "docs": project.get("docs", []),
                 "features": project.get("features", []),
-                "data": project.get("data", [])
+                "data": project.get("data", []),
+                "technical_sources": technical_sources,
+                "business_sources": business_sources
             }
         else:
             raise HTTPException(status_code=404, detail={'error': f'Project with ID {project_id} not found'})
@@ -418,30 +529,159 @@ async def get_project(project_id: str):
 
 @router.put("/projects/{project_id}")
 async def update_project(project_id: str, request: UpdateProjectRequest):
-    """Update a project."""
-    try:
-        supabase_client = get_supabase_client()
+    """Update a project with comprehensive Logfire monitoring."""
+    with logfire_logger.span("api_update_project") as span:
+        span.set_attribute("endpoint", f"/projects/{project_id}")
+        span.set_attribute("method", "PUT")
+        span.set_attribute("project_id", project_id)
+        span.set_attribute("has_technical_sources", request.technical_sources is not None)
+        span.set_attribute("has_business_sources", request.business_sources is not None)
         
-        # Build update data
-        update_data = {"updated_at": datetime.now().isoformat()}
+        if request.technical_sources is not None:
+            span.set_attribute("technical_sources_count", len(request.technical_sources))
+        if request.business_sources is not None:
+            span.set_attribute("business_sources_count", len(request.business_sources))
         
-        if request.title is not None:
-            update_data["title"] = request.title
-        if request.github_repo is not None:
-            update_data["github_repo"] = request.github_repo
-        if request.prd is not None:
-            update_data["prd"] = request.prd
-        if request.docs is not None:
-            update_data["docs"] = request.docs
-        if request.features is not None:
-            update_data["features"] = request.features
-        if request.data is not None:
-            update_data["data"] = request.data
-        
-        response = supabase_client.table("projects").update(update_data).eq("id", project_id).execute()
-        
-        if response.data:
-            project = response.data[0]
+        try:
+            supabase_client = get_supabase_client()
+            
+            # Build update data with monitoring
+            with logfire_logger.span("prepare_update_data") as prep_span:
+                update_data = {"updated_at": datetime.now().isoformat()}
+                
+                if request.title is not None:
+                    update_data["title"] = request.title
+                if request.github_repo is not None:
+                    update_data["github_repo"] = request.github_repo
+                if request.prd is not None:
+                    update_data["prd"] = request.prd
+                if request.docs is not None:
+                    update_data["docs"] = request.docs
+                if request.features is not None:
+                    update_data["features"] = request.features
+                if request.data is not None:
+                    update_data["data"] = request.data
+                
+                prep_span.set_attribute("update_fields_count", len(update_data) - 1)  # -1 for updated_at
+            
+            # Update project in database with monitoring
+            with logfire_logger.span("update_project_record") as update_span:
+                response = supabase_client.table("projects").update(update_data).eq("id", project_id).execute()
+                
+                if not response.data:
+                    update_span.set_attribute("success", False)
+                    raise HTTPException(status_code=404, detail={'error': f'Project with ID {project_id} not found'})
+                
+                project = response.data[0]
+                update_span.set_attribute("success", True)
+            
+            # Handle technical_sources with monitoring
+            if request.technical_sources is not None:
+                with logfire_logger.span("update_technical_sources") as tech_span:
+                    tech_span.set_attribute("source_count", len(request.technical_sources))
+                    
+                    # Remove existing technical sources
+                    supabase_client.table("project_sources").delete().eq("project_id", project_id).eq("notes", "technical").execute()
+                    
+                    # Add new technical sources
+                    successful_links = 0
+                    failed_links = 0
+                    
+                    for source_id in request.technical_sources:
+                        try:
+                            supabase_client.table("project_sources").insert({
+                                "project_id": project_id,
+                                "source_id": source_id,
+                                "notes": "technical"
+                            }).execute()
+                            successful_links += 1
+                        except Exception as e:
+                            failed_links += 1
+                            logger.warning(f"Failed to link technical source {source_id}: {e}")
+                            logfire_logger.warning(f"Technical source link failed", source_id=source_id, error=str(e))
+                    
+                    tech_span.set_attribute("successful_links", successful_links)
+                    tech_span.set_attribute("failed_links", failed_links)
+                    logfire_logger.info(f"Technical sources updated: {successful_links} success, {failed_links} failed")
+            
+            # Handle business_sources with monitoring
+            if request.business_sources is not None:
+                with logfire_logger.span("update_business_sources") as biz_span:
+                    biz_span.set_attribute("source_count", len(request.business_sources))
+                    
+                    # Remove existing business sources
+                    supabase_client.table("project_sources").delete().eq("project_id", project_id).eq("notes", "business").execute()
+                    
+                    # Add new business sources
+                    successful_links = 0
+                    failed_links = 0
+                    
+                    for source_id in request.business_sources:
+                        try:
+                            supabase_client.table("project_sources").insert({
+                                "project_id": project_id,
+                                "source_id": source_id,
+                                "notes": "business"
+                            }).execute()
+                            successful_links += 1
+                        except Exception as e:
+                            failed_links += 1
+                            logger.warning(f"Failed to link business source {source_id}: {e}")
+                            logfire_logger.warning(f"Business source link failed", source_id=source_id, error=str(e))
+                    
+                    biz_span.set_attribute("successful_links", successful_links)
+                    biz_span.set_attribute("failed_links", failed_links)
+                    logfire_logger.info(f"Business sources updated: {successful_links} success, {failed_links} failed")
+            
+            # Get linked sources for response with monitoring
+            technical_sources = []
+            business_sources = []
+            
+            with logfire_logger.span("fetch_linked_sources_for_response") as fetch_span:
+                try:
+                    # Get source IDs from project_sources table
+                    sources_response = supabase_client.table("project_sources").select("source_id, notes").eq("project_id", project_id).execute()
+                    
+                    # Collect source IDs by type
+                    technical_source_ids = []
+                    business_source_ids = []
+                    
+                    for source_link in sources_response.data:
+                        if source_link.get("notes") == "technical":
+                            technical_source_ids.append(source_link["source_id"])
+                        elif source_link.get("notes") == "business":
+                            business_source_ids.append(source_link["source_id"])
+                    
+                    fetch_span.set_attribute("technical_ids_found", len(technical_source_ids))
+                    fetch_span.set_attribute("business_ids_found", len(business_source_ids))
+                    
+                    # Fetch full source objects from sources table
+                    if technical_source_ids:
+                        tech_sources_response = supabase_client.table("sources").select("*").in_("source_id", technical_source_ids).execute()
+                        technical_sources = tech_sources_response.data
+                    
+                    if business_source_ids:
+                        biz_sources_response = supabase_client.table("sources").select("*").in_("source_id", business_source_ids).execute()
+                        business_sources = biz_sources_response.data
+                    
+                    fetch_span.set_attribute("technical_objects_fetched", len(technical_sources))
+                    fetch_span.set_attribute("business_objects_fetched", len(business_sources))
+                        
+                except Exception as e:
+                    fetch_span.set_attribute("success", False)
+                    fetch_span.set_attribute("error", str(e))
+                    logger.warning(f"Failed to retrieve linked sources: {e}")
+                    logfire_logger.warning(f"Failed to fetch linked sources for response", project_id=project_id, error=str(e))
+            
+            span.set_attribute("success", True)
+            span.set_attribute("final_technical_sources", len(technical_sources))
+            span.set_attribute("final_business_sources", len(business_sources))
+            
+            logfire_logger.info(f"Project updated successfully", 
+                              project_id=project_id, 
+                              technical_sources=len(technical_sources),
+                              business_sources=len(business_sources))
+            
             return {
                 "id": project["id"],
                 "title": project["title"],
@@ -451,15 +691,20 @@ async def update_project(project_id: str, request: UpdateProjectRequest):
                 "prd": project.get("prd", {}),
                 "docs": project.get("docs", []),
                 "features": project.get("features", []),
-                "data": project.get("data", [])
+                "data": project.get("data", []),
+                "technical_sources": technical_sources,
+                "business_sources": business_sources
             }
-        else:
-            raise HTTPException(status_code=404, detail={'error': f'Project with ID {project_id} not found'})
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail={'error': str(e)})
+                
+        except HTTPException:
+            span.set_attribute("success", False)
+            span.set_attribute("error", "HTTP Exception")
+            raise
+        except Exception as e:
+            span.set_attribute("success", False)
+            span.set_attribute("error", str(e))
+            logfire_logger.error(f"Project update failed", project_id=project_id, error=str(e))
+            raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.delete("/projects/{project_id}")
 async def delete_project(project_id: str):

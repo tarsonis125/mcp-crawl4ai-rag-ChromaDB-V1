@@ -27,6 +27,8 @@ export interface Project {
   github_repo?: string;
   created_at: string;
   updated_at: string;
+  technical_sources?: string[]; // Array of source IDs from project_sources table
+  business_sources?: string[]; // Array of source IDs from project_sources table
   
   // Extended UI properties (stored in JSONB fields)
   description?: string;
@@ -71,6 +73,8 @@ export interface CreateProjectRequest {
   docs?: any[];
   features?: any[];
   data?: any[];
+  technical_sources?: string[];
+  business_sources?: string[];
 }
 
 // Update project request
@@ -84,6 +88,8 @@ export interface UpdateProjectRequest {
   docs?: any[];
   features?: any[];
   data?: any[];
+  technical_sources?: string[];
+  business_sources?: string[];
 }
 
 // Create task request
