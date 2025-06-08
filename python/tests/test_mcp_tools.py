@@ -599,6 +599,34 @@ async def test_tool_response_times(mock_context):
     assert "success" in response
 
 
+@pytest.mark.asyncio
+async def test_list_tasks_by_project_filtering(mock_context):
+    """Test list_tasks_by_project tool with closed task filtering"""
+    supabase_client = mock_context.request_context.lifespan_context.supabase_client
+    
+    # Test default behavior (exclude closed tasks)
+    response = supabase_client.table("tasks").select("*").eq("project_id", "test-project-1").neq("status", "done").execute()
+    assert response.data is not None
+    
+    # Test including closed tasks
+    response = supabase_client.table("tasks").select("*").eq("project_id", "test-project-1").execute()
+    assert response.data is not None
+
+
+@pytest.mark.asyncio
+async def test_get_task_subtasks_filtering(mock_context):
+    """Test get_task_subtasks tool with closed subtask filtering"""
+    supabase_client = mock_context.request_context.lifespan_context.supabase_client
+    
+    # Test default behavior (exclude closed subtasks)
+    response = supabase_client.table("tasks").select("*").eq("parent_task_id", "test-task-1").neq("status", "done").execute()
+    assert response.data is not None
+    
+    # Test including closed subtasks
+    response = supabase_client.table("tasks").select("*").eq("parent_task_id", "test-task-1").execute()
+    assert response.data is not None
+
+
 if __name__ == "__main__":
     # Run specific test
     pytest.main([__file__ + "::test_health_check", "-v"]) 

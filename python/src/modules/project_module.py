@@ -19,6 +19,9 @@ import logging
 import traceback
 from datetime import datetime
 
+# Import Logfire
+from ..logfire_config import mcp_logger, api_logger
+
 # Setup logging for the project module
 logger = logging.getLogger(__name__)
 
@@ -100,138 +103,99 @@ def register_project_tools(mcp: FastMCP):
         Returns:
             JSON string with the created project information
         """
-        try:
-            logger.info(f"Creating project: {title}")
-            
-            # Validate inputs
-            if not title or not isinstance(title, str) or len(title.strip()) == 0:
-                return json.dumps({
-                    "success": False,
-                    "error": "Project title is required and must be a non-empty string"
-                })
-            
-            # Get Supabase client with error handling
-            try:
-                # Get the Supabase client from the context
-                supabase_client = ctx.request_context.lifespan_context.supabase_client
-            except AttributeError as e:
-                logger.error(f"Failed to get Supabase client: {e}")
-                return json.dumps({
-                    "success": False,
-                    "error": "Database connection not available"
-                })
-            
-            # Create the project first
-            project_data = {
-                "title": title.strip(),
-                "prd": prd or {},
-                "docs": [],
-                "features": [],
-                "data": [],
-                "created_at": datetime.now().isoformat(),
-                "updated_at": datetime.now().isoformat()
-            }
-            
-            if github_repo and isinstance(github_repo, str) and len(github_repo.strip()) > 0:
-                project_data["github_repo"] = github_repo.strip()
+        with mcp_logger.span("mcp_create_project") as span:
+            span.set_attribute("tool", "create_project")
+            span.set_attribute("title", title)
+            span.set_attribute("has_github_repo", github_repo is not None)
+            span.set_attribute("has_prd", prd is not None)
             
             try:
-                response = supabase_client.table("projects").insert(project_data).execute()
+                logger.info(f"Creating project: {title}")
+                mcp_logger.info("Creating new project", title=title, github_repo=github_repo)
                 
-                if not response.data:
-                    logger.error("Supabase returned empty data for project creation")
+                # Validate inputs
+                if not title or not isinstance(title, str) or len(title.strip()) == 0:
+                    error_msg = "Project title is required and must be a non-empty string"
+                    mcp_logger.error("Project creation failed - invalid title", title=title)
+                    span.set_attribute("success", False)
+                    span.set_attribute("error", error_msg)
                     return json.dumps({
                         "success": False,
-                        "error": "Failed to create project - database returned no data"
+                        "error": error_msg
                     })
                 
-                project = response.data[0]
-                project_id = project["id"]
-                logger.info(f"Project created successfully with ID: {project_id}")
+                # Get Supabase client with error handling
+                try:
+                    # Get the Supabase client from the context
+                    supabase_client = ctx.request_context.lifespan_context.supabase_client
+                except AttributeError as e:
+                    logger.error(f"Failed to get Supabase client: {e}")
+                    error_msg = "Database connection not available"
+                    mcp_logger.error("Project creation failed - no database connection", error=str(e))
+                    span.set_attribute("success", False)
+                    span.set_attribute("error", error_msg)
+                    return json.dumps({
+                        "success": False,
+                        "error": error_msg
+                    })
                 
-            except Exception as db_error:
-                logger.error(f"Database error creating project: {db_error}")
-                logger.error(traceback.format_exc())
-                return json.dumps({
-                    "success": False,
-                    "error": f"Database error: {str(db_error)}"
-                })
-            
-            # Create a default PRD document in the docs JSONB field
-            try:
-                logger.debug("Creating default PRD document")
-                
-                if MODELS_AVAILABLE and 'create_default_prd' in globals():
-                    # Use the Pydantic model to create a structured PRD
-                    try:
-                        default_prd = create_default_prd(title)
-                        prd_content = default_prd.dict()
-                        logger.debug("Used Pydantic model for PRD creation")
-                    except Exception as model_error:
-                        logger.warning(f"Pydantic model failed, using fallback: {model_error}")
-                        prd_content = create_fallback_prd(title)
-                else:
-                    # Fallback to basic PRD structure
-                    prd_content = create_fallback_prd(title)
-                    logger.debug("Used fallback PRD structure")
-                
-                # Create document entry for the docs JSONB array
-                doc_entry = {
-                    "id": str(uuid.uuid4()),
-                    "document_type": "prd",
-                    "title": f"{title} - Requirements",
-                    "content": prd_content,
-                    "status": "draft",
-                    "tags": ["default", "prd"],
-                    "version": "1.0",
+                # Create the project first
+                project_data = {
+                    "title": title.strip(),
+                    "prd": prd or {},
+                    "docs": [],
+                    "features": [],
+                    "data": [],
                     "created_at": datetime.now().isoformat(),
                     "updated_at": datetime.now().isoformat()
                 }
                 
-                # Update the project to include the default document in the docs JSONB field
-                docs_array = [doc_entry]
-                try:
-                    update_response = supabase_client.table("projects").update({
-                        "docs": docs_array,
-                        "updated_at": datetime.now().isoformat()
-                    }).eq("id", project_id).execute()
-                    
-                    if update_response.data:
-                        logger.info(f"Default PRD document created for project {project_id}")
-                        return json.dumps({
-                            "success": True,
-                            "project": {
-                                "id": project["id"],
-                                "title": project["title"],
-                                "github_repo": project.get("github_repo"),
-                                "created_at": project["created_at"]
-                            },
-                            "default_document": {
-                                "id": doc_entry["id"],
-                                "title": doc_entry["title"],
-                                "document_type": doc_entry["document_type"]
-                            }
-                        })
-                    else:
-                        logger.warning(f"Project created but document update failed for project {project_id}")
-                        return create_project_success_response(project, "Project created but default PRD document creation failed")
-                        
-                except Exception as update_error:
-                    logger.error(f"Error updating project with PRD document: {update_error}")
-                    return create_project_success_response(project, f"Project created but default PRD document creation failed: {str(update_error)}")
-                    
-            except Exception as doc_error:
-                logger.error(f"Error creating PRD document: {doc_error}")
-                logger.error(traceback.format_exc())
-                return create_project_success_response(project, f"Project created but default PRD document creation failed: {str(doc_error)}")
+                if github_repo and isinstance(github_repo, str) and len(github_repo.strip()) > 0:
+                    project_data["github_repo"] = github_repo.strip()
                 
-        except Exception as e:
-            logger.error(f"Unexpected error creating project: {e}")
-            logger.error(traceback.format_exc())
-            return json.dumps({
-                "success": False,
-                "error": f"Unexpected error creating project: {str(e)}"
-            })
+                try:
+                    response = supabase_client.table("projects").insert(project_data).execute()
+                    
+                    if not response.data:
+                        logger.error("Supabase returned empty data for project creation")
+                        error_msg = "Failed to create project - database returned no data"
+                        mcp_logger.error("Project creation failed - empty database response")
+                        span.set_attribute("success", False)
+                        span.set_attribute("error", error_msg)
+                        return json.dumps({
+                            "success": False,
+                            "error": error_msg
+                        })
+                    
+                    project = response.data[0]
+                    project_id = project["id"]
+                    logger.info(f"Project created successfully with ID: {project_id}")
+                    mcp_logger.info("Project created successfully", project_id=project_id, title=title)
+                    span.set_attribute("project_id", project_id)
+                    
+                except Exception as db_error:
+                    logger.error(f"Database error creating project: {db_error}")
+                    logger.error(traceback.format_exc())
+                    error_msg = f"Database error: {str(db_error)}"
+                    mcp_logger.error("Project creation failed - database error", error=str(db_error), error_type=type(db_error).__name__)
+                    span.set_attribute("success", False)
+                    span.set_attribute("error", error_msg)
+                    return json.dumps({
+                        "success": False,
+                        "error": error_msg
+                    })
+            
+            except Exception as e:
+                logger.error(f"Unexpected error creating project: {e}")
+                logger.error(traceback.format_exc())
+                error_msg = f"Unexpected error creating project: {str(e)}"
+                mcp_logger.error("Project creation failed - unexpected error", error=str(e))
+                span.set_attribute("success", False)
+                span.set_attribute("error", error_msg)
+                return json.dumps({
+                    "success": False,
+                    "error": error_msg
+                })
     
     @mcp.tool()
     async def list_projects(ctx: Context) -> str:
@@ -398,74 +362,126 @@ def register_project_tools(mcp: FastMCP):
         Returns:
             JSON string with the created task information
         """
-        try:
-            # Get the Supabase client from the context
-            supabase_client = ctx.request_context.lifespan_context.supabase_client
+        with mcp_logger.span("mcp_create_task") as span:
+            span.set_attribute("tool", "create_task")
+            span.set_attribute("project_id", project_id)
+            span.set_attribute("title", title)
+            span.set_attribute("assignee", assignee)
+            span.set_attribute("task_order", task_order)
+            span.set_attribute("has_parent", parent_task_id is not None)
+            span.set_attribute("has_sources", sources is not None and len(sources) > 0 if sources else False)
             
-            # Validate assignee
-            valid_assignees = ['User', 'Archon', 'AI IDE Agent']
-            if assignee not in valid_assignees:
+            try:
+                logger.info(f"Creating task: {title} for project {project_id}")
+                mcp_logger.info("Creating new task", title=title, project_id=project_id, assignee=assignee)
+                
+                # Validate inputs
+                if not title or not isinstance(title, str) or len(title.strip()) == 0:
+                    error_msg = "Task title is required and must be a non-empty string"
+                    mcp_logger.error("Task creation failed - invalid title", title=title, project_id=project_id)
+                    span.set_attribute("success", False)
+                    span.set_attribute("error", error_msg)
+                    return json.dumps({
+                        "success": False,
+                        "error": error_msg
+                    })
+                
+                if not project_id or not isinstance(project_id, str):
+                    error_msg = "Project ID is required and must be a string"
+                    mcp_logger.error("Task creation failed - invalid project_id", project_id=project_id)
+                    span.set_attribute("success", False)
+                    span.set_attribute("error", error_msg)
+                    return json.dumps({
+                        "success": False,
+                        "error": error_msg
+                    })
+                
+                # Validate assignee
+                valid_assignees = ['User', 'Archon', 'AI IDE Agent']
+                if assignee not in valid_assignees:
+                    error_msg = f"Invalid assignee '{assignee}'. Must be one of: {', '.join(valid_assignees)}"
+                    mcp_logger.error("Task creation failed - invalid assignee", assignee=assignee, valid_assignees=valid_assignees)
+                    span.set_attribute("success", False)
+                    span.set_attribute("error", error_msg)
+                    return json.dumps({
+                        "success": False,
+                        "error": error_msg
+                    })
+                
+                # Get Supabase client
+                supabase_client, error = safe_get_supabase_client(ctx)
+                if error:
+                    mcp_logger.error("Task creation failed - no database connection", error=error)
+                    span.set_attribute("success", False)
+                    span.set_attribute("error", error)
+                    return json.dumps({
+                        "success": False,
+                        "error": error
+                    })
+                
+                task_data = {
+                    "project_id": project_id,
+                    "title": title,
+                    "description": description,
+                    "status": "todo",
+                    "assignee": assignee,
+                    "task_order": task_order,
+                    "sources": sources or [],
+                    "code_examples": code_examples or [],
+                    "created_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat()
+                }
+                
+                if parent_task_id:
+                    task_data["parent_task_id"] = parent_task_id
+                
+                if feature:
+                    task_data["feature"] = feature
+                
+                response = supabase_client.table("tasks").insert(task_data).execute()
+                
+                if response.data:
+                    task = response.data[0]
+                    return json.dumps({
+                        "success": True,
+                        "task": {
+                            "id": task["id"],
+                            "project_id": task["project_id"],
+                            "parent_task_id": task.get("parent_task_id"),
+                            "title": task["title"],
+                            "description": task["description"],
+                            "status": task["status"],
+                            "assignee": task["assignee"],
+                            "task_order": task["task_order"],
+                            "created_at": task["created_at"]
+                        }
+                    })
+                else:
+                    return json.dumps({
+                        "success": False,
+                        "error": "Failed to create task"
+                    })
+                
+            except Exception as e:
+                logger.error(f"Unexpected error creating task: {e}")
+                logger.error(traceback.format_exc())
+                error_msg = f"Unexpected error creating task: {str(e)}"
+                mcp_logger.error("Task creation failed - unexpected error", error=str(e))
+                span.set_attribute("success", False)
+                span.set_attribute("error", error_msg)
                 return json.dumps({
                     "success": False,
-                    "error": f"Invalid assignee '{assignee}'. Must be one of: {', '.join(valid_assignees)}"
+                    "error": error_msg
                 })
-            
-            task_data = {
-                "project_id": project_id,
-                "title": title,
-                "description": description,
-                "status": "todo",
-                "assignee": assignee,
-                "task_order": task_order,
-                "sources": sources or [],
-                "code_examples": code_examples or [],
-                "created_at": datetime.now().isoformat(),
-                "updated_at": datetime.now().isoformat()
-            }
-            
-            if parent_task_id:
-                task_data["parent_task_id"] = parent_task_id
-                
-            if feature:
-                task_data["feature"] = feature
-            
-            response = supabase_client.table("tasks").insert(task_data).execute()
-            
-            if response.data:
-                task = response.data[0]
-                return json.dumps({
-                    "success": True,
-                    "task": {
-                        "id": task["id"],
-                        "project_id": task["project_id"],
-                        "parent_task_id": task.get("parent_task_id"),
-                        "title": task["title"],
-                        "description": task["description"],
-                        "status": task["status"],
-                        "assignee": task["assignee"],
-                        "task_order": task["task_order"],
-                        "created_at": task["created_at"]
-                    }
-                })
-            else:
-                return json.dumps({
-                    "success": False,
-                    "error": "Failed to create task"
-                })
-                
-        except Exception as e:
-            return json.dumps({
-                "success": False,
-                "error": f"Error creating task: {str(e)}"
-            })
     
     @mcp.tool()
-    async def list_tasks_by_project(ctx: Context, project_id: str) -> str:
+    async def list_tasks_by_project(ctx: Context, project_id: str, include_closed: bool = False) -> str:
         """
         List all tasks under a specific project.
         
         Args:
             project_id: UUID of the project
+            include_closed: Whether to include closed/done tasks (default: False)
         
         Returns:
             JSON string with list of tasks for the project
@@ -474,7 +490,14 @@ def register_project_tools(mcp: FastMCP):
             # Get the Supabase client from the context
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             
-            response = supabase_client.table("tasks").select("*").eq("project_id", project_id).order("task_order", desc=False).order("created_at", desc=False).execute()
+            # Build query - filter out 'done' tasks by default unless explicitly requested
+            query = supabase_client.table("tasks").select("*").eq("project_id", project_id)
+            
+            if not include_closed:
+                # Filter out closed/done tasks to focus on active work
+                query = query.neq("status", "done")
+            
+            response = query.order("task_order", desc=False).order("created_at", desc=False).execute()
             
             tasks = []
             for task in response.data:
@@ -491,11 +514,15 @@ def register_project_tools(mcp: FastMCP):
                     "updated_at": task["updated_at"]
                 })
             
+            filter_note = " (excluding closed tasks)" if not include_closed else " (including all tasks)"
+            
             return json.dumps({
                 "success": True,
                 "project_id": project_id,
                 "tasks": tasks,
-                "total_count": len(tasks)
+                "total_count": len(tasks),
+                "filter_applied": filter_note,
+                "include_closed": include_closed
             })
             
         except Exception as e:
@@ -552,44 +579,100 @@ def register_project_tools(mcp: FastMCP):
         Returns:
             JSON string with update results
         """
-        try:
-            supabase_client = ctx.request_context.lifespan_context.supabase_client
+        with mcp_logger.span("mcp_update_task_status") as span:
+            span.set_attribute("tool", "update_task_status")
+            span.set_attribute("task_id", task_id)
+            span.set_attribute("new_status", status)
             
-            # Validate status
-            valid_statuses = ['todo', 'doing', 'blocked', 'done']
-            if status not in valid_statuses:
-                return json.dumps({
-                    "success": False,
-                    "error": f"Invalid status '{status}'. Must be one of: {', '.join(valid_statuses)}"
-                })
-            
-            response = supabase_client.table("tasks").update({
-                "status": status,
-                "updated_at": datetime.now().isoformat()
-            }).eq("id", task_id).execute()
-            
-            if response.data:
-                task = response.data[0]
-                return json.dumps({
-                    "success": True,
-                    "task": {
-                        "id": task["id"],
-                        "title": task["title"],
-                        "status": task["status"],
-                        "updated_at": task["updated_at"]
-                    }
-                })
-            else:
-                return json.dumps({
-                    "success": False,
-                    "error": f"Task with ID {task_id} not found"
-                })
+            try:
+                logger.info(f"Updating task {task_id} status to {status}")
+                mcp_logger.info("Updating task status", task_id=task_id, new_status=status)
                 
-        except Exception as e:
-            return json.dumps({
-                "success": False,
-                "error": f"Error updating task status: {str(e)}"
-            })
+                # Validate status
+                is_valid, error_msg = validate_task_status(status)
+                if not is_valid:
+                    mcp_logger.error("Task status update failed - invalid status", task_id=task_id, status=status, error=error_msg)
+                    span.set_attribute("success", False)
+                    span.set_attribute("error", error_msg)
+                    return json.dumps({
+                        "success": False,
+                        "error": error_msg
+                    })
+                
+                # Get Supabase client
+                supabase_client, db_error = safe_get_supabase_client(ctx)
+                if db_error:
+                    mcp_logger.error("Task status update failed - no database connection", task_id=task_id, error=db_error)
+                    span.set_attribute("success", False)
+                    span.set_attribute("error", db_error)
+                    return json.dumps({
+                        "success": False,
+                        "error": db_error
+                    })
+                
+                try:
+                    # Update the task status
+                    response = supabase_client.table("tasks").update({
+                        "status": status,
+                        "updated_at": datetime.now().isoformat()
+                    }).eq("id", task_id).execute()
+                    
+                    if response.data:
+                        task = response.data[0]
+                        logger.info(f"Task {task_id} status updated successfully to {status}")
+                        mcp_logger.info("Task status updated successfully", 
+                                      task_id=task_id, 
+                                      old_status=task.get("status"), 
+                                      new_status=status)
+                        span.set_attribute("success", True)
+                        span.set_attribute("old_status", task.get("status"))
+                        
+                        return json.dumps({
+                            "success": True,
+                            "task": {
+                                "id": task["id"],
+                                "title": task["title"],
+                                "status": task["status"],
+                                "updated_at": task["updated_at"]
+                            }
+                        })
+                    else:
+                        error_msg = f"Task with ID {task_id} not found"
+                        mcp_logger.error("Task status update failed - task not found", task_id=task_id)
+                        span.set_attribute("success", False)
+                        span.set_attribute("error", error_msg)
+                        return json.dumps({
+                            "success": False,
+                            "error": error_msg
+                        })
+                        
+                except Exception as db_error:
+                    logger.error(f"Database error updating task status: {db_error}")
+                    error_msg = f"Database error: {str(db_error)}"
+                    mcp_logger.error("Task status update failed - database error", 
+                                   task_id=task_id, 
+                                   error=str(db_error), 
+                                   error_type=type(db_error).__name__)
+                    span.set_attribute("success", False)
+                    span.set_attribute("error", error_msg)
+                    return json.dumps({
+                        "success": False,
+                        "error": error_msg
+                    })
+                    
+            except Exception as e:
+                logger.error(f"Unexpected error updating task status: {e}")
+                logger.error(traceback.format_exc())
+                error_msg = f"Unexpected error: {str(e)}"
+                mcp_logger.error("Task status update failed - unexpected error", 
+                               task_id=task_id, 
+                               error=str(e))
+                span.set_attribute("success", False)
+                span.set_attribute("error", error_msg)
+                return json.dumps({
+                    "success": False,
+                    "error": error_msg
+                })
     
     @mcp.tool()
     async def update_task(ctx: Context, task_id: str, title: str = None, description: str = None, status: str = None, assignee: str = None, task_order: int = None, feature: str = None) -> str:
@@ -708,13 +791,14 @@ def register_project_tools(mcp: FastMCP):
             })
     
     @mcp.tool()
-    async def get_task_subtasks(ctx: Context, parent_task_id: str) -> str:
+    async def get_task_subtasks(ctx: Context, parent_task_id: str, include_closed: bool = False) -> str:
         """
         Get all subtasks of a specific task.
         
         Args:
             ctx: The MCP server provided context
             parent_task_id: UUID of the parent task
+            include_closed: Whether to include closed/done subtasks (default: False)
         
         Returns:
             JSON string with list of subtasks
@@ -722,7 +806,14 @@ def register_project_tools(mcp: FastMCP):
         try:
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             
-            response = supabase_client.table("tasks").select("*").eq("parent_task_id", parent_task_id).order("task_order", desc=False).order("created_at", desc=False).execute()
+            # Build query - filter out 'done' subtasks by default unless explicitly requested
+            query = supabase_client.table("tasks").select("*").eq("parent_task_id", parent_task_id)
+            
+            if not include_closed:
+                # Filter out closed/done subtasks to focus on active work
+                query = query.neq("status", "done")
+            
+            response = query.order("task_order", desc=False).order("created_at", desc=False).execute()
             
             subtasks = []
             for task in response.data:
@@ -739,11 +830,15 @@ def register_project_tools(mcp: FastMCP):
                     "updated_at": task["updated_at"]
                 })
             
+            filter_note = " (excluding closed subtasks)" if not include_closed else " (including all subtasks)"
+            
             return json.dumps({
                 "success": True,
                 "parent_task_id": parent_task_id,
                 "subtasks": subtasks,
-                "total_count": len(subtasks)
+                "total_count": len(subtasks),
+                "filter_applied": filter_note,
+                "include_closed": include_closed
             })
             
         except Exception as e:

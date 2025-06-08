@@ -21,6 +21,9 @@ import json
 
 from ..utils import get_supabase_client
 
+# Import Logfire
+from ..logfire_config import mcp_logger, api_logger
+
 router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 
 class ServerConfig(BaseModel):
@@ -52,175 +55,206 @@ class MCPServerManager:
     
     async def start_server(self) -> Dict[str, Any]:
         """Start the MCP server process."""
-        if self.process and self.process.poll() is None:
-            return {
-                'success': False,
-                'status': self.status,
-                'message': 'MCP server is already running'
-            }
-        
-        try:
-            # Set up environment variables for the MCP server
-            env = os.environ.copy()
+        with mcp_logger.span("mcp_server_start") as span:
+            span.set_attribute("action", "start_server")
             
-            # Try to get credentials from database first, fallback to env vars
-            try:
-                from ..credential_service import credential_service
-                
-                # Get configuration from database
-                openai_key = await credential_service.get_credential('OPENAI_API_KEY', decrypt=True)
-                model_choice = await credential_service.get_credential('MODEL_CHOICE', 'gpt-4o-mini')
-                transport = await credential_service.get_credential('TRANSPORT', 'sse')
-                host = await credential_service.get_credential('HOST', '0.0.0.0')
-                port = await credential_service.get_credential('PORT', '8051')
-                
-                # RAG strategy flags
-                use_contextual = await credential_service.get_credential('USE_CONTEXTUAL_EMBEDDINGS', 'false')
-                use_hybrid = await credential_service.get_credential('USE_HYBRID_SEARCH', 'false')
-                use_agentic = await credential_service.get_credential('USE_AGENTIC_RAG', 'false')
-                use_reranking = await credential_service.get_credential('USE_RERANKING', 'false')
-                
-                env.update({
-                    'OPENAI_API_KEY': str(openai_key) if openai_key else '',
-                    'SUPABASE_URL': os.getenv('SUPABASE_URL', ''),
-                    'SUPABASE_SERVICE_KEY': os.getenv('SUPABASE_SERVICE_KEY', ''),
-                    'HOST': str(host),
-                    'PORT': str(port),
-                    'TRANSPORT': str(transport),
-                    'MODEL_CHOICE': str(model_choice),
-                    'USE_CONTEXTUAL_EMBEDDINGS': str(use_contextual).lower(),
-                    'USE_HYBRID_SEARCH': str(use_hybrid).lower(),
-                    'USE_AGENTIC_RAG': str(use_agentic).lower(),
-                    'USE_RERANKING': str(use_reranking).lower(),
-                })
-                
-                self._add_log('INFO', 'Using database configuration')
-                
-            except Exception as e:
-                # Log the error but don't fallback to environment variables
-                # All configuration should come from the database
-                self._add_log('ERROR', f'Failed to load credentials from database: {e}')
-                self._add_log('ERROR', 'Please ensure all credentials are set via the Settings page')
-                
-                # Set minimal environment for MCP server with empty values
-                env.update({
-                    'OPENAI_API_KEY': '',  # Don't override database credentials
-                    'SUPABASE_URL': os.getenv('SUPABASE_URL', ''),  # Still need these for connection
-                    'SUPABASE_SERVICE_KEY': os.getenv('SUPABASE_SERVICE_KEY', ''),
-                    'HOST': '0.0.0.0',
-                    'PORT': '8051',
-                    'TRANSPORT': 'sse',
-                    'MODEL_CHOICE': 'gpt-4o-mini',
-                    'USE_CONTEXTUAL_EMBEDDINGS': 'false',
-                    'USE_HYBRID_SEARCH': 'false',
-                    'USE_AGENTIC_RAG': 'false',
-                    'USE_RERANKING': 'false',
-                })
-                
-                self._add_log('WARNING', 'Started MCP server with default configuration due to database error')
-            
-            # Start the MCP server process (using uv like the old working version)
-            cmd = ['uv', 'run', 'python', 'src/mcp_server.py']
-            self.process = subprocess.Popen(
-                cmd,
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1  # Line buffered
-            )
-            
-            self.status = 'starting'
-            self.start_time = time.time()
-            self._add_log('INFO', 'MCP server starting...')
-            
-            # Start reading logs from the process
-            self.log_reader_task = asyncio.create_task(self._read_process_logs())
-            
-            # Give it a moment to start
-            await asyncio.sleep(2)
-            
-            # Check if process is still running
-            if self.process.poll() is None:
-                self.status = 'running'
-                self._add_log('INFO', 'MCP server started successfully')
-                return {
-                    'success': True,
-                    'status': self.status,
-                    'message': 'MCP server started successfully',
-                    'pid': self.process.pid
-                }
-            else:
-                self.status = 'failed'
-                self._add_log('ERROR', 'MCP server failed to start')
+            if self.process and self.process.poll() is None:
+                mcp_logger.warning("MCP server start attempted while already running")
                 return {
                     'success': False,
                     'status': self.status,
-                    'message': 'MCP server failed to start'
+                    'message': 'MCP server is already running'
                 }
+            
+            try:
+                # Set up environment variables for the MCP server
+                env = os.environ.copy()
                 
-        except Exception as e:
-            self.status = 'failed'
-            self._add_log('ERROR', f'Failed to start MCP server: {str(e)}')
-            return {
-                'success': False,
-                'status': self.status,
-                'message': f'Failed to start MCP server: {str(e)}'
-            }
+                # Try to get credentials from database first, fallback to env vars
+                try:
+                    from ..credential_service import credential_service
+                    
+                    # Get configuration from database
+                    openai_key = await credential_service.get_credential('OPENAI_API_KEY', decrypt=True)
+                    model_choice = await credential_service.get_credential('MODEL_CHOICE', 'gpt-4o-mini')
+                    transport = await credential_service.get_credential('TRANSPORT', 'sse')
+                    host = await credential_service.get_credential('HOST', '0.0.0.0')
+                    port = await credential_service.get_credential('PORT', '8051')
+                    
+                    # RAG strategy flags
+                    use_contextual = await credential_service.get_credential('USE_CONTEXTUAL_EMBEDDINGS', 'false')
+                    use_hybrid = await credential_service.get_credential('USE_HYBRID_SEARCH', 'false')
+                    use_agentic = await credential_service.get_credential('USE_AGENTIC_RAG', 'false')
+                    use_reranking = await credential_service.get_credential('USE_RERANKING', 'false')
+                    
+                    env.update({
+                        'OPENAI_API_KEY': str(openai_key) if openai_key else '',
+                        'SUPABASE_URL': os.getenv('SUPABASE_URL', ''),
+                        'SUPABASE_SERVICE_KEY': os.getenv('SUPABASE_SERVICE_KEY', ''),
+                        'HOST': str(host),
+                        'PORT': str(port),
+                        'TRANSPORT': str(transport),
+                        'MODEL_CHOICE': str(model_choice),
+                        'USE_CONTEXTUAL_EMBEDDINGS': str(use_contextual).lower(),
+                        'USE_HYBRID_SEARCH': str(use_hybrid).lower(),
+                        'USE_AGENTIC_RAG': str(use_agentic).lower(),
+                        'USE_RERANKING': str(use_reranking).lower(),
+                    })
+                    
+                    self._add_log('INFO', 'Using database configuration')
+                    mcp_logger.info("MCP server configuration loaded from database", 
+                                  transport=transport, host=host, port=port, model=model_choice)
+                    
+                except Exception as e:
+                    # Log the error but don't fallback to environment variables
+                    # All configuration should come from the database
+                    self._add_log('ERROR', f'Failed to load credentials from database: {e}')
+                    self._add_log('ERROR', 'Please ensure all credentials are set via the Settings page')
+                    mcp_logger.error("Failed to load MCP server credentials from database", error=str(e))
+                    
+                    # Set minimal environment for MCP server with empty values
+                    env.update({
+                        'OPENAI_API_KEY': '',  # Don't override database credentials
+                        'SUPABASE_URL': os.getenv('SUPABASE_URL', ''),  # Still need these for connection
+                        'SUPABASE_SERVICE_KEY': os.getenv('SUPABASE_SERVICE_KEY', ''),
+                        'HOST': '0.0.0.0',
+                        'PORT': '8051',
+                        'TRANSPORT': 'sse',
+                        'MODEL_CHOICE': 'gpt-4o-mini',
+                        'USE_CONTEXTUAL_EMBEDDINGS': 'false',
+                        'USE_HYBRID_SEARCH': 'false',
+                        'USE_AGENTIC_RAG': 'false',
+                        'USE_RERANKING': 'false',
+                    })
+                    
+                    self._add_log('WARNING', 'Started MCP server with default configuration due to database error')
+                
+                # Start the MCP server process (using uv like the old working version)
+                cmd = ['uv', 'run', 'python', 'src/mcp_server.py']
+                self.process = subprocess.Popen(
+                    cmd,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1  # Line buffered
+                )
+                
+                self.status = 'starting'
+                self.start_time = time.time()
+                self._add_log('INFO', 'MCP server starting...')
+                mcp_logger.info("MCP server process started", pid=self.process.pid, cmd=cmd)
+                span.set_attribute("pid", self.process.pid)
+                
+                # Start reading logs from the process
+                self.log_reader_task = asyncio.create_task(self._read_process_logs())
+                
+                # Give it a moment to start
+                await asyncio.sleep(2)
+                
+                # Check if process is still running
+                if self.process.poll() is None:
+                    self.status = 'running'
+                    self._add_log('INFO', 'MCP server started successfully')
+                    mcp_logger.info("MCP server started successfully", pid=self.process.pid, uptime=0)
+                    span.set_attribute("success", True)
+                    span.set_attribute("status", "running")
+                    return {
+                        'success': True,
+                        'status': self.status,
+                        'message': 'MCP server started successfully',
+                        'pid': self.process.pid
+                    }
+                else:
+                    self.status = 'failed'
+                    self._add_log('ERROR', 'MCP server failed to start')
+                    mcp_logger.error("MCP server failed to start - process exited immediately")
+                    span.set_attribute("success", False)
+                    span.set_attribute("status", "failed")
+                    return {
+                        'success': False,
+                        'status': self.status,
+                        'message': 'MCP server failed to start'
+                    }
+                    
+            except Exception as e:
+                self.status = 'failed'
+                self._add_log('ERROR', f'Failed to start MCP server: {str(e)}')
+                mcp_logger.error("Exception during MCP server startup", error=str(e), error_type=type(e).__name__)
+                span.set_attribute("success", False)
+                span.set_attribute("error", str(e))
+                return {
+                    'success': False,
+                    'status': self.status,
+                    'message': f'Failed to start MCP server: {str(e)}'
+                }
     
     async def stop_server(self) -> Dict[str, Any]:
         """Stop the MCP server process."""
-        if not self.process or self.process.poll() is not None:
-            return {
-                'success': False,
-                'status': 'stopped',
-                'message': 'MCP server is not running'
-            }
-        
-        try:
-            self.status = 'stopping'
-            self._add_log('INFO', 'Stopping MCP server...')
+        with mcp_logger.span("mcp_server_stop") as span:
+            span.set_attribute("action", "stop_server")
             
-            # Cancel log reading task
-            if self.log_reader_task:
-                self.log_reader_task.cancel()
-                try:
-                    await self.log_reader_task
-                except asyncio.CancelledError:
-                    pass
+            if not self.process or self.process.poll() is not None:
+                mcp_logger.warning("MCP server stop attempted when not running")
+                return {
+                    'success': False,
+                    'status': 'stopped',
+                    'message': 'MCP server is not running'
+                }
             
-            # Terminate the process
-            self.process.terminate()
-            
-            # Wait for process to exit (with timeout)
             try:
-                await asyncio.wait_for(
-                    asyncio.get_event_loop().run_in_executor(None, self.process.wait),
-                    timeout=10.0
-                )
-            except asyncio.TimeoutError:
-                # Force kill if it doesn't exit gracefully
-                self.process.kill()
-                await asyncio.get_event_loop().run_in_executor(None, self.process.wait)
-            
-            self.process = None
-            self.status = 'stopped'
-            self.start_time = None
-            self._add_log('INFO', 'MCP server stopped')
-            
-            return {
-                'success': True,
-                'status': self.status,
-                'message': 'MCP server stopped successfully'
-            }
-            
-        except Exception as e:
-            self._add_log('ERROR', f'Error stopping MCP server: {str(e)}')
-            return {
-                'success': False,
-                'status': self.status,
-                'message': f'Error stopping MCP server: {str(e)}'
-            }
+                self.status = 'stopping'
+                self._add_log('INFO', 'Stopping MCP server...')
+                mcp_logger.info("Stopping MCP server", pid=self.process.pid)
+                span.set_attribute("pid", self.process.pid)
+                
+                # Cancel log reading task
+                if self.log_reader_task:
+                    self.log_reader_task.cancel()
+                    try:
+                        await self.log_reader_task
+                    except asyncio.CancelledError:
+                        pass
+                
+                # Terminate the process
+                self.process.terminate()
+                
+                # Wait for process to exit (with timeout)
+                try:
+                    await asyncio.wait_for(
+                        asyncio.get_event_loop().run_in_executor(None, self.process.wait),
+                        timeout=10.0
+                    )
+                except asyncio.TimeoutError:
+                    # Force kill if it doesn't exit gracefully
+                    self.process.kill()
+                    await asyncio.get_event_loop().run_in_executor(None, self.process.wait)
+                    mcp_logger.warning("MCP server force killed after timeout")
+                
+                self.process = None
+                self.status = 'stopped'
+                self.start_time = None
+                self._add_log('INFO', 'MCP server stopped')
+                mcp_logger.info("MCP server stopped successfully")
+                span.set_attribute("success", True)
+                span.set_attribute("status", "stopped")
+                
+                return {
+                    'success': True,
+                    'status': self.status,
+                    'message': 'MCP server stopped successfully'
+                }
+                
+            except Exception as e:
+                self._add_log('ERROR', f'Error stopping MCP server: {str(e)}')
+                mcp_logger.error("Exception during MCP server stop", error=str(e), error_type=type(e).__name__)
+                span.set_attribute("success", False)
+                span.set_attribute("error", str(e))
+                return {
+                    'success': False,
+                    'status': self.status,
+                    'message': f'Error stopping MCP server: {str(e)}'
+                }
     
     def get_status(self) -> Dict[str, Any]:
         """Get the current server status."""
@@ -376,39 +410,92 @@ mcp_manager = MCPServerManager()
 @router.post("/start", response_model=ServerResponse)
 async def start_server():
     """Start the MCP server."""
-    result = await mcp_manager.start_server()
-    return ServerResponse(**result)
+    with api_logger.span("api_mcp_start") as span:
+        span.set_attribute("endpoint", "/mcp/start")
+        span.set_attribute("method", "POST")
+        
+        try:
+            result = await mcp_manager.start_server()
+            api_logger.info("MCP server start API called", success=result.get('success', False))
+            span.set_attribute("success", result.get('success', False))
+            return result
+        except Exception as e:
+            api_logger.error("MCP server start API failed", error=str(e))
+            span.set_attribute("success", False)
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/stop", response_model=ServerResponse)
 async def stop_server():
     """Stop the MCP server."""
-    result = await mcp_manager.stop_server()
-    return ServerResponse(**result)
+    with api_logger.span("api_mcp_stop") as span:
+        span.set_attribute("endpoint", "/mcp/stop")
+        span.set_attribute("method", "POST")
+        
+        try:
+            result = await mcp_manager.stop_server()
+            api_logger.info("MCP server stop API called", success=result.get('success', False))
+            span.set_attribute("success", result.get('success', False))
+            return result
+        except Exception as e:
+            api_logger.error("MCP server stop API failed", error=str(e))
+            span.set_attribute("success", False)
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/status")
 async def get_status():
     """Get MCP server status."""
-    import logging
-    
-    status_response = mcp_manager.get_status()
-    current_status = status_response.get('status', 'unknown')
-    
-    # Log the actual status for debugging
-    logger = logging.getLogger(__name__)
-    logger.info(f"MCP Status Check: {current_status}")
-    
-    return status_response
+    with api_logger.span("api_mcp_status") as span:
+        span.set_attribute("endpoint", "/mcp/status")
+        span.set_attribute("method", "GET")
+        
+        try:
+            status = mcp_manager.get_status()
+            api_logger.debug("MCP server status checked", status=status.get('status'))
+            span.set_attribute("status", status.get('status'))
+            span.set_attribute("uptime", status.get('uptime'))
+            return status
+        except Exception as e:
+            api_logger.error("MCP server status API failed", error=str(e))
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/logs")
 async def get_logs(limit: int = 100):
     """Get MCP server logs."""
-    return mcp_manager.get_logs(limit)
+    with api_logger.span("api_mcp_logs") as span:
+        span.set_attribute("endpoint", "/mcp/logs")
+        span.set_attribute("method", "GET")
+        span.set_attribute("limit", limit)
+        
+        try:
+            logs = mcp_manager.get_logs(limit)
+            api_logger.debug("MCP server logs retrieved", count=len(logs))
+            span.set_attribute("log_count", len(logs))
+            return {'logs': logs}
+        except Exception as e:
+            api_logger.error("MCP server logs API failed", error=str(e))
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/logs")
 async def clear_logs():
     """Clear MCP server logs."""
-    mcp_manager.clear_logs()
-    return {"success": True, "message": "Logs cleared"}
+    with api_logger.span("api_mcp_clear_logs") as span:
+        span.set_attribute("endpoint", "/mcp/logs")
+        span.set_attribute("method", "DELETE")
+        
+        try:
+            mcp_manager.clear_logs()
+            api_logger.info("MCP server logs cleared")
+            span.set_attribute("success", True)
+            return {'success': True, 'message': 'Logs cleared successfully'}
+        except Exception as e:
+            api_logger.error("MCP server clear logs API failed", error=str(e))
+            span.set_attribute("success", False)
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/config")
 async def get_mcp_config():
@@ -620,10 +707,11 @@ async def get_mcp_tools():
                 },
                 {
                     "name": "list_tasks_by_project",
-                    "description": "List all tasks under a specific project.",
+                    "description": "List all tasks under a specific project. By default, filters out closed/done tasks.",
                     "module": "tasks_module",
                     "parameters": [
-                        {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project"}
+                        {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project"},
+                        {"name": "include_closed", "type": "boolean", "required": False, "description": "Whether to include closed/done tasks (default: False)"}
                     ]
                 },
                 {
@@ -664,10 +752,11 @@ async def get_mcp_tools():
                 },
                 {
                     "name": "get_task_subtasks",
-                    "description": "Get all subtasks of a specific task.",
+                    "description": "Get all subtasks of a specific task. By default, filters out closed/done subtasks.",
                     "module": "tasks_module",
                     "parameters": [
-                        {"name": "parent_task_id", "type": "string", "required": True, "description": "UUID of the parent task"}
+                        {"name": "parent_task_id", "type": "string", "required": True, "description": "UUID of the parent task"},
+                        {"name": "include_closed", "type": "boolean", "required": False, "description": "Whether to include closed/done subtasks (default: False)"}
                     ]
                 },
                 {
