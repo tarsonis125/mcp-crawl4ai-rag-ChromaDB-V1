@@ -979,6 +979,82 @@ def remove_websocket(self, progress_id: str, websocket: WebSocket) -> None:
             pass  # WebSocket already removed
 ```
 
+#### 🚨 5. useCallback Dependency Hell (MOST COMMON ISSUE)
+**Symptoms**: 
+- `WebSocket connection failed: WebSocket is closed before the connection is established`
+- `code: 1006` abnormal closures
+- Constant reconnection attempts
+- Components re-rendering infinitely
+
+**Root Cause**: Including unstable functions in `useCallback` dependency arrays causes components to re-render constantly, destabilizing WebSocket connections.
+
+**Debug Steps**:
+```typescript
+// ❌ Check for these patterns in your code:
+const handler = useCallback(() => {
+  showToast('message', 'success');
+}, [showToast]); // ❌ PROBLEM: showToast is unstable!
+
+const handler = useCallback(() => {
+  await apiFunction();
+}, [apiFunction]); // ❌ PROBLEM: apiFunction recreated every render!
+
+// ✅ Fix by removing unstable dependencies:
+const handler = useCallback(() => {
+  showToast('message', 'success'); // Still works!
+}, []); // ✅ No unstable dependencies
+
+const handler = useCallback(() => {
+  await apiFunction(); // Still works!
+}, [primitiveValue]); // ✅ Only stable dependencies
+```
+
+**Solution Steps**:
+1. **Find the problematic useCallback**: Look for any useCallback with function dependencies
+2. **Remove function dependencies**: Only include primitive values, state, and props
+3. **Test WebSocket stability**: Verify connections stay stable after fix
+4. **Add memory**: Document the fix to prevent regression
+
+**Real-World Fix Example**:
+```typescript
+// ❌ BROKEN: This pattern breaks WebSockets
+const handleManualSave = async () => {
+  try {
+    await saveToDatabase();
+    showToast('Features layout saved successfully', 'success');
+  } catch (error) {
+    showToast('Failed to save features layout', 'error');
+  }
+};
+
+const addNode = async () => {
+  // ... node creation logic
+  try {
+    await saveToDatabase(newNodes, edges);
+    showToast('Page added successfully', 'success');
+  } catch (error) {
+    showToast('Failed to save page', 'error');
+    setNodes(nodes);
+  }
+}
+
+// ✅ FIXED: Simple pattern that works (matches working DataTab)
+const handleManualSave = async () => {
+  await saveToDatabase();
+};
+
+const addNode = async () => {
+  // ... node creation logic
+  try {
+    await saveToDatabase(newNodes, edges);
+  } catch (error) {
+    setNodes(nodes);
+  }
+}
+```
+
+**Key Insight**: The issue wasn't just useCallback dependencies, but also **excessive showToast calls in functions that get called frequently during component lifecycle**. The working DataTab pattern keeps functions simple and doesn't use showToast in auto-save operations.
+
 ### Debug Tools
 
 #### Backend Debug Logging
@@ -1016,6 +1092,70 @@ curl -i \
 ```
 
 ## ✅ Best Practices
+
+### 🚨 **CRITICAL: useCallback Dependency Management**
+
+**THE #1 CAUSE OF WEBSOCKET BREAKAGE**: Including unstable functions like `showToast` or function references in `useCallback` dependency arrays causes constant re-renders that destabilize WebSocket connections.
+
+```typescript
+// ❌ BREAKS WEBSOCKETS: Including showToast in dependencies
+const handleDelete = useCallback(async () => {
+  // ... delete logic
+  showToast('Deleted successfully', 'success');
+}, [nodeId, showToast]); // ❌ showToast causes re-renders!
+
+// ✅ SAFE: Exclude showToast from dependencies 
+const handleDelete = useCallback(async () => {
+  // ... delete logic
+  showToast('Deleted successfully', 'success'); // ✅ Can still call it
+}, [nodeId]); // ✅ Only include stable dependencies
+
+// ❌ BREAKS WEBSOCKETS: Including function references
+const confirmDelete = useCallback(async () => {
+  await saveToDatabase(newData);
+  showToast('Success', 'success');
+}, [saveToDatabase]); // ❌ saveToDatabase recreated every render!
+
+// ✅ SAFE: Exclude function references
+const confirmDelete = useCallback(async () => {
+  await saveToDatabase(newData); // ✅ Can still call it
+  showToast('Success', 'success');
+}, [nodeId, nodes, edges]); // ✅ Only primitive dependencies
+```
+
+### 🛡️ **Stable Reference Rules**
+
+1. **NEVER include these in useCallback dependencies:**
+   - `showToast` or any toast functions
+   - API service functions (`projectService.updateProject`)
+   - Event handlers from parent components
+   - Any function that gets recreated each render
+
+2. **AVOID showToast in frequently called functions:**
+   - Auto-save operations triggered by state changes
+   - Functions called during component re-renders
+   - Event handlers that fire multiple times
+   - Use showToast only for explicit user actions (manual saves, deletions)
+
+3. **ONLY include these in useCallback dependencies:**
+   - Primitive values (`string`, `number`, `boolean`)
+   - State variables that are primitives
+   - Props that are primitives
+   - Stable refs (`useRef` values)
+
+4. **Safe dependency examples:**
+```typescript
+// ✅ SAFE DEPENDENCIES
+const handleClick = useCallback((id: string) => {
+  // Function body...
+}, [projectId, nodeId, status]); // All primitives
+
+// ✅ SAFE WITH STABLE REFS
+const stableFunctionRef = useRef(someFunction);
+const handleClick = useCallback(() => {
+  stableFunctionRef.current();
+}, [stableFunctionRef]); // Ref is stable
+```
 
 ### Backend Development
 

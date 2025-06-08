@@ -162,6 +162,7 @@ export const FeaturesTab = ({ project }: FeaturesTabProps) => {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [editingNode, setEditingNode] = useState<Node | null>(null)
   const [showEditModal, setShowEditModal] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
 
   const { showToast } = useToast()
 
@@ -267,6 +268,7 @@ export const FeaturesTab = ({ project }: FeaturesTabProps) => {
       return;
     }
 
+    setIsSaving(true);
     try {
       console.log('💾 Saving features to database...');
       await projectService.updateProject(project.id, {
@@ -277,7 +279,13 @@ export const FeaturesTab = ({ project }: FeaturesTabProps) => {
     } catch (error) {
       console.error('❌ Failed to save features:', error);
       throw error;
+    } finally {
+      setIsSaving(false);
     }
+  };
+
+  const handleManualSave = async () => {
+    await saveToDatabase();
   };
 
   const addPageNode = async () => {
@@ -302,9 +310,7 @@ export const FeaturesTab = ({ project }: FeaturesTabProps) => {
     // Auto-save when adding
     try {
       await saveToDatabase(newNodes, edges);
-      showToast('Page added successfully', 'success');
     } catch (error) {
-      showToast('Failed to save page', 'error');
       // Revert on error
       setNodes(nodes);
     }
@@ -330,9 +336,7 @@ export const FeaturesTab = ({ project }: FeaturesTabProps) => {
     // Auto-save when adding
     try {
       await saveToDatabase(newNodes, edges);
-      showToast('Service added successfully', 'success');
     } catch (error) {
-      showToast('Failed to save service', 'error');
       // Revert on error
       setNodes(nodes);
     }
@@ -382,7 +386,7 @@ export const FeaturesTab = ({ project }: FeaturesTabProps) => {
       setEdges(edges);
       showToast('Failed to delete node', 'error');
     }
-  }, [nodeToDelete, nodes, edges, saveToDatabase]);
+  }, [nodeToDelete, nodes, edges]);
 
     const cancelDelete = useCallback(() => {
     setShowDeleteConfirm(false);
@@ -530,6 +534,16 @@ export const FeaturesTab = ({ project }: FeaturesTabProps) => {
             Feature Planner {project?.features ? `(${project.features.length} features)` : '(Default)'}
           </div>
           <div className="flex gap-2">
+            {hasUnsavedChanges && (
+              <button 
+                onClick={handleManualSave}
+                disabled={isSaving}
+                className="px-3 py-1.5 rounded-lg bg-green-900/20 border border-green-500/30 text-green-400 hover:bg-green-900/30 hover:border-green-500/50 transition-all duration-300 text-xs flex items-center gap-2"
+              >
+                <Save className="w-3 h-3" />
+                {isSaving ? 'Saving...' : 'Save Layout'}
+              </button>
+            )}
             <button
               onClick={addPageNode}
               className="px-3 py-1.5 rounded-lg bg-cyan-900/20 border border-cyan-500/30 text-cyan-400 hover:bg-cyan-900/30 hover:border-cyan-500/50 hover:shadow-[0_0_15px_rgba(34,211,238,0.3)] transition-all duration-300 flex items-center gap-2 relative overflow-hidden group"
