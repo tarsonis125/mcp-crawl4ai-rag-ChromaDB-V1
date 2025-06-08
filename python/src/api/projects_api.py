@@ -10,10 +10,10 @@ Handles:
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Set
 import asyncio
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 
 from ..utils import get_supabase_client
@@ -308,6 +308,87 @@ class TaskUpdateManager:
 
 # Global task update manager
 task_update_manager = TaskUpdateManager()
+
+# Database Change Detection System for MCP-WebSocket Bridge
+class DatabaseChangeDetector:
+    """
+    Monitors database changes and broadcasts WebSocket updates.
+    This bridges MCP server operations with real-time WebSocket notifications
+    while maintaining separation of concerns.
+    """
+    
+    def __init__(self):
+        self.last_check_times: Dict[str, datetime] = {}
+        self.polling_tasks: Dict[str, asyncio.Task] = {}
+        self.check_interval = 2.0  # Check every 2 seconds
+        self.is_running = False
+    
+    def start_monitoring(self, project_id: str):
+        """Start monitoring changes for a specific project"""
+        if project_id not in self.polling_tasks or self.polling_tasks[project_id].done():
+            logfire_logger.info("Starting database change monitoring", project_id=project_id)
+            self.last_check_times[project_id] = datetime.now()
+            self.polling_tasks[project_id] = asyncio.create_task(
+                self._monitor_project_changes(project_id)
+            )
+    
+    def stop_monitoring(self, project_id: str):
+        """Stop monitoring changes for a specific project"""
+        if project_id in self.polling_tasks:
+            logfire_logger.info("Stopping database change monitoring", project_id=project_id)
+            self.polling_tasks[project_id].cancel()
+            del self.polling_tasks[project_id]
+            if project_id in self.last_check_times:
+                del self.last_check_times[project_id]
+    
+    async def _monitor_project_changes(self, project_id: str):
+        """Monitor database changes for a specific project"""
+        try:
+            while True:
+                await asyncio.sleep(self.check_interval)
+                await self._check_and_broadcast_changes(project_id)
+        except asyncio.CancelledError:
+            logfire_logger.info("Database monitoring cancelled", project_id=project_id)
+        except Exception as e:
+            logfire_logger.error("Error in database monitoring", project_id=project_id, error=str(e))
+            # Restart monitoring after brief delay
+            await asyncio.sleep(5)
+            self.start_monitoring(project_id)
+    
+    async def _check_and_broadcast_changes(self, project_id: str):
+        """Check for database changes since last check and broadcast updates"""
+        try:
+            supabase_client = get_supabase_client()
+            last_check = self.last_check_times.get(project_id, datetime.now() - timedelta(minutes=1))
+            
+            # Check for task changes since last check
+            task_changes = supabase_client.table("tasks").select("*").eq(
+                "project_id", project_id
+            ).gt("updated_at", last_check.isoformat()).execute()
+            
+            # Update last check time
+            self.last_check_times[project_id] = datetime.now()
+            
+            # Broadcast changes if any found
+            if task_changes.data:
+                logfire_logger.info("Detected task changes", 
+                                  project_id=project_id, 
+                                  changes_count=len(task_changes.data))
+                
+                for task in task_changes.data:
+                    await task_update_manager.broadcast_task_update(
+                        project_id=project_id,
+                        event_type="task_updated",
+                        task_data=task
+                    )
+                    
+        except Exception as e:
+            logfire_logger.error("Error checking database changes", 
+                               project_id=project_id, 
+                               error=str(e))
+
+# Global database change detector
+db_change_detector = DatabaseChangeDetector()
 
 @router.get("/projects")
 async def list_projects():
@@ -1182,7 +1263,6 @@ async def delete_task(task_id: str):
             span.set_attribute("project_id", project_id)
             
             # Archive task using soft delete (set archived=true)
-            from datetime import datetime
             archive_data = {
                 "archived": True,
                 "archived_at": datetime.now().isoformat(),
@@ -1263,11 +1343,14 @@ async def projects_health():
         
         return result
 
-# WebSocket endpoint for real-time task updates
+# Enhanced WebSocket endpoint with change detection
 @router.websocket("/projects/{project_id}/tasks/updates")
 async def task_updates_websocket(websocket: WebSocket, project_id: str):
-    """WebSocket endpoint for real-time task updates for a specific project"""
+    """WebSocket endpoint for real-time task updates with MCP change detection"""
     await task_update_manager.connect_to_project(websocket, project_id)
+    
+    # Start monitoring database changes for this project
+    db_change_detector.start_monitoring(project_id)
     
     try:
         # Send a connection confirmation message
@@ -1275,7 +1358,7 @@ async def task_updates_websocket(websocket: WebSocket, project_id: str):
             "type": "connection_established",
             "data": {
                 "project_id": project_id,
-                "message": "Connected to task updates"
+                "message": "Connected to task updates with MCP change detection"
             },
             "timestamp": datetime.now().isoformat()
         })
@@ -1285,11 +1368,16 @@ async def task_updates_websocket(websocket: WebSocket, project_id: str):
             await asyncio.sleep(1)  # Keep connection alive without expecting client messages
                 
     except WebSocketDisconnect:
-        logfire_logger.info("Task updates WebSocket disconnected during setup", project_id=project_id)
+        logfire_logger.info("Task updates WebSocket disconnected", project_id=project_id)
     except Exception as e:
         logfire_logger.error("Unexpected error in task updates WebSocket", project_id=project_id, error=str(e))
     finally:
-        task_update_manager.disconnect_from_project(websocket, project_id) 
+        task_update_manager.disconnect_from_project(websocket, project_id)
+        
+        # Stop monitoring if no more connections for this project
+        if project_id not in task_update_manager.project_connections or \
+           not task_update_manager.project_connections[project_id]:
+            db_change_detector.stop_monitoring(project_id)
 
 # MCP CONTEXT MANAGER FOR TASK UPDATES WITH WEBSOCKET BROADCASTING
 # Following the same pattern as RAG module
@@ -1363,4 +1451,32 @@ async def mcp_update_task_status_with_websockets(task_id: str, status: str):
             logfire_logger.error("Failed to update task status with WebSocket", error=str(e), task_id=task_id)
             span.set_attribute("success", False)
             span.set_attribute("error", str(e))
-            raise HTTPException(status_code=500, detail=str(e)) 
+            raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/projects/{project_id}/tasks/force-update-check")
+async def force_task_update_check(project_id: str):
+    """
+    Manually trigger a check for task updates and broadcast via WebSocket.
+    Useful for testing the MCP-WebSocket bridge system.
+    """
+    with logfire_logger.span("force_task_update_check") as span:
+        span.set_attribute("project_id", project_id)
+        
+        try:
+            logfire_logger.info("Manual task update check triggered", project_id=project_id)
+            
+            # Force a check for changes
+            await db_change_detector._check_and_broadcast_changes(project_id)
+            
+            span.set_attribute("success", True)
+            return {
+                "success": True,
+                "message": f"Forced update check completed for project {project_id}",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logfire_logger.error("Failed to force update check", project_id=project_id, error=str(e))
+            span.set_attribute("success", False)
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail=f"Failed to check for updates: {str(e)}") 
