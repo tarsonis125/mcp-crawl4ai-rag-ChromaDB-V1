@@ -31,6 +31,14 @@ class CreateProjectRequest(BaseModel):
     features: Optional[List[Any]] = None
     data: Optional[List[Any]] = None
 
+class UpdateProjectRequest(BaseModel):
+    title: Optional[str] = None
+    github_repo: Optional[str] = None
+    prd: Optional[Dict[str, Any]] = None
+    docs: Optional[List[Any]] = None
+    features: Optional[List[Any]] = None
+    data: Optional[List[Any]] = None
+
 class CreateTaskRequest(BaseModel):
     project_id: str
     parent_task_id: Optional[str] = None
@@ -403,6 +411,51 @@ async def get_project(project_id: str):
         else:
             raise HTTPException(status_code=404, detail={'error': f'Project with ID {project_id} not found'})
                 
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
+@router.put("/projects/{project_id}")
+async def update_project(project_id: str, request: UpdateProjectRequest):
+    """Update a project."""
+    try:
+        supabase_client = get_supabase_client()
+        
+        # Build update data
+        update_data = {"updated_at": datetime.now().isoformat()}
+        
+        if request.title is not None:
+            update_data["title"] = request.title
+        if request.github_repo is not None:
+            update_data["github_repo"] = request.github_repo
+        if request.prd is not None:
+            update_data["prd"] = request.prd
+        if request.docs is not None:
+            update_data["docs"] = request.docs
+        if request.features is not None:
+            update_data["features"] = request.features
+        if request.data is not None:
+            update_data["data"] = request.data
+        
+        response = supabase_client.table("projects").update(update_data).eq("id", project_id).execute()
+        
+        if response.data:
+            project = response.data[0]
+            return {
+                "id": project["id"],
+                "title": project["title"],
+                "github_repo": project.get("github_repo"),
+                "created_at": project["created_at"],
+                "updated_at": project["updated_at"],
+                "prd": project.get("prd", {}),
+                "docs": project.get("docs", []),
+                "features": project.get("features", []),
+                "data": project.get("data", [])
+            }
+        else:
+            raise HTTPException(status_code=404, detail={'error': f'Project with ID {project_id} not found'})
+            
     except HTTPException:
         raise
     except Exception as e:

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, X, Search, Upload, Link as LinkIcon, Check, Filter, Brain, Edit3, Save, Trash2, FileText, Layout, BookOpen } from 'lucide-react';
+import { Plus, X, Search, Upload, Link as LinkIcon, Check, Filter, Brain, Edit3, Save, FileText, Layout, BookOpen } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '../ui/Button';
 import { knowledgeBaseService, KnowledgeItem } from '../../services/knowledgeBaseService';
@@ -9,9 +9,12 @@ import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
 import { Select } from '../ui/Select';
 import { CrawlProgressData, crawlProgressService } from '../../services/crawlProgressService';
+import { BlockNoteEditor } from './BlockNoteEditor';
 
-// Notion-like Block structure
-interface NotionBlock {
+
+
+// Archon-like Block structure
+interface ArchonBlock {
   id: string;
   type: 'paragraph' | 'heading_1' | 'heading_2' | 'heading_3' | 'bulleted_list' | 'numbered_list' | 'to_do' | 'callout' | 'divider' | 'quote';
   content: any;
@@ -19,15 +22,19 @@ interface NotionBlock {
     title?: string;
     color?: string;
     checked?: boolean;
+    text?: string;
   };
 }
 
 interface ProjectDoc {
   id: string;
   title: string;
-  blocks: NotionBlock[];
+  blocks?: ArchonBlock[]; // Optional - some docs only have content
   created_at: string;
   updated_at: string;
+  // Additional fields for Archon MCP format support
+  content?: any;
+  document_type?: string;
 }
 
 interface Task {
@@ -114,6 +121,32 @@ export const DocsTab = ({
   const [loading, setLoading] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   
+  // Dark mode detection
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  
+  useEffect(() => {
+    const checkDarkMode = () => {
+      const htmlElement = document.documentElement;
+      const hasDarkClass = htmlElement.classList.contains('dark');
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      setIsDarkMode(hasDarkClass || prefersDark);
+    };
+    
+    checkDarkMode();
+    
+    // Listen for changes
+    const observer = new MutationObserver(checkDarkMode);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    mediaQuery.addEventListener('change', checkDarkMode);
+    
+    return () => {
+      observer.disconnect();
+      mediaQuery.removeEventListener('change', checkDarkMode);
+    };
+  }, []);
+  
   // Knowledge management state
   const [showTechnicalModal, setShowTechnicalModal] = useState(false);
   const [showBusinessModal, setShowBusinessModal] = useState(false);
@@ -137,13 +170,16 @@ export const DocsTab = ({
       const data = await response.json();
       const docs = data.docs || [];
       
-      // Transform docs to ProjectDoc format
-      const projectDocuments: ProjectDoc[] = docs.map((doc: any) => ({
-        id: doc.id || `doc-${Date.now()}`,
+      // Transform docs to ProjectDoc format with unique IDs
+      const projectDocuments: ProjectDoc[] = docs.map((doc: any, index: number) => ({
+        id: doc.id || `doc-${Date.now()}-${index}`, // Ensure unique IDs
         title: doc.title || 'Untitled Document',
         blocks: doc.blocks || [],
         created_at: doc.created_at || new Date().toISOString(),
-        updated_at: doc.updated_at || new Date().toISOString()
+        updated_at: doc.updated_at || new Date().toISOString(),
+        // Preserve original data for BlockNote conversion
+        content: doc.content,
+        document_type: doc.document_type
       }));
       
       setDocuments(projectDocuments);
@@ -167,13 +203,19 @@ export const DocsTab = ({
     const template = DOCUMENT_TEMPLATES[templateKey as keyof typeof DOCUMENT_TEMPLATES];
     if (!template) return;
 
+    // Create template blocks with unique IDs
+    const templateBlocks = template.blocks.map(block => ({
+      ...block,
+      id: `${Date.now()}-${block.id}`
+    }));
+
+    // Convert to clean MCP format using existing converter
+    const mcpContent = convertArchonBlocksToMCPContent(templateBlocks);
+
     const newDoc: ProjectDoc = {
       id: `doc-${Date.now()}`,
       title: template.name,
-      blocks: template.blocks.map(block => ({
-        ...block,
-        id: `${Date.now()}-${block.id}`
-      })),
+      content: mcpContent,    // Only clean MCP format like E-commerce
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -253,69 +295,17 @@ export const DocsTab = ({
     }
   };
 
-  // Add new block
-  const addBlock = (type: NotionBlock['type'] = 'paragraph') => {
-    if (!selectedDocument) return;
-
-    const newBlock: NotionBlock = {
-      id: `block-${Date.now()}`,
-      type,
-      content: type === 'divider' ? null : '',
-      properties: {}
-    };
-
-    const updatedDoc = {
-      ...selectedDocument,
-      blocks: [...selectedDocument.blocks, newBlock]
-    };
-
-    setSelectedDocument(updatedDoc);
-    setIsEditing(true);
-  };
-
-  // Update block
-  const updateBlock = (blockId: string, updates: Partial<NotionBlock>) => {
-    if (!selectedDocument) return;
-
-    const updatedDoc = {
-      ...selectedDocument,
-      blocks: selectedDocument.blocks.map(block => 
-        block.id === blockId ? { ...block, ...updates } : block
-      )
-    };
-
-    setSelectedDocument(updatedDoc);
-    setIsEditing(true);
-  };
-
-  // Delete block
-  const deleteBlock = (blockId: string) => {
-    if (!selectedDocument) return;
-
-    const updatedDoc = {
-      ...selectedDocument,
-      blocks: selectedDocument.blocks.filter(block => block.id !== blockId)
-    };
-
-    setSelectedDocument(updatedDoc);
-    setIsEditing(true);
-  };
-
-  // Update document title
-  const updateDocumentTitle = (newTitle: string) => {
-    if (!selectedDocument) return;
-
-    setSelectedDocument({
-      ...selectedDocument,
-      title: newTitle
-    });
-    setIsEditing(true);
-  };
+  // Note: Block editing functions removed - now handled by BlockNoteEditor internally
 
   // Load knowledge items and documents on mount
   useEffect(() => {
     loadKnowledgeItems();
     loadProjectDocuments();
+  }, [project?.id]);
+
+  // Clear selected document when project changes
+  useEffect(() => {
+    setSelectedDocument(null);
   }, [project?.id]);
 
   // Existing knowledge loading function
@@ -549,12 +539,49 @@ export const DocsTab = ({
             <div className="text-gray-500">Loading documents...</div>
           </div>
         ) : selectedDocument ? (
-          <NotionEditor
+          <BlockNoteEditor
             document={selectedDocument}
-            onUpdateTitle={updateDocumentTitle}
-            onUpdateBlock={updateBlock}
-            onDeleteBlock={deleteBlock}
-            onAddBlock={addBlock}
+            isDarkMode={isDarkMode}
+            onSave={async (updatedDocument) => {
+              try {
+                setIsSaving(true);
+                
+                // Get current project data to update docs array
+                const projectResponse = await fetch(`http://localhost:8080/api/projects/${project?.id}`);
+                if (!projectResponse.ok) throw new Error('Failed to load project');
+                
+                const projectData = await projectResponse.json();
+                const currentDocs = projectData.docs || [];
+                
+                // Update the specific document
+                const updatedDocs = currentDocs.map((doc: any) => 
+                  doc.id === updatedDocument.id ? updatedDocument : doc
+                );
+
+                // Save updated docs back to project using FastAPI
+                const response = await fetch(`http://localhost:8080/api/projects/${project?.id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ docs: updatedDocs })
+                });
+
+                if (!response.ok) throw new Error('Failed to save document');
+                
+                // Update local state
+                setSelectedDocument(updatedDocument);
+                setDocuments(prev => prev.map(doc => 
+                  doc.id === updatedDocument.id ? updatedDocument : doc
+                ));
+                
+                showToast('Document saved successfully', 'success');
+              } catch (error) {
+                console.error('Failed to save document:', error);
+                showToast('Failed to save document', 'error');
+              } finally {
+                setIsSaving(false);
+              }
+            }}
+            className="mb-8"
           />
         ) : (
           <div className="flex flex-col items-center justify-center h-64 text-gray-500">
@@ -631,296 +658,69 @@ export const DocsTab = ({
 };
 
 /* ——————————————————————————————————————————— */
+/* Helper functions                               */
+/* ——————————————————————————————————————————— */
+
+// Convert Archon blocks to clean MCP content format for AI agents
+const convertArchonBlocksToMCPContent = (blocks: ArchonBlock[]) => {
+  const content: any = {};
+  let currentSection = '';
+  let currentItems: string[] = [];
+  
+  for (const block of blocks) {
+    if (block.type === 'heading_1') {
+      // Main title - skip
+      continue;
+    }
+    
+    if (block.type === 'heading_2') {
+      // Save previous section if exists
+      if (currentSection && currentItems.length > 0) {
+        const sectionKey = currentSection.toLowerCase().replace(/\s+/g, '_');
+        if (currentItems.length === 1) {
+          content[sectionKey] = { description: currentItems[0] };
+        } else {
+          content[sectionKey] = currentItems;
+        }
+      }
+      
+      // Start new section
+      currentSection = block.content || block.properties?.text || '';
+      currentItems = [];
+    } else if (block.type === 'paragraph' && block.content?.trim()) {
+      currentItems.push(block.content);
+    } else if (block.type === 'bulleted_list' || block.type === 'numbered_list') {
+      if (block.content) {
+        // Handle array content or string content
+        if (Array.isArray(block.content)) {
+          currentItems.push(...block.content);
+        } else {
+          // Split by newlines for concatenated content
+          const items = block.content.split('\n').filter((item: string) => item.trim());
+          currentItems.push(...items);
+        }
+      }
+    }
+  }
+  
+  // Save final section
+  if (currentSection && currentItems.length > 0) {
+    const sectionKey = currentSection.toLowerCase().replace(/\s+/g, '_');
+    if (currentItems.length === 1) {
+      content[sectionKey] = { description: currentItems[0] };
+    } else {
+      content[sectionKey] = currentItems;
+    }
+  }
+  
+  return content;
+};
+
+/* ——————————————————————————————————————————— */
 /* Helper components                              */
 /* ——————————————————————————————————————————— */
 
-// Notion Editor Component
-const NotionEditor: React.FC<{
-  document: ProjectDoc;
-  onUpdateTitle: (title: string) => void;
-  onUpdateBlock: (blockId: string, updates: Partial<NotionBlock>) => void;
-  onDeleteBlock: (blockId: string) => void;
-  onAddBlock: (type?: NotionBlock['type']) => void;
-}> = ({ document, onUpdateTitle, onUpdateBlock, onDeleteBlock, onAddBlock }) => {
-  const renderBlock = (block: NotionBlock) => {
-    const blockClasses = "group relative p-2 rounded hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors";
-    
-    switch (block.type) {
-      case 'heading_1':
-        return (
-          <div key={block.id} className={blockClasses}>
-            <input
-              type="text"
-              value={block.content || ''}
-              onChange={(e) => onUpdateBlock(block.id, { content: e.target.value })}
-              className="w-full text-3xl font-bold bg-transparent border-none outline-none text-gray-900 dark:text-white"
-              placeholder="Heading 1"
-            />
-            <button 
-              onClick={() => onDeleteBlock(block.id)}
-              className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-600"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-        );
-      case 'heading_2':
-        return (
-          <div key={block.id} className={blockClasses}>
-            <input
-              type="text"
-              value={block.content || ''}
-              onChange={(e) => onUpdateBlock(block.id, { content: e.target.value })}
-              className="w-full text-2xl font-semibold bg-transparent border-none outline-none text-gray-900 dark:text-white"
-              placeholder="Heading 2"
-            />
-            <button 
-              onClick={() => onDeleteBlock(block.id)}
-              className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-600"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-        );
-      case 'heading_3':
-        return (
-          <div key={block.id} className={blockClasses}>
-            <input
-              type="text"
-              value={block.content || ''}
-              onChange={(e) => onUpdateBlock(block.id, { content: e.target.value })}
-              className="w-full text-xl font-medium bg-transparent border-none outline-none text-gray-900 dark:text-white"
-              placeholder="Heading 3"
-            />
-            <button 
-              onClick={() => onDeleteBlock(block.id)}
-              className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-600"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-        );
-      case 'paragraph':
-        return (
-          <div key={block.id} className={blockClasses}>
-            <textarea
-              value={block.content || ''}
-              onChange={(e) => onUpdateBlock(block.id, { content: e.target.value })}
-              className="w-full bg-transparent border-none outline-none resize-none text-gray-900 dark:text-white"
-              placeholder="Type something..."
-              rows={1}
-              style={{ minHeight: 'auto' }}
-              onInput={(e) => {
-                const target = e.target as HTMLTextAreaElement;
-                target.style.height = 'auto';
-                target.style.height = target.scrollHeight + 'px';
-              }}
-            />
-            <button 
-              onClick={() => onDeleteBlock(block.id)}
-              className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-600"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-        );
-      case 'bulleted_list':
-      case 'numbered_list':
-        const items = Array.isArray(block.content) ? block.content : [block.content || ''];
-        return (
-          <div key={block.id} className={blockClasses}>
-            <div className="space-y-2">
-              {items.map((item, index) => (
-                <div key={index} className="flex items-start gap-2">
-                  <span className="text-gray-500 mt-1">
-                    {block.type === 'bulleted_list' ? '•' : `${index + 1}.`}
-                  </span>
-                  <input
-                    type="text"
-                    value={item || ''}
-                    onChange={(e) => {
-                      const newItems = [...items];
-                      newItems[index] = e.target.value;
-                      onUpdateBlock(block.id, { content: newItems });
-                    }}
-                    className="flex-1 bg-transparent border-none outline-none text-gray-900 dark:text-white"
-                    placeholder="List item"
-                  />
-                </div>
-              ))}
-              <button
-                onClick={() => {
-                  const newItems = [...items, ''];
-                  onUpdateBlock(block.id, { content: newItems });
-                }}
-                className="text-gray-500 hover:text-gray-700 text-sm flex items-center gap-1"
-              >
-                <Plus className="w-3 h-3" />
-                Add item
-              </button>
-            </div>
-            <button 
-              onClick={() => onDeleteBlock(block.id)}
-              className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-600"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-        );
-      case 'to_do':
-        const todoItems = Array.isArray(block.content) ? block.content : [block.content || ''];
-        return (
-          <div key={block.id} className={blockClasses}>
-            <div className="space-y-2">
-              {todoItems.map((item, index) => (
-                <div key={index} className="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    className="mt-1"
-                    onChange={(e) => {
-                      // Handle checkbox state if needed
-                    }}
-                  />
-                  <input
-                    type="text"
-                    value={item || ''}
-                    onChange={(e) => {
-                      const newItems = [...todoItems];
-                      newItems[index] = e.target.value;
-                      onUpdateBlock(block.id, { content: newItems });
-                    }}
-                    className="flex-1 bg-transparent border-none outline-none text-gray-900 dark:text-white"
-                    placeholder="To-do item"
-                  />
-                </div>
-              ))}
-              <button
-                onClick={() => {
-                  const newItems = [...todoItems, ''];
-                  onUpdateBlock(block.id, { content: newItems });
-                }}
-                className="text-gray-500 hover:text-gray-700 text-sm flex items-center gap-1"
-              >
-                <Plus className="w-3 h-3" />
-                Add item
-              </button>
-            </div>
-            <button 
-              onClick={() => onDeleteBlock(block.id)}
-              className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-600"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-        );
-      case 'divider':
-        return (
-          <div key={block.id} className={blockClasses}>
-            <hr className="border-gray-300 dark:border-gray-700" />
-            <button 
-              onClick={() => onDeleteBlock(block.id)}
-              className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-600"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-        );
-      default:
-        return (
-          <div key={block.id} className={blockClasses}>
-            <textarea
-              value={block.content || ''}
-              onChange={(e) => onUpdateBlock(block.id, { content: e.target.value })}
-              className="w-full bg-transparent border-none outline-none resize-none text-gray-900 dark:text-white"
-              placeholder="Type something..."
-            />
-            <button 
-              onClick={() => onDeleteBlock(block.id)}
-              className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-600"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-        );
-    }
-  };
-
-  return (
-    <div className="max-w-4xl mx-auto">
-      {/* Document Title */}
-      <div className="mb-8">
-        <input
-          type="text"
-          value={document.title}
-          onChange={(e) => onUpdateTitle(e.target.value)}
-          className="w-full text-4xl font-bold bg-transparent border-none outline-none text-gray-900 dark:text-white mb-2"
-          placeholder="Untitled"
-        />
-        <div className="text-sm text-gray-500">
-          Last updated: {new Date(document.updated_at).toLocaleDateString()}
-        </div>
-      </div>
-
-      {/* Blocks */}
-      <div className="space-y-1">
-        {document.blocks.map(renderBlock)}
-      </div>
-
-      {/* Add Block Buttons */}
-      <div className="mt-8 flex flex-wrap gap-2">
-        <button
-          onClick={() => onAddBlock('paragraph')}
-          className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded flex items-center gap-1"
-        >
-          <Plus className="w-3 h-3" />
-          Text
-        </button>
-        <button
-          onClick={() => onAddBlock('heading_1')}
-          className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded flex items-center gap-1"
-        >
-          <Plus className="w-3 h-3" />
-          Heading 1
-        </button>
-        <button
-          onClick={() => onAddBlock('heading_2')}
-          className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded flex items-center gap-1"
-        >
-          <Plus className="w-3 h-3" />
-          Heading 2
-        </button>
-        <button
-          onClick={() => onAddBlock('bulleted_list')}
-          className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded flex items-center gap-1"
-        >
-          <Plus className="w-3 h-3" />
-          Bullet List
-        </button>
-        <button
-          onClick={() => onAddBlock('numbered_list')}
-          className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded flex items-center gap-1"
-        >
-          <Plus className="w-3 h-3" />
-          Numbered List
-        </button>
-        <button
-          onClick={() => onAddBlock('to_do')}
-          className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded flex items-center gap-1"
-        >
-          <Plus className="w-3 h-3" />
-          To-do
-        </button>
-        <button
-          onClick={() => onAddBlock('divider')}
-          className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded flex items-center gap-1"
-        >
-          <Plus className="w-3 h-3" />
-          Divider
-        </button>
-      </div>
-    </div>
-  );
-};
+// ArchonEditor component removed - replaced with BlockNoteEditor
 
 // Template Modal Component
 const TemplateModal: React.FC<{

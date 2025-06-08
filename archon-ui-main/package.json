@@ -14,6 +14,9 @@
     "seed:projects": "node --loader ts-node/esm ../scripts/seed-project-data.ts"
   },
   "dependencies": {
+    "@blocknote/core": "^0.32.0-hackdays.0",
+    "@blocknote/mantine": "^0.32.0-hackdays.0",
+    "@blocknote/react": "^0.32.0-hackdays.0",
     "@xyflow/react": "^12.3.0",
     "clsx": "latest",
     "framer-motion": "^11.5.4",
