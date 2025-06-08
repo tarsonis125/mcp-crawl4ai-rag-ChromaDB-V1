@@ -408,12 +408,12 @@ export function ProjectPage({
                 )}
                 {activeTab === 'features' && (
                   <TabsContent value="features" className="mt-0">
-                    <FeaturesTab />
+                    <FeaturesTab project={selectedProject} />
                   </TabsContent>
                 )}
                 {activeTab === 'data' && (
                   <TabsContent value="data" className="mt-0">
-                    <DataTab />
+                    <DataTab project={selectedProject} />
                   </TabsContent>
                 )}
                 {activeTab === 'tasks' && (

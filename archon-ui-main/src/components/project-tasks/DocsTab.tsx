@@ -41,7 +41,7 @@ interface Task {
   id: string;
   title: string;
   feature: string;
-  status: 'backlog' | 'in-progress' | 'testing' | 'complete';
+  status: 'backlog' | 'in-progress' | 'review' | 'complete';
 }
 
 // Document Templates
@@ -472,15 +472,8 @@ export const DocsTab = ({
   };
 
   return (
-    <div className="relative bg-white/30 dark:bg-black/50 backdrop-blur-lg border border-gray-200 dark:border-gray-800 rounded-lg p-8 min-h-[70vh]">
-      {/* Background effects */}
-      <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(to_bottom,rgba(59,130,246,0.01)_50%,transparent_50%)] bg-[length:100%_4px]" />
-      <div className="absolute inset-0 pointer-events-none shadow-[inset_0_0_30px_rgba(59,130,246,0.05)]" />
-      <div className="absolute inset-0 rounded-lg overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-0 right-0 h-[2px] bg-blue-500 shadow-[0_0_10px_2px_rgba(59,130,246,0.4)] dark:shadow-[0_0_20px_5px_rgba(59,130,246,0.7)]"></div>
-      </div>
-
-      <div className="max-w-6xl mx-auto">
+    <div className="relative min-h-[70vh] pt-8">
+      <div className="max-w-6xl pl-8">
         {/* Project Overview Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
           <OverviewCard 
@@ -498,7 +491,7 @@ export const DocsTab = ({
           <OverviewCard 
             title="Tasks Overview" 
             value={`${tasks.filter(t => t.status === 'complete').length}/${tasks.length}`} 
-            subtext={`${tasks.filter(t => t.status === 'in-progress').length} in progress, ${tasks.filter(t => t.status === 'testing').length} in testing`} 
+            subtext={`${tasks.filter(t => t.status === 'in-progress').length} in progress, ${tasks.filter(t => t.status === 'review').length} in review`} 
             color="pink" 
           />
         </div>
@@ -835,7 +828,7 @@ const TemplateModal: React.FC<{
 };
 
 const calculateProjectStatus = (tasks: Task[]) => {
-  const hasInProgress = tasks.some(task => task.status === 'in-progress' || task.status === 'testing');
+  const hasInProgress = tasks.some(task => task.status === 'in-progress' || task.status === 'review');
   const allComplete = tasks.every(task => task.status === 'complete');
   if (allComplete) return 'Complete';
   if (hasInProgress) return 'Development';
@@ -875,7 +868,7 @@ const calculateTaskDistribution = (tasks: Task[]) => {
   return {
     backlog: distribution.backlog || 0,
     inProgress: distribution['in-progress'] || 0,
-    testing: distribution.testing || 0,
+    review: distribution.review || 0,
     complete: distribution.complete || 0
   };
 };

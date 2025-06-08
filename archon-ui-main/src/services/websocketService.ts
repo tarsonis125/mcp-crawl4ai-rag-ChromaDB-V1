@@ -126,6 +126,12 @@ class TaskUpdateService {
   private callbacks: TaskUpdateCallbacks = {};
 
   connect(projectId: string, callbacks: TaskUpdateCallbacks, sessionId?: string) {
+    // If there's already an active connection, disconnect it first
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      console.log('🔄 Closing existing WebSocket connection before creating new one');
+      this.disconnect();
+    }
+
     this.projectId = projectId;
     this.sessionId = sessionId || this.generateSessionId();
     this.callbacks = callbacks;
@@ -158,7 +164,13 @@ class TaskUpdateService {
     
     this.ws.onclose = (event) => {
       console.log(`🔌 Task Updates WebSocket disconnected for project: ${projectId}, session: ${this.sessionId}`, event);
-      this.attemptReconnect();
+      
+      // Only attempt to reconnect if this wasn't a clean disconnect (code 1000 = normal closure)
+      if (event.code !== 1000 && event.reason !== 'Client disconnecting') {
+        this.attemptReconnect();
+      } else {
+        console.log('🟢 Clean disconnect detected, not attempting reconnection');
+      }
       
       if (this.callbacks.onClose) {
         this.callbacks.onClose(event);
@@ -246,18 +258,23 @@ class TaskUpdateService {
   }
 
   private attemptReconnect() {
-    if (this.reconnectAttempts < this.maxReconnectAttempts && this.projectId && this.sessionId) {
-      this.reconnectAttempts++;
-      console.log(`🔄 Attempting to reconnect Task Updates WebSocket (${this.reconnectAttempts}/${this.maxReconnectAttempts}) for session ${this.sessionId} in ${this.reconnectInterval}ms`);
-      
-      setTimeout(() => {
-        if (this.projectId && this.sessionId) {
-          this.connect(this.projectId, this.callbacks, this.sessionId);
-        }
-      }, this.reconnectInterval);
-    } else {
-      console.error(`❌ Max reconnection attempts reached for Task Updates WebSocket session ${this.sessionId}`);
+    // Don't attempt to reconnect if we've been manually disconnected or reached max attempts
+    if (this.reconnectAttempts >= this.maxReconnectAttempts || !this.projectId || !this.sessionId) {
+      if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+        console.error(`❌ Max reconnection attempts reached for Task Updates WebSocket session ${this.sessionId}`);
+      }
+      return;
     }
+
+    this.reconnectAttempts++;
+    console.log(`🔄 Attempting to reconnect Task Updates WebSocket (${this.reconnectAttempts}/${this.maxReconnectAttempts}) for session ${this.sessionId} in ${this.reconnectInterval}ms`);
+    
+    setTimeout(() => {
+      // Only reconnect if we still have project/session and no active WebSocket
+      if (this.projectId && this.sessionId && (!this.ws || this.ws.readyState === WebSocket.CLOSED)) {
+        this.connect(this.projectId, this.callbacks, this.sessionId);
+      }
+    }, this.reconnectInterval);
   }
 
   sendPing() {
@@ -268,8 +285,16 @@ class TaskUpdateService {
 
   disconnect() {
     if (this.ws) {
-      console.log('🔌 Disconnecting Task Updates WebSocket');
-      this.ws.close(1000, 'Client disconnecting');
+      console.log(`🔌 Disconnecting Task Updates WebSocket (state: ${this.ws.readyState})`);
+      
+      // Only try to close if the WebSocket is OPEN or CONNECTING
+      if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
+        try {
+          this.ws.close(1000, 'Client disconnecting');
+        } catch (error) {
+          console.warn('Error closing WebSocket:', error);
+        }
+      }
       this.ws = null;
     }
     this.projectId = null;
