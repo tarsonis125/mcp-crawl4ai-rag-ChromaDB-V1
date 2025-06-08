@@ -16,7 +16,9 @@ import {
   Connection,
   addEdge,
 } from '@xyflow/react'
-import { Layout, Component as ComponentIcon } from 'lucide-react'
+import { Layout, Component as ComponentIcon, X, Trash2 } from 'lucide-react'
+import { projectService } from '../../services/projectService'
+import { useToast } from '../../contexts/ToastContext'
 
 // Define custom node types following React Flow v12 pattern
 type PageNodeData = {
@@ -155,6 +157,11 @@ export const FeaturesTab = ({ project }: FeaturesTabProps) => {
   const [nodes, setNodes] = useState<Node[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
   const [loading, setLoading] = useState(true)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [nodeToDelete, setNodeToDelete] = useState<string | null>(null)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+
+  const { showToast } = useToast()
 
   // Load features from project or show empty state
   useEffect(() => {
@@ -205,14 +212,18 @@ export const FeaturesTab = ({ project }: FeaturesTabProps) => {
   }
 
   const onNodesChange = useCallback(
-    (changes: NodeChange[]) =>
-      setNodes((nds) => applyNodeChanges(changes, nds)),
+    (changes: NodeChange[]) => {
+      setNodes((nds) => applyNodeChanges(changes, nds))
+      setHasUnsavedChanges(true)
+    },
     [],
   )
   
   const onEdgesChange = useCallback(
-    (changes: EdgeChange[]) =>
-      setEdges((eds) => applyEdgeChanges(changes, eds)),
+    (changes: EdgeChange[]) => {
+      setEdges((eds) => applyEdgeChanges(changes, eds))
+      setHasUnsavedChanges(true)
+    },
     [],
   )
   
@@ -243,11 +254,31 @@ export const FeaturesTab = ({ project }: FeaturesTabProps) => {
           eds,
         ),
       )
+      setHasUnsavedChanges(true)
     },
     [nodes],
   )
 
-  const addPageNode = () => {
+  const saveToDatabase = async (nodesToSave = nodes, edgesToSave = edges) => {
+    if (!project?.id) {
+      console.error('❌ No project ID available for saving features');
+      return;
+    }
+
+    try {
+      console.log('💾 Saving features to database...');
+      await projectService.updateProject(project.id, {
+        features: nodesToSave
+      });
+      console.log('✅ Features saved successfully');
+      setHasUnsavedChanges(false);
+    } catch (error) {
+      console.error('❌ Failed to save features:', error);
+      throw error;
+    }
+  };
+
+  const addPageNode = async () => {
     const newNode: Node = {
       id: `page-${Date.now()}`,
       type: 'page',
@@ -262,10 +293,22 @@ export const FeaturesTab = ({ project }: FeaturesTabProps) => {
         y: 200,
       },
     }
-    setNodes([...nodes, newNode])
+    const newNodes = [...nodes, newNode];
+    setNodes(newNodes);
+    setHasUnsavedChanges(true);
+    
+    // Auto-save when adding
+    try {
+      await saveToDatabase(newNodes, edges);
+      showToast('Page added successfully', 'success');
+    } catch (error) {
+      showToast('Failed to save page', 'error');
+      // Revert on error
+      setNodes(nodes);
+    }
   }
 
-  const addServiceNode = () => {
+  const addServiceNode = async () => {
     const newNode: Node = {
       id: `service-${Date.now()}`,
       type: 'service',
@@ -278,8 +321,145 @@ export const FeaturesTab = ({ project }: FeaturesTabProps) => {
         y: 200,
       },
     }
-    setNodes([...nodes, newNode])
+    const newNodes = [...nodes, newNode];
+    setNodes(newNodes);
+    setHasUnsavedChanges(true);
+    
+    // Auto-save when adding
+    try {
+      await saveToDatabase(newNodes, edges);
+      showToast('Service added successfully', 'success');
+    } catch (error) {
+      showToast('Failed to save service', 'error');
+      // Revert on error
+      setNodes(nodes);
+    }
   }
+
+  const handleDeleteNode = useCallback(async (event: React.MouseEvent, nodeId: string) => {
+    event.stopPropagation();
+    
+    if (!project?.id) {
+      console.error('❌ No project ID available for deleting node');
+      return;
+    }
+
+    // Show custom confirmation dialog
+    setNodeToDelete(nodeId);
+    setShowDeleteConfirm(true);
+  }, [project?.id]);
+
+  const confirmDelete = useCallback(async () => {
+    if (!nodeToDelete) return;
+
+    console.log('🗑️ Deleting node:', nodeToDelete);
+
+    try {
+      // Remove node from UI
+      const newNodes = nodes.filter(node => node.id !== nodeToDelete);
+      
+      // Remove any edges connected to this node
+      const newEdges = edges.filter(edge => 
+        edge.source !== nodeToDelete && edge.target !== nodeToDelete
+      );
+      
+      setNodes(newNodes);
+      setEdges(newEdges);
+
+      // Save to database
+      await saveToDatabase(newNodes, newEdges);
+      showToast('Node deleted successfully', 'success');
+      
+      // Close confirmation dialog
+      setShowDeleteConfirm(false);
+      setNodeToDelete(null);
+    } catch (error) {
+      console.error('❌ Failed to delete node:', error);
+      // Revert UI changes on error
+      setNodes(nodes);
+      setEdges(edges);
+      showToast('Failed to delete node', 'error');
+    }
+  }, [nodeToDelete, nodes, edges, saveToDatabase]);
+
+  const cancelDelete = useCallback(() => {
+    setShowDeleteConfirm(false);
+    setNodeToDelete(null);
+  }, []);
+
+       // Updated node types with delete functionality
+  const nodeTypes = {
+    page: ({ data, id }: NodeProps) => {
+      const pageData = data as any;
+      return (
+        <div className="relative group">
+          <Handle
+            type="target"
+            position={Position.Top}
+            className="w-3 h-3 !bg-cyan-400 transition-all duration-300 !opacity-60 group-hover:!opacity-100 group-hover:!shadow-[0_0_8px_rgba(34,211,238,0.6)]"
+          />
+          <div className="p-4 rounded-lg bg-[#1a2c3b]/80 border border-cyan-500/30 min-w-[200px] backdrop-blur-sm transition-all duration-300 group-hover:border-cyan-500/70 group-hover:shadow-[0_5px_15px_rgba(34,211,238,0.15)]">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="flex items-center gap-2">
+                <Layout className="w-4 h-4 text-cyan-400" />
+                <div className="text-sm font-bold text-cyan-400">{pageData.label}</div>
+              </div>
+              <button
+                onClick={(e) => handleDeleteNode(e, id)}
+                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-600/20 rounded"
+                title="Delete node"
+              >
+                <Trash2 className="w-3 h-3 text-red-400 hover:text-red-300" />
+              </button>
+            </div>
+            <div className="text-xs text-gray-400">{pageData.type}</div>
+            <div className="mt-2 text-xs text-gray-500">
+              <div>Route: {pageData.route}</div>
+              <div>Components: {pageData.components}</div>
+            </div>
+          </div>
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            className="w-3 h-3 !bg-cyan-400 transition-all duration-300 !opacity-60 group-hover:!opacity-100 group-hover:!shadow-[0_0_8px_rgba(34,211,238,0.6)]"
+          />
+        </div>
+      );
+    },
+    service: ({ data, id }: NodeProps) => {
+      const serviceData = data as any;
+      return (
+        <div className="relative group">
+          <Handle
+            type="target"
+            position={Position.Top}
+            className="w-3 h-3 !bg-fuchsia-400 transition-all duration-300 !opacity-60 group-hover:!opacity-100 group-hover:!shadow-[0_0_8px_rgba(217,70,239,0.6)]"
+          />
+          <div className="p-4 rounded-lg bg-[#2d1a3b]/80 border border-fuchsia-500/30 min-w-[200px] backdrop-blur-sm transition-all duration-300 group-hover:border-fuchsia-500/70 group-hover:shadow-[0_5px_15px_rgba(217,70,239,0.15)]">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="flex items-center gap-2">
+                <ComponentIcon className="w-4 h-4 text-fuchsia-400" />
+                <div className="text-sm font-bold text-fuchsia-400">{serviceData.label}</div>
+              </div>
+              <button
+                onClick={(e) => handleDeleteNode(e, id)}
+                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-600/20 rounded"
+                title="Delete node"
+              >
+                <Trash2 className="w-3 h-3 text-red-400 hover:text-red-300" />
+              </button>
+            </div>
+            <div className="text-xs text-gray-400">{serviceData.type}</div>
+          </div>
+          <Handle
+            type="source"
+            position={Position.Bottom}
+            className="w-3 h-3 !bg-fuchsia-400 transition-all duration-300 !opacity-60 group-hover:!opacity-100 group-hover:!shadow-[0_0_8px_rgba(217,70,239,0.6)]"
+          />
+        </div>
+      );
+    }
+  };
 
   if (loading) {
     return (
@@ -290,7 +470,7 @@ export const FeaturesTab = ({ project }: FeaturesTabProps) => {
   }
 
   return (
-    <div className="relative">
+    <div className="relative pt-8">
       <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(to_right,rgba(0,255,255,0.03)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,255,255,0.03)_1px,transparent_1px)] bg-[size:20px_20px]" />
       <div className="relative z-10">
         <div className="flex justify-between items-center mb-4">
@@ -341,7 +521,76 @@ export const FeaturesTab = ({ project }: FeaturesTabProps) => {
             </ReactFlow>
           )}
         </div>
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteConfirm && (
+          <DeleteConfirmModal
+            onConfirm={confirmDelete}
+            onCancel={cancelDelete}
+            nodeName={nodes.find(n => n.id === nodeToDelete)?.data.label as string || 'node'}
+          />
+        )}
       </div>
     </div>
   )
 }
+
+// Delete Confirmation Modal Component
+const DeleteConfirmModal = ({ 
+  onConfirm, 
+  onCancel, 
+  nodeName 
+}: { 
+  onConfirm: () => void; 
+  onCancel: () => void; 
+  nodeName: string;
+}) => {
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="relative p-6 rounded-md backdrop-blur-md w-full max-w-md
+          bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30
+          border border-gray-200 dark:border-zinc-800/50
+          shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)]
+          before:content-[''] before:absolute before:top-0 before:left-0 before:right-0 before:h-[2px] 
+          before:rounded-t-[4px] before:bg-red-500 
+          before:shadow-[0_0_10px_2px_rgba(239,68,68,0.4)] dark:before:shadow-[0_0_20px_5px_rgba(239,68,68,0.7)]">
+        
+        <div className="relative z-10">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+              <Trash2 className="w-6 h-6 text-red-600 dark:text-red-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-white">
+                Delete Node
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                This action cannot be undone
+              </p>
+            </div>
+          </div>
+          
+          <p className="text-gray-700 dark:text-gray-300 mb-6">
+            Are you sure you want to delete <span className="font-medium text-red-600 dark:text-red-400">"{nodeName}"</span>? 
+            This will also remove all related connections.
+          </p>
+          
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={onCancel}
+              className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onConfirm}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors shadow-lg shadow-red-600/25 hover:shadow-red-700/25"
+            >
+              Delete Node
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};

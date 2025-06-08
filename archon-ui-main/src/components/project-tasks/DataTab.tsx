@@ -4,6 +4,7 @@ import { ReactFlow, Node, Edge, Background, Controls, MarkerType, NodeChange, ap
 import { Database, Info, Calendar, TrendingUp, Edit, Plus, X, Save, Trash2 } from 'lucide-react';
 import { projectService } from '../../services/projectService';
 import { taskUpdateWebSocket } from '../../services/websocketService';
+import { useToast } from '../../contexts/ToastContext';
 
 // Custom node types - will be defined inside the component to access state
 
@@ -111,6 +112,10 @@ export const DataTab = ({ project }: DataTabProps) => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [nodeToDelete, setNodeToDelete] = useState<string | null>(null);
+
+  const { showToast } = useToast();
 
   // Note: Removed aggressive WebSocket cleanup to prevent interference with normal connection lifecycle
 
@@ -219,6 +224,8 @@ export const DataTab = ({ project }: DataTabProps) => {
     setShowEditModal(true);
   }, []);
 
+
+
   const addTableNode = async () => {
     if (!project?.id) {
       console.error('❌ No project ID available for adding table');
@@ -298,14 +305,64 @@ export const DataTab = ({ project }: DataTabProps) => {
     await saveToDatabase();
   };
 
+  const handleDeleteNode = useCallback(async (event: React.MouseEvent, nodeId: string) => {
+    event.stopPropagation(); // Prevent triggering the edit modal
+    
+    if (!project?.id) {
+      console.error('❌ No project ID available for deleting table');
+      return;
+    }
+
+    // Show custom confirmation dialog
+    setNodeToDelete(nodeId);
+    setShowDeleteConfirm(true);
+  }, [project?.id]);
+
+  const confirmDelete = useCallback(async () => {
+    if (!nodeToDelete) return;
+
+    console.log('🗑️ Deleting table:', nodeToDelete);
+
+    try {
+      // Remove node from UI
+      const newNodes = nodes.filter(node => node.id !== nodeToDelete);
+      
+      // Remove any edges connected to this node
+      const newEdges = edges.filter(edge => 
+        edge.source !== nodeToDelete && edge.target !== nodeToDelete
+      );
+      
+      setNodes(newNodes);
+      setEdges(newEdges);
+
+      // Save to database
+      console.log('💾 Saving after table deletion...');
+      await saveToDatabase(newNodes, newEdges);
+      console.log('✅ Table deleted successfully');
+      showToast('Table deleted successfully', 'success');
+      
+      // Close confirmation dialog
+      setShowDeleteConfirm(false);
+      setNodeToDelete(null);
+    } catch (error) {
+      console.error('❌ Failed to delete table:', error);
+      // Revert UI changes on error
+      setNodes(nodes);
+      setEdges(edges);
+      showToast('Failed to delete table', 'error');
+    }
+  }, [nodeToDelete, nodes, edges, saveToDatabase]);
+
+  const cancelDelete = useCallback(() => {
+    setShowDeleteConfirm(false);
+    setNodeToDelete(null);
+  }, []);
+
   // Memoize nodeTypes to prevent recreation on every render
   const nodeTypes = useMemo(() => ({
     table: ({ data, id }: any) => (
       <div 
-        className="p-3 rounded-lg bg-gradient-to-r from-cyan-900/40 to-cyan-800/30 backdrop-blur-md border border-cyan-500/50 min-w-[220px] transition-all duration-300 hover:border-cyan-500/70 hover:shadow-[0_0_15px_rgba(34,211,238,0.2)] group cursor-pointer"
-        onClick={(e) => {
-          handleNodeClick(e, { id, data } as Node);
-        }}
+        className="p-3 rounded-lg bg-gradient-to-r from-cyan-900/40 to-cyan-800/30 backdrop-blur-md border border-cyan-500/50 min-w-[220px] transition-all duration-300 hover:border-cyan-500/70 hover:shadow-[0_0_15px_rgba(34,211,238,0.2)] group"
       >
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-2">
@@ -314,7 +371,25 @@ export const DataTab = ({ project }: DataTabProps) => {
               {data.label}
             </div>
           </div>
-          <Edit className="w-3 h-3 text-cyan-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="flex items-center gap-1">
+            <button
+              onClick={(e) => handleDeleteNode(e, id)}
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-600/20 rounded"
+              title="Delete table"
+            >
+              <Trash2 className="w-3 h-3 text-red-400 hover:text-red-300" />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleNodeClick(e, { id, data } as Node);
+              }}
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-cyan-600/20 rounded"
+              title="Edit table"
+            >
+              <Edit className="w-3 h-3 text-cyan-400 hover:text-cyan-300" />
+            </button>
+          </div>
         </div>
         <div className="text-xs text-left text-cyan-600">
           {data.columns.map((col: string, i: number) => {
@@ -347,7 +422,7 @@ export const DataTab = ({ project }: DataTabProps) => {
         </div>
       </div>
     )
-  }), [handleNodeClick]);
+  }), [handleNodeClick, handleDeleteNode]);
 
   if (loading) {
     return (
@@ -358,7 +433,7 @@ export const DataTab = ({ project }: DataTabProps) => {
   }
 
   return (
-    <div className="relative">
+    <div className="relative pt-8">
       <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(to_right,rgba(0,255,255,0.03)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,255,255,0.03)_1px,transparent_1px)] bg-[size:20px_20px]"></div>
       <div className="relative z-10">
         <div className="flex justify-between items-center mb-4">
@@ -455,6 +530,15 @@ export const DataTab = ({ project }: DataTabProps) => {
               </ReactFlow>
             )}
           </div>
+                )}
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteConfirm && (
+          <DeleteConfirmModal
+            onConfirm={confirmDelete}
+            onCancel={cancelDelete}
+            tableName={nodes.find(n => n.id === nodeToDelete)?.data.label as string || 'table'}
+          />
         )}
 
         {/* Edit Modal */}
@@ -468,6 +552,66 @@ export const DataTab = ({ project }: DataTabProps) => {
             }}
           />
         )}
+      </div>
+    </div>
+  );
+};
+
+// Delete Confirmation Modal Component
+const DeleteConfirmModal = ({ 
+  onConfirm, 
+  onCancel, 
+  tableName 
+}: { 
+  onConfirm: () => void; 
+  onCancel: () => void; 
+  tableName: string;
+}) => {
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="relative p-6 rounded-md backdrop-blur-md w-full max-w-md
+          bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30
+          border border-gray-200 dark:border-zinc-800/50
+          shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)]
+          before:content-[''] before:absolute before:top-0 before:left-0 before:right-0 before:h-[2px] 
+          before:rounded-t-[4px] before:bg-red-500 
+          before:shadow-[0_0_10px_2px_rgba(239,68,68,0.4)] dark:before:shadow-[0_0_20px_5px_rgba(239,68,68,0.7)]">
+        
+        <div className="relative z-10">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+              <Trash2 className="w-6 h-6 text-red-600 dark:text-red-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-white">
+                Delete Table
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                This action cannot be undone
+              </p>
+            </div>
+          </div>
+          
+          <p className="text-gray-700 dark:text-gray-300 mb-6">
+            Are you sure you want to delete the <span className="font-medium text-red-600 dark:text-red-400">"{tableName}"</span> table? 
+            This will also remove all related connections.
+          </p>
+          
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={onCancel}
+              className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onConfirm}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors shadow-lg shadow-red-600/25 hover:shadow-red-700/25"
+            >
+              Delete Table
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -110,7 +110,7 @@ export const TabsTrigger = ({
       {children}
       {/* Active state neon indicator */}
       {isActive && <>
-          <span className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[2px] ${colorMap[color].glow}`}></span>
+          <span className={`absolute bottom-0 left-0 right-0 w-full h-[2px] ${colorMap[color].glow}`}></span>
         </>}
     </button>;
 };
