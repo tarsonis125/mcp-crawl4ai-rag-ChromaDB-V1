@@ -312,68 +312,98 @@ task_update_manager = TaskUpdateManager()
 @router.get("/projects")
 async def list_projects():
     """List all projects."""
-    try:
-        supabase_client = get_supabase_client()
+    with logfire_logger.span("api_list_projects") as span:
+        span.set_attribute("endpoint", "/api/projects")
+        span.set_attribute("method", "GET")
         
-        response = supabase_client.table("projects").select("*").order("created_at", desc=True).execute()
-        
-        projects = []
-        for project in response.data:
-            # Get linked sources for this project
-            technical_sources = []
-            business_sources = []
+        try:
+            logfire_logger.info("Listing all projects")
+            supabase_client = get_supabase_client()
             
-            try:
-                sources_response = supabase_client.table("project_sources").select("source_id, notes").eq("project_id", project["id"]).execute()
-                for source_link in sources_response.data:
-                    if source_link.get("notes") == "technical":
-                        technical_sources.append(source_link["source_id"])
-                    elif source_link.get("notes") == "business":
-                        business_sources.append(source_link["source_id"])
-            except Exception as e:
-                logger.warning(f"Failed to retrieve linked sources for project {project['id']}: {e}")
+            response = supabase_client.table("projects").select("*").order("created_at", desc=True).execute()
             
-            projects.append({
-                "id": project["id"],
-                "title": project["title"],
-                "github_repo": project.get("github_repo"),
-                "created_at": project["created_at"],
-                "updated_at": project["updated_at"],
-                "prd": project.get("prd", {}),
-                "docs": project.get("docs", []),
-                "features": project.get("features", []),
-                "data": project.get("data", []),
-                "technical_sources": technical_sources,
-                "business_sources": business_sources
-            })
-        
-        return projects
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail={'error': str(e)})
+            projects = []
+            for project in response.data:
+                # Get linked sources for this project
+                technical_sources = []
+                business_sources = []
+                
+                try:
+                    sources_response = supabase_client.table("project_sources").select("source_id, notes").eq("project_id", project["id"]).execute()
+                    for source_link in sources_response.data:
+                        if source_link.get("notes") == "technical":
+                            technical_sources.append(source_link["source_id"])
+                        elif source_link.get("notes") == "business":
+                            business_sources.append(source_link["source_id"])
+                except Exception as e:
+                    logger.warning(f"Failed to retrieve linked sources for project {project['id']}: {e}")
+                
+                projects.append({
+                    "id": project["id"],
+                    "title": project["title"],
+                    "github_repo": project.get("github_repo"),
+                    "created_at": project["created_at"],
+                    "updated_at": project["updated_at"],
+                    "prd": project.get("prd", {}),
+                    "docs": project.get("docs", []),
+                    "features": project.get("features", []),
+                    "data": project.get("data", []),
+                    "technical_sources": technical_sources,
+                    "business_sources": business_sources
+                })
+            
+            logfire_logger.info("Projects listed successfully", count=len(projects))
+            span.set_attribute("project_count", len(projects))
+            
+            return projects
+            
+        except Exception as e:
+            logfire_logger.error("Failed to list projects", error=str(e))
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.post("/projects")
 async def create_project(request: CreateProjectRequest):
     """Create a new project with streaming progress."""
-    # Generate unique progress ID for this creation
-    progress_id = secrets.token_hex(16)
-    
-    # Start tracking creation progress
-    project_creation_manager.start_creation(progress_id, {
-        'title': request.title,
-        'description': request.description or '',
-        'github_repo': request.github_repo
-    })
-    
-    # Start background task to actually create the project
-    asyncio.create_task(_create_project_background(progress_id, request))
-    
-    # Return progress_id immediately so frontend can connect to WebSocket
-    return {
-        "progress_id": progress_id,
-        "status": "started",
-        "message": "Project creation started. Connect to WebSocket for progress updates."
-    }
+    with logfire_logger.span("api_create_project") as span:
+        span.set_attribute("endpoint", "/api/projects")
+        span.set_attribute("method", "POST")
+        span.set_attribute("title", request.title)
+        span.set_attribute("has_github_repo", request.github_repo is not None)
+        span.set_attribute("has_technical_sources", request.technical_sources is not None)
+        span.set_attribute("has_business_sources", request.business_sources is not None)
+        
+        try:
+            logfire_logger.info("Creating new project", title=request.title, github_repo=request.github_repo)
+            
+            # Generate unique progress ID for this creation
+            progress_id = secrets.token_hex(16)
+            span.set_attribute("progress_id", progress_id)
+            
+            # Start tracking creation progress
+            project_creation_manager.start_creation(progress_id, {
+                'title': request.title,
+                'description': request.description or '',
+                'github_repo': request.github_repo
+            })
+            
+            # Start background task to actually create the project
+            asyncio.create_task(_create_project_background(progress_id, request))
+            
+            logfire_logger.info("Project creation started", progress_id=progress_id, title=request.title)
+            span.set_attribute("success", True)
+            
+            # Return progress_id immediately so frontend can connect to WebSocket
+            return {
+                "progress_id": progress_id,
+                "status": "started",
+                "message": "Project creation started. Connect to WebSocket for progress updates."
+            }
+            
+        except Exception as e:
+            logfire_logger.error("Failed to start project creation", error=str(e), title=request.title)
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail={'error': str(e)})
 
 async def _create_project_background(progress_id: str, request: CreateProjectRequest):
     """Background task to actually create the project with progress updates."""
@@ -554,64 +584,78 @@ async def _create_project_background(progress_id: str, request: CreateProjectReq
 @router.get("/projects/{project_id}")
 async def get_project(project_id: str):
     """Get a specific project."""
-    try:
-        supabase_client = get_supabase_client()
+    with logfire_logger.span("api_get_project") as span:
+        span.set_attribute("endpoint", f"/api/projects/{project_id}")
+        span.set_attribute("method", "GET")
+        span.set_attribute("project_id", project_id)
         
-        response = supabase_client.table("projects").select("*").eq("id", project_id).execute()
-        
-        if response.data:
-            project = response.data[0]
+        try:
+            logfire_logger.info("Getting project", project_id=project_id)
+            supabase_client = get_supabase_client()
             
-            # Get linked sources
-            technical_sources = []
-            business_sources = []
+            response = supabase_client.table("projects").select("*").eq("id", project_id).execute()
             
-            try:
-                # Get source IDs from project_sources table
-                sources_response = supabase_client.table("project_sources").select("source_id, notes").eq("project_id", project["id"]).execute()
+            if response.data:
+                project = response.data[0]
                 
-                # Collect source IDs by type
-                technical_source_ids = []
-                business_source_ids = []
+                # Get linked sources
+                technical_sources = []
+                business_sources = []
                 
-                for source_link in sources_response.data:
-                    if source_link.get("notes") == "technical":
-                        technical_source_ids.append(source_link["source_id"])
-                    elif source_link.get("notes") == "business":
-                        business_source_ids.append(source_link["source_id"])
-                
-                # Fetch full source objects from sources table
-                if technical_source_ids:
-                    tech_sources_response = supabase_client.table("sources").select("*").in_("source_id", technical_source_ids).execute()
-                    technical_sources = tech_sources_response.data
-                
-                if business_source_ids:
-                    biz_sources_response = supabase_client.table("sources").select("*").in_("source_id", business_source_ids).execute()
-                    business_sources = biz_sources_response.data
+                try:
+                    # Get source IDs from project_sources table
+                    sources_response = supabase_client.table("project_sources").select("source_id, notes").eq("project_id", project["id"]).execute()
                     
-            except Exception as e:
-                logger.warning(f"Failed to retrieve linked sources for project {project['id']}: {e}")
-            
-            return {
-                "id": project["id"],
-                "title": project["title"],
-                "github_repo": project.get("github_repo"),
-                "created_at": project["created_at"],
-                "updated_at": project["updated_at"],
-                "prd": project.get("prd", {}),
-                "docs": project.get("docs", []),
-                "features": project.get("features", []),
-                "data": project.get("data", []),
-                "technical_sources": technical_sources,
-                "business_sources": business_sources
-            }
-        else:
-            raise HTTPException(status_code=404, detail={'error': f'Project with ID {project_id} not found'})
+                    # Collect source IDs by type
+                    technical_source_ids = []
+                    business_source_ids = []
+                    
+                    for source_link in sources_response.data:
+                        if source_link.get("notes") == "technical":
+                            technical_source_ids.append(source_link["source_id"])
+                        elif source_link.get("notes") == "business":
+                            business_source_ids.append(source_link["source_id"])
+                    
+                    # Fetch full source objects from sources table
+                    if technical_source_ids:
+                        tech_sources_response = supabase_client.table("sources").select("*").in_("source_id", technical_source_ids).execute()
+                        technical_sources = tech_sources_response.data
+                    
+                    if business_source_ids:
+                        biz_sources_response = supabase_client.table("sources").select("*").in_("source_id", business_source_ids).execute()
+                        business_sources = biz_sources_response.data
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to retrieve linked sources for project {project['id']}: {e}")
                 
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail={'error': str(e)})
+                logfire_logger.info("Project retrieved successfully", project_id=project_id, title=project["title"])
+                span.set_attribute("success", True)
+                span.set_attribute("title", project["title"])
+                
+                return {
+                    "id": project["id"],
+                    "title": project["title"],
+                    "github_repo": project.get("github_repo"),
+                    "created_at": project["created_at"],
+                    "updated_at": project["updated_at"],
+                    "prd": project.get("prd", {}),
+                    "docs": project.get("docs", []),
+                    "features": project.get("features", []),
+                    "data": project.get("data", []),
+                    "technical_sources": technical_sources,
+                    "business_sources": business_sources
+                }
+            else:
+                logfire_logger.warning("Project not found", project_id=project_id)
+                span.set_attribute("found", False)
+                raise HTTPException(status_code=404, detail={'error': f'Project with ID {project_id} not found'})
+                    
+        except HTTPException:
+            raise
+        except Exception as e:
+            logfire_logger.error("Failed to get project", error=str(e), project_id=project_id)
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.put("/projects/{project_id}")
 async def update_project(project_id: str, request: UpdateProjectRequest):
@@ -795,70 +839,119 @@ async def update_project(project_id: str, request: UpdateProjectRequest):
 @router.delete("/projects/{project_id}")
 async def delete_project(project_id: str):
     """Delete a project and all its tasks."""
-    try:
-        supabase_client = get_supabase_client()
+    with logfire_logger.span("api_delete_project") as span:
+        span.set_attribute("endpoint", f"/api/projects/{project_id}")
+        span.set_attribute("method", "DELETE")
+        span.set_attribute("project_id", project_id)
         
-        # Delete project (tasks will be cascade deleted due to foreign key)
-        response = supabase_client.table("projects").delete().eq("id", project_id).execute()
-        
-        return {"message": "Project deleted successfully"}
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail={'error': str(e)})
+        try:
+            logfire_logger.info("Deleting project", project_id=project_id)
+            supabase_client = get_supabase_client()
+            
+            # Delete project (tasks will be cascade deleted due to foreign key)
+            response = supabase_client.table("projects").delete().eq("id", project_id).execute()
+            
+            logfire_logger.info("Project deleted successfully", project_id=project_id)
+            span.set_attribute("success", True)
+            
+            return {"message": "Project deleted successfully"}
+            
+        except Exception as e:
+            logfire_logger.error("Failed to delete project", error=str(e), project_id=project_id)
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.get("/projects/{project_id}/features")
 async def get_project_features(project_id: str):
     """Get features from a project's features JSONB field."""
-    try:
-        supabase_client = get_supabase_client()
+    with logfire_logger.span("api_get_project_features") as span:
+        span.set_attribute("endpoint", f"/api/projects/{project_id}/features")
+        span.set_attribute("method", "GET")
+        span.set_attribute("project_id", project_id)
         
-        response = supabase_client.table("projects").select("features").eq("id", project_id).single().execute()
-        
-        if not response.data:
-            raise HTTPException(status_code=404, detail={'error': 'Project not found'})
-        
-        features = response.data.get("features", [])
-        
-        # Extract feature labels for dropdown options
-        feature_options = []
-        for feature in features:
-            if isinstance(feature, dict) and "data" in feature and "label" in feature["data"]:
-                feature_options.append({
-                    "id": feature.get("id", ""),
-                    "label": feature["data"]["label"],
-                    "type": feature["data"].get("type", ""),
-                    "feature_type": feature.get("type", "page")
-                })
-        
-        return {
-            "features": feature_options,
-            "count": len(feature_options)
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail={'error': str(e)})
+        try:
+            logfire_logger.info("Getting project features", project_id=project_id)
+            supabase_client = get_supabase_client()
+            
+            response = supabase_client.table("projects").select("features").eq("id", project_id).single().execute()
+            
+            if not response.data:
+                logfire_logger.warning("Project not found for features", project_id=project_id)
+                span.set_attribute("found", False)
+                raise HTTPException(status_code=404, detail={'error': 'Project not found'})
+            
+            features = response.data.get("features", [])
+            
+            # Extract feature labels for dropdown options
+            feature_options = []
+            for feature in features:
+                if isinstance(feature, dict) and "data" in feature and "label" in feature["data"]:
+                    feature_options.append({
+                        "id": feature.get("id", ""),
+                        "label": feature["data"]["label"],
+                        "type": feature["data"].get("type", ""),
+                        "feature_type": feature.get("type", "page")
+                    })
+            
+            logfire_logger.info("Project features retrieved", project_id=project_id, feature_count=len(feature_options))
+            span.set_attribute("feature_count", len(feature_options))
+            
+            return {
+                "features": feature_options,
+                "count": len(feature_options)
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logfire_logger.error("Failed to get project features", error=str(e), project_id=project_id)
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.get("/projects/{project_id}/tasks")
 async def list_project_tasks(project_id: str, include_archived: bool = False):
     """List all tasks for a specific project. By default, filters out archived tasks."""
-    try:
-        supabase_client = get_supabase_client()
+    with logfire_logger.span("api_list_project_tasks") as span:
+        span.set_attribute("endpoint", f"/api/projects/{project_id}/tasks")
+        span.set_attribute("method", "GET")
+        span.set_attribute("project_id", project_id)
+        span.set_attribute("include_archived", include_archived)
         
-        # Build query to optionally exclude archived tasks
-        query = supabase_client.table("tasks").select("*").eq("project_id", project_id)
+        try:
+            logfire_logger.info("Listing project tasks", project_id=project_id, include_archived=include_archived)
+            supabase_client = get_supabase_client()
+            
+            # Build query to optionally exclude archived tasks
+            query = supabase_client.table("tasks").select("*").eq("project_id", project_id)
+            
+            # Only include non-archived tasks by default (handle NULL as False for backwards compatibility)
+            if not include_archived:
+                query = query.or_("archived.is.null,archived.eq.false")
+            
+            response = query.order("task_order", desc=False).order("created_at", desc=False).execute()
+            
+            logfire_logger.info("Project tasks retrieved", project_id=project_id, task_count=len(response.data))
+            span.set_attribute("task_count", len(response.data))
+            
+            return response.data
+            
+        except Exception as e:
+            logfire_logger.error("Failed to list project tasks", error=str(e), project_id=project_id)
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail={'error': str(e)})
+
+@router.get("/health")
+async def projects_health():
+    """Health check for projects API."""
+    with logfire_logger.span("api_projects_health") as span:
+        span.set_attribute("endpoint", "/api/health")
+        span.set_attribute("method", "GET")
         
-        # Only include non-archived tasks by default (handle NULL as False for backwards compatibility)
-        if not include_archived:
-            query = query.or_("archived.is.null,archived.eq.false")
+        logfire_logger.info("Projects health check requested")
+        result = {"status": "healthy", "service": "projects"}
+        span.set_attribute("status", "healthy")
         
-        response = query.order("task_order", desc=False).order("created_at", desc=False).execute()
-        
-        return response.data
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail={'error': str(e)})
+        return result
 
 @router.post("/tasks")
 async def create_task(request: CreateTaskRequest):
@@ -1160,7 +1253,15 @@ async def websocket_project_creation_progress(websocket: WebSocket, progress_id:
 @router.get("/health")
 async def projects_health():
     """Health check for projects API."""
-    return {"status": "healthy", "service": "projects"}
+    with logfire_logger.span("api_projects_health") as span:
+        span.set_attribute("endpoint", "/api/health")
+        span.set_attribute("method", "GET")
+        
+        logfire_logger.info("Projects health check requested")
+        result = {"status": "healthy", "service": "projects"}
+        span.set_attribute("status", "healthy")
+        
+        return result
 
 # WebSocket endpoint for real-time task updates
 @router.websocket("/projects/{project_id}/tasks/updates")
@@ -1203,10 +1304,14 @@ class TaskContext:
 async def mcp_update_task_status_with_websockets(task_id: str, status: str):
     """Update task status via MCP tools with WebSocket broadcasting using RAG pattern."""
     with logfire_logger.span("mcp_task_status_update") as span:
+        span.set_attribute("endpoint", f"/api/mcp/tasks/{task_id}/status")
+        span.set_attribute("method", "PUT")
         span.set_attribute("task_id", task_id)
         span.set_attribute("status", status)
         
         try:
+            logfire_logger.info("MCP task status update", task_id=task_id, status=status)
+            
             # Get task to determine project_id
             supabase_client = get_supabase_client()
             task_response = supabase_client.table("tasks").select("*").eq("id", task_id).execute()

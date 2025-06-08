@@ -379,113 +379,194 @@ async def run_ui_tests(
     background_tasks: BackgroundTasks
 ):
     """Execute React UI tests using vitest with real-time streaming output."""
-    execution_id = str(uuid.uuid4())
-    
-    # Create test execution record
-    execution = TestExecution(
-        execution_id=execution_id,
-        test_type=TestType.UI,
-        status=TestStatus.PENDING,
-        started_at=datetime.now()
-    )
-    
-    test_executions[execution_id] = execution
-    
-    # Start background task
-    background_tasks.add_task(execute_tests_background, execution_id, TestType.UI)
-    
-    return TestExecutionResponse(
-        execution_id=execution_id,
-        test_type=TestType.UI,
-        status=TestStatus.PENDING,
-        started_at=execution.started_at,
-        message="React UI test execution started"
-    )
+    with logfire.span("api_run_ui_tests") as span:
+        span.set_attribute("endpoint", "/api/tests/ui/run")
+        span.set_attribute("method", "POST")
+        span.set_attribute("test_type", "ui")
+        
+        execution_id = str(uuid.uuid4())
+        span.set_attribute("execution_id", execution_id)
+        
+        logfire.info("Starting UI test execution", execution_id=execution_id, test_type="ui")
+        
+        # Create test execution record
+        execution = TestExecution(
+            execution_id=execution_id,
+            test_type=TestType.UI,
+            status=TestStatus.PENDING,
+            started_at=datetime.now()
+        )
+        
+        test_executions[execution_id] = execution
+        
+        # Start background task
+        background_tasks.add_task(execute_tests_background, execution_id, TestType.UI)
+        
+        logfire.info("UI test execution queued successfully", execution_id=execution_id)
+        
+        return TestExecutionResponse(
+            execution_id=execution_id,
+            test_type=TestType.UI,
+            status=TestStatus.PENDING,
+            started_at=execution.started_at,
+            message="React UI test execution started"
+        )
 
 @router.get("/status/{execution_id}", response_model=TestStatusResponse)
 async def get_test_status(execution_id: str):
     """Get the status of a specific test execution."""
-    if execution_id not in test_executions:
-        raise HTTPException(status_code=404, detail="Test execution not found")
-    
-    execution = test_executions[execution_id]
-    
-    return TestStatusResponse(
-        execution_id=execution.execution_id,
-        test_type=execution.test_type,
-        status=execution.status,
-        started_at=execution.started_at,
-        completed_at=execution.completed_at,
-        duration_seconds=execution.duration_seconds,
-        exit_code=execution.exit_code,
-        summary=execution.summary
-    )
+    with logfire.span("api_get_test_status") as span:
+        span.set_attribute("endpoint", f"/api/tests/status/{execution_id}")
+        span.set_attribute("method", "GET")
+        span.set_attribute("execution_id", execution_id)
+        
+        try:
+            logfire.info("Getting test execution status", execution_id=execution_id)
+            
+            if execution_id not in test_executions:
+                logfire.warning("Test execution not found", execution_id=execution_id)
+                span.set_attribute("found", False)
+                raise HTTPException(status_code=404, detail="Test execution not found")
+            
+            execution = test_executions[execution_id]
+            
+            logfire.info("Test execution status retrieved", 
+                        execution_id=execution_id, 
+                        status=execution.status, 
+                        test_type=execution.test_type)
+            span.set_attribute("found", True)
+            span.set_attribute("status", execution.status)
+            span.set_attribute("test_type", execution.test_type)
+            span.set_attribute("exit_code", execution.exit_code)
+            
+            return TestStatusResponse(
+                execution_id=execution.execution_id,
+                test_type=execution.test_type,
+                status=execution.status,
+                started_at=execution.started_at,
+                completed_at=execution.completed_at,
+                duration_seconds=execution.duration_seconds,
+                exit_code=execution.exit_code,
+                summary=execution.summary
+            )
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logfire.error("Failed to get test status", error=str(e), execution_id=execution_id)
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/history", response_model=TestHistoryResponse)
 async def get_test_history(limit: int = 50, offset: int = 0):
     """Get test execution history."""
-    executions = list(test_executions.values())
-    
-    # Sort by started_at descending
-    executions.sort(key=lambda x: x.started_at, reverse=True)
-    
-    # Apply pagination
-    total_count = len(executions)
-    paginated_executions = executions[offset:offset + limit]
-    
-    # Convert to response models
-    execution_responses = [
-        TestStatusResponse(
-            execution_id=exec.execution_id,
-            test_type=exec.test_type,
-            status=exec.status,
-            started_at=exec.started_at,
-            completed_at=exec.completed_at,
-            duration_seconds=exec.duration_seconds,
-            exit_code=exec.exit_code,
-            summary=exec.summary
-        )
-        for exec in paginated_executions
-    ]
-    
-    return TestHistoryResponse(
-        executions=execution_responses,
-        total_count=total_count
-    )
+    with logfire.span("api_get_test_history") as span:
+        span.set_attribute("endpoint", "/api/tests/history")
+        span.set_attribute("method", "GET")
+        span.set_attribute("limit", limit)
+        span.set_attribute("offset", offset)
+        
+        try:
+            logfire.info("Getting test execution history", limit=limit, offset=offset)
+            
+            executions = list(test_executions.values())
+            
+            # Sort by started_at descending
+            executions.sort(key=lambda x: x.started_at, reverse=True)
+            
+            # Apply pagination
+            total_count = len(executions)
+            paginated_executions = executions[offset:offset + limit]
+            
+            # Convert to response models
+            execution_responses = [
+                TestStatusResponse(
+                    execution_id=exec.execution_id,
+                    test_type=exec.test_type,
+                    status=exec.status,
+                    started_at=exec.started_at,
+                    completed_at=exec.completed_at,
+                    duration_seconds=exec.duration_seconds,
+                    exit_code=exec.exit_code,
+                    summary=exec.summary
+                )
+                for exec in paginated_executions
+            ]
+            
+            logfire.info("Test execution history retrieved", 
+                        total_count=total_count, 
+                        returned_count=len(execution_responses))
+            span.set_attribute("total_count", total_count)
+            span.set_attribute("returned_count", len(execution_responses))
+            
+            return TestHistoryResponse(
+                executions=execution_responses,
+                total_count=total_count
+            )
+            
+        except Exception as e:
+            logfire.error("Failed to get test history", error=str(e), limit=limit, offset=offset)
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/execution/{execution_id}")
 async def cancel_test_execution(execution_id: str):
     """Cancel a running test execution."""
-    if execution_id not in test_executions:
-        raise HTTPException(status_code=404, detail="Test execution not found")
-    
-    execution = test_executions[execution_id]
-    
-    if execution.status not in [TestStatus.PENDING, TestStatus.RUNNING]:
-        raise HTTPException(status_code=400, detail="Test execution cannot be cancelled")
-    
-    # Try to terminate the process
-    if execution.process:
+    with logfire.span("api_cancel_test_execution") as span:
+        span.set_attribute("endpoint", f"/api/tests/execution/{execution_id}")
+        span.set_attribute("method", "DELETE")
+        span.set_attribute("execution_id", execution_id)
+        
         try:
-            execution.process.terminate()
-            await asyncio.sleep(1)  # Give it a moment to terminate gracefully
-            if execution.process.returncode is None:
-                execution.process.kill()
+            logfire.info("Cancelling test execution", execution_id=execution_id)
+            
+            if execution_id not in test_executions:
+                logfire.warning("Test execution not found for cancellation", execution_id=execution_id)
+                span.set_attribute("found", False)
+                raise HTTPException(status_code=404, detail="Test execution not found")
+            
+            execution = test_executions[execution_id]
+            
+            if execution.status not in [TestStatus.PENDING, TestStatus.RUNNING]:
+                logfire.warning("Test execution cannot be cancelled", 
+                              execution_id=execution_id, 
+                              status=execution.status)
+                span.set_attribute("cancellable", False)
+                span.set_attribute("status", execution.status)
+                raise HTTPException(status_code=400, detail="Test execution cannot be cancelled")
+            
+            # Try to terminate the process
+            if execution.process:
+                try:
+                    execution.process.terminate()
+                    await asyncio.sleep(1)  # Give it a moment to terminate gracefully
+                    if execution.process.returncode is None:
+                        execution.process.kill()
+                except Exception as e:
+                    logfire.warning("Error terminating test process", error=str(e), execution_id=execution_id)
+            
+            execution.status = TestStatus.CANCELLED
+            execution.completed_at = datetime.now()
+            execution.summary = {"result": "Test execution cancelled by user"}
+            
+            # Broadcast cancellation
+            await websocket_manager.broadcast_to_execution(execution_id, {
+                "type": "cancelled",
+                "message": "Test execution cancelled",
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            logfire.info("Test execution cancelled successfully", execution_id=execution_id)
+            span.set_attribute("success", True)
+            
+            return {"message": "Test execution cancelled", "execution_id": execution_id}
+            
+        except HTTPException:
+            raise
         except Exception as e:
-            logger.warning(f"Error terminating process: {e}")
-    
-    execution.status = TestStatus.CANCELLED
-    execution.completed_at = datetime.now()
-    execution.summary = {"result": "Test execution cancelled by user"}
-    
-    # Broadcast cancellation
-    await websocket_manager.broadcast_to_execution(execution_id, {
-        "type": "cancelled",
-        "message": "Test execution cancelled",
-        "timestamp": datetime.now().isoformat()
-    })
-    
-    return {"message": "Test execution cancelled", "execution_id": execution_id}
+            logfire.error("Failed to cancel test execution", error=str(e), execution_id=execution_id)
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail=str(e))
 
 # WebSocket endpoint for real-time test output
 @router.websocket("/stream/{execution_id}")

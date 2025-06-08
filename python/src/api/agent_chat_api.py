@@ -546,30 +546,69 @@ async def create_chat_session(
 @router.get("/sessions/{session_id}")
 async def get_chat_session(session_id: str):
     """Get chat session details."""
-    if session_id not in chat_manager.sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    session = chat_manager.sessions[session_id]
-    return {
-        "success": True,
-        "session": session.model_dump()
-    }
+    with logfire.span("api_get_chat_session") as span:
+        span.set_attribute("endpoint", f"/api/agent-chat/sessions/{session_id}")
+        span.set_attribute("method", "GET")
+        span.set_attribute("session_id", session_id)
+        
+        try:
+            logfire.info("Getting chat session", session_id=session_id)
+            
+            if session_id not in chat_manager.sessions:
+                logfire.warning("Chat session not found", session_id=session_id)
+                span.set_attribute("found", False)
+                raise HTTPException(status_code=404, detail="Session not found")
+            
+            session = chat_manager.sessions[session_id]
+            
+            logfire.info("Chat session retrieved", session_id=session_id, message_count=len(session.messages))
+            span.set_attribute("found", True)
+            span.set_attribute("message_count", len(session.messages))
+            span.set_attribute("agent_type", session.agent_type)
+            
+            return {
+                "success": True,
+                "session": session.model_dump()
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logfire.error("Failed to get chat session", error=str(e), session_id=session_id)
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/sessions/{session_id}/messages")
 async def send_message(session_id: str, request: ChatRequest):
     """Send a message to an agent in a chat session."""
-    try:
-        await chat_manager.process_user_message(
-            session_id=session_id,
-            message_content=request.message,
-            context=request.context
-        )
-        return {
-            "success": True,
-            "message": "Message sent successfully"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    with logfire.span("api_send_chat_message") as span:
+        span.set_attribute("endpoint", f"/api/agent-chat/sessions/{session_id}/messages")
+        span.set_attribute("method", "POST")
+        span.set_attribute("session_id", session_id)
+        span.set_attribute("message_length", len(request.message))
+        span.set_attribute("has_context", request.context is not None)
+        
+        try:
+            logfire.info("Sending chat message", session_id=session_id, message_length=len(request.message))
+            
+            await chat_manager.process_user_message(
+                session_id=session_id,
+                message_content=request.message,
+                context=request.context
+            )
+            
+            logfire.info("Chat message sent successfully", session_id=session_id)
+            span.set_attribute("success", True)
+            
+            return {
+                "success": True,
+                "message": "Message sent successfully"
+            }
+            
+        except Exception as e:
+            logfire.error("Failed to send chat message", error=str(e), session_id=session_id)
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail=str(e))
 
 @router.websocket("/sessions/{session_id}/ws")
 async def websocket_chat(websocket: WebSocket, session_id: str):
@@ -620,40 +659,79 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
         print(f"🧹 DEBUG: Cleaning up WebSocket for session {session_id}")
         chat_manager.remove_websocket(session_id, websocket)
 
-# Add new endpoint to monitor rate limiting status
 @router.get("/status")
 async def get_chat_status():
     """Get current chat system status including rate limiting info."""
-    return {
-        "success": True,
-        "status": {
-            "active_sessions": len(chat_manager.sessions),
-            "active_websockets": sum(len(ws_list) for ws_list in chat_manager.websockets.values()),
-            "processing_requests": chat_manager._processing_requests,
-            "max_concurrent_requests": chat_manager._max_concurrent_requests,
-            "queued_requests": chat_manager._request_queue.qsize(),
-            "cached_responses": len(chat_manager._response_cache)
-        }
-    }
+    with logfire.span("api_get_chat_status") as span:
+        span.set_attribute("endpoint", "/api/agent-chat/status")
+        span.set_attribute("method", "GET")
+        
+        try:
+            logfire.info("Getting chat system status")
+            
+            status_data = {
+                "active_sessions": len(chat_manager.sessions),
+                "active_websockets": sum(len(ws_list) for ws_list in chat_manager.websockets.values()),
+                "processing_requests": chat_manager._processing_requests,
+                "max_concurrent_requests": chat_manager._max_concurrent_requests,
+                "queued_requests": chat_manager._request_queue.qsize(),
+                "cached_responses": len(chat_manager._response_cache)
+            }
+            
+            logfire.info("Chat system status retrieved", **status_data)
+            span.set_attribute("active_sessions", status_data["active_sessions"])
+            span.set_attribute("active_websockets", status_data["active_websockets"])
+            span.set_attribute("processing_requests", status_data["processing_requests"])
+            span.set_attribute("queued_requests", status_data["queued_requests"])
+            
+            return {
+                "success": True,
+                "status": status_data
+            }
+            
+        except Exception as e:
+            logfire.error("Failed to get chat status", error=str(e))
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/debug/token-usage")
 async def debug_token_usage():
     """Debug endpoint to show simplified agent info."""
-    return {
-        "success": True,
-        "info": {
-            "agent_type": "simplified_pydantic_ai",
-            "model": "openai:gpt-4o-mini",
-            "features": [
-                "Single agent instance",
-                "No complex inheritance",
-                "Direct PydanticAI usage",
-                "Built-in rate limit handling"
-            ]
-        },
-        "estimated_tokens": {
-            "simple_chat": "~100 tokens (system prompt + message + tools)",
-            "document_tasks": "~200-500 tokens (depending on complexity)",
-            "previous_broken_version": "~900+ tokens (with complex schemas and inheritance)"
-        }
-    } 
+    with logfire.span("api_debug_token_usage") as span:
+        span.set_attribute("endpoint", "/api/agent-chat/debug/token-usage")
+        span.set_attribute("method", "GET")
+        
+        try:
+            logfire.info("Getting debug token usage info")
+            
+            debug_info = {
+                "agent_type": "simplified_pydantic_ai",
+                "model": "openai:gpt-4o-mini",
+                "features": [
+                    "Single agent instance",
+                    "No complex inheritance",
+                    "Direct PydanticAI usage",
+                    "Built-in rate limit handling"
+                ]
+            }
+            
+            estimated_tokens = {
+                "simple_chat": "~100 tokens (system prompt + message + tools)",
+                "document_tasks": "~200-500 tokens (depending on complexity)",
+                "previous_broken_version": "~900+ tokens (with complex schemas and inheritance)"
+            }
+            
+            logfire.info("Debug token usage info retrieved")
+            span.set_attribute("agent_type", debug_info["agent_type"])
+            span.set_attribute("model", debug_info["model"])
+            
+            return {
+                "success": True,
+                "info": debug_info,
+                "estimated_tokens": estimated_tokens
+            }
+            
+        except Exception as e:
+            logfire.error("Failed to get debug token usage", error=str(e))
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail=str(e)) 
