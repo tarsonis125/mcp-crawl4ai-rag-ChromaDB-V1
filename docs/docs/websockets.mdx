@@ -15,6 +15,7 @@ WebSocket connections enable real-time, bidirectional communication without the 
 - **📡 Server Log Streaming**: MCP server logs streamed to UI dashboard  
 - **🎯 Knowledge Base Updates**: Real-time synchronization of knowledge items
 - **💬 Chat Streaming**: Live RAG query responses
+- **🤖 MCP-WebSocket Bridge**: Real-time task updates when AI agents modify data through MCP
 
 ## 🏗️ Architecture
 
@@ -30,6 +31,7 @@ graph TB
         FastAPI[FastAPI Application]
         WS_Manager[WebSocket Manager]
         Progress[Progress Manager]
+        DB_Detector[Database Change Detector]
         MCP[MCP Server]
     end
     
@@ -37,21 +39,276 @@ graph TB
         EP1["/api/crawl-progress/{id}"]
         EP2["/api/mcp/logs/stream"]
         EP3["/api/knowledge-items/stream"]
+        EP4["/api/projects/{id}/tasks/ws"]
+    end
+    
+    subgraph "Database"
+        Tasks[Tasks Table]
+        Projects[Projects Table]
+        Timestamps[updated_at columns]
     end
     
     UI --> WS_Client
     WS_Client <--> EP1
     WS_Client <--> EP2
     WS_Client <--> EP3
+    WS_Client <--> EP4
     EP1 <--> Progress
     EP2 <--> MCP
     EP3 <--> WS_Manager
+    EP4 <--> DB_Detector
     Progress --> FastAPI
-    MCP --> FastAPI
+    MCP --> Tasks
+    DB_Detector --> Tasks
+    DB_Detector --> Projects
+    DB_Detector --> Timestamps
     WS_Manager --> FastAPI
     
     State --> UI
     WS_Client --> State
+```
+
+## 🚀 **NEW: Database Change Detection Pattern**
+
+### **The MCP-WebSocket Bridge Problem**
+
+When AI agents update tasks through MCP tools, the changes don't trigger real-time WebSocket updates because:
+
+1. **MCP servers should be simple** - No WebSocket infrastructure (follows MCP best practices)
+2. **FastAPI handles WebSockets** - Real-time infrastructure belongs in the web server
+3. **Database is the bridge** - MCP writes to DB, FastAPI needs to detect changes
+
+### **The Solution: Database Change Detection**
+
+A **polling-based change detection system** that bridges MCP operations with WebSocket broadcasts while maintaining perfect separation of concerns:
+
+```python
+# Database Change Detection System for MCP-WebSocket Bridge
+class DatabaseChangeDetector:
+    """
+    Monitors database changes and broadcasts WebSocket updates.
+    This bridges MCP server operations with real-time WebSocket notifications
+    while maintaining separation of concerns.
+    """
+    
+    def __init__(self):
+        self.last_check_times: Dict[str, datetime] = {}
+        self.polling_tasks: Dict[str, asyncio.Task] = {}
+        self.check_interval = 2  # seconds
+        self.websocket_connections: Dict[str, List[WebSocket]] = {}
+    
+    async def add_websocket_connection(self, project_id: str, websocket: WebSocket):
+        """Add WebSocket connection and start monitoring if first connection"""
+        if project_id not in self.websocket_connections:
+            self.websocket_connections[project_id] = []
+        
+        self.websocket_connections[project_id].append(websocket)
+        
+        # Start monitoring this project if first connection
+        if len(self.websocket_connections[project_id]) == 1:
+            await self._start_monitoring(project_id)
+    
+    async def _start_monitoring(self, project_id: str):
+        """Start polling for database changes for this project"""
+        self.last_check_times[project_id] = datetime.now(timezone.utc)
+        
+        async def monitor_loop():
+            while project_id in self.websocket_connections and self.websocket_connections[project_id]:
+                try:
+                    await self._check_and_broadcast_changes(project_id)
+                    await asyncio.sleep(self.check_interval)
+                except Exception as e:
+                    print(f"Error monitoring project {project_id}: {e}")
+                    await asyncio.sleep(self.check_interval)
+        
+        # Store the monitoring task
+        self.polling_tasks[project_id] = asyncio.create_task(monitor_loop())
+    
+    async def _check_and_broadcast_changes(self, project_id: str):
+        """Check for database changes and broadcast via WebSocket"""
+        last_check = self.last_check_times.get(project_id)
+        if not last_check:
+            return
+        
+        # Query for tasks updated since last check
+        query = """
+            SELECT id, title, status, assignee, task_order, updated_at
+            FROM tasks 
+            WHERE project_id = $1 AND updated_at > $2
+            ORDER BY updated_at DESC
+        """
+        
+        async with get_connection() as conn:
+            changed_tasks = await conn.fetch(query, project_id, last_check)
+        
+        if changed_tasks:
+            # Update last check time
+            self.last_check_times[project_id] = datetime.now(timezone.utc)
+            
+            # Broadcast changes to all connected WebSockets
+            tasks_data = [dict(task) for task in changed_tasks]
+            await self._broadcast_to_project(project_id, {
+                "type": "tasks_updated",
+                "data": {
+                    "project_id": project_id,
+                    "updated_tasks": tasks_data,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+            })
+    
+    async def _broadcast_to_project(self, project_id: str, message: dict):
+        """Broadcast message to all WebSocket connections for a project"""
+        if project_id not in self.websocket_connections:
+            return
+        
+        disconnected = []
+        for websocket in self.websocket_connections[project_id]:
+            try:
+                await websocket.send_json(message)
+            except Exception as e:
+                print(f"Failed to send WebSocket message: {e}")
+                disconnected.append(websocket)
+        
+        # Clean up disconnected WebSockets
+        for ws in disconnected:
+            self.remove_websocket_connection(project_id, ws)
+    
+    def remove_websocket_connection(self, project_id: str, websocket: WebSocket):
+        """Remove WebSocket connection and stop monitoring if no connections left"""
+        if project_id in self.websocket_connections:
+            try:
+                self.websocket_connections[project_id].remove(websocket)
+                if not self.websocket_connections[project_id]:
+                    # No more connections, stop monitoring
+                    del self.websocket_connections[project_id]
+                    if project_id in self.polling_tasks:
+                        self.polling_tasks[project_id].cancel()
+                        del self.polling_tasks[project_id]
+                    if project_id in self.last_check_times:
+                        del self.last_check_times[project_id]
+            except ValueError:
+                pass  # WebSocket already removed
+
+# Global database change detector
+db_change_detector = DatabaseChangeDetector()
+```
+
+### **WebSocket Endpoint for Task Updates**
+
+```python
+@router.websocket("/projects/{project_id}/tasks/ws")
+async def websocket_project_tasks(websocket: WebSocket, project_id: str):
+    """WebSocket endpoint for real-time task updates"""
+    try:
+        await websocket.accept()
+        print(f"WebSocket connected for project tasks: {project_id}")
+        
+        # Add to change detector (starts monitoring automatically)
+        await db_change_detector.add_websocket_connection(project_id, websocket)
+        
+        # Send initial task state
+        async with get_connection() as conn:
+            tasks = await conn.fetch(
+                "SELECT * FROM tasks WHERE project_id = $1 AND archived = false ORDER BY task_order",
+                project_id
+            )
+        
+        initial_data = {
+            "type": "initial_tasks",
+            "data": {
+                "project_id": project_id,
+                "tasks": [dict(task) for task in tasks]
+            }
+        }
+        await websocket.send_json(initial_data)
+        
+        # Keep connection alive
+        while True:
+            try:
+                message = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+                if message == "ping":
+                    await websocket.send_json({"type": "pong"})
+            except asyncio.TimeoutError:
+                await websocket.send_json({"type": "heartbeat"})
+            except WebSocketDisconnect:
+                break
+                
+    except WebSocketDisconnect:
+        print(f"WebSocket disconnected for project: {project_id}")
+    except Exception as e:
+        print(f"WebSocket error for project {project_id}: {e}")
+    finally:
+        db_change_detector.remove_websocket_connection(project_id, websocket)
+```
+
+### **How the Pattern Works**
+
+1. **🔌 WebSocket Connection**: Frontend connects to `/api/projects/{id}/tasks/ws`
+2. **👁️ Start Monitoring**: Database change detector begins polling for changes
+3. **🤖 MCP Operation**: AI agent calls MCP tool to update task (e.g., change status)
+4. **💾 Database Write**: MCP tool updates database with new `updated_at` timestamp
+5. **🔍 Change Detection**: Polling system detects `updated_at` > last check time
+6. **📡 WebSocket Broadcast**: Changed tasks are broadcast to all connected clients
+7. **⚡ Real-time Update**: Frontend receives update and re-renders UI instantly
+
+### **Key Benefits**
+
+- **✅ Separation of Concerns**: MCP stays simple, FastAPI handles WebSockets
+- **✅ Real-time Updates**: Instant UI updates when AI agents modify data
+- **✅ Resource Efficient**: Only monitors projects with active WebSocket connections
+- **✅ Automatic Lifecycle**: Starts/stops monitoring based on connection state
+- **✅ MCP Best Practices**: Follows official MCP server architecture guidelines
+
+### **Frontend Integration**
+
+```typescript
+// Hook for real-time task updates
+const useRealtimeTaskUpdates = (projectId: string) => {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [isConnected, setIsConnected] = useState(false);
+  
+  useEffect(() => {
+    const wsUrl = `ws://localhost:8080/api/projects/${projectId}/tasks/ws`;
+    const ws = new WebSocket(wsUrl);
+    
+    ws.onopen = () => {
+      console.log('🚀 Connected to real-time task updates');
+      setIsConnected(true);
+    };
+    
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      
+      if (message.type === 'initial_tasks') {
+        setTasks(message.data.tasks);
+      } else if (message.type === 'tasks_updated') {
+        // Update specific tasks that were changed
+        setTasks(currentTasks => {
+          const updatedTasks = [...currentTasks];
+          message.data.updated_tasks.forEach(updatedTask => {
+            const index = updatedTasks.findIndex(t => t.id === updatedTask.id);
+            if (index >= 0) {
+              updatedTasks[index] = { ...updatedTasks[index], ...updatedTask };
+            }
+          });
+          return updatedTasks;
+        });
+        
+        // Show notification
+        toast.success(`Tasks updated by AI agent!`);
+      }
+    };
+    
+    ws.onclose = () => {
+      console.log('❌ Disconnected from task updates');
+      setIsConnected(false);
+    };
+    
+    return () => ws.close();
+  }, [projectId]);
+  
+  return { tasks, isConnected };
+};
 ```
 
 ## 📡 WebSocket Endpoints
@@ -141,6 +398,51 @@ graph TB
     "total": 156,
     "page": 1,
     "per_page": 20
+  }
+}
+```
+
+### **Task Updates: `/api/projects/{project_id}/tasks/ws`**
+
+**Purpose**: Real-time task updates when AI agents modify data through MCP
+
+**Message Types**:
+- `initial_tasks`: Full task list on connection
+- `tasks_updated`: Incremental updates when tasks change
+- `heartbeat`: Keep-alive ping
+
+**Example Message Flow**:
+```json
+// Initial connection
+{
+  "type": "initial_tasks",
+  "data": {
+    "project_id": "0b6665f6-ceb8-49d7-a9f0-e6baf07eadb9",
+    "tasks": [
+      {
+        "id": "task-1",
+        "title": "Task 1",
+        "status": "todo",
+        "assignee": "User",
+        "task_order": 1
+      }
+    ]
+  }
+}
+
+// Real-time update (when AI agent changes task via MCP)
+{
+  "type": "tasks_updated", 
+  "data": {
+    "project_id": "0b6665f6-ceb8-49d7-a9f0-e6baf07eadb9",
+    "updated_tasks": [
+      {
+        "id": "task-1",
+        "status": "doing",
+        "updated_at": "2025-06-08T04:39:43.928693+00:00"
+      }
+    ],
+    "timestamp": "2025-06-08T04:39:44.123456+00:00"
   }
 }
 ```
