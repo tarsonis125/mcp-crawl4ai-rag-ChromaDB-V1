@@ -33,42 +33,62 @@ const ItemTypes = {
 const getAssigneeIcon = (assigneeName: 'User' | 'Archon' | 'AI IDE Agent') => {
   switch (assigneeName) {
     case 'User':
-      return <User className="w-4 h-4 text-blue-400" />;
+      return <User className="w-4 h-4 text-blue-500 dark:text-blue-400" />;
     case 'AI IDE Agent':
-      return <Bot className="w-4 h-4 text-purple-400" />;
+      return <Bot className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />;
     case 'Archon':
-      return <img src="/logo-neon.svg" alt="Archon" className="w-4 h-4" />;
+      return <img src="/logo-neon.svg" alt="Archon" className="w-4 h-4 text-pink-500 dark:text-pink-400" />;
     default:
-      return <User className="w-4 h-4 text-blue-400" />;
+      return <User className="w-4 h-4 text-blue-500 dark:text-blue-400" />;
   }
 };
 
 const getAssigneeGlow = (assigneeName: 'User' | 'Archon' | 'AI IDE Agent') => {
   switch (assigneeName) {
     case 'User':
-      return 'shadow-[0_0_10px_rgba(59,130,246,0.4)]';
+      return 'shadow-[0_0_12px_rgba(59,130,246,0.6)] hover:shadow-[0_0_16px_rgba(59,130,246,0.8)]'; // blue glow
     case 'AI IDE Agent':
-      return 'shadow-[0_0_10px_rgba(168,85,247,0.4)]';
+      return 'shadow-[0_0_12px_rgba(16,185,129,0.6)] hover:shadow-[0_0_16px_rgba(16,185,129,0.8)]'; // emerald green glow
     case 'Archon':
-      return 'shadow-[0_0_10px_rgba(34,211,238,0.4)]';
+      return 'shadow-[0_0_12px_rgba(236,72,153,0.6)] hover:shadow-[0_0_16px_rgba(236,72,153,0.8)]'; // pink glow
     default:
-      return 'shadow-[0_0_10px_rgba(59,130,246,0.4)]';
+      return 'shadow-[0_0_10px_rgba(59,130,246,0.5)]';
   }
 };
 
-// Get color based on task order (lower = higher priority = warmer color)
-const getOrderColor = (order: number) => {
-  if (order <= 3) return 'bg-rose-500';
-  if (order <= 6) return 'bg-orange-500';
-  if (order <= 10) return 'bg-blue-500';
-  return 'bg-emerald-500';
+const getAssigneeGlassStyle = (assigneeName: 'User' | 'Archon' | 'AI IDE Agent') => {
+  switch (assigneeName) {
+    case 'User':
+      return 'backdrop-blur-md bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30 border-blue-400 dark:border-blue-500'; // blue glass
+    case 'AI IDE Agent':
+      return 'backdrop-blur-md bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30 border-emerald-400 dark:border-emerald-500'; // emerald green glass (like toggle)
+    case 'Archon':
+      return 'backdrop-blur-md bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30 border-pink-400 dark:border-pink-500'; // pink glass
+    default:
+      return 'backdrop-blur-md bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30 border-blue-400 dark:border-blue-500';
+  }
+};
+
+// Get glass morphism style based on task order (lower = higher priority = warmer color)
+const getOrderGlassStyle = (order: number) => {
+  if (order <= 3) return 'backdrop-blur-md bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30 border-rose-400 dark:border-rose-500'; // red glass
+  if (order <= 6) return 'backdrop-blur-md bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30 border-orange-400 dark:border-orange-500'; // orange glass
+  if (order <= 10) return 'backdrop-blur-md bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30 border-blue-400 dark:border-blue-500'; // blue glass
+  return 'backdrop-blur-md bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30 border-emerald-400 dark:border-emerald-500'; // green glass
+};
+
+const getOrderTextColor = (order: number) => {
+  if (order <= 3) return 'text-rose-500 dark:text-rose-400'; // red text
+  if (order <= 6) return 'text-orange-500 dark:text-orange-400'; // orange text
+  if (order <= 10) return 'text-blue-500 dark:text-blue-400'; // blue text
+  return 'text-emerald-500 dark:text-emerald-400'; // green text
 };
 
 const getOrderGlow = (order: number) => {
-  if (order <= 3) return 'shadow-[0_0_10px_rgba(244,63,94,0.7)]';
-  if (order <= 6) return 'shadow-[0_0_10px_rgba(249,115,22,0.7)]';
-  if (order <= 10) return 'shadow-[0_0_10px_rgba(59,130,246,0.7)]';
-  return 'shadow-[0_0_10px_rgba(16,185,129,0.7)]';
+  if (order <= 3) return 'shadow-[0_0_12px_rgba(244,63,94,0.6)] hover:shadow-[0_0_16px_rgba(244,63,94,0.8)]'; // red glow
+  if (order <= 6) return 'shadow-[0_0_12px_rgba(249,115,22,0.6)] hover:shadow-[0_0_16px_rgba(249,115,22,0.8)]'; // orange glow
+  if (order <= 10) return 'shadow-[0_0_12px_rgba(59,130,246,0.6)] hover:shadow-[0_0_16px_rgba(59,130,246,0.8)]'; // blue glow
+  return 'shadow-[0_0_12px_rgba(16,185,129,0.6)] hover:shadow-[0_0_16px_rgba(16,185,129,0.8)]'; // green glow
 };
 
 // Helper function to reorder tasks properly
@@ -121,9 +141,12 @@ const EditableCell = ({
     return (
       <div 
         onClick={onEdit}
-        className="cursor-pointer hover:bg-gray-100/50 dark:hover:bg-gray-800/30 p-1 rounded transition-colors min-h-[24px] flex items-center"
+        className="cursor-pointer hover:bg-gray-100/50 dark:hover:bg-gray-800/30 p-1 rounded transition-colors min-h-[24px] flex items-center truncate"
+        title={value || placeholder}
       >
-        {value || <span className="text-gray-400 italic">Click to edit</span>}
+        <span className="truncate">
+          {value || <span className="text-gray-400 italic">Click to edit</span>}
+        </span>
       </div>
     );
   }
@@ -198,6 +221,7 @@ const DraggableTaskRow = ({
   tasksInStatus 
 }: DraggableTaskRowProps) => {
   const [editingField, setEditingField] = useState<string | null>(null);
+  const [isHovering, setIsHovering] = useState(false);
   
   const [{ isDragging }, drag] = useDrag({
     type: ItemTypes.TASK,
@@ -207,9 +231,10 @@ const DraggableTaskRow = ({
     }),
   });
 
-  const [, drop] = useDrop({
+  const [{ isOver, canDrop }, drop] = useDrop({
     accept: ItemTypes.TASK,
-    hover: (draggedItem: { id: string; index: number; status: Task['status'] }) => {
+    hover: (draggedItem: { id: string; index: number; status: Task['status'] }, monitor) => {
+      if (!monitor.isOver({ shallow: true })) return;
       if (draggedItem.id === task.id) return;
       if (draggedItem.status !== task.status) return;
       
@@ -218,19 +243,18 @@ const DraggableTaskRow = ({
       
       if (draggedIndex === hoveredIndex) return;
       
-      // Improved reordering logic using React DND best practices
-      // Reorder the tasks array and calculate proper sequential orders
-      const reorderedTasks = reorderTasks(tasksInStatus, draggedIndex, hoveredIndex);
+      console.log('HOVER: Moving task', draggedItem.id, 'from index', draggedIndex, 'to', hoveredIndex);
       
-      // Find the new order for the dragged task
-      const draggedTask = reorderedTasks.find(t => t.id === draggedItem.id);
-      if (draggedTask) {
-        onTaskReorder(draggedItem.id, draggedTask.task_order, task.status);
-      }
+      // Move the task immediately for visual feedback
+      onTaskReorder(draggedItem.id, hoveredIndex, task.status);
       
-      // Update the dragged item's index for continued hover calculations
+      // Update the dragged item's index to prevent re-triggering
       draggedItem.index = hoveredIndex;
     },
+    collect: (monitor) => ({
+      isOver: !!monitor.isOver(),
+      canDrop: !!monitor.canDrop(),
+    }),
   });
 
   const handleUpdateField = async (field: string, value: string) => {
@@ -260,37 +284,35 @@ const DraggableTaskRow = ({
     <tr 
       ref={(node) => drag(drop(node))}
       className={`
-        group transition-all duration-300 cursor-move
+        group transition-all duration-200 cursor-move
         ${index % 2 === 0 ? 'bg-white/50 dark:bg-black/50' : 'bg-gray-50/80 dark:bg-gray-900/30'}
         hover:bg-gradient-to-r hover:from-cyan-50/70 hover:to-purple-50/70 dark:hover:from-cyan-900/20 dark:hover:to-purple-900/20
         border-b border-gray-200 dark:border-gray-800 last:border-b-0
-        ${isDragging ? 'opacity-50' : ''}
+        ${isDragging ? 'opacity-50 scale-105 shadow-lg z-50' : ''}
+        ${isOver && canDrop ? 'bg-cyan-100/50 dark:bg-cyan-900/20 border-cyan-400' : ''}
+        ${isHovering ? 'transform translate-y-1 shadow-md' : ''}
       `}
+      onMouseLeave={() => setIsHovering(false)}
     >
       <td className="p-3">
         <div className="flex items-center justify-center">
-          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white ${getOrderColor(task.task_order)} ${getOrderGlow(task.task_order)}`}>
+          <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-all duration-300 ${getOrderGlassStyle(task.task_order)} ${getOrderTextColor(task.task_order)} ${getOrderGlow(task.task_order)}`}>
             {task.task_order}
           </div>
         </div>
       </td>
       <td className="p-3 text-gray-800 dark:text-gray-200 group-hover:text-gray-900 dark:group-hover:text-white transition-colors relative">
-        <div className="absolute left-0 top-0 bottom-0 w-[3px] transition-all duration-300 group-hover:w-[4px] group-hover:opacity-100" 
-             style={{
-               backgroundColor: getOrderColor(task.task_order).replace('bg-', ''),
-               boxShadow: `0 0 8px ${getOrderColor(task.task_order).includes('rose') ? '#f43f5e' : getOrderColor(task.task_order).includes('orange') ? '#f97316' : getOrderColor(task.task_order).includes('blue') ? '#3b82f6' : '#10b981'}`,
-               opacity: 0.8
-             }}
-        />
-        <div className="pl-2">
-          <EditableCell
-            value={task.title}
-            onSave={(value) => handleUpdateField('title', value)}
-            isEditing={editingField === 'title'}
-            onEdit={() => setEditingField('title')}
-            onCancel={() => setEditingField(null)}
-            placeholder="Task title..."
-          />
+        <div className="min-w-0">
+          <div className="truncate">
+            <EditableCell
+              value={task.title}
+              onSave={(value) => handleUpdateField('title', value)}
+              isEditing={editingField === 'title'}
+              onEdit={() => setEditingField('title')}
+              onCancel={() => setEditingField(null)}
+              placeholder="Task title..."
+            />
+          </div>
         </div>
       </td>
       <td className="p-3">
@@ -315,32 +337,44 @@ const DraggableTaskRow = ({
         />
       </td>
       <td className="p-3">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center justify-center w-6 h-6 rounded-full bg-white/80 dark:bg-black/70 border border-gray-300 dark:border-gray-700 group-hover:border-cyan-500/50 transition-colors backdrop-blur-md" 
-               style={{boxShadow: getAssigneeGlow(task.assignee?.name || 'User')}}
-          >
-            {getAssigneeIcon(task.assignee?.name || 'User')}
-          </div>
+        <div className="truncate">
           <EditableCell
-            value={task.assignee?.name || 'User'}
-            onSave={(value) => handleUpdateField('assignee', value)}
-            type="select"
-            options={['User', 'Archon', 'AI IDE Agent']}
-            isEditing={editingField === 'assignee'}
-            onEdit={() => setEditingField('assignee')}
+            value={task.feature}
+            onSave={(value) => handleUpdateField('feature', value)}
+            isEditing={editingField === 'feature'}
+            onEdit={() => setEditingField('feature')}
             onCancel={() => setEditingField(null)}
+            placeholder="Feature name..."
           />
         </div>
       </td>
       <td className="p-3">
-        <EditableCell
-          value={task.feature}
-          onSave={(value) => handleUpdateField('feature', value)}
-          isEditing={editingField === 'feature'}
-          onEdit={() => setEditingField('feature')}
-          onCancel={() => setEditingField(null)}
-          placeholder="Feature name..."
-        />
+        <div className="flex items-center justify-center">
+          <div 
+            className={`flex items-center justify-center w-8 h-8 rounded-full border-2 transition-all duration-300 cursor-pointer hover:scale-110 ${getAssigneeGlassStyle(task.assignee?.name || 'User')} ${getAssigneeGlow(task.assignee?.name || 'User')}`}
+            onClick={() => setEditingField('assignee')}
+            title={`Assignee: ${task.assignee?.name || 'User'}`}
+          >
+            {getAssigneeIcon(task.assignee?.name || 'User')}
+          </div>
+          {editingField === 'assignee' && (
+            <div className="absolute z-50 mt-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg p-2">
+              <select
+                value={task.assignee?.name || 'User'}
+                onChange={(e) => {
+                  handleUpdateField('assignee', e.target.value);
+                  setEditingField(null);
+                }}
+                className="bg-white/90 dark:bg-black/90 border border-cyan-300 dark:border-cyan-600 rounded px-2 py-1 text-sm focus:outline-none focus:border-cyan-500"
+                autoFocus
+              >
+                <option value="User">User</option>
+                <option value="Archon">Archon</option>
+                <option value="AI IDE Agent">AI IDE Agent</option>
+              </select>
+            </div>
+          )}
+        </div>
       </td>
       <td className="p-3">
         <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -386,19 +420,19 @@ const DraggableTaskRow = ({
   );
 };
 
-// Add Task Row Component
+// Add Task Row Component - Always visible empty input row
 interface AddTaskRowProps {
   onTaskCreate?: (task: Omit<Task, 'id'>) => Promise<void>;
   tasks: Task[];
+  statusFilter: Task['status'] | 'all';
 }
 
-const AddTaskRow = ({ onTaskCreate, tasks }: AddTaskRowProps) => {
-  const [isAdding, setIsAdding] = useState(false);
+const AddTaskRow = ({ onTaskCreate, tasks, statusFilter }: AddTaskRowProps) => {
   const [newTask, setNewTask] = useState<Omit<Task, 'id'>>({
     title: '',
     description: '',
-    status: 'backlog',
-    assignee: { name: 'User', avatar: '' },
+    status: statusFilter === 'all' ? 'backlog' : statusFilter,
+    assignee: { name: 'AI IDE Agent', avatar: '' },
     feature: '',
     featureColor: '#3b82f6',
     task_order: 1
@@ -407,62 +441,51 @@ const AddTaskRow = ({ onTaskCreate, tasks }: AddTaskRowProps) => {
   const handleCreateTask = async () => {
     if (!newTask.title.trim() || !onTaskCreate) return;
     
-    // Calculate the highest task order + 1
-    const maxOrder = Math.max(...tasks.map(t => t.task_order), 0);
+    // Calculate the next order number for the target status
+    const targetStatus = newTask.status;
+    const tasksInStatus = tasks.filter(t => t.status === targetStatus);
+    const nextOrder = tasksInStatus.length > 0 ? Math.max(...tasksInStatus.map(t => t.task_order)) + 1 : 1;
     
     try {
       await onTaskCreate({
         ...newTask,
-        task_order: maxOrder + 1
+        task_order: nextOrder
       });
       
-      // Reset form
-      setNewTask({
+      // Reset only the title to allow quick adding
+      setNewTask(prev => ({
+        ...prev,
         title: '',
-        description: '',
-        status: 'backlog',
-        assignee: { name: 'User', avatar: '' },
-        feature: '',
-        featureColor: '#3b82f6',
-        task_order: 1
-      });
-      setIsAdding(false);
+        description: ''
+      }));
     } catch (error) {
       console.error('Failed to create task:', error);
     }
   };
 
-  const handleCancel = () => {
-    setNewTask({
-      title: '',
-      description: '',
-      status: 'backlog',
-      assignee: { name: 'User', avatar: '' },
-      feature: '',
-      featureColor: '#3b82f6',
-      task_order: 1
-    });
-    setIsAdding(false);
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleCreateTask();
+    }
   };
 
-  if (!isAdding) {
-    return (
-      <tr className="border-t-2 border-dashed border-gray-300 dark:border-gray-600">
-        <td colSpan={6} className="p-4 text-center">
-          <button
-            onClick={() => setIsAdding(true)}
-            className="flex items-center gap-2 mx-auto px-4 py-2 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 rounded-lg transition-colors duration-200 border border-cyan-500/30 hover:border-cyan-500/50"
-          >
-            <Plus className="w-4 h-4" />
-            Add New Task
-          </button>
-        </td>
-      </tr>
-    );
-  }
+  // Update status when filter changes
+  React.useEffect(() => {
+    if (statusFilter !== 'all') {
+      setNewTask(prev => ({ ...prev, status: statusFilter }));
+    }
+  }, [statusFilter]);
 
   return (
-    <tr className="border-t-2 border-dashed border-cyan-300 dark:border-cyan-600 bg-cyan-50/30 dark:bg-cyan-900/10">
+    <>
+      <tr className="border-t border-cyan-400 dark:border-cyan-500 bg-cyan-50/30 dark:bg-cyan-900/10 relative">
+        {/* Toned down neon blue line separator */}
+        <td colSpan={6} className="p-0 relative">
+          <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_4px_1px_rgba(34,211,238,0.4)] dark:shadow-[0_0_6px_2px_rgba(34,211,238,0.5)]"></div>
+        </td>
+      </tr>
+      <tr className="bg-cyan-50/20 dark:bg-cyan-900/5">
       <td className="p-3">
         <div className="flex items-center justify-center">
           <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white bg-cyan-500 shadow-[0_0_10px_rgba(34,211,238,0.5)]">
@@ -475,8 +498,9 @@ const AddTaskRow = ({ onTaskCreate, tasks }: AddTaskRowProps) => {
           type="text"
           value={newTask.title}
           onChange={(e) => setNewTask(prev => ({ ...prev, title: e.target.value }))}
-          placeholder="Enter task title..."
-          className="w-full bg-white/90 dark:bg-black/90 border border-cyan-300 dark:border-cyan-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)]"
+          onKeyPress={handleKeyPress}
+          placeholder="Type task title and press Enter..."
+          className="w-full bg-white/90 dark:bg-black/90 border border-cyan-300 dark:border-cyan-600 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)] transition-all duration-200"
           autoFocus
         />
       </td>
@@ -494,7 +518,7 @@ const AddTaskRow = ({ onTaskCreate, tasks }: AddTaskRowProps) => {
             };
             setNewTask(prev => ({ ...prev, status: statusMap[e.target.value] || 'backlog' }));
           }}
-          className="w-full bg-white/90 dark:bg-black/90 border border-cyan-300 dark:border-cyan-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)]"
+          className="w-full bg-white/90 dark:bg-black/90 border border-cyan-300 dark:border-cyan-600 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)]"
         >
           <option value="Backlog">Backlog</option>
           <option value="In Progress">In Progress</option>
@@ -503,46 +527,36 @@ const AddTaskRow = ({ onTaskCreate, tasks }: AddTaskRowProps) => {
         </select>
       </td>
       <td className="p-3">
+        <input
+          type="text"
+          value={newTask.feature}
+          onChange={(e) => setNewTask(prev => ({ ...prev, feature: e.target.value }))}
+          onKeyPress={handleKeyPress}
+          placeholder="Feature..."
+          className="w-full bg-white/90 dark:bg-black/90 border border-cyan-300 dark:border-cyan-600 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)]"
+        />
+      </td>
+      <td className="p-3">
         <select
           value={newTask.assignee.name}
           onChange={(e) => setNewTask(prev => ({ 
             ...prev, 
             assignee: { name: e.target.value as 'User' | 'Archon' | 'AI IDE Agent', avatar: '' }
           }))}
-          className="w-full bg-white/90 dark:bg-black/90 border border-cyan-300 dark:border-cyan-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)]"
+          className="w-full bg-white/90 dark:bg-black/90 border border-cyan-300 dark:border-cyan-600 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)]"
         >
+          <option value="AI IDE Agent">AI IDE Agent</option>
           <option value="User">User</option>
           <option value="Archon">Archon</option>
-          <option value="AI IDE Agent">AI IDE Agent</option>
         </select>
       </td>
       <td className="p-3">
-        <input
-          type="text"
-          value={newTask.feature}
-          onChange={(e) => setNewTask(prev => ({ ...prev, feature: e.target.value }))}
-          placeholder="Feature name..."
-          className="w-full bg-white/90 dark:bg-black/90 border border-cyan-300 dark:border-cyan-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)]"
-        />
-      </td>
-      <td className="p-3">
-        <div className="flex justify-center gap-2">
-          <button 
-            onClick={handleCreateTask}
-            disabled={!newTask.title.trim()}
-            className="p-1.5 rounded-full bg-green-500/20 text-green-500 hover:bg-green-500/30 hover:shadow-[0_0_10px_rgba(34,197,94,0.3)] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Check className="w-3.5 h-3.5" />
-          </button>
-          <button 
-            onClick={handleCancel}
-            className="p-1.5 rounded-full bg-red-500/20 text-red-500 hover:bg-red-500/30 hover:shadow-[0_0_10px_rgba(239,68,68,0.3)] transition-all duration-300"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+        <div className="flex justify-center">
+          <span className="text-xs text-cyan-600 dark:text-cyan-400 font-medium">Press Enter</span>
         </div>
       </td>
     </tr>
+    </>
   );
 };
 
@@ -555,7 +569,7 @@ export const TaskTableView = ({
   onTaskCreate,
   onTaskUpdate
 }: TaskTableViewProps) => {
-  const [statusFilter, setStatusFilter] = useState<Task['status'] | 'all'>('all');
+  const [statusFilter, setStatusFilter] = useState<Task['status'] | 'all'>('backlog');
 
   // Group tasks by status and sort by task_order
   const getTasksByStatus = (status: Task['status']) => {
@@ -643,7 +657,15 @@ export const TaskTableView = ({
         })}
       </div>
 
-      <table className="w-full border-collapse">
+      <table className="w-full border-collapse table-fixed">
+        <colgroup>
+          <col className="w-16" /> {/* Order - fixed small width */}
+          <col className="w-auto" />  {/* Task - takes remaining space */}
+          <col className="w-24" />   {/* Status - compact */}
+          <col className="w-28" />   {/* Feature - smaller width */}
+          <col className="w-32" />   {/* Assignee - compact */}
+          <col className="w-40" />   {/* Actions - fixed width for buttons */}
+        </colgroup>
         <thead>
           <tr className="bg-white/80 dark:bg-black/80 backdrop-blur-sm sticky top-0 z-10">
             <th className="text-left p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
@@ -670,17 +692,17 @@ export const TaskTableView = ({
             </th>
             <th className="text-left p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
               <div className="flex items-center gap-2">
-                <span className={getHeaderColor('primary')}>Assignee</span>
-                <span className={`w-1 h-1 rounded-full ${getHeaderGlow('primary')}`}></span>
-              </div>
-              <div className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[1px] bg-cyan-500/30 shadow-[0_0_10px_2px_rgba(34,211,238,0.2)]`}></div>
-            </th>
-            <th className="text-left p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
-              <div className="flex items-center gap-2">
                 <span className={getHeaderColor('secondary')}>Feature</span>
                 <span className={`w-1 h-1 rounded-full ${getHeaderGlow('secondary')}`}></span>
               </div>
               <div className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[1px] bg-purple-500/30 shadow-[0_0_10px_2px_rgba(168,85,247,0.2)]`}></div>
+            </th>
+            <th className="text-left p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
+              <div className="flex items-center gap-2">
+                <span className={getHeaderColor('primary')}>Assignee</span>
+                <span className={`w-1 h-1 rounded-full ${getHeaderGlow('primary')}`}></span>
+              </div>
+              <div className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[1px] bg-cyan-500/30 shadow-[0_0_10px_2px_rgba(34,211,238,0.2)]`}></div>
             </th>
             <th className="text-center p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
               <div className="flex items-center justify-center gap-2">
@@ -700,16 +722,16 @@ export const TaskTableView = ({
                 <DraggableTaskRow
                   key={task.id}
                   task={task}
-                  index={index}
+                  index={index}  // This is the correct index within this status group
                   onTaskView={onTaskView}
                   onTaskComplete={onTaskComplete}
                   onTaskDelete={onTaskDelete}
                   onTaskReorder={onTaskReorder}
                   onTaskUpdate={onTaskUpdate}
-                  tasksInStatus={statusTasks}
+                  tasksInStatus={statusTasks}  // Pass the tasks in this specific status
                 />
               ));
-            })
+            }).flat()  // Flatten the array since map returns arrays
           ) : (
             // Single status filter
             getTasksByStatus(statusFilter).map((task, index) => (
@@ -727,7 +749,7 @@ export const TaskTableView = ({
             ))
           )}
           {/* Add Task Row */}
-          <AddTaskRow onTaskCreate={onTaskCreate} tasks={tasks} />
+          <AddTaskRow onTaskCreate={onTaskCreate} tasks={tasks} statusFilter={statusFilter} />
         </tbody>
       </table>
     </div>

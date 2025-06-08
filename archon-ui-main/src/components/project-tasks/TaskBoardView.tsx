@@ -99,7 +99,8 @@ const DraggableTaskCard = ({
 
   const [, drop] = useDrop({
     accept: ItemTypes.TASK,
-    hover: (draggedItem: { id: string; status: Task['status']; index: number }) => {
+    hover: (draggedItem: { id: string; status: Task['status']; index: number }, monitor) => {
+      if (!monitor.isOver({ shallow: true })) return;
       if (draggedItem.id === task.id) return;
       if (draggedItem.status !== task.status) return;
       
@@ -108,24 +109,12 @@ const DraggableTaskCard = ({
       
       if (draggedIndex === hoveredIndex) return;
       
-      // Reorder tasks within the same column
-      const reorderedTasks = [...tasksInStatus];
-      const [movedTask] = reorderedTasks.splice(draggedIndex, 1);
-      reorderedTasks.splice(hoveredIndex, 0, movedTask);
+      console.log('BOARD HOVER: Moving task', draggedItem.id, 'from index', draggedIndex, 'to', hoveredIndex, 'in status', task.status);
       
-      // Update task_order to be sequential (1, 2, 3, ...)
-      const updatedTasks = reorderedTasks.map((t, idx) => ({
-        ...t,
-        task_order: idx + 1
-      }));
+      // Move the task immediately for visual feedback (same pattern as table view)
+      onTaskReorder(draggedItem.id, hoveredIndex, task.status);
       
-      // Find the new order for the dragged task
-      const draggedTask = updatedTasks.find(t => t.id === draggedItem.id);
-      if (draggedTask) {
-        onTaskReorder(draggedItem.id, draggedTask.task_order, task.status);
-      }
-      
-      // Update the dragged item's index for continued hover calculations
+      // Update the dragged item's index to prevent re-triggering
       draggedItem.index = hoveredIndex;
     }
   });

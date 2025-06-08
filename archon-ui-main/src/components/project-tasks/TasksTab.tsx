@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { X, Table, LayoutGrid, RefreshCw, Plus, Wifi, WifiOff } from 'lucide-react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -257,45 +257,92 @@ export const TasksTab = ({
     onTasksChange(newTasks);
   };
 
-  // Task reordering function - improved to prevent skipped numbers
-  const handleTaskReorder = async (taskId: string, newOrder: number, status: Task['status']) => {
-    try {
-      // Get all tasks in the same status
-      const statusTasks = tasks.filter(task => task.status === status);
-      const otherTasks = tasks.filter(task => task.status !== status);
-      
-      // Find the task being moved
-      const movedTask = statusTasks.find(task => task.id === taskId);
-      if (!movedTask) return;
-      
-      // Remove the moved task from the array
-      const remainingTasks = statusTasks.filter(task => task.id !== taskId);
-      
-      // Insert the moved task at the new position
-      const reorderedTasks = [...remainingTasks];
-      reorderedTasks.splice(newOrder - 1, 0, movedTask);
-      
-      // Renumber all tasks in this status sequentially
-      const renumberedTasks = reorderedTasks.map((task, index) => ({
-        ...task,
-        task_order: index + 1
-      }));
-      
-      // Combine with tasks from other statuses
-      const allUpdatedTasks = [...otherTasks, ...renumberedTasks];
-      
-      // Update all tasks in this status in the backend
-      const updatePromises = renumberedTasks.map(task => 
-        projectService.updateTask(task.id, { task_order: task.task_order })
-      );
-      
-      await Promise.all(updatePromises);
-      
-      updateTasks(allUpdatedTasks);
-    } catch (error) {
-      console.error('Failed to reorder task:', error);
+  // React DnD optimized task reordering - immediate visual feedback, async persistence  
+  const handleTaskReorder = (taskId: string, targetIndex: number, status: Task['status']) => {
+    console.log('REORDER: Moving task', taskId, 'to index', targetIndex, 'in status', status);
+    
+    // Get all tasks in the target status, sorted by current order
+    const statusTasks = tasks
+      .filter(task => task.status === status)
+      .sort((a, b) => a.task_order - b.task_order);
+    
+    const otherTasks = tasks.filter(task => task.status !== status);
+    
+    // Find the moving task
+    const movingTaskIndex = statusTasks.findIndex(task => task.id === taskId);
+    if (movingTaskIndex === -1) {
+      console.log('REORDER: Task not found in status');
+      return;
     }
+    
+    // Prevent invalid moves
+    if (targetIndex < 0 || targetIndex >= statusTasks.length) {
+      console.log('REORDER: Invalid target index', targetIndex);
+      return;
+    }
+    
+    const movingTask = statusTasks[movingTaskIndex];
+    console.log('REORDER: Moving', movingTask.title, 'from', movingTaskIndex, 'to', targetIndex);
+    
+    // Create new array with the task moved to the target position
+    const reorderedTasks = [...statusTasks];
+    
+    // Remove the task from its current position
+    reorderedTasks.splice(movingTaskIndex, 1);
+    
+    // Insert the task at the new position
+    reorderedTasks.splice(targetIndex, 0, movingTask);
+    
+    // Renumber all tasks sequentially based on their new array positions
+    const renumberedTasks = reorderedTasks.map((task, index) => ({
+      ...task,
+      task_order: index + 1
+    }));
+    
+    // Update UI immediately for smooth visual feedback
+    const allUpdatedTasks = [...otherTasks, ...renumberedTasks];
+    updateTasks(allUpdatedTasks);
+    
+    // Persist to backend asynchronously (debounced)
+    debouncedPersistReorder(renumberedTasks);
   };
+  
+  // Simple debounce function
+  const debounce = (func: Function, delay: number) => {
+    let timeoutId: NodeJS.Timeout;
+    return (...args: any[]) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => func(...args), delay);
+    };
+  };
+
+  // Debounced persistence to avoid too many API calls during rapid dragging
+  const debouncedPersistReorder = useCallback(
+    debounce(async (tasksToUpdate: Task[]) => {
+      try {
+        console.log('REORDER: Persisting order changes for', tasksToUpdate.length, 'tasks');
+        
+        const updatePromises = tasksToUpdate.map(task => 
+          projectService.updateTask(task.id, { task_order: task.task_order })
+        );
+        
+        await Promise.all(updatePromises);
+        console.log('REORDER: Persistence completed');
+        
+      } catch (error) {
+        console.error('REORDER: Failed to persist order changes:', error);
+        // Reload tasks from backend on error to restore correct state
+        try {
+          const updatedTasks = await projectService.getTasksByProject(projectId);
+          const uiTasks: Task[] = updatedTasks.map(mapDatabaseTaskToUITask);
+          updateTasks(uiTasks);
+        } catch (reloadError) {
+          console.error('REORDER: Failed to reload tasks:', reloadError);
+        }
+      }
+    }, 500), // 500ms delay to batch rapid changes
+    [projectId]
+  );
 
   // Task move function (for board view)
   const moveTask = async (taskId: string, newStatus: Task['status']) => {
@@ -482,7 +529,7 @@ export const TasksTab = ({
                   title: '',
                   description: '',
                   status: 'backlog',
-                  assignee: { name: 'User', avatar: '' },
+                  assignee: { name: 'AI IDE Agent', avatar: '' },
                   feature: '',
                   featureColor: '#3b82f6',
                   task_order: defaultOrder
