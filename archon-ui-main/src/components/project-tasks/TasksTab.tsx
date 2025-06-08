@@ -336,6 +336,59 @@ export const TasksTab = ({
     }
   };
 
+  // Inline task creation function
+  const createTaskInline = async (newTask: Omit<Task, 'id'>) => {
+    try {
+      const createData: CreateTaskRequest = {
+        project_id: projectId,
+        title: newTask.title,
+        description: newTask.description,
+        status: mapUIStatusToDBStatus(newTask.status),
+        assignee: newTask.assignee?.name || 'User',
+        task_order: newTask.task_order,
+        ...(newTask.feature && { feature: newTask.feature }),
+        ...(newTask.featureColor && { featureColor: newTask.featureColor })
+      };
+      
+      await projectService.createTask(createData);
+      
+      // Reload tasks from backend to get the new task with ID
+      const updatedTasks = await projectService.getTasksByProject(projectId);
+      const uiTasks: Task[] = updatedTasks.map(mapDatabaseTaskToUITask);
+      
+      updateTasks(uiTasks);
+    } catch (error) {
+      console.error('Failed to create task:', error);
+      throw error;
+    }
+  };
+
+  // Inline task update function
+  const updateTaskInline = async (taskId: string, updates: Partial<Task>) => {
+    try {
+      const updateData: Partial<UpdateTaskRequest> = {};
+      
+      if (updates.title !== undefined) updateData.title = updates.title;
+      if (updates.description !== undefined) updateData.description = updates.description;
+      if (updates.status !== undefined) updateData.status = mapUIStatusToDBStatus(updates.status);
+      if (updates.assignee !== undefined) updateData.assignee = updates.assignee.name;
+      if (updates.task_order !== undefined) updateData.task_order = updates.task_order;
+      if (updates.feature !== undefined) updateData.feature = updates.feature;
+      if (updates.featureColor !== undefined) updateData.featureColor = updates.featureColor;
+      
+      await projectService.updateTask(taskId, updateData);
+      
+      // Update local state optimistically
+      const newTasks = tasks.map(task => 
+        task.id === taskId ? { ...task, ...updates } : task
+      );
+      updateTasks(newTasks);
+    } catch (error) {
+      console.error('Failed to update task:', error);
+      throw error;
+    }
+  };
+
   // Get tasks for priority selection with descriptive labels
   const getTasksForPrioritySelection = (status: Task['status']): Array<{value: number, label: string}> => {
     const tasksInStatus = tasks
@@ -387,6 +440,8 @@ export const TasksTab = ({
               onTaskComplete={completeTask}
               onTaskDelete={deleteTask}
               onTaskReorder={handleTaskReorder}
+              onTaskCreate={createTaskInline}
+              onTaskUpdate={updateTaskInline}
             />
           ) : (
             <TaskBoardView

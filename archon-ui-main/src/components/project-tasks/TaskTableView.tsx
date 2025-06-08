@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useDrag, useDrop } from 'react-dnd';
-import { Check, Trash2, Edit, Tag, User, Bot, Clipboard } from 'lucide-react';
+import { Check, Trash2, Edit, Tag, User, Bot, Clipboard, X, Save, Plus } from 'lucide-react';
 
 export interface Task {
   id: string;
@@ -22,6 +22,8 @@ interface TaskTableViewProps {
   onTaskComplete: (taskId: string) => void;
   onTaskDelete: (taskId: string) => void;
   onTaskReorder: (taskId: string, newOrder: number, status: Task['status']) => void;
+  onTaskCreate?: (task: Omit<Task, 'id'>) => Promise<void>;
+  onTaskUpdate?: (taskId: string, updates: Partial<Task>) => Promise<void>;
 }
 
 const ItemTypes = {
@@ -82,6 +84,98 @@ const reorderTasks = (tasks: Task[], fromIndex: number, toIndex: number): Task[]
   }));
 };
 
+// Inline editable cell component
+interface EditableCellProps {
+  value: string;
+  onSave: (value: string) => void;
+  type?: 'text' | 'textarea' | 'select';
+  options?: string[];
+  placeholder?: string;
+  isEditing: boolean;
+  onEdit: () => void;
+  onCancel: () => void;
+}
+
+const EditableCell = ({ 
+  value, 
+  onSave, 
+  type = 'text', 
+  options = [], 
+  placeholder = '', 
+  isEditing,
+  onEdit,
+  onCancel
+}: EditableCellProps) => {
+  const [editValue, setEditValue] = useState(value);
+
+  const handleSave = () => {
+    onSave(editValue);
+  };
+
+  const handleCancel = () => {
+    setEditValue(value);
+    onCancel();
+  };
+
+  if (!isEditing) {
+    return (
+      <div 
+        onClick={onEdit}
+        className="cursor-pointer hover:bg-gray-100/50 dark:hover:bg-gray-800/30 p-1 rounded transition-colors min-h-[24px] flex items-center"
+      >
+        {value || <span className="text-gray-400 italic">Click to edit</span>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      {type === 'select' ? (
+        <select
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          className="flex-1 bg-white/90 dark:bg-black/90 border border-cyan-300 dark:border-cyan-600 rounded px-2 py-1 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)]"
+          autoFocus
+        >
+          {options.map(option => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </select>
+      ) : type === 'textarea' ? (
+        <textarea
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          placeholder={placeholder}
+          className="flex-1 bg-white/90 dark:bg-black/90 border border-cyan-300 dark:border-cyan-600 rounded px-2 py-1 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)] resize-none"
+          rows={2}
+          autoFocus
+        />
+      ) : (
+        <input
+          type="text"
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          placeholder={placeholder}
+          className="flex-1 bg-white/90 dark:bg-black/90 border border-cyan-300 dark:border-cyan-600 rounded px-2 py-1 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)]"
+          autoFocus
+        />
+      )}
+      <button
+        onClick={handleSave}
+        className="p-1 rounded bg-green-500/20 text-green-600 hover:bg-green-500/30 transition-colors"
+      >
+        <Check className="w-3 h-3" />
+      </button>
+      <button
+        onClick={handleCancel}
+        className="p-1 rounded bg-red-500/20 text-red-600 hover:bg-red-500/30 transition-colors"
+      >
+        <X className="w-3 h-3" />
+      </button>
+    </div>
+  );
+};
+
 interface DraggableTaskRowProps {
   task: Task;
   index: number;
@@ -89,6 +183,7 @@ interface DraggableTaskRowProps {
   onTaskComplete: (taskId: string) => void;
   onTaskDelete: (taskId: string) => void;
   onTaskReorder: (taskId: string, newOrder: number, status: Task['status']) => void;
+  onTaskUpdate?: (taskId: string, updates: Partial<Task>) => Promise<void>;
   tasksInStatus: Task[];
 }
 
@@ -99,8 +194,11 @@ const DraggableTaskRow = ({
   onTaskComplete, 
   onTaskDelete, 
   onTaskReorder,
+  onTaskUpdate,
   tasksInStatus 
 }: DraggableTaskRowProps) => {
+  const [editingField, setEditingField] = useState<string | null>(null);
+  
   const [{ isDragging }, drag] = useDrag({
     type: ItemTypes.TASK,
     item: { id: task.id, index, status: task.status },
@@ -135,6 +233,29 @@ const DraggableTaskRow = ({
     },
   });
 
+  const handleUpdateField = async (field: string, value: string) => {
+    if (onTaskUpdate) {
+      const updates: Partial<Task> = {};
+      
+      if (field === 'title') {
+        updates.title = value;
+      } else if (field === 'status') {
+        updates.status = value as Task['status'];
+      } else if (field === 'assignee') {
+        updates.assignee = { name: value as 'User' | 'Archon' | 'AI IDE Agent', avatar: '' };
+      } else if (field === 'feature') {
+        updates.feature = value;
+      }
+      
+      try {
+        await onTaskUpdate(task.id, updates);
+        setEditingField(null);
+      } catch (error) {
+        console.error('Failed to update task:', error);
+      }
+    }
+  };
+
   return (
     <tr 
       ref={(node) => drag(drop(node))}
@@ -161,23 +282,37 @@ const DraggableTaskRow = ({
                opacity: 0.8
              }}
         />
-        <div className="pl-2">{task.title}</div>
+        <div className="pl-2">
+          <EditableCell
+            value={task.title}
+            onSave={(value) => handleUpdateField('title', value)}
+            isEditing={editingField === 'title'}
+            onEdit={() => setEditingField('title')}
+            onCancel={() => setEditingField(null)}
+            placeholder="Task title..."
+          />
+        </div>
       </td>
       <td className="p-3">
-        <div className="px-2 py-1 rounded text-xs inline-flex items-center gap-1" 
-             style={{
-               backgroundColor: task.status === 'backlog' ? 'rgba(107, 114, 128, 0.2)' : 
-                               task.status === 'in-progress' ? 'rgba(59, 130, 246, 0.2)' : 
-                               task.status === 'review' ? 'rgba(168, 85, 247, 0.2)' : 'rgba(16, 185, 129, 0.2)',
-               color: task.status === 'backlog' ? '#6b7280' : 
-                     task.status === 'in-progress' ? '#3b82f6' : 
-                     task.status === 'review' ? '#a855f7' : '#10b981'
-             }}
-        >
-          {task.status === 'backlog' ? 'Backlog' : 
-           task.status === 'in-progress' ? 'In Progress' : 
-           task.status === 'review' ? 'Review' : 'Complete'}
-        </div>
+        <EditableCell
+          value={task.status === 'backlog' ? 'Backlog' : 
+                task.status === 'in-progress' ? 'In Progress' : 
+                task.status === 'review' ? 'Review' : 'Complete'}
+          onSave={(value) => {
+            const statusMap: Record<string, Task['status']> = {
+              'Backlog': 'backlog',
+              'In Progress': 'in-progress', 
+              'Review': 'review',
+              'Complete': 'complete'
+            };
+            handleUpdateField('status', statusMap[value] || 'backlog');
+          }}
+          type="select"
+          options={['Backlog', 'In Progress', 'Review', 'Complete']}
+          isEditing={editingField === 'status'}
+          onEdit={() => setEditingField('status')}
+          onCancel={() => setEditingField(null)}
+        />
       </td>
       <td className="p-3">
         <div className="flex items-center gap-2">
@@ -186,21 +321,26 @@ const DraggableTaskRow = ({
           >
             {getAssigneeIcon(task.assignee?.name || 'User')}
           </div>
-          <span className="text-sm text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white transition-colors">
-            {task.assignee?.name || 'User'}
-          </span>
+          <EditableCell
+            value={task.assignee?.name || 'User'}
+            onSave={(value) => handleUpdateField('assignee', value)}
+            type="select"
+            options={['User', 'Archon', 'AI IDE Agent']}
+            isEditing={editingField === 'assignee'}
+            onEdit={() => setEditingField('assignee')}
+            onCancel={() => setEditingField(null)}
+          />
         </div>
       </td>
       <td className="p-3">
-        <div className="px-2 py-1 rounded text-xs inline-flex items-center gap-1" 
-             style={{
-               backgroundColor: `${task.featureColor}20`,
-               color: task.featureColor
-             }}
-        >
-          <Tag className="w-3 h-3" />
-          {task.feature}
-        </div>
+        <EditableCell
+          value={task.feature}
+          onSave={(value) => handleUpdateField('feature', value)}
+          isEditing={editingField === 'feature'}
+          onEdit={() => setEditingField('feature')}
+          onCancel={() => setEditingField(null)}
+          placeholder="Feature name..."
+        />
       </td>
       <td className="p-3">
         <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -246,12 +386,174 @@ const DraggableTaskRow = ({
   );
 };
 
+// Add Task Row Component
+interface AddTaskRowProps {
+  onTaskCreate?: (task: Omit<Task, 'id'>) => Promise<void>;
+  tasks: Task[];
+}
+
+const AddTaskRow = ({ onTaskCreate, tasks }: AddTaskRowProps) => {
+  const [isAdding, setIsAdding] = useState(false);
+  const [newTask, setNewTask] = useState<Omit<Task, 'id'>>({
+    title: '',
+    description: '',
+    status: 'backlog',
+    assignee: { name: 'User', avatar: '' },
+    feature: '',
+    featureColor: '#3b82f6',
+    task_order: 1
+  });
+
+  const handleCreateTask = async () => {
+    if (!newTask.title.trim() || !onTaskCreate) return;
+    
+    // Calculate the highest task order + 1
+    const maxOrder = Math.max(...tasks.map(t => t.task_order), 0);
+    
+    try {
+      await onTaskCreate({
+        ...newTask,
+        task_order: maxOrder + 1
+      });
+      
+      // Reset form
+      setNewTask({
+        title: '',
+        description: '',
+        status: 'backlog',
+        assignee: { name: 'User', avatar: '' },
+        feature: '',
+        featureColor: '#3b82f6',
+        task_order: 1
+      });
+      setIsAdding(false);
+    } catch (error) {
+      console.error('Failed to create task:', error);
+    }
+  };
+
+  const handleCancel = () => {
+    setNewTask({
+      title: '',
+      description: '',
+      status: 'backlog',
+      assignee: { name: 'User', avatar: '' },
+      feature: '',
+      featureColor: '#3b82f6',
+      task_order: 1
+    });
+    setIsAdding(false);
+  };
+
+  if (!isAdding) {
+    return (
+      <tr className="border-t-2 border-dashed border-gray-300 dark:border-gray-600">
+        <td colSpan={6} className="p-4 text-center">
+          <button
+            onClick={() => setIsAdding(true)}
+            className="flex items-center gap-2 mx-auto px-4 py-2 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 rounded-lg transition-colors duration-200 border border-cyan-500/30 hover:border-cyan-500/50"
+          >
+            <Plus className="w-4 h-4" />
+            Add New Task
+          </button>
+        </td>
+      </tr>
+    );
+  }
+
+  return (
+    <tr className="border-t-2 border-dashed border-cyan-300 dark:border-cyan-600 bg-cyan-50/30 dark:bg-cyan-900/10">
+      <td className="p-3">
+        <div className="flex items-center justify-center">
+          <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white bg-cyan-500 shadow-[0_0_10px_rgba(34,211,238,0.5)]">
+            +
+          </div>
+        </div>
+      </td>
+      <td className="p-3">
+        <input
+          type="text"
+          value={newTask.title}
+          onChange={(e) => setNewTask(prev => ({ ...prev, title: e.target.value }))}
+          placeholder="Enter task title..."
+          className="w-full bg-white/90 dark:bg-black/90 border border-cyan-300 dark:border-cyan-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)]"
+          autoFocus
+        />
+      </td>
+      <td className="p-3">
+        <select
+          value={newTask.status === 'backlog' ? 'Backlog' : 
+                newTask.status === 'in-progress' ? 'In Progress' : 
+                newTask.status === 'review' ? 'Review' : 'Complete'}
+          onChange={(e) => {
+            const statusMap: Record<string, Task['status']> = {
+              'Backlog': 'backlog',
+              'In Progress': 'in-progress', 
+              'Review': 'review',
+              'Complete': 'complete'
+            };
+            setNewTask(prev => ({ ...prev, status: statusMap[e.target.value] || 'backlog' }));
+          }}
+          className="w-full bg-white/90 dark:bg-black/90 border border-cyan-300 dark:border-cyan-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)]"
+        >
+          <option value="Backlog">Backlog</option>
+          <option value="In Progress">In Progress</option>
+          <option value="Review">Review</option>
+          <option value="Complete">Complete</option>
+        </select>
+      </td>
+      <td className="p-3">
+        <select
+          value={newTask.assignee.name}
+          onChange={(e) => setNewTask(prev => ({ 
+            ...prev, 
+            assignee: { name: e.target.value as 'User' | 'Archon' | 'AI IDE Agent', avatar: '' }
+          }))}
+          className="w-full bg-white/90 dark:bg-black/90 border border-cyan-300 dark:border-cyan-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)]"
+        >
+          <option value="User">User</option>
+          <option value="Archon">Archon</option>
+          <option value="AI IDE Agent">AI IDE Agent</option>
+        </select>
+      </td>
+      <td className="p-3">
+        <input
+          type="text"
+          value={newTask.feature}
+          onChange={(e) => setNewTask(prev => ({ ...prev, feature: e.target.value }))}
+          placeholder="Feature name..."
+          className="w-full bg-white/90 dark:bg-black/90 border border-cyan-300 dark:border-cyan-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)]"
+        />
+      </td>
+      <td className="p-3">
+        <div className="flex justify-center gap-2">
+          <button 
+            onClick={handleCreateTask}
+            disabled={!newTask.title.trim()}
+            className="p-1.5 rounded-full bg-green-500/20 text-green-500 hover:bg-green-500/30 hover:shadow-[0_0_10px_rgba(34,197,94,0.3)] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Check className="w-3.5 h-3.5" />
+          </button>
+          <button 
+            onClick={handleCancel}
+            className="p-1.5 rounded-full bg-red-500/20 text-red-500 hover:bg-red-500/30 hover:shadow-[0_0_10px_rgba(239,68,68,0.3)] transition-all duration-300"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+};
+
 export const TaskTableView = ({ 
   tasks, 
   onTaskView, 
   onTaskComplete, 
   onTaskDelete, 
-  onTaskReorder 
+  onTaskReorder,
+  onTaskCreate,
+  onTaskUpdate
 }: TaskTableViewProps) => {
   const [statusFilter, setStatusFilter] = useState<Task['status'] | 'all'>('all');
 
@@ -403,6 +705,7 @@ export const TaskTableView = ({
                   onTaskComplete={onTaskComplete}
                   onTaskDelete={onTaskDelete}
                   onTaskReorder={onTaskReorder}
+                  onTaskUpdate={onTaskUpdate}
                   tasksInStatus={statusTasks}
                 />
               ));
@@ -418,10 +721,13 @@ export const TaskTableView = ({
                 onTaskComplete={onTaskComplete}
                 onTaskDelete={onTaskDelete}
                 onTaskReorder={onTaskReorder}
+                onTaskUpdate={onTaskUpdate}
                 tasksInStatus={getTasksByStatus(statusFilter)}
               />
             ))
           )}
+          {/* Add Task Row */}
+          <AddTaskRow onTaskCreate={onTaskCreate} tasks={tasks} />
         </tbody>
       </table>
     </div>
