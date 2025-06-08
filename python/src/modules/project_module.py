@@ -820,19 +820,69 @@ def register_project_tools(mcp: FastMCP):
     @mcp.tool()
     async def add_project_document(ctx: Context, project_id: str, document_type: str, title: str, content: Dict[str, Any] = None, tags: List[str] = None, author: str = None) -> str:
         """
-        Add a new document to a project's docs JSONB field.
+        Add a new document to a project's docs JSONB field using clean MCP format.
+        
+        CRITICAL: The content field must use the structured MCP format for optimal AI agent consumption.
+        The UI will automatically convert this to editable blocks.
         
         Args:
             ctx: The MCP server provided context
             project_id: UUID of the parent project
-            document_type: Type of document (prd, feature_plan, erd, technical_spec, etc.)
-            title: Document title
-            content: Document content as JSON
-            tags: Optional list of tags
-            author: Optional author name
+            document_type: Type of document (prd, feature_plan, erd, technical_spec, meeting_notes, api_docs)
+            title: Document title (e.g., "E-commerce Platform v1.0 - Product Requirements Document")
+            content: Document content as structured JSON - MUST follow MCP format:
+                {
+                    "project_overview": {
+                        "description": "Clear project description",
+                        "target_completion": "Timeline or milestone"
+                    },
+                    "goals": ["Specific goal 1", "Specific goal 2"],
+                    "scope": {
+                        "frontend": "Technology description",
+                        "backend": "Technology description"
+                    },
+                    "architecture": {
+                        "frontend": ["Technology 1", "Technology 2"],
+                        "backend": ["Technology 1", "Technology 2"]
+                    },
+                    "tech_packages": {
+                        "frontend_dependencies": ["package ^version"],
+                        "backend_dependencies": ["package ^version"]
+                    },
+                    "ui_ux_requirements": {
+                        "color_palette": ["#hex1", "#hex2"],
+                        "typography": {"headings": "Font", "body": "Font"}
+                    },
+                    "coding_standards": ["Standard 1", "Standard 2"]
+                }
+            tags: Optional list of tags for categorization
+            author: Optional author name (defaults to "System")
         
         Returns:
             JSON string with the created document information
+        
+        Example:
+            add_project_document(
+                project_id="uuid-here",
+                document_type="prd",
+                title="User Authentication System - PRD",
+                content={
+                    "project_overview": {
+                        "description": "Secure JWT-based authentication system",
+                        "target_completion": "Q2 2024"
+                    },
+                    "goals": [
+                        "Implement secure user authentication",
+                        "Support multiple login methods",
+                        "Ensure scalable session management"
+                    ],
+                    "architecture": {
+                        "backend": ["FastAPI", "JWT tokens", "bcrypt hashing"],
+                        "database": ["PostgreSQL", "user sessions table"]
+                    }
+                },
+                tags=["authentication", "security", "backend"]
+            )
         """
         try:
             supabase_client = ctx.request_context.lifespan_context.supabase_client
@@ -1003,21 +1053,51 @@ def register_project_tools(mcp: FastMCP):
     @mcp.tool()
     async def update_project_document(ctx: Context, project_id: str, doc_id: str, title: str = None, content: Dict[str, Any] = None, status: str = None, tags: List[str] = None, author: str = None, version: str = None) -> str:
         """
-        Update a document in a project's docs JSONB field.
+        Update a document in a project's docs JSONB field using clean MCP format.
+        
+        CRITICAL: When updating content, must use the structured MCP format for optimal AI agent consumption.
         
         Args:
             ctx: The MCP server provided context
             project_id: UUID of the project
             doc_id: UUID of the document to update
             title: Optional new title
-            content: Optional new content
-            status: Optional new status
-            tags: Optional new tags
-            author: Optional new author
-            version: Optional new version
+            content: Optional new content - MUST follow MCP format when provided:
+                {
+                    "project_overview": {"description": "...", "target_completion": "..."},
+                    "goals": ["goal1", "goal2"],
+                    "scope": {"frontend": "...", "backend": "..."},
+                    "architecture": {"frontend": [...], "backend": [...]},
+                    "tech_packages": {"frontend_dependencies": [...], "backend_dependencies": [...]},
+                    "ui_ux_requirements": {"color_palette": [...], "typography": {...}},
+                    "coding_standards": ["standard1", "standard2"]
+                }
+            status: Optional new status (draft, review, approved, archived)
+            tags: Optional new tags for categorization
+            author: Optional new author name
+            version: Optional new version (e.g., "1.1", "2.0")
         
         Returns:
             JSON string with update results
+        
+        Example:
+            update_project_document(
+                project_id="uuid-here",
+                doc_id="doc-uuid-here",
+                content={
+                    "project_overview": {
+                        "description": "Updated authentication system with OAuth support",
+                        "target_completion": "Q3 2024"
+                    },
+                    "goals": [
+                        "Implement OAuth 2.0 integration",
+                        "Add social login options",
+                        "Maintain backward compatibility"
+                    ]
+                },
+                status="review",
+                version="1.2"
+            )
         """
         try:
             supabase_client = ctx.request_context.lifespan_context.supabase_client

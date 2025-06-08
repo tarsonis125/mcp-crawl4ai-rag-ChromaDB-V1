@@ -382,13 +382,15 @@ AI coding assistants can autonomously manage tasks through MCP tools:
 
 #### Document Management Tools
 
-| Tool | Purpose | AI Usage Example |
-|------|---------|------------------|
-| `add_project_document` | Add documentation | "Create a technical spec document" |
-| `list_project_documents` | Get all project docs | "What documentation exists for this project?" |
-| `get_project_document` | Retrieve specific doc | "Show me the API specification document" |
-| `update_project_document` | Modify documents | "Update the PRD with new requirements" |
-| `delete_project_document` | Remove outdated docs | "Remove the old design mockups" |
+| Tool | Purpose | Required Format | AI Usage Example |
+|------|---------|----------------|------------------|
+| `add_project_document` | Add documentation with structured content | Must use clean MCP format in `content` field | "Create a technical spec document with architecture and dependencies" |
+| `list_project_documents` | Get all project docs | N/A | "What documentation exists for this project?" |
+| `get_project_document` | Retrieve specific doc | N/A | "Show me the API specification document" |
+| `update_project_document` | Modify documents | Use clean MCP format for `content` updates | "Update the PRD with new requirements and timeline" |
+| `delete_project_document` | Remove outdated docs | N/A | "Remove the old design mockups" |
+
+**Critical for AI Agents**: When using `add_project_document` or `update_project_document`, the `content` field must follow the structured MCP format documented above. Do not use flat text or unstructured data.
 
 ### AI-Driven Task Management Examples
 
@@ -489,7 +491,16 @@ When creating projects, Archon automatically generates a structured PRD:
 
 ### Project Document Management
 
-The `docs` JSONB field stores structured documents:
+Archon provides a sophisticated document management system that stores documents in a clean, structured format optimized for AI agent consumption while providing rich editing capabilities through the BlockNote editor.
+
+#### Document Architecture
+
+Documents are stored in the project's `docs` JSONB field using a dual-format approach:
+
+1. **Clean MCP Format**: Structured content for AI agents
+2. **BlockNote Integration**: Rich editing with automatic format conversion
+
+#### Document Structure
 
 ```json
 {
@@ -497,36 +508,190 @@ The `docs` JSONB field stores structured documents:
     {
       "id": "doc-uuid-1",
       "document_type": "prd",
-      "title": "Product Requirements Document",
+      "title": "E-commerce Platform v1.0 - Product Requirements Document",
       "content": {
-        "overview": "...",
-        "goals": ["..."],
-        "requirements": ["..."]
+        "project_overview": {
+          "description": "A modern e-commerce platform built with React and Node.js, featuring a responsive UI, secure payment processing, and comprehensive product management.",
+          "target_completion": "Q3 2024"
+        },
+        "goals": [
+          "Enable seamless project creation with automatic document generation",
+          "Provide intuitive document editing with JSONB field management",
+          "Implement AI agents for feature planning from PRDs"
+        ],
+        "scope": {
+          "frontend": "React TypeScript with Tailwind CSS and shadcn/ui",
+          "backend": "FastAPI Python backend on port 8080 with Pydantic validation",
+          "database": "Supabase PostgreSQL with JSONB document storage"
+        },
+        "architecture": {
+          "frontend": [
+            "React + TypeScript",
+            "Redux for state management",
+            "React Router for navigation",
+            "Tailwind CSS for styling"
+          ],
+          "backend": [
+            "Node.js + Express",
+            "MongoDB for database",
+            "JWT for authentication",
+            "RESTful API architecture"
+          ]
+        },
+        "tech_packages": {
+          "frontend_dependencies": [
+            "react ^18.2.0",
+            "react-dom ^18.2.0",
+            "tailwindcss ^3.2.4"
+          ],
+          "backend_dependencies": [
+            "express ^4.18.2",
+            "mongoose ^6.9.0",
+            "jsonwebtoken ^9.0.0"
+          ]
+        },
+        "ui_ux_requirements": {
+          "color_palette": [
+            "#1a1a2e",
+            "#16213e", 
+            "#0f3460",
+            "#e94560"
+          ],
+          "typography": {
+            "headings": "Poppins (600, 700)",
+            "body": "Inter (400, 500)"
+          }
+        },
+        "coding_standards": [
+          "Follow Airbnb JavaScript Style Guide",
+          "Use functional components with hooks",
+          "Implement strict TypeScript typing"
+        ]
       },
       "status": "approved",
-      "tags": ["default", "prd"],
+      "tags": ["prd", "requirements", "e-commerce"],
       "version": "1.0",
-      "author": "AI Assistant",
+      "author": "System",
       "created_at": "2024-01-15T10:00:00Z",
       "updated_at": "2024-01-15T10:00:00Z"
-    },
-    {
-      "id": "doc-uuid-2", 
-      "document_type": "technical_spec",
-      "title": "Authentication Technical Specification",
-      "content": {
-        "architecture": "...",
-        "apis": ["..."],
-        "security": "..."
-      },
-      "status": "draft",
-      "tags": ["auth", "technical"],
-      "version": "0.1",
-      "created_at": "2024-01-16T09:00:00Z"
     }
   ]
 }
 ```
+
+#### Document Format Guidelines for AI Agents
+
+<Admonition type="warning" title="MCP Document Format">
+  When creating documents via MCP tools, always use the clean structured format below. The UI will automatically convert this to editable blocks.
+</Admonition>
+
+**Required Format for `content` field**:
+
+```json
+{
+  "content": {
+    "project_overview": {
+      "description": "Clear project description",
+      "target_completion": "Timeline or milestone"
+    },
+    "goals": [
+      "Specific goal 1",
+      "Specific goal 2", 
+      "Specific goal 3"
+    ],
+    "scope": {
+      "section_name": "Description or array of items",
+      "in_scope": ["Feature 1", "Feature 2"],
+      "out_of_scope": ["Excluded feature 1"]
+    },
+    "architecture": {
+      "frontend": ["Technology 1", "Technology 2"],
+      "backend": ["Technology 1", "Technology 2"],
+      "database": ["Database choice", "Schema approach"]
+    },
+    "tech_packages": {
+      "frontend_dependencies": [
+        "package-name ^version",
+        "another-package ^version"
+      ],
+      "backend_dependencies": [
+        "package-name ^version"
+      ]
+    },
+    "ui_ux_requirements": {
+      "color_palette": ["#hex1", "#hex2", "#hex3"],
+      "typography": {
+        "headings": "Font family and weights",
+        "body": "Font family and weights"
+      },
+      "ui_components": [
+        "Component library choice",
+        "Custom component requirements"
+      ]
+    },
+    "coding_standards": [
+      "Style guide to follow",
+      "Architecture patterns",
+      "Testing requirements"
+    ]
+  }
+}
+```
+
+#### Document Types
+
+| Type | Purpose | Key Sections |
+|------|---------|--------------|
+| `prd` | Product Requirements Document | `project_overview`, `goals`, `scope`, `architecture` |
+| `technical_spec` | Technical Specification | `architecture`, `tech_packages`, `coding_standards` |
+| `feature_plan` | Feature Planning Document | `goals`, `scope`, `ui_ux_requirements` |
+| `meeting_notes` | Meeting Documentation | `attendees`, `agenda`, `action_items` |
+| `api_docs` | API Documentation | `endpoints`, `authentication`, `examples` |
+
+#### Template System
+
+The UI provides predefined templates that automatically create documents in the correct MCP format:
+
+```javascript
+// Example template structure (internal)
+const PRD_TEMPLATE = {
+  name: 'PRD Template',
+  icon: '📋',
+  generates: {
+    content: {
+      project_overview: { description: "Describe the project overview here..." },
+      goals: ["Goal 1", "Goal 2", "Goal 3"],
+      success_criteria: ["Criteria 1", "Criteria 2"],
+      requirements: ["Requirement 1", "Requirement 2"]
+    }
+  }
+}
+```
+
+#### BlockNote Editor Integration
+
+The BlockNote editor automatically:
+
+1. **Converts MCP format to editable blocks** when loading documents
+2. **Maintains clean MCP format** when saving changes
+3. **Provides rich editing** with headings, lists, and formatting
+4. **Auto-saves changes** with debounced updates
+5. **Supports dark/light themes** matching the application
+
+#### Document Creation Workflow
+
+**Via UI Templates**:
+1. Click "New Doc" → Choose template
+2. Template creates document in clean MCP format
+3. BlockNote editor loads and converts to editable blocks
+4. User edits in rich editor
+5. Changes auto-save in MCP format
+
+**Via MCP Tools**:
+1. AI agent calls `add_project_document` with structured content
+2. Document stored in clean MCP format
+3. UI automatically displays in BlockNote editor when selected
+4. User can edit and changes maintain MCP structure
 
 ### Feature Tracking
 
