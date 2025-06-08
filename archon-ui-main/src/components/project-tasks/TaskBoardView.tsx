@@ -72,23 +72,62 @@ const getOrderGlow = (order: number) => {
 
 interface DraggableTaskCardProps {
   task: Task;
+  index: number;
   onView: () => void;
   onComplete: () => void;
   onDelete: () => void;
+  onTaskReorder: (taskId: string, newOrder: number, status: Task['status']) => void;
+  tasksInStatus: Task[];
 }
 
 const DraggableTaskCard = ({
   task,
+  index,
   onView,
   onComplete,
-  onDelete
+  onDelete,
+  onTaskReorder,
+  tasksInStatus
 }: DraggableTaskCardProps) => {
   const [{ isDragging }, drag] = useDrag({
     type: ItemTypes.TASK,
-    item: { id: task.id, status: task.status },
+    item: { id: task.id, status: task.status, index },
     collect: (monitor) => ({
       isDragging: !!monitor.isDragging()
     })
+  });
+
+  const [, drop] = useDrop({
+    accept: ItemTypes.TASK,
+    hover: (draggedItem: { id: string; status: Task['status']; index: number }) => {
+      if (draggedItem.id === task.id) return;
+      if (draggedItem.status !== task.status) return;
+      
+      const draggedIndex = draggedItem.index;
+      const hoveredIndex = index;
+      
+      if (draggedIndex === hoveredIndex) return;
+      
+      // Reorder tasks within the same column
+      const reorderedTasks = [...tasksInStatus];
+      const [movedTask] = reorderedTasks.splice(draggedIndex, 1);
+      reorderedTasks.splice(hoveredIndex, 0, movedTask);
+      
+      // Update task_order to be sequential (1, 2, 3, ...)
+      const updatedTasks = reorderedTasks.map((t, idx) => ({
+        ...t,
+        task_order: idx + 1
+      }));
+      
+      // Find the new order for the dragged task
+      const draggedTask = updatedTasks.find(t => t.id === draggedItem.id);
+      if (draggedTask) {
+        onTaskReorder(draggedItem.id, draggedTask.task_order, task.status);
+      }
+      
+      // Update the dragged item's index for continued hover calculations
+      draggedItem.index = hoveredIndex;
+    }
   });
 
   const [isFlipped, setIsFlipped] = useState(false);
@@ -100,7 +139,7 @@ const DraggableTaskCard = ({
 
   return (
     <div 
-      ref={drag} 
+      ref={(node) => drag(drop(node))}
       className={`flip-card h-[140px] w-full cursor-move ${isDragging ? 'opacity-50 scale-95' : 'opacity-100'} transition-all duration-300`} 
       style={{ perspective: '1000px' }}
     >
@@ -262,7 +301,7 @@ const ColumnDropZone = ({
         return 'text-gray-600 dark:text-gray-400';
       case 'in-progress':
         return 'text-blue-600 dark:text-blue-400';
-      case 'testing':
+      case 'review':
         return 'text-purple-600 dark:text-purple-400';
       case 'complete':
         return 'text-green-600 dark:text-green-400';
@@ -276,7 +315,7 @@ const ColumnDropZone = ({
         return 'bg-gray-500/30';
       case 'in-progress':
         return 'bg-blue-500/30 shadow-[0_0_10px_2px_rgba(59,130,246,0.2)]';
-      case 'testing':
+      case 'review':
         return 'bg-purple-500/30 shadow-[0_0_10px_2px_rgba(168,85,247,0.2)]';
       case 'complete':
         return 'bg-green-500/30 shadow-[0_0_10px_2px_rgba(16,185,129,0.2)]';
@@ -298,13 +337,16 @@ const ColumnDropZone = ({
       </div>
       
       <div className="px-1 flex-1 overflow-y-auto space-y-3 py-3">
-        {sortedTasks.map((task) => (
+        {sortedTasks.map((task, index) => (
           <DraggableTaskCard
             key={task.id}
             task={task}
+            index={index}
             onView={() => onTaskView(task)}
             onComplete={() => onTaskComplete(task.id)}
             onDelete={() => onTaskDelete(task.id)}
+            onTaskReorder={onTaskReorder}
+            tasksInStatus={sortedTasks}
           />
         ))}
       </div>

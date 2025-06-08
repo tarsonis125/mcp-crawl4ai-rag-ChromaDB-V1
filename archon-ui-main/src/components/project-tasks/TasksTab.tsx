@@ -241,38 +241,41 @@ export const TasksTab = ({
     onTasksChange(newTasks);
   };
 
-  // Task reordering function - the key feature!
+  // Task reordering function - improved to prevent skipped numbers
   const handleTaskReorder = async (taskId: string, newOrder: number, status: Task['status']) => {
     try {
-      // Reorder tasks: shift others up/down based on the new position
-      const updatedTasks = tasks.map(task => {
-        if (task.id === taskId) {
-          // Update the dragged task
-          return { ...task, task_order: newOrder };
-        } else if (task.status === status) {
-          // Adjust other tasks in the same status
-          if (task.task_order >= newOrder) {
-            return { ...task, task_order: task.task_order + 1 };
-          }
-        }
-        return task;
-      });
-
-      // Update backend
-      await projectService.updateTask(taskId, {
-        task_order: newOrder
-      });
-
-      // Update all affected tasks in batch (in a real app, you'd want a batch update API)
-      const tasksToUpdate = updatedTasks.filter(task => 
-        task.status === status && task.id !== taskId && task.task_order !== tasks.find(t => t.id === task.id)?.task_order
+      // Get all tasks in the same status
+      const statusTasks = tasks.filter(task => task.status === status);
+      const otherTasks = tasks.filter(task => task.status !== status);
+      
+      // Find the task being moved
+      const movedTask = statusTasks.find(task => task.id === taskId);
+      if (!movedTask) return;
+      
+      // Remove the moved task from the array
+      const remainingTasks = statusTasks.filter(task => task.id !== taskId);
+      
+      // Insert the moved task at the new position
+      const reorderedTasks = [...remainingTasks];
+      reorderedTasks.splice(newOrder - 1, 0, movedTask);
+      
+      // Renumber all tasks in this status sequentially
+      const renumberedTasks = reorderedTasks.map((task, index) => ({
+        ...task,
+        task_order: index + 1
+      }));
+      
+      // Combine with tasks from other statuses
+      const allUpdatedTasks = [...otherTasks, ...renumberedTasks];
+      
+      // Update all tasks in this status in the backend
+      const updatePromises = renumberedTasks.map(task => 
+        projectService.updateTask(task.id, { task_order: task.task_order })
       );
-
-      for (const task of tasksToUpdate) {
-        await projectService.updateTask(task.id, { task_order: task.task_order });
-      }
-
-      updateTasks(updatedTasks);
+      
+      await Promise.all(updatePromises);
+      
+      updateTasks(allUpdatedTasks);
     } catch (error) {
       console.error('Failed to reorder task:', error);
     }
