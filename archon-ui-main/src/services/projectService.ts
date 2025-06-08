@@ -482,6 +482,31 @@ export const projectService = {
     }
   },
 
+  /**
+   * Get subtasks for a parent task
+   */
+  async getTaskSubtasks(parentTaskId: string, includeClosed: boolean = false): Promise<Task[]> {
+    try {
+      // Use MCP endpoint for getting subtasks
+      const response = await callAPI<{subtasks: Task[]}>(`/api/mcp/call`, {
+        method: 'POST',
+        body: JSON.stringify({
+          tool_name: 'get_task_subtasks',
+          arguments: {
+            parent_task_id: parentTaskId,
+            include_closed: includeClosed
+          }
+        })
+      });
+      
+      // Map database tasks to UI tasks
+      return (response.subtasks || []).map(dbTaskToUITask);
+    } catch (error) {
+      console.error(`Failed to get subtasks for task ${parentTaskId}:`, error);
+      throw error;
+    }
+  },
+
   // ==================== DOCUMENT OPERATIONS ====================
 
   /**

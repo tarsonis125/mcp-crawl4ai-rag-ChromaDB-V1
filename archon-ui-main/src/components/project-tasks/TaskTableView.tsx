@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useDrag, useDrop } from 'react-dnd';
-import { Check, Trash2, Edit, Tag, User, Bot, Clipboard, Save, Plus } from 'lucide-react';
+import { Check, Trash2, Edit, Tag, User, Bot, Clipboard, Save, Plus, List } from 'lucide-react';
+import { Toggle } from '../ui/Toggle';
 
 export interface Task {
   id: string;
@@ -14,6 +15,7 @@ export interface Task {
   feature: string;
   featureColor: string;
   task_order: number;
+  parent_task_id?: string; // Added for subtask support
 }
 
 interface TaskTableViewProps {
@@ -24,6 +26,9 @@ interface TaskTableViewProps {
   onTaskReorder: (taskId: string, newOrder: number, status: Task['status']) => void;
   onTaskCreate?: (task: Omit<Task, 'id'>) => Promise<void>;
   onTaskUpdate?: (taskId: string, updates: Partial<Task>) => Promise<void>;
+  showSubtasks?: boolean;
+  showSubtasksToggle?: boolean;
+  onShowSubtasksChange?: (show: boolean) => void;
 }
 
 const ItemTypes = {
@@ -222,6 +227,8 @@ interface DraggableTaskRowProps {
   onTaskReorder: (taskId: string, newOrder: number, status: Task['status']) => void;
   onTaskUpdate?: (taskId: string, updates: Partial<Task>) => Promise<void>;
   tasksInStatus: Task[];
+  isSubtask?: boolean;
+  indentLevel?: number;
 }
 
 const DraggableTaskRow = ({ 
@@ -232,7 +239,9 @@ const DraggableTaskRow = ({
   onTaskDelete, 
   onTaskReorder,
   onTaskUpdate,
-  tasksInStatus 
+  tasksInStatus,
+  isSubtask = false,
+  indentLevel = 0
 }: DraggableTaskRowProps) => {
   const [editingField, setEditingField] = useState<string | null>(null);
   const [isHovering, setIsHovering] = useState(false);
@@ -316,8 +325,14 @@ const DraggableTaskRow = ({
         </div>
       </td>
       <td className="p-3 text-gray-800 dark:text-gray-200 group-hover:text-gray-900 dark:group-hover:text-white transition-colors relative">
-        <div className="min-w-0">
-          <div className="truncate">
+        <div className={`min-w-0 flex items-center ${isSubtask ? 'ml-6' : ''}`}>
+          {isSubtask && (
+            <div className="flex items-center mr-2 text-gray-400">
+              <div className="w-4 h-px bg-gray-300 dark:bg-gray-600"></div>
+              <div className="w-2 h-px bg-gray-300 dark:bg-gray-600 rotate-90"></div>
+            </div>
+          )}
+          <div className="truncate flex-1">
             <EditableCell
               value={task.title}
               onSave={(value) => handleUpdateField('title', value)}
@@ -581,7 +596,10 @@ export const TaskTableView = ({
   onTaskDelete, 
   onTaskReorder,
   onTaskCreate,
-  onTaskUpdate
+  onTaskUpdate,
+  showSubtasks = false,
+  showSubtasksToggle = false,
+  onShowSubtasksChange
 }: TaskTableViewProps) => {
   const [statusFilter, setStatusFilter] = useState<Task['status'] | 'all'>('backlog');
 
@@ -590,6 +608,32 @@ export const TaskTableView = ({
     return tasks
       .filter(task => task.status === status)
       .sort((a, b) => a.task_order - b.task_order);
+  };
+
+  // Organize tasks hierarchically (parent tasks with their subtasks)
+  const organizeTasksHierarchically = (taskList: Task[]) => {
+    const parentTasks = taskList.filter(task => !task.parent_task_id);
+    const subtasks = taskList.filter(task => task.parent_task_id);
+    
+    const organizedTasks: (Task & { isSubtask?: boolean; indentLevel?: number })[] = [];
+    
+    parentTasks.forEach(parentTask => {
+      // Add parent task
+      organizedTasks.push({ ...parentTask, isSubtask: false, indentLevel: 0 });
+      
+      // Add its subtasks if showSubtasks is true
+      if (showSubtasks) {
+        const taskSubtasks = subtasks
+          .filter(subtask => subtask.parent_task_id === parentTask.id)
+          .sort((a, b) => a.task_order - b.task_order);
+        
+        taskSubtasks.forEach(subtask => {
+          organizedTasks.push({ ...subtask, isSubtask: true, indentLevel: 1 });
+        });
+      }
+    });
+    
+    return organizedTasks;
   };
 
   const filteredTasks = statusFilter === 'all' ? tasks : tasks.filter(task => task.status === statusFilter);
@@ -607,20 +651,21 @@ export const TaskTableView = ({
   return (
     <div className="overflow-x-auto">
       {/* Status Filter */}
-      <div className="mb-4 flex gap-2 flex-wrap py-2">
-        <button
-          onClick={() => setStatusFilter('all')}
-          className={`
-            px-3 py-1.5 rounded-full text-xs transition-all duration-200
-            ${statusFilter === 'all' 
-              ? 'bg-cyan-100 dark:bg-cyan-900/20 text-cyan-600 dark:text-cyan-400 ring-1 ring-cyan-500/50 shadow-[0_0_8px_rgba(34,211,238,0.3)]' 
-              : 'bg-gray-100/70 dark:bg-gray-800/50 text-gray-600 dark:text-gray-400 hover:bg-gray-200/70 dark:hover:bg-gray-700/50'
-            }
-          `}
-        >
-          All Tasks
-        </button>
-        {statuses.map((status) => {
+      <div className="mb-4 flex gap-2 flex-wrap py-2 items-center justify-between">
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={() => setStatusFilter('all')}
+            className={`
+              px-3 py-1.5 rounded-full text-xs transition-all duration-200
+              ${statusFilter === 'all' 
+                ? 'bg-cyan-100 dark:bg-cyan-900/20 text-cyan-600 dark:text-cyan-400 ring-1 ring-cyan-500/50 shadow-[0_0_8px_rgba(34,211,238,0.3)]' 
+                : 'bg-gray-100/70 dark:bg-gray-800/50 text-gray-600 dark:text-gray-400 hover:bg-gray-200/70 dark:hover:bg-gray-700/50'
+              }
+            `}
+          >
+            All Tasks
+          </button>
+          {statuses.map((status) => {
           // Define colors for each status
           const getStatusColors = (status: Task['status']) => {
             switch (status) {
@@ -669,6 +714,29 @@ export const TaskTableView = ({
             </button>
           );
         })}
+        </div>
+        
+        {/* Show Subtasks Toggle */}
+        {onShowSubtasksChange && (
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-gradient-to-r from-blue-500/5 to-blue-500/0">
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-gray-800 dark:text-white text-sm">
+                Show Subtasks
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Display subtasks indented under parent tasks
+              </p>
+            </div>
+            <div className="flex-shrink-0">
+              <Toggle 
+                checked={showSubtasksToggle} 
+                onCheckedChange={onShowSubtasksChange} 
+                accentColor="blue" 
+                icon={<List className="w-5 h-5" />} 
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <table className="w-full border-collapse table-fixed">
@@ -732,7 +800,8 @@ export const TaskTableView = ({
             // Grouped by status when showing all
             statuses.map((status) => {
               const statusTasks = getTasksByStatus(status);
-              return statusTasks.map((task, index) => (
+              const organizedTasks = organizeTasksHierarchically(statusTasks);
+              return organizedTasks.map((task, index) => (
                 <DraggableTaskRow
                   key={task.id}
                   task={task}
@@ -743,12 +812,14 @@ export const TaskTableView = ({
                   onTaskReorder={onTaskReorder}
                   onTaskUpdate={onTaskUpdate}
                   tasksInStatus={statusTasks}  // Pass the tasks in this specific status
+                  isSubtask={task.isSubtask}
+                  indentLevel={task.indentLevel}
                 />
               ));
             }).flat()  // Flatten the array since map returns arrays
           ) : (
             // Single status filter
-            getTasksByStatus(statusFilter).map((task, index) => (
+            organizeTasksHierarchically(getTasksByStatus(statusFilter)).map((task, index) => (
               <DraggableTaskRow
                 key={task.id}
                 task={task}
@@ -759,6 +830,8 @@ export const TaskTableView = ({
                 onTaskReorder={onTaskReorder}
                 onTaskUpdate={onTaskUpdate}
                 tasksInStatus={getTasksByStatus(statusFilter)}
+                isSubtask={task.isSubtask}
+                indentLevel={task.indentLevel}
               />
             ))
           )}

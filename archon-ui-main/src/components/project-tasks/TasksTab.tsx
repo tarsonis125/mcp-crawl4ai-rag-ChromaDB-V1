@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Table, LayoutGrid, RefreshCw, Plus, Wifi, WifiOff } from 'lucide-react';
+import { X, Table, LayoutGrid, RefreshCw, Plus, Wifi, WifiOff, Check, Trash2, List, ChevronDown, ChevronRight } from 'lucide-react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { Button } from '../ui/Button';
+import { Toggle } from '../ui/Toggle';
 import { projectService } from '../../services/projectService';
 import { taskUpdateWebSocket } from '../../services/websocketService';
 import type { CreateTaskRequest, UpdateTaskRequest, DatabaseTaskStatus } from '../../types/project';
@@ -46,7 +47,8 @@ const mapDatabaseTaskToUITask = (dbTask: any): Task => {
     },
     feature: dbTask.feature || 'General',
     featureColor: '#3b82f6', // Default blue color
-    task_order: dbTask.task_order || 0
+    task_order: dbTask.task_order || 0,
+    parent_task_id: dbTask.parent_task_id || undefined
   };
 };
 
@@ -66,6 +68,17 @@ export const TasksTab = ({
   const [projectFeatures, setProjectFeatures] = useState<any[]>([]);
   const [isLoadingFeatures, setIsLoadingFeatures] = useState(false);
   const [isWebSocketConnected, setIsWebSocketConnected] = useState(false);
+  
+  // Subtask-related state
+  const [currentSubtasks, setCurrentSubtasks] = useState<Task[]>([]);
+  const [isLoadingSubtasks, setIsLoadingSubtasks] = useState(false);
+  const [showSubtasksInTable, setShowSubtasksInTable] = useState(false);
+  
+  // Accordion state
+  const [isSubtasksExpanded, setIsSubtasksExpanded] = useState(false);
+  
+  // Temporary subtasks for new tasks
+  const [tempSubtasks, setTempSubtasks] = useState<Omit<Task, 'id'>[]>([]);
 
   // Initialize tasks
   useEffect(() => {
@@ -204,21 +217,67 @@ export const TasksTab = ({
     }
   };
 
+  // Load subtasks when editing an existing task
+  const loadSubtasks = async (parentTaskId: string) => {
+    setIsLoadingSubtasks(true);
+    try {
+      const response = await projectService.getTaskSubtasks(parentTaskId);
+      const subtasks = response.map(mapDatabaseTaskToUITask);
+      setCurrentSubtasks(subtasks);
+    } catch (error) {
+      console.error('Failed to load subtasks:', error);
+      setCurrentSubtasks([]);
+    } finally {
+      setIsLoadingSubtasks(false);
+    }
+  };
+
   // Modal management functions
-  const openEditModal = (task: Task) => {
+  const openEditModal = async (task: Task) => {
     setEditingTask(task);
     setIsModalOpen(true);
+    if (task.id) {
+      // Load existing subtasks into tempSubtasks so we can modify them before saving
+      setIsLoadingSubtasks(true);
+      try {
+        const subtasks = await projectService.getTaskSubtasks(task.id, false);
+        setTempSubtasks(subtasks.map(subtask => ({
+          title: subtask.title,
+          description: subtask.description,
+          status: mapDBStatusToUIStatus(subtask.status),
+          assignee: { name: subtask.assignee as 'User' | 'Archon' | 'AI IDE Agent', avatar: '' },
+          feature: subtask.feature || '',
+          featureColor: subtask.featureColor || '#3b82f6',
+          task_order: subtask.task_order,
+          parent_task_id: task.id
+        })));
+        setCurrentSubtasks([]); // Clear this since we're using tempSubtasks now
+      } catch (error) {
+        console.error('Failed to load subtasks:', error);
+        setTempSubtasks([]);
+      } finally {
+        setIsLoadingSubtasks(false);
+      }
+    } else {
+      setCurrentSubtasks([]);
+      setTempSubtasks([]);
+    }
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingTask(null);
+    setCurrentSubtasks([]);
+    setTempSubtasks([]);
+    setIsSubtasksExpanded(false);
   };
 
   const saveTask = async () => {
     if (!editingTask) return;
     
     try {
+      let parentTaskId = editingTask.id;
+      
       if (editingTask.id) {
         // Update existing task
         const updateData: UpdateTaskRequest = {
@@ -232,8 +291,31 @@ export const TasksTab = ({
         };
         
         await projectService.updateTask(editingTask.id, updateData);
+        
+        // Delete all existing subtasks first
+        const existingSubtasks = await projectService.getTaskSubtasks(editingTask.id, false);
+        for (const subtask of existingSubtasks) {
+          await projectService.deleteTask(subtask.id);
+        }
+        
+        // Create all tempSubtasks as new subtasks
+        for (const subtask of tempSubtasks) {
+          const subtaskCreateData: CreateTaskRequest = {
+            project_id: projectId,
+            title: subtask.title,
+            description: subtask.description,
+            status: mapUIStatusToDBStatus(subtask.status),
+            assignee: subtask.assignee?.name || 'User',
+            task_order: subtask.task_order,
+            parent_task_id: editingTask.id,
+            ...(subtask.feature && { feature: subtask.feature }),
+            ...(subtask.featureColor && { featureColor: subtask.featureColor })
+          };
+          
+          await projectService.createTask(subtaskCreateData);
+        }
       } else {
-        // Create new task
+        // Create new task first to get UUID
         const createData: CreateTaskRequest = {
           project_id: projectId,
           title: editingTask.title,
@@ -245,24 +327,32 @@ export const TasksTab = ({
           ...(editingTask.featureColor && { featureColor: editingTask.featureColor })
         };
         
-        await projectService.createTask(createData);
+        const createdTask = await projectService.createTask(createData);
+        parentTaskId = createdTask.id;
+        
+        // Now create any temporary subtasks
+        if (tempSubtasks.length > 0) {
+          for (const subtask of tempSubtasks) {
+            const subtaskCreateData: CreateTaskRequest = {
+              project_id: projectId,
+              title: subtask.title,
+              description: subtask.description,
+              status: mapUIStatusToDBStatus(subtask.status),
+              assignee: subtask.assignee?.name || 'User',
+              task_order: subtask.task_order,
+              parent_task_id: parentTaskId,
+              ...(subtask.feature && { feature: subtask.feature }),
+              ...(subtask.featureColor && { featureColor: subtask.featureColor })
+            };
+            
+            await projectService.createTask(subtaskCreateData);
+          }
+        }
       }
       
       // Reload tasks from backend
       const updatedTasks = await projectService.getTasksByProject(projectId);
-      const uiTasks: Task[] = updatedTasks.map(task => ({
-        id: task.id,
-        title: task.title,
-        description: task.description,
-        status: mapDBStatusToUIStatus(task.status),
-        assignee: {
-          name: task.assignee || 'User',
-          avatar: ''
-        },
-        feature: task.feature || 'General',
-        featureColor: task.featureColor || '#6366f1',
-        task_order: task.task_order || 0
-      }));
+      const uiTasks: Task[] = updatedTasks.map(mapDatabaseTaskToUITask);
       
       updateTasks(uiTasks);
       closeModal();
@@ -276,6 +366,31 @@ export const TasksTab = ({
   const updateTasks = (newTasks: Task[]) => {
     setTasks(newTasks);
     onTasksChange(newTasks);
+  };
+
+  // Helper function to reorder tasks by status to ensure no gaps (1,2,3...)
+  const reorderTasksByStatus = async (status: Task['status']) => {
+    const tasksInStatus = tasks
+      .filter(task => task.status === status && !task.parent_task_id) // Only parent tasks
+      .sort((a, b) => a.task_order - b.task_order);
+    
+    const updatePromises = tasksInStatus.map((task, index) => 
+      projectService.updateTask(task.id, { task_order: index + 1 })
+    );
+    
+    await Promise.all(updatePromises);
+  };
+
+  // Helper function to get next available order number for a status
+  const getNextOrderForStatus = (status: Task['status']): number => {
+    const tasksInStatus = tasks.filter(task => 
+      task.status === status && !task.parent_task_id // Only parent tasks
+    );
+    
+    if (tasksInStatus.length === 0) return 1;
+    
+    const maxOrder = Math.max(...tasksInStatus.map(task => task.task_order));
+    return maxOrder + 1;
   };
 
   // React DnD optimized task reordering - immediate visual feedback, async persistence  
@@ -368,23 +483,35 @@ export const TasksTab = ({
   // Task move function (for board view)
   const moveTask = async (taskId: string, newStatus: Task['status']) => {
     try {
-      // Calculate new order (add to end of target status)
-      const tasksInTargetStatus = tasks.filter(task => task.status === newStatus);
-      const newOrder = tasksInTargetStatus.length + 1;
+      const movingTask = tasks.find(task => task.id === taskId);
+      if (!movingTask) return;
+      
+      const oldStatus = movingTask.status;
+      const newOrder = getNextOrderForStatus(newStatus);
 
+      // Update the task with new status and order
       await projectService.updateTask(taskId, {
         status: mapUIStatusToDBStatus(newStatus),
         task_order: newOrder
       });
       
-      // Update local state
+      // Update local state immediately
       const newTasks = tasks.map(task => task.id === taskId ? {
         ...task,
         status: newStatus,
         task_order: newOrder
       } : task);
-      
       updateTasks(newTasks);
+      
+      // Reorder the old status to close gaps (if different from new status)
+      if (oldStatus !== newStatus) {
+        await reorderTasksByStatus(oldStatus);
+        
+        // Reload tasks to reflect reordering
+        const updatedTasks = await projectService.getTasksByProject(projectId);
+        const uiTasks: Task[] = updatedTasks.map(mapDatabaseTaskToUITask);
+        updateTasks(uiTasks);
+      }
     } catch (error) {
       console.error('Failed to move task:', error);
     }
@@ -396,9 +523,25 @@ export const TasksTab = ({
 
   const deleteTask = async (taskId: string) => {
     try {
+      const deletingTask = tasks.find(task => task.id === taskId);
+      if (!deletingTask) return;
+      
+      const taskStatus = deletingTask.status;
+      
+      // Delete the task
       await projectService.deleteTask(taskId);
+      
+      // Update local state immediately
       const newTasks = tasks.filter(task => task.id !== taskId);
       updateTasks(newTasks);
+      
+      // Reorder remaining tasks in the same status to close gaps
+      await reorderTasksByStatus(taskStatus);
+      
+      // Reload tasks to reflect reordering
+      const updatedTasks = await projectService.getTasksByProject(projectId);
+      const uiTasks: Task[] = updatedTasks.map(mapDatabaseTaskToUITask);
+      updateTasks(uiTasks);
     } catch (error) {
       console.error('Failed to delete task:', error);
     }
@@ -407,13 +550,16 @@ export const TasksTab = ({
   // Inline task creation function
   const createTaskInline = async (newTask: Omit<Task, 'id'>) => {
     try {
+      // Auto-assign next order number if not provided
+      const nextOrder = newTask.task_order || getNextOrderForStatus(newTask.status);
+      
       const createData: CreateTaskRequest = {
         project_id: projectId,
         title: newTask.title,
         description: newTask.description,
         status: mapUIStatusToDBStatus(newTask.status),
         assignee: newTask.assignee?.name || 'User',
-        task_order: newTask.task_order,
+        task_order: nextOrder,
         ...(newTask.feature && { feature: newTask.feature }),
         ...(newTask.featureColor && { featureColor: newTask.featureColor })
       };
@@ -496,6 +642,282 @@ export const TasksTab = ({
     return options;
   };
 
+  // Create subtask function
+  const createSubtask = async (parentTaskId: string, subtaskData: Omit<Task, 'id'>) => {
+    try {
+      const createData: CreateTaskRequest = {
+        project_id: projectId,
+        title: subtaskData.title,
+        description: subtaskData.description,
+        status: mapUIStatusToDBStatus(subtaskData.status),
+        assignee: subtaskData.assignee?.name || 'User',
+        task_order: subtaskData.task_order,
+        parent_task_id: parentTaskId,
+        ...(subtaskData.feature && { feature: subtaskData.feature }),
+        ...(subtaskData.featureColor && { featureColor: subtaskData.featureColor })
+      };
+      
+      await projectService.createTask(createData);
+      
+      // Reload subtasks
+      await loadSubtasks(parentTaskId);
+      
+      // Reload all tasks to update parent status if needed
+      const updatedTasks = await projectService.getTasksByProject(projectId);
+      const uiTasks: Task[] = updatedTasks.map(mapDatabaseTaskToUITask);
+      updateTasks(uiTasks);
+    } catch (error) {
+      console.error('Failed to create subtask:', error);
+      throw error;
+    }
+  };
+
+  // Delete subtask function
+  const deleteSubtask = async (subtaskId: string, parentTaskId: string) => {
+    try {
+      await projectService.deleteTask(subtaskId);
+      
+      // Reload subtasks
+      await loadSubtasks(parentTaskId);
+      
+      // Reload all tasks
+      const updatedTasks = await projectService.getTasksByProject(projectId);
+      const uiTasks: Task[] = updatedTasks.map(mapDatabaseTaskToUITask);
+      updateTasks(uiTasks);
+    } catch (error) {
+      console.error('Failed to delete subtask:', error);
+      throw error;
+    }
+  };
+
+  // Update subtask function
+  const updateSubtask = async (subtaskId: string, updates: Partial<Task>, parentTaskId: string) => {
+    try {
+      const updateData: Partial<UpdateTaskRequest> = {};
+      
+      if (updates.title !== undefined) updateData.title = updates.title;
+      if (updates.description !== undefined) updateData.description = updates.description;
+      if (updates.status !== undefined) updateData.status = mapUIStatusToDBStatus(updates.status);
+      if (updates.assignee !== undefined) updateData.assignee = updates.assignee.name;
+      if (updates.task_order !== undefined) updateData.task_order = updates.task_order;
+      if (updates.feature !== undefined) updateData.feature = updates.feature;
+      if (updates.featureColor !== undefined) updateData.featureColor = updates.featureColor;
+      
+      await projectService.updateTask(subtaskId, updateData);
+      
+      // Reload subtasks
+      await loadSubtasks(parentTaskId);
+    } catch (error) {
+      console.error('Failed to update subtask:', error);
+      throw error;
+    }
+  };
+
+  // Handle temporary subtasks for new tasks
+  const addTempSubtask = (subtaskData: Omit<Task, 'id'>) => {
+    setTempSubtasks(prev => [...prev, {
+      ...subtaskData,
+      parent_task_id: 'temp' // Will be replaced when parent is saved
+    }]);
+  };
+
+  const deleteTempSubtask = (index: number) => {
+    setTempSubtasks(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updateTempSubtask = (index: number, updates: Partial<Omit<Task, 'id'>>) => {
+    setTempSubtasks(prev => prev.map((subtask, i) => 
+      i === index ? { ...subtask, ...updates } : subtask
+    ));
+  };
+
+  // Filter out subtasks from main task list if showSubtasksInTable is false
+  const getFilteredTasks = () => {
+    if (showSubtasksInTable) {
+      return tasks; // Show all tasks including subtasks
+    }
+    // Filter out tasks that have a parent_task_id (i.e., subtasks)
+    return tasks.filter(task => !task.parent_task_id);
+  };
+
+// SubtaskAddRow component for inline subtask creation
+interface SubtaskAddRowProps {
+  parentTaskId: string;
+  onSubtaskCreate: (parentTaskId: string, subtaskData: Omit<Task, 'id'>) => Promise<void>;
+  inheritedFeature?: string;
+}
+
+const SubtaskAddRow = ({ parentTaskId, onSubtaskCreate, inheritedFeature }: SubtaskAddRowProps) => {
+  const [newSubtask, setNewSubtask] = useState<Omit<Task, 'id'>>({
+    title: '',
+    description: '',
+    status: 'backlog',
+    assignee: { name: 'AI IDE Agent', avatar: '' },
+    feature: inheritedFeature || '',
+    featureColor: '#3b82f6',
+    task_order: 1,
+    parent_task_id: parentTaskId
+  });
+
+  const handleCreateSubtask = async () => {
+    if (!newSubtask.title.trim()) return;
+    
+    try {
+      await onSubtaskCreate(parentTaskId, newSubtask);
+      
+      // Reset form
+      setNewSubtask(prev => ({
+        ...prev,
+        title: '',
+        description: ''
+      }));
+    } catch (error) {
+      console.error('Failed to create subtask:', error);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleCreateSubtask();
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-3 p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+      <input
+        type="text"
+        value={newSubtask.title}
+        onChange={(e) => setNewSubtask(prev => ({ ...prev, title: e.target.value }))}
+        onKeyPress={handleKeyPress}
+        placeholder="Add subtask..."
+        className="flex-1 bg-white/90 dark:bg-black/90 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)]"
+      />
+      
+      <select
+        value={newSubtask.assignee?.name || 'User'}
+        onChange={(e) => setNewSubtask(prev => ({ 
+          ...prev, 
+          assignee: { name: e.target.value as 'User' | 'Archon' | 'AI IDE Agent', avatar: '' } 
+        }))}
+        className="bg-white/90 dark:bg-black/90 border border-gray-300 dark:border-gray-600 rounded px-2 py-2 text-sm focus:outline-none focus:border-cyan-500"
+      >
+        {ASSIGNEE_OPTIONS.map(option => (
+          <option key={option} value={option}>{option}</option>
+        ))}
+      </select>
+      
+      <select
+        value={newSubtask.status}
+        onChange={(e) => setNewSubtask(prev => ({ 
+          ...prev, 
+          status: e.target.value as Task['status'] 
+        }))}
+        className="bg-white/90 dark:bg-black/90 border border-gray-300 dark:border-gray-600 rounded px-2 py-2 text-sm focus:outline-none focus:border-cyan-500"
+      >
+        <option value="backlog">Backlog</option>
+        <option value="in-progress">In Progress</option>
+        <option value="review">Review</option>
+        <option value="complete">Complete</option>
+      </select>
+      
+      <button
+        onClick={handleCreateSubtask}
+        disabled={!newSubtask.title.trim()}
+        className="p-2 rounded-full bg-cyan-500 text-white hover:bg-cyan-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+      >
+        <Plus className="w-4 h-4" />
+      </button>
+    </div>
+  );
+};
+
+// Component for adding temporary subtasks (for new tasks)
+interface TempSubtaskAddRowProps {
+  onSubtaskCreate: (subtaskData: Omit<Task, 'id'>) => void;
+  inheritedFeature?: string;
+}
+
+const TempSubtaskAddRow = ({ onSubtaskCreate, inheritedFeature }: TempSubtaskAddRowProps) => {
+  const [newSubtask, setNewSubtask] = useState<Omit<Task, 'id'>>({
+    title: '',
+    description: '',
+    status: 'backlog',
+    assignee: { name: 'AI IDE Agent', avatar: '' },
+    feature: inheritedFeature || '',
+    featureColor: '#3b82f6',
+    task_order: 1
+  });
+
+  const handleCreateSubtask = () => {
+    if (!newSubtask.title.trim()) return;
+    
+    onSubtaskCreate(newSubtask);
+    
+    // Reset form
+    setNewSubtask(prev => ({
+      ...prev,
+      title: '',
+      description: ''
+    }));
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleCreateSubtask();
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
+      <input
+        type="text"
+        value={newSubtask.title}
+        onChange={(e) => setNewSubtask(prev => ({ ...prev, title: e.target.value }))}
+        onKeyPress={handleKeyPress}
+        placeholder="Add subtask..."
+        className="flex-1 bg-white/90 dark:bg-black/90 border border-blue-300 dark:border-blue-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:shadow-[0_0_5px_rgba(59,130,246,0.3)]"
+      />
+      
+      <select
+        value={newSubtask.assignee?.name || 'User'}
+        onChange={(e) => setNewSubtask(prev => ({ 
+          ...prev, 
+          assignee: { name: e.target.value as 'User' | 'Archon' | 'AI IDE Agent', avatar: '' } 
+        }))}
+        className="bg-white/90 dark:bg-black/90 border border-blue-300 dark:border-blue-600 rounded px-2 py-2 text-sm focus:outline-none focus:border-blue-500"
+      >
+        {ASSIGNEE_OPTIONS.map(option => (
+          <option key={option} value={option}>{option}</option>
+        ))}
+      </select>
+      
+      <select
+        value={newSubtask.status}
+        onChange={(e) => setNewSubtask(prev => ({ 
+          ...prev, 
+          status: e.target.value as Task['status'] 
+        }))}
+        className="bg-white/90 dark:bg-black/90 border border-blue-300 dark:border-blue-600 rounded px-2 py-2 text-sm focus:outline-none focus:border-blue-500"
+      >
+        <option value="backlog">Backlog</option>
+        <option value="in-progress">In Progress</option>
+        <option value="review">Review</option>
+        <option value="complete">Complete</option>
+      </select>
+      
+      <button
+        onClick={handleCreateSubtask}
+        disabled={!newSubtask.title.trim()}
+        className="p-2 rounded-full bg-blue-500 text-white hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+      >
+        <Plus className="w-4 h-4" />
+      </button>
+    </div>
+  );
+};
+
   return (
     <DndProvider backend={HTML5Backend}>
       <div className="min-h-[70vh] relative">
@@ -503,17 +925,20 @@ export const TasksTab = ({
         <div className="relative h-[calc(100vh-220px)] overflow-auto">
           {viewMode === 'table' ? (
             <TaskTableView
-              tasks={tasks}
+              tasks={getFilteredTasks()}
               onTaskView={openEditModal}
               onTaskComplete={completeTask}
               onTaskDelete={deleteTask}
               onTaskReorder={handleTaskReorder}
               onTaskCreate={createTaskInline}
               onTaskUpdate={updateTaskInline}
+              showSubtasks={showSubtasksInTable}
+              showSubtasksToggle={showSubtasksInTable}
+              onShowSubtasksChange={setShowSubtasksInTable}
             />
           ) : (
             <TaskBoardView
-              tasks={tasks}
+              tasks={tasks.filter(task => !task.parent_task_id)} // Never show subtasks in board view
               onTaskView={openEditModal}
               onTaskComplete={completeTask}
               onTaskDelete={deleteTask}
@@ -697,6 +1122,87 @@ export const TasksTab = ({
                       </div>
                     </div>
                   </div>
+                </div>
+
+                {/* Subtasks Section - Accordion for both new and existing tasks */}
+                <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-6">
+                  <button
+                    onClick={() => setIsSubtasksExpanded(!isSubtasksExpanded)}
+                    className="flex items-center justify-between w-full mb-4 text-left hover:bg-gray-50 dark:hover:bg-gray-800 p-2 rounded-lg transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                        Subtasks
+                      </h4>
+                      {tempSubtasks.length > 0 && (
+                        <span className="px-2 py-1 text-xs bg-blue-200 dark:bg-blue-700 text-blue-600 dark:text-blue-400 rounded-full">
+                          {tempSubtasks.length}
+                        </span>
+                      )}
+                      {isLoadingSubtasks && (
+                        <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" />
+                      )}
+                    </div>
+                    {isSubtasksExpanded ? (
+                      <ChevronDown className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+                    ) : (
+                      <ChevronRight className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+                    )}
+                  </button>
+                  
+                  {isSubtasksExpanded && (
+                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                      {/* Temporary Subtasks (for both new and existing tasks) */}
+                      {tempSubtasks.map((subtask, index) => (
+                        <div key={index} className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border-l-4 border-blue-500">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                {subtask.title}
+                              </span>
+                              <span className={`px-2 py-1 text-xs rounded-full ${
+                                subtask.status === 'complete' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                                subtask.status === 'in-progress' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
+                                subtask.status === 'review' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                                'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+                              }`}>
+                                {subtask.status}
+                              </span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                {subtask.assignee?.name || 'User'}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => updateTempSubtask(index, { 
+                                status: subtask.status === 'complete' ? 'backlog' : 'complete' 
+                              })}
+                              className={`p-1 rounded-full transition-colors ${
+                                subtask.status === 'complete' 
+                                  ? 'bg-gray-200 text-gray-500 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-400' 
+                                  : 'bg-green-100 text-green-600 hover:bg-green-200 dark:bg-green-900 dark:text-green-400'
+                              }`}
+                            >
+                              <Check className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={() => deleteTempSubtask(index)}
+                              className="p-1 rounded-full bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900 dark:text-red-400 transition-colors"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      
+                      {/* Add New Subtask Row */}
+                      <TempSubtaskAddRow 
+                        onSubtaskCreate={addTempSubtask}
+                        inheritedFeature={editingTask?.feature}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex justify-end gap-3 mt-6">
