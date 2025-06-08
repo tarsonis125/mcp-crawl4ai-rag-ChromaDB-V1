@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useDrag, useDrop } from 'react-dnd';
-import { Check, Trash2, Edit, Tag, User, Bot } from 'lucide-react';
+import { Check, Trash2, Edit, Tag, User, Bot, Clipboard } from 'lucide-react';
 
 export interface Task {
   id: string;
@@ -69,6 +69,19 @@ const getOrderGlow = (order: number) => {
   return 'shadow-[0_0_10px_rgba(16,185,129,0.7)]';
 };
 
+// Helper function to reorder tasks properly
+const reorderTasks = (tasks: Task[], fromIndex: number, toIndex: number): Task[] => {
+  const result = [...tasks];
+  const [movedTask] = result.splice(fromIndex, 1);
+  result.splice(toIndex, 0, movedTask);
+  
+  // Update task_order to be sequential (1, 2, 3, ...)
+  return result.map((task, index) => ({
+    ...task,
+    task_order: index + 1
+  }));
+};
+
 interface DraggableTaskRowProps {
   task: Task;
   index: number;
@@ -107,9 +120,15 @@ const DraggableTaskRow = ({
       
       if (draggedIndex === hoveredIndex) return;
       
-      // Calculate new order based on position
-      const newOrder = hoveredIndex + 1;
-      onTaskReorder(draggedItem.id, newOrder, task.status);
+      // Improved reordering logic using React DND best practices
+      // Reorder the tasks array and calculate proper sequential orders
+      const reorderedTasks = reorderTasks(tasksInStatus, draggedIndex, hoveredIndex);
+      
+      // Find the new order for the dragged task
+      const draggedTask = reorderedTasks.find(t => t.id === draggedItem.id);
+      if (draggedTask) {
+        onTaskReorder(draggedItem.id, draggedTask.task_order, task.status);
+      }
       
       // Update the dragged item's index for continued hover calculations
       draggedItem.index = hoveredIndex;
@@ -149,15 +168,15 @@ const DraggableTaskRow = ({
              style={{
                backgroundColor: task.status === 'backlog' ? 'rgba(107, 114, 128, 0.2)' : 
                                task.status === 'in-progress' ? 'rgba(59, 130, 246, 0.2)' : 
-                               task.status === 'testing' ? 'rgba(168, 85, 247, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+                               task.status === 'review' ? 'rgba(168, 85, 247, 0.2)' : 'rgba(16, 185, 129, 0.2)',
                color: task.status === 'backlog' ? '#6b7280' : 
                      task.status === 'in-progress' ? '#3b82f6' : 
-                     task.status === 'testing' ? '#a855f7' : '#10b981'
+                     task.status === 'review' ? '#a855f7' : '#10b981'
              }}
         >
           {task.status === 'backlog' ? 'Backlog' : 
            task.status === 'in-progress' ? 'In Progress' : 
-           task.status === 'testing' ? 'Testing' : 'Complete'}
+           task.status === 'review' ? 'Review' : 'Complete'}
         </div>
       </td>
       <td className="p-3">
@@ -203,6 +222,24 @@ const DraggableTaskRow = ({
           >
             <Edit className="w-3.5 h-3.5" />
           </button>
+          {/* Copy Task ID Button - Matching Board View */}
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              navigator.clipboard.writeText(task.id);
+              // Visual feedback like in board view
+              const button = e.currentTarget;
+              const originalHTML = button.innerHTML;
+              button.innerHTML = '<div class="flex items-center gap-1"><span class="w-3 h-3 text-green-500">✓</span><span class="text-green-500 text-xs">Copied</span></div>';
+              setTimeout(() => {
+                button.innerHTML = originalHTML;
+              }, 2000);
+            }}
+            className="p-1.5 rounded-full bg-gray-500/20 text-gray-500 hover:bg-gray-500/30 hover:shadow-[0_0_10px_rgba(107,114,128,0.3)] transition-all duration-300"
+            title="Copy Task ID to clipboard"
+          >
+            <Clipboard className="w-3.5 h-3.5" />
+          </button>
         </div>
       </td>
     </tr>
@@ -226,7 +263,16 @@ export const TaskTableView = ({
   };
 
   const filteredTasks = statusFilter === 'all' ? tasks : tasks.filter(task => task.status === statusFilter);
-  const statuses: Task['status'][] = ['backlog', 'in-progress', 'testing', 'complete'];
+  const statuses: Task['status'][] = ['backlog', 'in-progress', 'review', 'complete'];
+
+  // Get column header color and glow based on header type (matching board view style)
+  const getHeaderColor = (type: 'primary' | 'secondary') => {
+    return type === 'primary' ? 'text-cyan-600 dark:text-cyan-400' : 'text-purple-600 dark:text-purple-400';
+  };
+
+  const getHeaderGlow = (type: 'primary' | 'secondary') => {
+    return type === 'primary' ? 'bg-cyan-500 shadow-[0_0_8px_rgba(34,211,238,0.6)]' : 'bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.6)]';
+  };
 
   return (
     <div className="overflow-x-auto">
@@ -254,49 +300,56 @@ export const TaskTableView = ({
           >
             {status === 'backlog' ? 'Backlog' : 
              status === 'in-progress' ? 'In Progress' : 
-             status === 'testing' ? 'Testing' : 'Complete'}
+             status === 'review' ? 'Review' : 'Complete'}
           </button>
         ))}
       </div>
 
       <table className="w-full border-collapse">
         <thead>
-          <tr className="bg-gradient-to-r from-cyan-100/80 to-purple-100/80 dark:from-cyan-900/60 dark:to-purple-900/60 sticky top-0 z-10">
-            <th className="text-left p-3 font-mono text-purple-600 dark:text-purple-400 border-b border-gray-300 dark:border-gray-800">
+          <tr className="bg-white/80 dark:bg-black/80 backdrop-blur-sm sticky top-0 z-10">
+            <th className="text-left p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
               <div className="flex items-center gap-2">
-                Order
-                <span className="w-1 h-1 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.6)]"></span>
+                <span className={getHeaderColor('secondary')}>Order</span>
+                <span className={`w-1 h-1 rounded-full ${getHeaderGlow('secondary')}`}></span>
               </div>
+              {/* Header divider with glow matching board view */}
+              <div className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[1px] bg-purple-500/30 shadow-[0_0_10px_2px_rgba(168,85,247,0.2)]`}></div>
             </th>
-            <th className="text-left p-3 font-mono text-cyan-600 dark:text-cyan-400 border-b border-gray-300 dark:border-gray-800">
+            <th className="text-left p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
               <div className="flex items-center gap-2">
-                Task
-                <span className="w-1 h-1 rounded-full bg-cyan-500 shadow-[0_0_8px_rgba(34,211,238,0.6)]"></span>
+                <span className={getHeaderColor('primary')}>Task</span>
+                <span className={`w-1 h-1 rounded-full ${getHeaderGlow('primary')}`}></span>
               </div>
+              <div className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[1px] bg-cyan-500/30 shadow-[0_0_10px_2px_rgba(34,211,238,0.2)]`}></div>
             </th>
-            <th className="text-left p-3 font-mono text-purple-600 dark:text-purple-400 border-b border-gray-300 dark:border-gray-800">
+            <th className="text-left p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
               <div className="flex items-center gap-2">
-                Status
-                <span className="w-1 h-1 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.6)]"></span>
+                <span className={getHeaderColor('secondary')}>Status</span>
+                <span className={`w-1 h-1 rounded-full ${getHeaderGlow('secondary')}`}></span>
               </div>
+              <div className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[1px] bg-purple-500/30 shadow-[0_0_10px_2px_rgba(168,85,247,0.2)]`}></div>
             </th>
-            <th className="text-left p-3 font-mono text-cyan-600 dark:text-cyan-400 border-b border-gray-300 dark:border-gray-800">
+            <th className="text-left p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
               <div className="flex items-center gap-2">
-                Assignee
-                <span className="w-1 h-1 rounded-full bg-cyan-500 shadow-[0_0_8px_rgba(34,211,238,0.6)]"></span>
+                <span className={getHeaderColor('primary')}>Assignee</span>
+                <span className={`w-1 h-1 rounded-full ${getHeaderGlow('primary')}`}></span>
               </div>
+              <div className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[1px] bg-cyan-500/30 shadow-[0_0_10px_2px_rgba(34,211,238,0.2)]`}></div>
             </th>
-            <th className="text-left p-3 font-mono text-purple-600 dark:text-purple-400 border-b border-gray-300 dark:border-gray-800">
+            <th className="text-left p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
               <div className="flex items-center gap-2">
-                Feature
-                <span className="w-1 h-1 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.6)]"></span>
+                <span className={getHeaderColor('secondary')}>Feature</span>
+                <span className={`w-1 h-1 rounded-full ${getHeaderGlow('secondary')}`}></span>
               </div>
+              <div className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[1px] bg-purple-500/30 shadow-[0_0_10px_2px_rgba(168,85,247,0.2)]`}></div>
             </th>
-            <th className="text-center p-3 font-mono text-cyan-600 dark:text-cyan-400 border-b border-gray-300 dark:border-gray-800">
+            <th className="text-center p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
               <div className="flex items-center justify-center gap-2">
-                Actions
-                <span className="w-1 h-1 rounded-full bg-cyan-500 shadow-[0_0_8px_rgba(34,211,238,0.6)]"></span>
+                <span className={getHeaderColor('primary')}>Actions</span>
+                <span className={`w-1 h-1 rounded-full ${getHeaderGlow('primary')}`}></span>
               </div>
+              <div className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[1px] bg-cyan-500/30 shadow-[0_0_10px_2px_rgba(34,211,238,0.2)]`}></div>
             </th>
           </tr>
         </thead>
