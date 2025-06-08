@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useDrag, useDrop } from 'react-dnd';
-import { Check, Trash2, Edit, Tag, User, Bot, Clipboard, X, Save, Plus } from 'lucide-react';
+import { Check, Trash2, Edit, Tag, User, Bot, Clipboard, Save, Plus } from 'lucide-react';
 
 export interface Task {
   id: string;
@@ -137,6 +137,22 @@ const EditableCell = ({
     onCancel();
   };
 
+  // Handle keyboard events for Tab/Enter to save, Escape to cancel
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      handleSave();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      handleCancel();
+    }
+  };
+
+  // Handle blur to save (when clicking outside)
+  const handleBlur = () => {
+    handleSave();
+  };
+
   if (!isEditing) {
     return (
       <div 
@@ -152,12 +168,18 @@ const EditableCell = ({
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center w-full">
       {type === 'select' ? (
         <select
           value={editValue}
-          onChange={(e) => setEditValue(e.target.value)}
-          className="flex-1 bg-white/90 dark:bg-black/90 border border-cyan-300 dark:border-cyan-600 rounded px-2 py-1 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)]"
+          onChange={(e) => {
+            setEditValue(e.target.value);
+            // Auto-save on select change
+            setTimeout(() => handleSave(), 0);
+          }}
+          onKeyDown={handleKeyDown}
+          onBlur={handleBlur}
+          className="w-full bg-white/90 dark:bg-black/90 border border-cyan-300 dark:border-cyan-600 rounded px-2 py-1 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)]"
           autoFocus
         >
           {options.map(option => (
@@ -168,8 +190,10 @@ const EditableCell = ({
         <textarea
           value={editValue}
           onChange={(e) => setEditValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onBlur={handleBlur}
           placeholder={placeholder}
-          className="flex-1 bg-white/90 dark:bg-black/90 border border-cyan-300 dark:border-cyan-600 rounded px-2 py-1 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)] resize-none"
+          className="w-full bg-white/90 dark:bg-black/90 border border-cyan-300 dark:border-cyan-600 rounded px-2 py-1 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)] resize-none"
           rows={2}
           autoFocus
         />
@@ -178,23 +202,13 @@ const EditableCell = ({
           type="text"
           value={editValue}
           onChange={(e) => setEditValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onBlur={handleBlur}
           placeholder={placeholder}
-          className="flex-1 bg-white/90 dark:bg-black/90 border border-cyan-300 dark:border-cyan-600 rounded px-2 py-1 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)]"
+          className="w-full bg-white/90 dark:bg-black/90 border border-cyan-300 dark:border-cyan-600 rounded px-2 py-1 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)]"
           autoFocus
         />
       )}
-      <button
-        onClick={handleSave}
-        className="p-1 rounded bg-green-500/20 text-green-600 hover:bg-green-500/30 transition-colors"
-      >
-        <Check className="w-3 h-3" />
-      </button>
-      <button
-        onClick={handleCancel}
-        className="p-1 rounded bg-red-500/20 text-red-600 hover:bg-red-500/30 transition-colors"
-      >
-        <X className="w-3 h-3" />
-      </button>
     </div>
   );
 };
