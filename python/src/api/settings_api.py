@@ -16,6 +16,13 @@ from datetime import datetime
 from ..utils import get_supabase_client
 from ..credential_service import credential_service, CredentialItem, initialize_credentials
 
+# Import logfire for comprehensive API logging
+from ..logfire_config import logfire
+import logging
+
+# Set up logging
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api", tags=["settings"])
 
 class SetOpenAIKeyRequest(BaseModel):
@@ -41,20 +48,30 @@ class CredentialResponse(BaseModel):
 @router.get("/openai-key/status")
 async def get_openai_key_status():
     """Check if OpenAI API key is configured."""
-    try:
-        supabase_client = get_supabase_client()
+    with logfire.span("api_get_openai_key_status") as span:
+        span.set_attribute("endpoint", "/api/openai-key/status")
+        span.set_attribute("method", "GET")
         
-        response = supabase_client.table("credentials").select("key_value").eq("key_name", "openai_api_key").execute()
-        
-        has_key = bool(response.data)
-        
-        return {
-            "configured": has_key,
-            "message": "OpenAI API key is configured" if has_key else "OpenAI API key not configured"
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail={'error': str(e)})
+        try:
+            logfire.info("Checking OpenAI API key status")
+            supabase_client = get_supabase_client()
+            
+            response = supabase_client.table("credentials").select("key_value").eq("key_name", "openai_api_key").execute()
+            
+            has_key = bool(response.data)
+            span.set_attribute("has_key", has_key)
+            
+            logfire.info("OpenAI key status retrieved", configured=has_key)
+            
+            return {
+                "configured": has_key,
+                "message": "OpenAI API key is configured" if has_key else "OpenAI API key not configured"
+            }
+            
+        except Exception as e:
+            logfire.error("Failed to check OpenAI key status", error=str(e))
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.post("/openai-key", response_model=CredentialResponse)
 async def set_openai_key(request: SetOpenAIKeyRequest):

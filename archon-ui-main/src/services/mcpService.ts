@@ -160,7 +160,8 @@ class MCPService {
       throw new Error('Failed to fetch logs');
     }
 
-    return response.json();
+    const data = await response.json();
+    return data.logs || [];
   }
 
   async clearLogs(): Promise<ServerResponse> {

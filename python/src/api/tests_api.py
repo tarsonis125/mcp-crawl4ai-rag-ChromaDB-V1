@@ -21,6 +21,9 @@ from pydantic import BaseModel
 
 import logging
 
+# Import logfire for comprehensive API logging
+from ..logfire_config import logfire
+
 logger = logging.getLogger(__name__)
 
 # Create router
@@ -337,28 +340,38 @@ async def run_mcp_tests(
     background_tasks: BackgroundTasks
 ):
     """Execute Python tests using pytest with real-time streaming output."""
-    execution_id = str(uuid.uuid4())
-    
-    # Create test execution record
-    execution = TestExecution(
-        execution_id=execution_id,
-        test_type=TestType.MCP,
-        status=TestStatus.PENDING,
-        started_at=datetime.now()
-    )
-    
-    test_executions[execution_id] = execution
-    
-    # Start background task
-    background_tasks.add_task(execute_tests_background, execution_id, TestType.MCP)
-    
-    return TestExecutionResponse(
-        execution_id=execution_id,
-        test_type=TestType.MCP,
-        status=TestStatus.PENDING,
-        started_at=execution.started_at,
-        message="Python test execution started"
-    )
+    with logfire.span("api_run_mcp_tests") as span:
+        span.set_attribute("endpoint", "/api/tests/mcp/run")
+        span.set_attribute("method", "POST")
+        span.set_attribute("test_type", "mcp")
+        
+        execution_id = str(uuid.uuid4())
+        span.set_attribute("execution_id", execution_id)
+        
+        logfire.info("Starting MCP test execution", execution_id=execution_id, test_type="mcp")
+        
+        # Create test execution record
+        execution = TestExecution(
+            execution_id=execution_id,
+            test_type=TestType.MCP,
+            status=TestStatus.PENDING,
+            started_at=datetime.now()
+        )
+        
+        test_executions[execution_id] = execution
+        
+        # Start background task
+        background_tasks.add_task(execute_tests_background, execution_id, TestType.MCP)
+        
+        logfire.info("MCP test execution queued successfully", execution_id=execution_id)
+        
+        return TestExecutionResponse(
+            execution_id=execution_id,
+            test_type=TestType.MCP,
+            status=TestStatus.PENDING,
+            started_at=execution.started_at,
+            message="Python test execution started"
+        )
 
 @router.post("/ui/run", response_model=TestExecutionResponse)
 async def run_ui_tests(

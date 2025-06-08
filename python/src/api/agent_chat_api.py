@@ -15,6 +15,13 @@ from pydantic import BaseModel
 from ..agents.docs_agent import DocsAgent
 from ..utils import get_supabase_client
 
+# Import logfire for comprehensive API logging  
+from ..logfire_config import logfire
+import logging
+
+# Set up logging
+logger = logging.getLogger(__name__)
+
 # Get the global crawling context from main.py (same pattern as knowledge_api)
 def get_crawling_context():
     """Get the global crawling context from the app state."""
@@ -512,15 +519,29 @@ async def create_chat_session(
     agent_type: str = "docs"
 ):
     """Create a new chat session with an agent."""
-    try:
-        session_id = await chat_manager.create_session(project_id, agent_type)
-        return {
-            "success": True,
-            "session_id": session_id,
-            "message": "Chat session created successfully"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    with logfire.span("api_create_chat_session") as span:
+        span.set_attribute("endpoint", "/api/agent-chat/sessions")
+        span.set_attribute("method", "POST")
+        span.set_attribute("agent_type", agent_type)
+        if project_id:
+            span.set_attribute("project_id", project_id)
+        
+        try:
+            logfire.info("Creating new chat session", agent_type=agent_type, project_id=project_id)
+            session_id = await chat_manager.create_session(project_id, agent_type)
+            
+            logfire.info("Chat session created successfully", session_id=session_id, agent_type=agent_type)
+            span.set_attribute("session_id", session_id)
+            
+            return {
+                "success": True,
+                "session_id": session_id,
+                "message": "Chat session created successfully"
+            }
+        except Exception as e:
+            logfire.error("Failed to create chat session", error=str(e), agent_type=agent_type)
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/sessions/{session_id}")
 async def get_chat_session(session_id: str):

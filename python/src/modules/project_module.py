@@ -22,6 +22,8 @@ from datetime import datetime
 # Import Logfire
 from ..logfire_config import mcp_logger, api_logger
 
+# Note: WebSocket broadcasting happens at FastAPI endpoint level
+
 # Setup logging for the project module
 logger = logging.getLogger(__name__)
 
@@ -490,8 +492,8 @@ def register_project_tools(mcp: FastMCP):
             # Get the Supabase client from the context
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             
-            # Build query - filter out 'done' tasks by default unless explicitly requested
-            query = supabase_client.table("tasks").select("*").eq("project_id", project_id)
+            # Build query - always filter out archived tasks (handle NULL as False), and optionally filter out 'done' tasks
+            query = supabase_client.table("tasks").select("*").eq("project_id", project_id).or_("archived.is.null,archived.eq.false")
             
             if not include_closed:
                 # Filter out closed/done tasks to focus on active work
@@ -515,6 +517,7 @@ def register_project_tools(mcp: FastMCP):
                 })
             
             filter_note = " (excluding closed tasks)" if not include_closed else " (including all tasks)"
+            filter_note += " (archived tasks always excluded)"
             
             return json.dumps({
                 "success": True,
@@ -611,7 +614,7 @@ def register_project_tools(mcp: FastMCP):
                     })
                 
                 try:
-                    # Update the task status
+                    # Update the task status directly in database
                     response = supabase_client.table("tasks").update({
                         "status": status,
                         "updated_at": datetime.now().isoformat()
@@ -627,14 +630,21 @@ def register_project_tools(mcp: FastMCP):
                         span.set_attribute("success", True)
                         span.set_attribute("old_status", task.get("status"))
                         
+                        # Check for progress callback and broadcast WebSocket update
+                        progress_callback = getattr(ctx, 'progress_callback', None)
+                        if progress_callback:
+                            try:
+                                await progress_callback(
+                                    event_type="task_updated",
+                                    task_data=task
+                                )
+                                logger.info(f"WebSocket update broadcast for task {task_id}")
+                            except Exception as ws_error:
+                                logger.warning(f"Failed to broadcast WebSocket update: {ws_error}")
+                        
                         return json.dumps({
                             "success": True,
-                            "task": {
-                                "id": task["id"],
-                                "title": task["title"],
-                                "status": task["status"],
-                                "updated_at": task["updated_at"]
-                            }
+                            "task": task
                         })
                     else:
                         error_msg = f"Task with ID {task_id} not found"
@@ -730,13 +740,28 @@ def register_project_tools(mcp: FastMCP):
             if feature is not None:
                 update_data["feature"] = feature
             
+            # Directly update database (WebSocket broadcasting happens at FastAPI endpoint level)
             response = supabase_client.table("tasks").update(update_data).eq("id", task_id).execute()
             
             if response.data:
                 task = response.data[0]
+                
+                # Check for progress callback and broadcast WebSocket update
+                progress_callback = getattr(ctx, 'progress_callback', None)
+                if progress_callback:
+                    try:
+                        await progress_callback(
+                            event_type="task_updated",
+                            task_data=task
+                        )
+                        logger.info(f"WebSocket update broadcast for task {task_id}")
+                    except Exception as ws_error:
+                        logger.warning(f"Failed to broadcast WebSocket update: {ws_error}")
+                
                 return json.dumps({
                     "success": True,
-                    "task": task
+                    "task": task,
+                    "message": "Task updated successfully"
                 })
             else:
                 return json.dumps({
@@ -753,41 +778,71 @@ def register_project_tools(mcp: FastMCP):
     @mcp.tool()
     async def delete_task(ctx: Context, task_id: str) -> str:
         """
-        Delete a task and all its subtasks.
+        Archive a task and all its subtasks (soft delete).
         
         Args:
             ctx: The MCP server provided context
-            task_id: UUID of the task to delete
+            task_id: UUID of the task to archive
         
         Returns:
-            JSON string with deletion results
+            JSON string with archive results
         """
         try:
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             
-            # First, get all subtasks to count them
-            subtasks_response = supabase_client.table("tasks").select("id").eq("parent_task_id", task_id).execute()
+            # First, check if task exists and is not already archived
+            task_response = supabase_client.table("tasks").select("*").eq("id", task_id).execute()
+            if not task_response.data:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Task with ID {task_id} not found"
+                })
+            
+            task = task_response.data[0]
+            # Check if task is already archived (handle NULL as False for backwards compatibility)
+            if task.get("archived") is True:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Task with ID {task_id} is already archived"
+                })
+            
+            # Get all non-archived subtasks to count them (handle NULL as False)
+            subtasks_response = supabase_client.table("tasks").select("id").eq("parent_task_id", task_id).or_("archived.is.null,archived.eq.false").execute()
             subtasks_count = len(subtasks_response.data) if subtasks_response.data else 0
             
-            # Delete the task (subtasks will be deleted by cascade)
-            response = supabase_client.table("tasks").delete().eq("id", task_id).execute()
+            # Archive the task using soft delete
+            from datetime import datetime
+            archive_data = {
+                "archived": True,
+                "archived_at": datetime.now().isoformat(),
+                "archived_by": "mcp",
+                "updated_at": datetime.now().isoformat()
+            }
+            
+            # Archive the main task
+            response = supabase_client.table("tasks").update(archive_data).eq("id", task_id).execute()
             
             if response.data:
+                # Also archive all subtasks
+                if subtasks_count > 0:
+                    subtasks_response = supabase_client.table("tasks").update(archive_data).eq("parent_task_id", task_id).or_("archived.is.null,archived.eq.false").execute()
+                
                 return json.dumps({
                     "success": True,
                     "task_id": task_id,
-                    "deleted_subtasks": subtasks_count
+                    "archived_subtasks": subtasks_count,
+                    "message": "Task and all subtasks archived successfully"
                 })
             else:
                 return json.dumps({
                     "success": False,
-                    "error": f"Task with ID {task_id} not found"
+                    "error": f"Failed to archive task {task_id}"
                 })
                 
         except Exception as e:
             return json.dumps({
                 "success": False,
-                "error": f"Error deleting task: {str(e)}"
+                "error": f"Error archiving task: {str(e)}"
             })
     
     @mcp.tool()
@@ -806,8 +861,8 @@ def register_project_tools(mcp: FastMCP):
         try:
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             
-            # Build query - filter out 'done' subtasks by default unless explicitly requested
-            query = supabase_client.table("tasks").select("*").eq("parent_task_id", parent_task_id)
+            # Build query - always filter out archived subtasks (handle NULL as False), and optionally filter out 'done' subtasks
+            query = supabase_client.table("tasks").select("*").eq("parent_task_id", parent_task_id).or_("archived.is.null,archived.eq.false")
             
             if not include_closed:
                 # Filter out closed/done subtasks to focus on active work
@@ -871,7 +926,7 @@ def register_project_tools(mcp: FastMCP):
                     "error": f"Invalid status '{status}'. Must be one of: {', '.join(valid_statuses)}"
                 })
             
-            response = supabase_client.table("tasks").select("*").eq("project_id", project_id).eq("status", status).order("task_order", desc=False).order("created_at", desc=False).execute()
+            response = supabase_client.table("tasks").select("*").eq("project_id", project_id).eq("status", status).or_("archived.is.null,archived.eq.false").order("task_order", desc=False).order("created_at", desc=False).execute()
             
             tasks = []
             for task in response.data:
@@ -1356,4 +1411,57 @@ def register_project_tools(mcp: FastMCP):
             return json.dumps({
                 "success": False,
                 "error": f"Error deleting document: {str(e)}"
+            })
+
+    # Direct functions for FastAPI endpoints (following RAG pattern)
+    async def update_task_status_direct(ctx, task_id: str, status: str) -> str:
+        """
+        Direct function for updating task status that can be called from FastAPI with context.
+        Follows the same pattern as RAG module's smart_crawl_url_direct.
+        """
+        try:
+            # Get Supabase client directly
+            supabase_client = get_supabase_client()
+            
+            # Validate status
+            if status not in ["todo", "doing", "blocked", "done"]:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Invalid status '{status}'. Must be one of: todo, doing, blocked, done"
+                })
+            
+            # Update task status
+            response = supabase_client.table("tasks").update({"status": status}).eq("id", task_id).execute()
+            
+            if response.data:
+                task = response.data[0]
+                logger.info(f"Task {task_id} status updated successfully to {status}")
+                
+                # Check for progress callback and broadcast WebSocket update
+                progress_callback = getattr(ctx, 'progress_callback', None)
+                if progress_callback:
+                    try:
+                        await progress_callback(
+                            event_type="task_updated",
+                            task_data=task
+                        )
+                        logger.info(f"WebSocket update broadcast for task {task_id}")
+                    except Exception as ws_error:
+                        logger.warning(f"Failed to broadcast WebSocket update: {ws_error}")
+            
+                return json.dumps({
+                    "success": True,
+                    "task": task
+                })
+            else:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Task {task_id} not found"
+                })
+            
+        except Exception as e:
+            logger.error(f"Error updating task status: {str(e)}")
+            return json.dumps({
+                "success": False,
+                "error": f"Error updating task status: {str(e)}"
             }) 

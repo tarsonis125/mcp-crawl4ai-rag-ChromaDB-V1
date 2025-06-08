@@ -424,8 +424,8 @@ export const projectService = {
         method: 'DELETE'
       });
       
-      // Broadcast deletion event
-      this.broadcastTaskUpdate('TASK_DELETED', taskId, task.project_id, {});
+      // Broadcast archive event  
+      this.broadcastTaskUpdate('TASK_ARCHIVED', taskId, task.project_id, {});
     } catch (error) {
       console.error(`Failed to delete task ${taskId}:`, error);
       throw error;
@@ -622,7 +622,7 @@ export const projectService = {
   /**
    * Broadcast task update event
    */
-  broadcastTaskUpdate(type: 'TASK_CREATED' | 'TASK_UPDATED' | 'TASK_MOVED' | 'TASK_DELETED', taskId: string, projectId: string, data: any): void {
+  broadcastTaskUpdate(type: 'TASK_CREATED' | 'TASK_UPDATED' | 'TASK_MOVED' | 'TASK_DELETED' | 'TASK_ARCHIVED', taskId: string, projectId: string, data: any): void {
     const event: ProjectManagementEvent = {
       type,
       taskId,

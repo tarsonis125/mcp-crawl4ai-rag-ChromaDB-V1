@@ -19,32 +19,63 @@ except ImportError:
     # Create a mock logfire module for graceful fallback
     class MockLogfire:
         def configure(self, **kwargs):
-            pass
+            logging.info("🔥 Mock Logfire configured (real Logfire not available)")
+            
         def info(self, message, **kwargs):
-            logging.info(f"{message} {kwargs}")
+            # Enhanced logging format for API events
+            if kwargs:
+                formatted_kwargs = " | ".join([f"{k}={v}" for k, v in kwargs.items()])
+                logging.info(f"🔷 {message} | {formatted_kwargs}")
+            else:
+                logging.info(f"🔷 {message}")
+                
         def error(self, message, **kwargs):
-            logging.error(f"{message} {kwargs}")
+            if kwargs:
+                formatted_kwargs = " | ".join([f"{k}={v}" for k, v in kwargs.items()])
+                logging.error(f"❌ {message} | {formatted_kwargs}")
+            else:
+                logging.error(f"❌ {message}")
+                
         def debug(self, message, **kwargs):
-            logging.debug(f"{message} {kwargs}")
+            if kwargs:
+                formatted_kwargs = " | ".join([f"{k}={v}" for k, v in kwargs.items()])
+                logging.debug(f"🔍 {message} | {formatted_kwargs}")
+            else:
+                logging.debug(f"🔍 {message}")
+                
         def warning(self, message, **kwargs):
-            logging.warning(f"{message} {kwargs}")
+            if kwargs:
+                formatted_kwargs = " | ".join([f"{k}={v}" for k, v in kwargs.items()])
+                logging.warning(f"⚠️ {message} | {formatted_kwargs}")
+            else:
+                logging.warning(f"⚠️ {message}")
+                
         def exception(self, message, **kwargs):
-            logging.exception(f"{message} {kwargs}")
+            if kwargs:
+                formatted_kwargs = " | ".join([f"{k}={v}" for k, v in kwargs.items()])
+                logging.exception(f"💥 {message} | {formatted_kwargs}")
+            else:
+                logging.exception(f"💥 {message}")
+                
         def with_tags(self, **kwargs):
             return self
+            
         def span(self, name, **kwargs):
-            return self
+            return MockSpan(name, **kwargs)
+            
         def __enter__(self):
             return self
+            
         def __exit__(self, *args):
             pass
     
     logfire = MockLogfire()
 
-# Configure standard logging as fallback
+# Configure standard logging as fallback with better formatting
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s | %(name)s | %(levelname)s | %(message)s',
+    datefmt='%H:%M:%S'
 )
 
 def setup_logfire(
@@ -119,8 +150,8 @@ def get_logger(name: str, **tags) -> "logfire.Logfire":
     
     try:
         # Check if logfire is actually configured
-        # This will raise an exception if logfire.configure() was never called successfully
-        return logfire
+        # Return logfire with tags applied - this creates a tagged logger
+        return logfire.with_tags(**tags, logger_name=name)
     except Exception:
         # Fallback to mock if logfire is not properly configured
         class MockLogfire:

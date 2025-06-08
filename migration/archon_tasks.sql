@@ -39,6 +39,9 @@ create table if not exists tasks (
   feature text,
   sources jsonb default '[]'::jsonb,
   code_examples jsonb default '[]'::jsonb,
+  archived boolean default false,
+  archived_at timestamptz null,
+  archived_by text null,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -60,6 +63,8 @@ create index if not exists idx_tasks_project_id on tasks(project_id);
 create index if not exists idx_tasks_status on tasks(status);
 create index if not exists idx_tasks_assignee on tasks(assignee);
 create index if not exists idx_tasks_order on tasks(task_order);
+create index if not exists idx_tasks_archived on tasks(archived);
+create index if not exists idx_tasks_archived_at on tasks(archived_at);
 create index if not exists idx_project_sources_project_id on project_sources(project_id);
 create index if not exists idx_project_sources_source_id on project_sources(source_id);
 
@@ -82,3 +87,84 @@ DROP TRIGGER IF EXISTS update_tasks_updated_at ON tasks;
 CREATE TRIGGER update_tasks_updated_at 
     BEFORE UPDATE ON tasks 
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Soft delete functions
+CREATE OR REPLACE FUNCTION archive_task(
+    task_id_param UUID,
+    archived_by_param TEXT DEFAULT 'system'
+) 
+RETURNS BOOLEAN AS $$
+DECLARE
+    task_exists BOOLEAN;
+BEGIN
+    -- Check if task exists and is not already archived
+    SELECT EXISTS(
+        SELECT 1 FROM tasks 
+        WHERE id = task_id_param AND archived = FALSE
+    ) INTO task_exists;
+    
+    IF NOT task_exists THEN
+        RETURN FALSE;
+    END IF;
+    
+    -- Archive the task
+    UPDATE tasks 
+    SET 
+        archived = TRUE,
+        archived_at = NOW(),
+        archived_by = archived_by_param,
+        updated_at = NOW()
+    WHERE id = task_id_param;
+    
+    -- Also archive all subtasks
+    UPDATE tasks 
+    SET 
+        archived = TRUE,
+        archived_at = NOW(), 
+        archived_by = archived_by_param,
+        updated_at = NOW()
+    WHERE parent_task_id = task_id_param AND archived = FALSE;
+    
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION restore_task(task_id_param UUID)
+RETURNS BOOLEAN AS $$
+DECLARE
+    task_exists BOOLEAN;
+BEGIN
+    -- Check if task exists and is archived
+    SELECT EXISTS(
+        SELECT 1 FROM tasks 
+        WHERE id = task_id_param AND archived = TRUE
+    ) INTO task_exists;
+    
+    IF NOT task_exists THEN
+        RETURN FALSE;
+    END IF;
+    
+    -- Restore the task
+    UPDATE tasks 
+    SET 
+        archived = FALSE,
+        archived_at = NULL,
+        archived_by = NULL,
+        updated_at = NOW()
+    WHERE id = task_id_param;
+    
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create views for active and archived tasks
+CREATE OR REPLACE VIEW active_tasks AS
+SELECT * FROM tasks WHERE archived = FALSE;
+
+CREATE OR REPLACE VIEW archived_tasks AS
+SELECT * FROM tasks WHERE archived = TRUE;
+
+-- Add comments to document the new fields
+COMMENT ON COLUMN tasks.archived IS 'Soft delete flag - TRUE if task is archived/deleted';
+COMMENT ON COLUMN tasks.archived_at IS 'Timestamp when task was archived';
+COMMENT ON COLUMN tasks.archived_by IS 'User/system that archived the task';

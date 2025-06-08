@@ -20,8 +20,9 @@ from ..utils import get_supabase_client
 import logging
 from ..logfire_config import get_logger
 
-# Get logfire logger for this module
-logfire_logger = get_logger("projects_api", module="projects_api", service="archon-backend")
+# Get logfire logger for this module - use logfire directly like MCP server does
+from ..logfire_config import logfire
+logfire_logger = logfire
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +223,91 @@ class ProjectCreationProgressManager:
 
 # Global project creation progress manager
 project_creation_manager = ProjectCreationProgressManager()
+
+# WebSocket Connection Manager for Task Updates
+class TaskUpdateManager:
+    def __init__(self):
+        self.project_connections: Dict[str, List[WebSocket]] = {}
+        self.task_connections: Dict[str, List[WebSocket]] = {}
+    
+    async def connect_to_project(self, websocket: WebSocket, project_id: str):
+        """Connect a WebSocket to receive updates for a specific project's tasks"""
+        with logfire_logger.span("task_websocket_connect") as span:
+            span.set_attribute("project_id", project_id)
+            
+            try:
+                await websocket.accept()
+                logfire_logger.info("Task WebSocket connected", project_id=project_id)
+                
+                if project_id not in self.project_connections:
+                    self.project_connections[project_id] = []
+                
+                self.project_connections[project_id].append(websocket)
+                span.set_attribute("success", True)
+                span.set_attribute("total_connections", len(self.project_connections[project_id]))
+                
+            except Exception as e:
+                logfire_logger.error("Failed to connect task WebSocket", project_id=project_id, error=str(e))
+                span.set_attribute("success", False)
+                span.set_attribute("error", str(e))
+                raise
+    
+    def disconnect_from_project(self, websocket: WebSocket, project_id: str):
+        """Disconnect a WebSocket from project task updates"""
+        if project_id in self.project_connections:
+            try:
+                self.project_connections[project_id].remove(websocket)
+                if not self.project_connections[project_id]:
+                    del self.project_connections[project_id]
+                logfire_logger.info("Task WebSocket disconnected", project_id=project_id)
+            except ValueError:
+                pass  # WebSocket not in list
+    
+    async def broadcast_task_update(self, project_id: str, event_type: str, task_data: Dict[str, Any]):
+        """Broadcast a task update to all connected clients for a project"""
+        with logfire_logger.span("task_websocket_broadcast") as span:
+            span.set_attribute("project_id", project_id)
+            span.set_attribute("event_type", event_type)
+            span.set_attribute("task_id", task_data.get("id"))
+            
+            if project_id not in self.project_connections:
+                span.set_attribute("connections", 0)
+                return
+            
+            connections = self.project_connections[project_id][:]
+            message = {
+                "type": event_type,
+                "data": task_data,
+                "timestamp": datetime.now().isoformat(),
+                "project_id": project_id
+            }
+            
+            disconnected = []
+            successful_broadcasts = 0
+            
+            for websocket in connections:
+                try:
+                    await websocket.send_json(message)
+                    successful_broadcasts += 1
+                except Exception as e:
+                    logfire_logger.warning("Failed to send task update to WebSocket", error=str(e))
+                    disconnected.append(websocket)
+            
+            # Remove disconnected WebSockets
+            for ws in disconnected:
+                self.disconnect_from_project(ws, project_id)
+            
+            logfire_logger.info("Task update broadcasted", 
+                          project_id=project_id, 
+                          event_type=event_type,
+                          successful_broadcasts=successful_broadcasts,
+                          failed_broadcasts=len(disconnected))
+            
+            span.set_attribute("successful_broadcasts", successful_broadcasts)
+            span.set_attribute("failed_broadcasts", len(disconnected))
+
+# Global task update manager
+task_update_manager = TaskUpdateManager()
 
 @router.get("/projects")
 async def list_projects():
@@ -755,12 +841,19 @@ async def get_project_features(project_id: str):
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.get("/projects/{project_id}/tasks")
-async def list_project_tasks(project_id: str):
-    """List all tasks for a specific project."""
+async def list_project_tasks(project_id: str, include_archived: bool = False):
+    """List all tasks for a specific project. By default, filters out archived tasks."""
     try:
         supabase_client = get_supabase_client()
         
-        response = supabase_client.table("tasks").select("*").eq("project_id", project_id).order("task_order", desc=False).order("created_at", desc=False).execute()
+        # Build query to optionally exclude archived tasks
+        query = supabase_client.table("tasks").select("*").eq("project_id", project_id)
+        
+        # Only include non-archived tasks by default (handle NULL as False for backwards compatibility)
+        if not include_archived:
+            query = query.or_("archived.is.null,archived.eq.false")
+        
+        response = query.order("task_order", desc=False).order("created_at", desc=False).execute()
         
         return response.data
         
@@ -769,54 +862,127 @@ async def list_project_tasks(project_id: str):
 
 @router.post("/tasks")
 async def create_task(request: CreateTaskRequest):
-    """Create a new task."""
-    try:
-        supabase_client = get_supabase_client()
+    """Create a new task with automatic reordering and real-time WebSocket broadcasting."""
+    with logfire_logger.span("api_create_task") as span:
+        span.set_attribute("endpoint", "/tasks")
+        span.set_attribute("method", "POST")
+        span.set_attribute("project_id", request.project_id)
+        span.set_attribute("title", request.title)
+        span.set_attribute("assignee", request.assignee)
+        span.set_attribute("status", request.status)
         
-        # Validate assignee
-        valid_assignees = ['User', 'Archon', 'AI IDE Agent']
-        if request.assignee not in valid_assignees:
-            raise HTTPException(
-                status_code=400, 
-                detail={'error': f"Invalid assignee '{request.assignee}'. Must be one of: {', '.join(valid_assignees)}"}
-            )
-        
-        # Validate status
-        valid_statuses = ['todo', 'doing', 'blocked', 'done']
-        if request.status not in valid_statuses:
-            raise HTTPException(
-                status_code=400, 
-                detail={'error': f"Invalid status '{request.status}'. Must be one of: {', '.join(valid_statuses)}"}
-            )
-        
-        task_data = {
-            "project_id": request.project_id,
-            "title": request.title,
-            "description": request.description or "",
-            "status": request.status,
-            "assignee": request.assignee,
-            "task_order": request.task_order,
-            "sources": [],
-            "code_examples": [],
-            "created_at": datetime.now().isoformat(),
-            "updated_at": datetime.now().isoformat()
-        }
-        
-        if request.parent_task_id:
-            task_data["parent_task_id"] = request.parent_task_id
+        try:
+            supabase_client = get_supabase_client()
             
-        if request.feature:
-            task_data["feature"] = request.feature
-        
-        response = supabase_client.table("tasks").insert(task_data).execute()
-        
-        if response.data:
-            return response.data[0]
-        else:
-            raise HTTPException(status_code=500, detail={'error': 'Failed to create task'})
+            task_status = request.status or 'todo'
+            task_order = request.task_order or 0
             
-    except Exception as e:
-        raise HTTPException(status_code=500, detail={'error': str(e)})
+            # REORDERING LOGIC: If inserting at a specific position, increment existing tasks
+            if task_order > 0:
+                # Get all tasks in the same project and status with task_order >= new task's order
+                existing_tasks_response = supabase_client.table("tasks").select("id, task_order").eq("project_id", request.project_id).eq("status", task_status).gte("task_order", task_order).execute()
+                
+                if existing_tasks_response.data:
+                    logfire_logger.info(f"Reordering {len(existing_tasks_response.data)} existing tasks", 
+                                      project_id=request.project_id, 
+                                      status=task_status, 
+                                      insert_position=task_order)
+                    span.set_attribute("tasks_to_reorder", len(existing_tasks_response.data))
+                    
+                    # Increment task_order for all affected tasks
+                    for existing_task in existing_tasks_response.data:
+                        new_order = existing_task["task_order"] + 1
+                        supabase_client.table("tasks").update({
+                            "task_order": new_order,
+                            "updated_at": datetime.now().isoformat()
+                        }).eq("id", existing_task["id"]).execute()
+                        
+                        logfire_logger.debug("Reordered task", 
+                                           task_id=existing_task["id"], 
+                                           old_order=existing_task["task_order"], 
+                                           new_order=new_order)
+            
+            # Create task data
+            task_data = {
+                "project_id": request.project_id,
+                "title": request.title,
+                "description": request.description,
+                "status": task_status,
+                "assignee": request.assignee or 'User',
+                "task_order": task_order,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
+            }
+            
+            if request.parent_task_id:
+                task_data["parent_task_id"] = request.parent_task_id
+            if request.feature:
+                task_data["feature"] = request.feature
+            
+            # Insert task into database
+            response = supabase_client.table("tasks").insert(task_data).execute()
+            
+            if response.data:
+                created_task = response.data[0]
+                logfire_logger.info("Task created successfully with automatic reordering", 
+                                  task_id=created_task["id"], 
+                                  project_id=request.project_id,
+                                  task_order=task_order)
+                span.set_attribute("success", True)
+                span.set_attribute("task_id", created_task["id"])
+                span.set_attribute("final_task_order", task_order)
+                
+                # Broadcast real-time update to connected clients
+                await task_update_manager.broadcast_task_update(
+                    project_id=request.project_id,
+                    event_type="task_created",
+                    task_data=created_task
+                )
+                
+                return {"message": "Task created successfully", "task": created_task}
+            else:
+                raise HTTPException(status_code=500, detail="Failed to create task")
+                
+        except Exception as e:
+            logfire_logger.error("Failed to create task", error=str(e), project_id=request.project_id)
+            span.set_attribute("success", False)
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/tasks/{task_id}")
+async def get_task(task_id: str):
+    """Get a specific task by ID."""
+    with logfire_logger.span("api_get_task") as span:
+        span.set_attribute("endpoint", f"/tasks/{task_id}")
+        span.set_attribute("method", "GET")
+        span.set_attribute("task_id", task_id)
+        
+        try:
+            supabase_client = get_supabase_client()
+            
+            # Get task by ID - handle backwards compatibility for archived field
+            response = supabase_client.table("tasks").select("*").eq("id", task_id).or_("archived.is.null,archived.eq.false").execute()
+            
+            if not response.data:
+                raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+            
+            task = response.data[0]
+            span.set_attribute("project_id", task.get("project_id"))
+            span.set_attribute("success", True)
+            
+            logfire_logger.info("Task retrieved successfully", 
+                              task_id=task_id, 
+                              project_id=task.get("project_id"))
+            
+            return task
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logfire_logger.error("Failed to get task", error=str(e), task_id=task_id)
+            span.set_attribute("success", False)
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail=str(e))
 
 class UpdateTaskRequest(BaseModel):
     title: Optional[str] = None
@@ -828,59 +994,147 @@ class UpdateTaskRequest(BaseModel):
 
 @router.put("/tasks/{task_id}")
 async def update_task(task_id: str, request: UpdateTaskRequest):
-    """Update a task."""
-    try:
-        supabase_client = get_supabase_client()
+    """Update a task with real-time WebSocket broadcasting."""
+    with logfire_logger.span("api_update_task") as span:
+        span.set_attribute("endpoint", f"/tasks/{task_id}")
+        span.set_attribute("method", "PUT")
+        span.set_attribute("task_id", task_id)
         
-        update_data = {"updated_at": datetime.now().isoformat()}
-        
-        if request.title is not None:
-            update_data["title"] = request.title
-        if request.description is not None:
-            update_data["description"] = request.description
-        if request.status is not None:
-            valid_statuses = ['todo', 'doing', 'blocked', 'done']
-            if request.status not in valid_statuses:
-                raise HTTPException(
-                    status_code=400, 
-                    detail={'error': f"Invalid status '{request.status}'. Must be one of: {', '.join(valid_statuses)}"}
-                )
-            update_data["status"] = request.status
-        if request.assignee is not None:
-            valid_assignees = ['User', 'Archon', 'AI IDE Agent']
-            if request.assignee not in valid_assignees:
-                raise HTTPException(
-                    status_code=400, 
-                    detail={'error': f"Invalid assignee '{request.assignee}'. Must be one of: {', '.join(valid_assignees)}"}
-                )
-            update_data["assignee"] = request.assignee
-        if request.task_order is not None:
-            update_data["task_order"] = request.task_order
-        if request.feature is not None:
-            update_data["feature"] = request.feature
-        
-        response = supabase_client.table("tasks").update(update_data).eq("id", task_id).execute()
-        
-        if response.data:
-            return response.data[0]
-        else:
-            raise HTTPException(status_code=404, detail={'error': f'Task with ID {task_id} not found'})
+        try:
+            supabase_client = get_supabase_client()
             
-    except Exception as e:
-        raise HTTPException(status_code=500, detail={'error': str(e)})
+            # First get the current task to get project_id for broadcasting
+            current_task_response = supabase_client.table("tasks").select("*").eq("id", task_id).execute()
+            if not current_task_response.data:
+                raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+            
+            current_task = current_task_response.data[0]
+            project_id = current_task["project_id"]
+            span.set_attribute("project_id", project_id)
+            
+            # Build update data
+            update_data = {"updated_at": datetime.now().isoformat()}
+            
+            if request.title is not None:
+                update_data["title"] = request.title
+                span.set_attribute("updated_title", True)
+            if request.description is not None:
+                update_data["description"] = request.description
+                span.set_attribute("updated_description", True)
+            if request.status is not None:
+                update_data["status"] = request.status
+                span.set_attribute("new_status", request.status)
+            if request.assignee is not None:
+                update_data["assignee"] = request.assignee
+                span.set_attribute("new_assignee", request.assignee)
+            if request.task_order is not None:
+                update_data["task_order"] = request.task_order
+                span.set_attribute("new_task_order", request.task_order)
+            if request.feature is not None:
+                update_data["feature"] = request.feature
+                span.set_attribute("updated_feature", True)
+            
+            # Update task in database
+            response = supabase_client.table("tasks").update(update_data).eq("id", task_id).execute()
+            
+            if response.data:
+                updated_task = response.data[0]
+                logfire_logger.info("Task updated successfully", 
+                                  task_id=task_id, 
+                                  project_id=project_id,
+                                  updated_fields=list(update_data.keys()))
+                span.set_attribute("success", True)
+                
+                # Broadcast real-time update to connected clients
+                await task_update_manager.broadcast_task_update(
+                    project_id=project_id,
+                    event_type="task_updated",
+                    task_data=updated_task
+                )
+                
+                return {"message": "Task updated successfully", "task": updated_task}
+            else:
+                raise HTTPException(status_code=500, detail="Failed to update task")
+                
+        except HTTPException:
+            raise
+        except Exception as e:
+            logfire_logger.error("Failed to update task", error=str(e), task_id=task_id)
+            span.set_attribute("success", False)
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/tasks/{task_id}")
 async def delete_task(task_id: str):
-    """Delete a task."""
-    try:
-        supabase_client = get_supabase_client()
+    """Archive a task (soft delete) with real-time WebSocket broadcasting."""
+    with logfire_logger.span("api_archive_task") as span:
+        span.set_attribute("endpoint", f"/tasks/{task_id}")
+        span.set_attribute("method", "DELETE")
+        span.set_attribute("task_id", task_id)
         
-        response = supabase_client.table("tasks").delete().eq("id", task_id).execute()
-        
-        return {"message": "Task deleted successfully"}
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail={'error': str(e)})
+        try:
+            supabase_client = get_supabase_client()
+            
+            # First get the task to get project_id for broadcasting
+            # Handle backwards compatibility - check for archived field and treat NULL as False
+            task_response = supabase_client.table("tasks").select("*").eq("id", task_id).execute()
+            if not task_response.data:
+                raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+            
+            task_to_archive = task_response.data[0]
+            # Check if task is already archived (handle NULL as False for backwards compatibility)
+            if task_to_archive.get("archived") is True:
+                raise HTTPException(status_code=404, detail=f"Task {task_id} is already archived")
+            project_id = task_to_archive["project_id"]
+            span.set_attribute("project_id", project_id)
+            
+            # Archive task using soft delete (set archived=true)
+            from datetime import datetime
+            archive_data = {
+                "archived": True,
+                "archived_at": datetime.now().isoformat(),
+                "archived_by": "api",  # Could be enhanced to track actual user
+                "updated_at": datetime.now().isoformat()
+            }
+            
+            response = supabase_client.table("tasks").update(archive_data).eq("id", task_id).execute()
+            
+            if response.data:
+                archived_task = response.data[0]
+                
+                # Also archive all subtasks - use OR condition to handle NULL values
+                subtasks_response = supabase_client.table("tasks").update(archive_data).eq("parent_task_id", task_id).or_("archived.is.null,archived.eq.false").execute()
+                subtasks_count = len(subtasks_response.data) if subtasks_response.data else 0
+                
+                logfire_logger.info("Task archived successfully", 
+                                  task_id=task_id, 
+                                  project_id=project_id,
+                                  subtasks_archived=subtasks_count)
+                span.set_attribute("success", True)
+                span.set_attribute("subtasks_archived", subtasks_count)
+                
+                # Broadcast real-time update to connected clients
+                await task_update_manager.broadcast_task_update(
+                    project_id=project_id,
+                    event_type="task_archived",
+                    task_data=archived_task
+                )
+                
+                return {
+                    "message": "Task archived successfully", 
+                    "task": archived_task,
+                    "subtasks_archived": subtasks_count
+                }
+            else:
+                raise HTTPException(status_code=500, detail="Failed to archive task")
+                
+        except HTTPException:
+            raise
+        except Exception as e:
+            logfire_logger.error("Failed to archive task", error=str(e), task_id=task_id)
+            span.set_attribute("success", False)
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail=str(e))
 
 @router.websocket("/project-creation-progress/{progress_id}")
 async def websocket_project_creation_progress(websocket: WebSocket, progress_id: str):
@@ -906,4 +1160,102 @@ async def websocket_project_creation_progress(websocket: WebSocket, progress_id:
 @router.get("/health")
 async def projects_health():
     """Health check for projects API."""
-    return {"status": "healthy", "service": "projects"} 
+    return {"status": "healthy", "service": "projects"}
+
+# WebSocket endpoint for real-time task updates
+@router.websocket("/projects/{project_id}/tasks/updates")
+async def task_updates_websocket(websocket: WebSocket, project_id: str):
+    """WebSocket endpoint for real-time task updates for a specific project"""
+    await task_update_manager.connect_to_project(websocket, project_id)
+    
+    try:
+        # Send a connection confirmation message
+        await websocket.send_json({
+            "type": "connection_established",
+            "data": {
+                "project_id": project_id,
+                "message": "Connected to task updates"
+            },
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        # Keep connection alive - just wait for disconnection
+        while True:
+            await asyncio.sleep(1)  # Keep connection alive without expecting client messages
+                
+    except WebSocketDisconnect:
+        logfire_logger.info("Task updates WebSocket disconnected during setup", project_id=project_id)
+    except Exception as e:
+        logfire_logger.error("Unexpected error in task updates WebSocket", project_id=project_id, error=str(e))
+    finally:
+        task_update_manager.disconnect_from_project(websocket, project_id) 
+
+# MCP CONTEXT MANAGER FOR TASK UPDATES WITH WEBSOCKET BROADCASTING
+# Following the same pattern as RAG module
+
+class TaskContext:
+    """Minimal context for task MCP calls with WebSocket broadcasting support."""
+    def __init__(self, project_id: str):
+        self.project_id = project_id
+        self.progress_callback = None
+
+@router.put("/mcp/tasks/{task_id}/status")
+async def mcp_update_task_status_with_websockets(task_id: str, status: str):
+    """Update task status via MCP tools with WebSocket broadcasting using RAG pattern."""
+    with logfire_logger.span("mcp_task_status_update") as span:
+        span.set_attribute("task_id", task_id)
+        span.set_attribute("status", status)
+        
+        try:
+            # Get task to determine project_id
+            supabase_client = get_supabase_client()
+            task_response = supabase_client.table("tasks").select("*").eq("id", task_id).execute()
+            if not task_response.data:
+                raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+            
+            current_task = task_response.data[0]
+            project_id = current_task["project_id"]
+            span.set_attribute("project_id", project_id)
+            
+            # Create context for MCP function (like RAG does)
+            ctx = TaskContext(project_id)
+            
+            # Set progress callback for WebSocket broadcasting
+            async def websocket_callback(event_type: str, task_data: dict):
+                """Callback to broadcast WebSocket updates"""
+                await task_update_manager.broadcast_task_update(
+                    project_id=project_id,
+                    event_type=event_type,
+                    task_data=task_data
+                )
+            
+            ctx.progress_callback = websocket_callback
+            
+            # Import and call MCP function directly with context
+            from src.modules.project_module import update_task_status_direct
+            result = await update_task_status_direct(ctx, task_id, status)
+            
+            # Parse result
+            if isinstance(result, str):
+                result_data = json.loads(result)
+            else:
+                result_data = result
+            
+            if not result_data.get("success"):
+                raise HTTPException(status_code=500, detail=result_data.get("error", "Unknown error"))
+            
+            span.set_attribute("success", True)
+            logfire_logger.info("Task status updated with WebSocket broadcast", 
+                              task_id=task_id, 
+                              project_id=project_id, 
+                              status=status)
+            
+            return {"message": "Task status updated successfully", "task": result_data.get("task")}
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logfire_logger.error("Failed to update task status with WebSocket", error=str(e), task_id=task_id)
+            span.set_attribute("success", False)
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail=str(e)) 

@@ -22,8 +22,8 @@ import traceback
 
 from ..utils import get_supabase_client
 
-# Import Logfire
-from ..logfire_config import api_logger, rag_logger
+# Import Logfire - use logfire directly like other working APIs
+from ..logfire_config import logfire
 
 # Create router
 router = APIRouter(prefix="/api", tags=["knowledge"])

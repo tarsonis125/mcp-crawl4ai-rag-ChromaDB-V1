@@ -54,6 +54,11 @@ export interface Task {
   created_at: string;
   updated_at: string;
   
+  // Soft delete fields
+  archived?: boolean; // Soft delete flag
+  archived_at?: string; // Timestamp when archived
+  archived_by?: string; // User/system that archived the task
+  
   // Extended UI properties (can be stored in sources JSONB)
   featureColor?: string;
   priority?: TaskPriority;
@@ -140,7 +145,7 @@ export interface ProjectUpdateEvent {
 }
 
 export interface TaskUpdateEvent {
-  type: 'TASK_MOVED' | 'TASK_CREATED' | 'TASK_UPDATED' | 'TASK_DELETED';
+  type: 'TASK_MOVED' | 'TASK_CREATED' | 'TASK_UPDATED' | 'TASK_DELETED' | 'TASK_ARCHIVED';
   taskId: string;
   projectId: string;
   userId: string;

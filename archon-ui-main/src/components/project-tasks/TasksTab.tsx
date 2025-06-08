@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { X, Table, LayoutGrid, RefreshCw, Plus } from 'lucide-react';
+import { X, Table, LayoutGrid, RefreshCw, Plus, Wifi, WifiOff } from 'lucide-react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { Button } from '../ui/Button';
 import { projectService } from '../../services/projectService';
+import { taskUpdateWebSocket } from '../../services/websocketService';
 import type { CreateTaskRequest, UpdateTaskRequest, DatabaseTaskStatus } from '../../types/project';
 import { TaskTableView, Task } from './TaskTableView';
 import { TaskBoardView } from './TaskBoardView';
@@ -32,6 +33,22 @@ const mapDBStatusToUIStatus = (dbStatus: DatabaseTaskStatus): Task['status'] => 
   }
 };
 
+// Helper function to map database task format to UI task format
+const mapDatabaseTaskToUITask = (dbTask: any): Task => {
+  return {
+    id: dbTask.id,
+    title: dbTask.title,
+    description: dbTask.description || '',
+    status: mapDBStatusToUIStatus(dbTask.status),
+    assignee: {
+      name: dbTask.assignee || 'User',
+      avatar: ''
+    },
+    feature: dbTask.feature || 'General',
+    featureColor: '#3b82f6', // Default blue color
+    task_order: dbTask.task_order || 0
+  };
+};
 
 export const TasksTab = ({
   initialTasks,
@@ -48,6 +65,7 @@ export const TasksTab = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [projectFeatures, setProjectFeatures] = useState<any[]>([]);
   const [isLoadingFeatures, setIsLoadingFeatures] = useState(false);
+  const [isWebSocketConnected, setIsWebSocketConnected] = useState(false);
 
   // Initialize tasks
   useEffect(() => {
@@ -58,6 +76,81 @@ export const TasksTab = ({
   useEffect(() => {
     loadProjectFeatures();
   }, [projectId]);
+
+  // WebSocket connection for real-time task updates
+  useEffect(() => {
+    if (!projectId) return;
+
+    console.log('🔌 Setting up WebSocket connection for project:', projectId);
+
+    const connectWebSocket = () => {
+      taskUpdateWebSocket.connect(projectId, {
+        onConnectionEstablished: () => {
+          console.log('✅ Task updates WebSocket connected');
+          setIsWebSocketConnected(true);
+        },
+        
+        onTaskCreated: (newTask) => {
+          console.log('🆕 Real-time task created:', newTask);
+          const mappedTask = mapDatabaseTaskToUITask(newTask);
+          setTasks(prev => {
+            const updated = [...prev, mappedTask];
+            onTasksChange(updated);
+            return updated;
+          });
+        },
+        
+        onTaskUpdated: (updatedTask) => {
+          console.log('📝 Real-time task updated:', updatedTask);
+          const mappedTask = mapDatabaseTaskToUITask(updatedTask);
+          setTasks(prev => {
+            const updated = prev.map(task => 
+              task.id === updatedTask.id ? mappedTask : task
+            );
+            onTasksChange(updated);
+            return updated;
+          });
+        },
+        
+        onTaskDeleted: (deletedTask) => {
+          console.log('🗑️ Real-time task deleted:', deletedTask);
+          setTasks(prev => {
+            const updated = prev.filter(task => task.id !== deletedTask.id);
+            onTasksChange(updated);
+            return updated;
+          });
+        },
+        
+        onTaskArchived: (archivedTask) => {
+          console.log('📦 Real-time task archived:', archivedTask);
+          setTasks(prev => {
+            const updated = prev.filter(task => task.id !== archivedTask.id);
+            onTasksChange(updated);
+            return updated;
+          });
+        },
+        
+        onError: (error) => {
+          console.error('❌ Task updates WebSocket error:', error);
+          setIsWebSocketConnected(false);
+        },
+        
+        onClose: (event) => {
+          console.log('🔌 Task updates WebSocket closed:', event);
+          setIsWebSocketConnected(false);
+        }
+      });
+    };
+
+    connectWebSocket();
+
+    // Cleanup on unmount or projectId change
+    return () => {
+      console.log('🧹 Cleaning up WebSocket connection');
+      taskUpdateWebSocket.disconnect();
+      setIsWebSocketConnected(false);
+    };
+  }, [projectId]); // Removed onTasksChange from dependency array
 
   const loadProjectFeatures = async () => {
     if (!projectId) return;
@@ -291,7 +384,22 @@ export const TasksTab = ({
         {/* Fixed View Controls */}
         <div className="fixed bottom-6 left-0 right-0 flex justify-center z-50 pointer-events-none">
           <div className="flex items-center gap-4">
-            {/* New Task Button */}
+            {/* WebSocket Status Indicator */}
+            <div className="flex items-center gap-2 px-3 py-2 bg-white/80 dark:bg-black/90 border border-gray-200 dark:border-gray-800 rounded-lg shadow-[0_0_20px_rgba(0,0,0,0.1)] dark:shadow-[0_0_20px_rgba(0,0,0,0.5)] backdrop-blur-md pointer-events-auto">
+              {isWebSocketConnected ? (
+                <>
+                  <Wifi className="w-4 h-4 text-green-500" />
+                  <span className="text-xs text-green-600 dark:text-green-400">Live</span>
+                </>
+              ) : (
+                <>
+                  <WifiOff className="w-4 h-4 text-red-500" />
+                  <span className="text-xs text-red-600 dark:text-red-400">Offline</span>
+                </>
+              )}
+            </div>
+            
+            {/* Add Task Button with Luminous Style */}
             <button 
               onClick={() => {
                 const defaultOrder = getTasksForPrioritySelection('backlog')[0]?.value || 1;
@@ -306,15 +414,15 @@ export const TasksTab = ({
                   task_order: defaultOrder
                 });
                 setIsModalOpen(true);
-              }} 
+              }}
               className="relative px-5 py-2.5 flex items-center gap-2 bg-white/80 dark:bg-black/90 border border-gray-200 dark:border-gray-800 rounded-lg shadow-[0_0_20px_rgba(0,0,0,0.1)] dark:shadow-[0_0_20px_rgba(0,0,0,0.5)] backdrop-blur-md pointer-events-auto text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 transition-all duration-300"
             >
               <Plus className="w-4 h-4 mr-1" />
-              <span>New Task</span>
+              <span>Add Task</span>
               <span className="absolute bottom-0 left-[0%] right-[0%] w-[95%] mx-auto h-[2px] bg-cyan-500 shadow-[0_0_10px_2px_rgba(34,211,238,0.4)] dark:shadow-[0_0_20px_5px_rgba(34,211,238,0.7)]"></span>
             </button>
-
-            {/* View Toggle */}
+          
+            {/* View Toggle Controls */}
             <div className="flex items-center bg-white/80 dark:bg-black/90 border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden shadow-[0_0_20px_rgba(0,0,0,0.1)] dark:shadow-[0_0_20px_rgba(0,0,0,0.5)] backdrop-blur-md pointer-events-auto">
               <button 
                 onClick={() => setViewMode('table')} 
