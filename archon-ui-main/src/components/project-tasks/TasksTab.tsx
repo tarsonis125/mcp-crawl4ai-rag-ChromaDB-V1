@@ -125,6 +125,27 @@ export const TasksTab = ({
             return updated;
           });
         },
+
+        // Handle bulk task updates from MCP DatabaseChangeDetector
+        onTasksChange: (updatedTasks) => {
+          console.log('🔄 Real-time bulk task updates from MCP:', updatedTasks);
+          setTasks(prev => {
+            const updated = [...prev];
+            
+            // Update each changed task
+            updatedTasks.forEach(updatedTask => {
+              const mappedTask = mapDatabaseTaskToUITask(updatedTask);
+              const index = updated.findIndex(task => task.id === updatedTask.id);
+              if (index >= 0) {
+                updated[index] = mappedTask;
+              }
+            });
+            
+            // Use setTimeout to avoid setState during render
+            setTimeout(() => onTasksChange(updated), 0);
+            return updated;
+          });
+        },
         
         onTaskDeleted: (deletedTask) => {
           console.log('🗑️ Real-time task deleted:', deletedTask);
