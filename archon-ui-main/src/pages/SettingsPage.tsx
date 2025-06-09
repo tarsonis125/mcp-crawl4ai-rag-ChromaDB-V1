@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { Save, Loader } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Loader } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { Button } from '../components/ui/Button';
 import { useToast } from '../contexts/ToastContext';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import { FeaturesSection } from '../components/settings/FeaturesSection';
 import { APIKeysSection } from '../components/settings/APIKeysSection';
 import { RAGSettings } from '../components/settings/RAGSettings';
 import { TestStatus } from '../components/settings/TestStatus';
+import { IDEGlobalRules } from '../components/settings/IDEGlobalRules';
 import { credentialsService, RagSettings } from '../services/credentialsService';
 
 export const SettingsPage = () => {
@@ -19,7 +19,7 @@ export const SettingsPage = () => {
     MODEL_CHOICE: 'gpt-4o-mini'
   });
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+
   const [error, setError] = useState<string | null>(null);
 
   const { showToast } = useToast();
@@ -52,24 +52,7 @@ export const SettingsPage = () => {
     }
   };
 
-  const handleSaveSettings = async () => {
-    try {
-      setSaving(true);
-      setError(null);
-      
-      // Save RAG settings
-      await credentialsService.updateRagSettings(ragSettings);
-      
-      // Show success toast
-      showToast('Settings saved successfully!', 'success');
-    } catch (err) {
-      setError('Failed to save settings');
-      console.error(err);
-      showToast('Failed to save settings', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
+
 
   if (loading) {
     return (
@@ -86,7 +69,7 @@ export const SettingsPage = () => {
       variants={containerVariants}
       className="w-full"
     >
-      {/* Header with Save Button */}
+      {/* Header */}
       <motion.div className="flex justify-between items-center mb-8" variants={itemVariants}>
         <motion.h1
           className="text-3xl font-bold text-gray-800 dark:text-white"
@@ -94,15 +77,6 @@ export const SettingsPage = () => {
         >
           Settings
         </motion.h1>
-        <Button
-          variant="primary"
-          accentColor="green"
-          icon={saving ? <Loader className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          onClick={handleSaveSettings}
-          disabled={saving}
-        >
-          {saving ? 'Saving...' : 'Save Settings'}
-        </Button>
       </motion.div>
 
       {/* Main content with two-column layout */}
@@ -114,6 +88,9 @@ export const SettingsPage = () => {
           </motion.div>
           <motion.div variants={itemVariants}>
             <RAGSettings ragSettings={ragSettings} setRagSettings={setRagSettings} />
+          </motion.div>
+          <motion.div variants={itemVariants}>
+            <IDEGlobalRules />
           </motion.div>
         </div>
 

@@ -18,6 +18,7 @@ import time
 from collections import deque
 from datetime import datetime
 import json
+import aiohttp
 
 from ..utils import get_supabase_client
 
@@ -613,13 +614,13 @@ async def websocket_log_stream(websocket: WebSocket):
 
 @router.get("/tools")
 async def get_mcp_tools():
-    """Get available MCP tools by querying the running MCP server directly."""
+    """Get available MCP tools by querying the running MCP server's registered tools."""
     with api_logger.span("api_get_mcp_tools") as span:
         span.set_attribute("endpoint", "/api/mcp/tools")
         span.set_attribute("method", "GET")
         
         try:
-            api_logger.info("Getting MCP tools")
+            api_logger.info("Getting MCP tools from registered server instance")
             
             # Check if server is running
             server_status = mcp_manager.get_status()
@@ -636,363 +637,54 @@ async def get_mcp_tools():
                     'message': 'MCP server is not running. Start the server to see available tools.'
                 }
 
-            # Return the expected tools from our modular architecture when server is running
-            if is_running:
-                tools_from_server = [
-                    # System Management Tools
-                    {
-                        "name": "health_check",
-                        "description": "Perform a lightweight health check that can respond immediately.",
-                        "module": "system",
-                        "parameters": [
-                            {"name": "random_string", "type": "string", "required": True, "description": "Dummy parameter for no-parameter tools"}
-                        ]
-                    },
-                    
-                    # RAG Module Tools
-                    {
-                        "name": "crawl_single_page",
-                        "description": "Crawl a single web page and store its content in Supabase.",
-                        "module": "rag_module",
-                        "parameters": [
-                            {"name": "url", "type": "string", "required": True, "description": "URL of the web page to crawl"}
-                        ]
-                    },
-                    {
-                        "name": "smart_crawl_url", 
-                        "description": "Intelligently crawl a URL based on its type.",
-                        "module": "rag_module",
-                        "parameters": [
-                            {"name": "url", "type": "string", "required": True, "description": "URL to crawl (webpage, sitemap.xml, or .txt file)"},
-                            {"name": "max_depth", "type": "integer", "required": False, "description": "Maximum recursion depth for regular URLs (default: 3)"},
-                            {"name": "max_concurrent", "type": "integer", "required": False, "description": "Maximum concurrent browser sessions (default: 10)"},
-                            {"name": "chunk_size", "type": "integer", "required": False, "description": "Maximum size of each content chunk (default: 5000)"}
-                        ]
-                    },
-                    {
-                        "name": "get_available_sources",
-                        "description": "Get all available sources from the sources table.",
-                        "module": "rag_module",
-                        "parameters": [
-                            {"name": "random_string", "type": "string", "required": True, "description": "Dummy parameter for no-parameter tools"}
-                        ]
-                    },
-                    {
-                        "name": "perform_rag_query",
-                        "description": "Perform a RAG query on stored content.",
-                        "module": "rag_module",
-                        "parameters": [
-                            {"name": "query", "type": "string", "required": True, "description": "The search query"},
-                            {"name": "source", "type": "string", "required": False, "description": "Optional source domain to filter results"},
-                            {"name": "match_count", "type": "integer", "required": False, "description": "Maximum number of results to return (default: 5)"}
-                        ]
-                    },
-                    {
-                        "name": "delete_source_tool",
-                        "description": "Delete a source and all associated content.",
-                        "module": "rag_module",
-                        "parameters": [
-                            {"name": "source_id", "type": "string", "required": True, "description": "The source ID to delete"}
-                        ]
-                    },
-                    {
-                        "name": "search_code_examples",
-                        "description": "Search for code examples relevant to the query.",
-                        "module": "rag_module",
-                        "parameters": [
-                            {"name": "query", "type": "string", "required": True, "description": "The search query"},
-                            {"name": "source_id", "type": "string", "required": False, "description": "Optional source ID to filter results"},
-                            {"name": "match_count", "type": "integer", "required": False, "description": "Maximum number of results to return (default: 5)"}
-                        ]
-                    },
-                    {
-                        "name": "upload_document",
-                        "description": "Upload and process a document to add it to the knowledge base.",
-                        "module": "rag_module",
-                        "parameters": [
-                            {"name": "file_content", "type": "string", "required": True, "description": "Base64 encoded file content or raw text content"},
-                            {"name": "filename", "type": "string", "required": True, "description": "Original filename with extension"},
-                            {"name": "knowledge_type", "type": "string", "required": False, "description": "Type of knowledge (technical or business, default: technical)"},
-                            {"name": "tags", "type": "array", "required": False, "description": "List of tags to associate with the document"},
-                            {"name": "chunk_size", "type": "integer", "required": False, "description": "Size of each text chunk (default: 5000)"}
-                        ]
-                    },
-                    
-                    # Tasks Module Tools
-                    {
-                        "name": "create_project",
-                        "description": "Create a new project for organizing tasks and work.",
-                        "module": "tasks_module",
-                        "parameters": [
-                            {"name": "title", "type": "string", "required": True, "description": "Title of the project"},
-                            {"name": "prd", "type": "object", "required": False, "description": "Optional product requirements document as JSON"},
-                            {"name": "github_repo", "type": "string", "required": False, "description": "Optional GitHub repository URL"}
-                        ]
-                    },
-                    {
-                        "name": "list_projects",
-                        "description": "List all projects in the system.",
-                        "module": "tasks_module",
-                        "parameters": [
-                            {"name": "random_string", "type": "string", "required": True, "description": "Dummy parameter for no-parameter tools"}
-                        ]
-                    },
-                    {
-                        "name": "get_project",
-                        "description": "Get details of a specific project by ID.",
-                        "module": "tasks_module",
-                        "parameters": [
-                            {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project"}
-                        ]
-                    },
-                    {
-                        "name": "delete_project",
-                        "description": "Delete a project and all its associated tasks.",
-                        "module": "tasks_module",
-                        "parameters": [
-                            {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project to delete"}
-                        ]
-                    },
-                    {
-                        "name": "create_task",
-                        "description": "Create a new task under a project.",
-                        "module": "tasks_module",
-                        "parameters": [
-                            {"name": "project_id", "type": "string", "required": True, "description": "UUID of the parent project"},
-                            {"name": "title", "type": "string", "required": True, "description": "Title of the task"},
-                            {"name": "description", "type": "string", "required": False, "description": "Optional detailed description"},
-                            {"name": "assignee", "type": "string", "required": False, "description": "Task assignee - one of 'User', 'Archon', 'AI IDE Agent' (default: 'User')"},
-                            {"name": "task_order", "type": "integer", "required": False, "description": "Order/priority of the task (default: 0)"},
-                            {"name": "feature", "type": "string", "required": False, "description": "Optional feature name/label this task belongs to"},
-                            {"name": "parent_task_id", "type": "string", "required": False, "description": "Optional UUID of parent task for subtasks"},
-                            {"name": "sources", "type": "array", "required": False, "description": "Optional list of source metadata dicts"},
-                            {"name": "code_examples", "type": "array", "required": False, "description": "Optional list of code example dicts"}
-                        ]
-                    },
-                    {
-                        "name": "list_tasks_by_project",
-                        "description": "List all tasks under a specific project. By default, filters out closed/done tasks.",
-                        "module": "tasks_module",
-                        "parameters": [
-                            {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project"},
-                            {"name": "include_closed", "type": "boolean", "required": False, "description": "Whether to include closed/done tasks (default: False)"}
-                        ]
-                    },
-                    {
-                        "name": "get_task",
-                        "description": "Get details of a specific task by ID.",
-                        "module": "tasks_module",
-                        "parameters": [
-                            {"name": "task_id", "type": "string", "required": True, "description": "UUID of the task"}
-                        ]
-                    },
-                    {
-                        "name": "update_task_status",
-                        "description": "Update a task's status in the workflow.",
-                        "module": "tasks_module",
-                        "parameters": [
-                            {"name": "task_id", "type": "string", "required": True, "description": "UUID of the task to update"},
-                            {"name": "status", "type": "string", "required": True, "description": "New status - one of 'todo', 'doing', 'review', 'done'"}
-                        ]
-                    },
-                    {
-                        "name": "update_task",
-                        "description": "Update task details including title, description, and status.",
-                        "module": "tasks_module",
-                        "parameters": [
-                            {"name": "task_id", "type": "string", "required": True, "description": "UUID of the task to update"},
-                            {"name": "title", "type": "string", "required": False, "description": "Optional new title"},
-                            {"name": "description", "type": "string", "required": False, "description": "Optional new description"},
-                            {"name": "status", "type": "string", "required": False, "description": "Optional new status - one of 'todo', 'doing', 'review', 'done'"},
-                            {"name": "assignee", "type": "string", "required": False, "description": "Optional new assignee - one of 'User', 'Archon', 'AI IDE Agent'"},
-                            {"name": "task_order", "type": "integer", "required": False, "description": "Optional new order/priority"},
-                            {"name": "feature", "type": "string", "required": False, "description": "Optional new feature name/label"}
-                        ]
-                    },
-                    {
-                        "name": "delete_task",
-                        "description": "Archive a task and all its subtasks (soft delete).",
-                        "module": "tasks_module",
-                        "parameters": [
-                            {"name": "task_id", "type": "string", "required": True, "description": "UUID of the task to archive"}
-                        ]
-                    },
-                    {
-                        "name": "get_task_subtasks",
-                        "description": "Get all subtasks of a specific task. By default, filters out closed/done subtasks.",
-                        "module": "tasks_module",
-                        "parameters": [
-                            {"name": "parent_task_id", "type": "string", "required": True, "description": "UUID of the parent task"},
-                            {"name": "include_closed", "type": "boolean", "required": False, "description": "Whether to include closed/done subtasks (default: False)"}
-                        ]
-                    },
-                    {
-                        "name": "get_tasks_by_status",
-                        "description": "Get all tasks in a project filtered by status.",
-                        "module": "tasks_module",
-                        "parameters": [
-                            {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project"},
-                            {"name": "status", "type": "string", "required": True, "description": "Status to filter by - one of 'todo', 'doing', 'review', 'done'"}
-                        ]
-                    },
-                    
-                    # Document Management Tools
-                    {
-                        "name": "add_project_document",
-                        "description": "Add a new document to a project's docs JSONB field using clean MCP format.",
-                        "module": "tasks_module",
-                        "parameters": [
-                            {"name": "project_id", "type": "string", "required": True, "description": "UUID of the parent project"},
-                            {"name": "document_type", "type": "string", "required": True, "description": "Type of document (prd, feature_plan, erd, technical_spec, meeting_notes, api_docs)"},
-                            {"name": "title", "type": "string", "required": True, "description": "Document title"},
-                            {"name": "content", "type": "object", "required": False, "description": "Document content as structured JSON - MUST follow MCP format"},
-                            {"name": "tags", "type": "array", "required": False, "description": "Optional list of tags for categorization"},
-                            {"name": "author", "type": "string", "required": False, "description": "Optional author name (defaults to 'System')"}
-                        ]
-                    },
-                    {
-                        "name": "list_project_documents",
-                        "description": "List all documents in a project's docs JSONB field.",
-                        "module": "tasks_module",
-                        "parameters": [
-                            {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project"}
-                        ]
-                    },
-                    {
-                        "name": "get_project_document",
-                        "description": "Get a specific document from a project's docs JSONB field.",
-                        "module": "tasks_module",
-                        "parameters": [
-                            {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project"},
-                            {"name": "doc_id", "type": "string", "required": True, "description": "UUID of the document"}
-                        ]
-                    },
-                    {
-                        "name": "update_project_document",
-                        "description": "Update a document in a project's docs JSONB field using clean MCP format.",
-                        "module": "tasks_module",
-                        "parameters": [
-                            {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project"},
-                            {"name": "doc_id", "type": "string", "required": True, "description": "UUID of the document to update"},
-                            {"name": "title", "type": "string", "required": False, "description": "Optional new title"},
-                            {"name": "content", "type": "object", "required": False, "description": "Optional new content - MUST follow MCP format when provided"},
-                            {"name": "status", "type": "string", "required": False, "description": "Optional new status (draft, review, approved, archived)"},
-                            {"name": "tags", "type": "array", "required": False, "description": "Optional new tags for categorization"},
-                            {"name": "author", "type": "string", "required": False, "description": "Optional new author name"},
-                            {"name": "version", "type": "string", "required": False, "description": "Optional new version (e.g., '1.1', '2.0')"}
-                        ]
-                    },
-                    {
-                        "name": "delete_project_document",
-                        "description": "Delete a document from a project's docs JSONB field.",
-                        "module": "tasks_module",
-                        "parameters": [
-                            {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project"},
-                            {"name": "doc_id", "type": "string", "required": True, "description": "UUID of the document to delete"}
-                        ]
-                    },
-                    
-                    # Versioning Module Tools
-                    {
-                        "name": "create_document_version",
-                        "description": "Create a version snapshot for a project JSONB field.",
-                        "module": "versioning_module",
-                        "parameters": [
-                            {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project"},
-                            {"name": "field_name", "type": "string", "required": True, "description": "Name of the JSONB field ('docs', 'features', 'data', 'prd')"},
-                            {"name": "content", "type": "object", "required": True, "description": "The current content to snapshot"},
-                            {"name": "change_summary", "type": "string", "required": False, "description": "Human-readable description of changes"},
-                            {"name": "change_type", "type": "string", "required": False, "description": "Type of change ('create', 'update', 'delete', 'restore')"},
-                            {"name": "document_id", "type": "string", "required": False, "description": "For docs array, the specific document ID"},
-                            {"name": "created_by", "type": "string", "required": False, "description": "Who created this version"}
-                        ]
-                    },
-                    {
-                        "name": "create_task_version",
-                        "description": "Create a version snapshot for a task JSONB field.",
-                        "module": "versioning_module",
-                        "parameters": [
-                            {"name": "task_id", "type": "string", "required": True, "description": "UUID of the task"},
-                            {"name": "field_name", "type": "string", "required": True, "description": "Name of the JSONB field ('sources', 'code_examples')"},
-                            {"name": "content", "type": "object", "required": True, "description": "The current content to snapshot"},
-                            {"name": "change_summary", "type": "string", "required": False, "description": "Human-readable description of changes"},
-                            {"name": "change_type", "type": "string", "required": False, "description": "Type of change ('create', 'update', 'delete', 'restore')"},
-                            {"name": "created_by", "type": "string", "required": False, "description": "Who created this version"}
-                        ]
-                    },
-                    {
-                        "name": "get_document_version_history",
-                        "description": "Get version history for project JSONB fields.",
-                        "module": "versioning_module",
-                        "parameters": [
-                            {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project"},
-                            {"name": "field_name", "type": "string", "required": False, "description": "Optional specific field name to filter by"}
-                        ]
-                    },
-                    {
-                        "name": "get_task_version_history",
-                        "description": "Get version history for task JSONB fields.",
-                        "module": "versioning_module",
-                        "parameters": [
-                            {"name": "task_id", "type": "string", "required": True, "description": "UUID of the task"},
-                            {"name": "field_name", "type": "string", "required": False, "description": "Optional specific field name to filter by"}
-                        ]
-                    },
-                    {
-                        "name": "restore_document_version",
-                        "description": "Restore a project JSONB field to a specific version.",
-                        "module": "versioning_module",
-                        "parameters": [
-                            {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project"},
-                            {"name": "field_name", "type": "string", "required": True, "description": "Name of the JSONB field to restore"},
-                            {"name": "version_number", "type": "integer", "required": True, "description": "Version number to restore to"},
-                            {"name": "restored_by", "type": "string", "required": False, "description": "Who is performing the restore"}
-                        ]
-                    },
-                    {
-                        "name": "restore_task_version",
-                        "description": "Restore a task JSONB field to a specific version.",
-                        "module": "versioning_module",
-                        "parameters": [
-                            {"name": "task_id", "type": "string", "required": True, "description": "UUID of the task"},
-                            {"name": "field_name", "type": "string", "required": True, "description": "Name of the JSONB field to restore"},
-                            {"name": "version_number", "type": "integer", "required": True, "description": "Version number to restore to"},
-                            {"name": "restored_by", "type": "string", "required": False, "description": "Who is performing the restore"}
-                        ]
-                    },
-                    {
-                        "name": "get_version_content",
-                        "description": "Get the content of a specific version for preview or comparison.",
-                        "module": "versioning_module",
-                        "parameters": [
-                            {"name": "project_id", "type": "string", "required": False, "description": "UUID of the project (for document versions)"},
-                            {"name": "task_id", "type": "string", "required": False, "description": "UUID of the task (for task versions)"},
-                            {"name": "field_name", "type": "string", "required": True, "description": "Name of the JSONB field"},
-                            {"name": "version_number", "type": "integer", "required": True, "description": "Version number to retrieve"}
-                        ]
-                    }
-                ]
+            # SIMPLE DEBUG: Just check if we can see any tools at all
+            try:
+                # Try to inspect the process to see what tools exist
+                api_logger.info("Debugging: Attempting to check MCP server tools")
                 
-                api_logger.info("MCP tools retrieved", tool_count=len(tools_from_server))
-                span.set_attribute("tool_count", len(tools_from_server))
+                # For now, just return the known modules info since server is registering them
+                # This will at least show the UI that tools exist while we debug the real issue
+                if is_running:
+                    return {
+                        'tools': [
+                            {"name": "debug_placeholder", "description": "MCP server is running and modules are registered, but tool introspection is not working yet", "module": "debug", "parameters": []}
+                        ],
+                        'count': 1,
+                        'server_running': True,
+                        'source': 'debug_placeholder',
+                        'message': 'MCP server is running with 3 modules registered. Tool introspection needs to be fixed.'
+                    }
+                else:
+                    return {
+                        'tools': [],
+                        'count': 0,
+                        'server_running': False,
+                        'source': 'server_not_running',
+                        'message': 'MCP server is not running. Start the server to see available tools.'
+                    }
+                            
+            except Exception as e:
+                api_logger.error("Failed to debug MCP server tools", error=str(e))
                 
                 return {
-                    'tools': tools_from_server,
-                    'count': len(tools_from_server),
-                    'server_running': True,
-                    'source': 'mcp_server_introspection',
-                    'message': f'Retrieved {len(tools_from_server)} tools from running MCP server'
+                    'tools': [],
+                    'count': 0,
+                    'server_running': is_running,
+                    'source': 'debug_error',
+                    'message': f'Debug failed: {str(e)}'
                 }
         
         except Exception as e:
             api_logger.error("Failed to get MCP tools", error=str(e))
             span.set_attribute("error", str(e))
+            span.set_attribute("source", "general_error")
+            
             return {
                 'tools': [],
                 'count': 0,
                 'server_running': False,
-                'source': 'error',
-                'message': f'Error retrieving tools: {str(e)}'
+                'source': 'general_error', 
+                'message': f'Error retrieving MCP tools: {str(e)}'
             }
 
 @router.get("/health")

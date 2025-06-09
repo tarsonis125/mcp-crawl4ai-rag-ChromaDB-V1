@@ -1,7 +1,10 @@
-import React from 'react';
-import { Settings, Check } from 'lucide-react';
+import React, { useState } from 'react';
+import { Settings, Check, Save, Loader } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Select } from '../ui/Select';
+import { Button } from '../ui/Button';
+import { useToast } from '../../contexts/ToastContext';
+import { credentialsService } from '../../services/credentialsService';
 interface RAGSettingsProps {
   ragSettings: {
     MODEL_CHOICE: string;
@@ -16,6 +19,8 @@ export const RAGSettings = ({
   ragSettings,
   setRagSettings
 }: RAGSettingsProps) => {
+  const [saving, setSaving] = useState(false);
+  const { showToast } = useToast();
   return <div>
       <div className="flex items-center mb-4">
         <Settings className="mr-2 text-green-500" size={20} />
@@ -24,10 +29,34 @@ export const RAGSettings = ({
         </h2>
       </div>
       <Card accentColor="green" className="overflow-hidden">
-        <p className="text-sm text-gray-600 dark:text-zinc-400 mb-4">
-          Configure Retrieval-Augmented Generation (RAG) strategies for optimal
-          knowledge retrieval.
-        </p>
+        <div className="flex flex-col sm:flex-row gap-4 mb-6">
+          <p className="text-sm text-gray-600 dark:text-zinc-400 w-full sm:w-3/4">
+            Configure Retrieval-Augmented Generation (RAG) strategies for optimal
+            knowledge retrieval.
+          </p>
+          <Button 
+            variant="outline" 
+            accentColor="green" 
+            icon={saving ? <Loader className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}
+            className="self-end sm:self-start sm:ml-auto whitespace-nowrap px-4 py-2"
+            size="md"
+            onClick={async () => {
+              try {
+                setSaving(true);
+                await credentialsService.updateRagSettings(ragSettings);
+                showToast('RAG settings saved successfully!', 'success');
+              } catch (err) {
+                console.error('Failed to save RAG settings:', err);
+                showToast('Failed to save settings', 'error');
+              } finally {
+                setSaving(false);
+              }
+            }}
+            disabled={saving}
+          >
+            {saving ? 'Saving...' : 'Save Settings'}
+          </Button>
+        </div>
         {/* Model Choice */}
         <Select label="LLM Model" value={ragSettings.MODEL_CHOICE} onChange={e => setRagSettings({
         ...ragSettings,

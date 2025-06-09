@@ -3,6 +3,7 @@ import { X, Table, LayoutGrid, RefreshCw, Plus, Wifi, WifiOff, Check, Trash2, Li
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { Button } from '../ui/Button';
+import { ArchonLoadingSpinner } from '../animations/Animations';
 import { Toggle } from '../ui/Toggle';
 import { projectService } from '../../services/projectService';
 import { taskUpdateWebSocket } from '../../services/websocketService';
@@ -71,7 +72,8 @@ export const TasksTab = ({
   
   // Subtask-related state
   const [currentSubtasks, setCurrentSubtasks] = useState<Task[]>([]);
-  const [isLoadingSubtasks, setIsLoadingSubtasks] = useState(false);
+  const [isLoadingSubtasks, setIsLoadingSubtasks] = useState<boolean>(false);
+  const [isSavingTask, setIsSavingTask] = useState<boolean>(false);
   const [showSubtasksInTable, setShowSubtasksInTable] = useState(false);
   
   // Accordion state
@@ -275,6 +277,7 @@ export const TasksTab = ({
   const saveTask = async () => {
     if (!editingTask) return;
     
+    setIsSavingTask(true);
     try {
       let parentTaskId = editingTask.id;
       
@@ -359,6 +362,8 @@ export const TasksTab = ({
     } catch (error) {
       console.error('Failed to save task:', error);
       alert(`Failed to save task: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsSavingTask(false);
     }
   };
 
@@ -1206,9 +1211,22 @@ const TempSubtaskAddRow = ({ onSubtaskCreate, inheritedFeature }: TempSubtaskAdd
                 </div>
 
                 <div className="flex justify-end gap-3 mt-6">
-                  <Button onClick={closeModal} variant="ghost">Cancel</Button>
-                  <Button onClick={saveTask} variant="primary" accentColor="cyan" className="shadow-lg shadow-cyan-500/20">
-                    {editingTask?.id ? 'Save Changes' : 'Create Task'}
+                  <Button onClick={closeModal} variant="ghost" disabled={isSavingTask}>Cancel</Button>
+                  <Button 
+                    onClick={saveTask} 
+                    variant="primary" 
+                    accentColor="cyan" 
+                    className="shadow-lg shadow-cyan-500/20"
+                    disabled={isSavingTask}
+                  >
+                    {isSavingTask ? (
+                      <span className="flex items-center">
+                        <ArchonLoadingSpinner size="sm" className="mr-2" />
+                        {editingTask?.id ? 'Saving...' : 'Creating...'}
+                      </span>
+                    ) : (
+                      editingTask?.id ? 'Save Changes' : 'Create Task'
+                    )}
                   </Button>
                 </div>
               </div>
