@@ -184,7 +184,7 @@ const DraggableTaskCard = ({
             </div>
           </div>
           
-          <h4 className="font-medium text-gray-900 dark:text-white mb-2 pl-1.5">
+          <h4 className="font-medium text-gray-900 dark:text-white mb-2 pl-1.5 line-clamp-2 overflow-hidden" title={task.title}>
             {task.title}
           </h4>
           

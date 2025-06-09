@@ -36,7 +36,7 @@ export const Button: React.FC<ButtonProps> = ({
   const variantClasses = {
     primary: `
       relative overflow-hidden backdrop-blur-md font-medium
-      bg-${accentColor}-500/80 text-white
+      bg-${accentColor}-500/80 text-black dark:text-white
       border border-${accentColor}-500/50 border-t-${accentColor}-300
       shadow-lg shadow-${accentColor}-500/40 hover:shadow-xl hover:shadow-${accentColor}-500/50
       group

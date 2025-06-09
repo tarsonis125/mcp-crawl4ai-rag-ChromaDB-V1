@@ -22,15 +22,32 @@ Archon is designed as a containerized application using Docker and Docker Compos
 ## 🏗️ Architecture Overview
 
 ```mermaid
+---
+config:
+  theme: 'base'
+  themeVariables:
+    primaryColor: '#1a1a2e'
+    primaryTextColor: '#00d4ff'
+    primaryBorderColor: '#00d4ff'
+    lineColor: '#00d4ff'
+    secondaryColor: '#16213e'
+    tertiaryColor: '#0f3460'
+    background: '#0a0a1a'
+    mainBkg: '#1a1a2e'
+    secondBkg: '#16213e'
+    textColor: '#ffffff'
+    clusterBkg: '#1a1a2e'
+    clusterBorder: '#00d4ff'
+---
 graph TB
-    subgraph "Docker Compose Stack"
+    subgraph "🐳 Docker Compose Stack"
         Frontend["🌐 Frontend Container<br/>React + Nginx<br/>Port 3737"]
         Backend["⚡ Backend Container<br/>FastAPI + Python<br/>Port 8080"]
         MCPServer["🔧 MCP Server<br/>Python + Logfire<br/>Port 8051"]
         Docs["📚 Documentation<br/>Docusaurus<br/>Port 3838"]
     end
 
-    subgraph "External Services"
+    subgraph "☁️ External Services"
         Supabase["🗄️ Supabase<br/>PostgreSQL + pgvector"]
         OpenAI["🤖 OpenAI API<br/>Embeddings + Chat"]
         Logfire["🔥 Logfire<br/>Real-time Monitoring<br/>& Debugging"]
@@ -44,9 +61,13 @@ graph TB
     Backend --> Logfire
     MCPServer --> Supabase
 
-    style Logfire fill:#ff6b6b,stroke:#ff4757,stroke-width:3px
-    style MCPServer fill:#4834d4,stroke:#686de0,stroke-width:2px
-    style Backend fill:#00d2d3,stroke:#01a3a4,stroke-width:2px
+    classDef neonCore fill:#1a1a2e,stroke:#00d4ff,stroke-width:2px,color:#00d4ff
+    classDef neonExternal fill:#16213e,stroke:#00ff88,stroke-width:2px,color:#00ff88
+    classDef neonCritical fill:#2d1810,stroke:#ff6b6b,stroke-width:3px,color:#ff6b6b
+    
+    class Frontend,Backend,MCPServer,Docs neonCore
+    class Supabase,OpenAI neonExternal
+    class Logfire neonCritical
 ```
 
 ## ⚡ Quick Start

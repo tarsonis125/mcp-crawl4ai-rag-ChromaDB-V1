@@ -22,27 +22,44 @@ Archon's backend is built on a modern, scalable architecture using FastAPI, Dock
 ## 🎯 Architecture Overview
 
 ```mermaid
+---
+config:
+  theme: 'base'
+  themeVariables:
+    primaryColor: '#1a1a2e'
+    primaryTextColor: '#00d4ff'
+    primaryBorderColor: '#00d4ff'
+    lineColor: '#00d4ff'
+    secondaryColor: '#16213e'
+    tertiaryColor: '#0f3460'
+    background: '#0a0a1a'
+    mainBkg: '#1a1a2e'
+    secondBkg: '#16213e'
+    textColor: '#ffffff'
+    clusterBkg: '#1a1a2e'
+    clusterBorder: '#00d4ff'
+---
 graph TB
-    subgraph "Docker Container Environment"
-        subgraph "Main Application Container"
-            FastAPI["🚀 FastAPI Application<br/>Port 8080"]
+    subgraph "🐳 Docker Container Environment"
+        subgraph "🚀 Main Application Container"
+            FastAPI["⚡ FastAPI Application<br/>Port 8080"]
             MCP["🔌 MCP Server<br/>Port 8051"]
             WS["📡 WebSocket Manager"]
             BG["⚙️ Background Tasks"]
         end
         
-        subgraph "Frontend Container"
+        subgraph "🌐 Frontend Container"
             React["⚛️ React + Vite<br/>Port 3737"]
         end
     end
     
-    subgraph "External Services"
+    subgraph "☁️ External Services"
         Supabase[("🗄️ Supabase<br/>PostgreSQL + pgvector")]
         OpenAI["🤖 OpenAI API<br/>Embeddings"]
         Logfire["🔥 Logfire<br/>Real-time Monitoring & Debugging"]
     end
     
-    subgraph "File System"
+    subgraph "💾 File System"
         Uploads["📁 Document Uploads<br/>/app/uploads"]
         Logs["📋 Application Logs<br/>/app/logs"]
         Config["⚙️ Configuration<br/>.env"]
@@ -61,13 +78,13 @@ graph TB
     MCP --> Logfire
     BG --> Logfire
     
-    classDef external fill:#e1f5fe
-    classDef container fill:#f3e5f5
-    classDef filesystem fill:#fff3e0
+    classDef neonCore fill:#1a1a2e,stroke:#00d4ff,stroke-width:2px,color:#00d4ff
+    classDef neonExternal fill:#16213e,stroke:#00ff88,stroke-width:2px,color:#00ff88
+    classDef neonSystem fill:#0f3460,stroke:#ff6b6b,stroke-width:2px,color:#ffffff
     
-    class Supabase,OpenAI,Logfire external
-    class FastAPI,MCP,WS,BG,React container
-    class Uploads,Logs,Config filesystem
+    class FastAPI,MCP,WS,BG,React neonCore
+    class Supabase,OpenAI,Logfire neonExternal
+    class Uploads,Logs,Config neonSystem
 ```
 
 ## 📁 Project Structure

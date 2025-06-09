@@ -545,7 +545,7 @@ function HomepageContent() {
           <div className="row">
             <div className="col col--8 col--offset-2 text--center">
               <hr />
-              <p><strong>Transform your AI coding experience with Archon</strong> - <em>Build once, query everywhere</em></p>
+              <p><strong>Archon</strong> - <em>Supercharging AI IDE's with knowledge and tasks</em></p>
             </div>
           </div>
         </div>

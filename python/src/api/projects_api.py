@@ -1518,6 +1518,51 @@ class TaskContext:
         self.project_id = project_id
         self.progress_callback = None
 
+@router.get("/tasks/subtasks/{parent_task_id}")
+async def get_task_subtasks(parent_task_id: str, include_closed: bool = False):
+    """Get all subtasks of a specific task."""
+    with logfire_logger.span("api_get_task_subtasks") as span:
+        span.set_attribute("endpoint", f"/tasks/subtasks/{parent_task_id}")
+        span.set_attribute("method", "GET")
+        span.set_attribute("parent_task_id", parent_task_id)
+        span.set_attribute("include_closed", include_closed)
+        
+        try:
+            supabase_client = get_supabase_client()
+            
+            # Set up query
+            query = supabase_client.table("tasks").select("*").eq("parent_task_id", parent_task_id)
+            
+            # Filter out archived tasks
+            query = query.eq("archived", False)
+            
+            # Filter out done tasks if include_closed is False
+            if not include_closed:
+                query = query.neq("status", "done")
+            
+            # Execute query
+            response = query.execute()
+            
+            if response.data:
+                logfire_logger.info("Retrieved subtasks successfully", 
+                                  parent_task_id=parent_task_id,
+                                  subtask_count=len(response.data),
+                                  include_closed=include_closed)
+                span.set_attribute("success", True)
+                span.set_attribute("subtask_count", len(response.data))
+                return {"tasks": response.data}
+            else:
+                logfire_logger.info("No subtasks found", parent_task_id=parent_task_id)
+                span.set_attribute("success", True)
+                span.set_attribute("subtask_count", 0)
+                return {"tasks": []}
+                
+        except Exception as e:
+            logfire_logger.error("Failed to get subtasks", error=str(e), parent_task_id=parent_task_id)
+            span.set_attribute("success", False)
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail=str(e))
+
 @router.put("/mcp/tasks/{task_id}/status")
 async def mcp_update_task_status_with_websockets(task_id: str, status: str):
     """Update task status via MCP tools with WebSocket broadcasting using RAG pattern."""

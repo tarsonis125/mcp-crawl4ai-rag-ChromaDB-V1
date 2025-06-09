@@ -56,7 +56,7 @@ def create_project_success_response(project: Dict[str, Any], warning: str = None
 
 def validate_task_status(status: str) -> tuple[bool, str]:
     """Validate task status and return (is_valid, error_message)."""
-    valid_statuses = ['todo', 'doing', 'blocked', 'done']
+    valid_statuses = ['todo', 'doing', 'review', 'done']
     if status not in valid_statuses:
         return False, f"Invalid status '{status}'. Must be one of: {', '.join(valid_statuses)}"
     return True, ""
@@ -717,7 +717,7 @@ def register_project_tools(mcp: FastMCP):
                 update_data["description"] = description
                 
             if status is not None:
-                valid_statuses = ['todo', 'doing', 'blocked', 'done']
+                valid_statuses = ['todo', 'doing', 'review', 'done']
                 if status not in valid_statuses:
                     return json.dumps({
                         "success": False,
@@ -919,7 +919,7 @@ def register_project_tools(mcp: FastMCP):
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             
             # Validate status
-            valid_statuses = ['todo', 'doing', 'blocked', 'done']
+            valid_statuses = ['todo', 'doing', 'review', 'done']
             if status not in valid_statuses:
                 return json.dumps({
                     "success": False,
@@ -1424,10 +1424,10 @@ def register_project_tools(mcp: FastMCP):
             supabase_client = get_supabase_client()
             
             # Validate status
-            if status not in ["todo", "doing", "blocked", "done"]:
+            if status not in ["todo", "doing", "review", "done"]:
                 return json.dumps({
                     "success": False,
-                    "error": f"Invalid status '{status}'. Must be one of: todo, doing, blocked, done"
+                    "error": f"Invalid status '{status}'. Must be one of: todo, doing, review, done"
                 })
             
             # Update task status
