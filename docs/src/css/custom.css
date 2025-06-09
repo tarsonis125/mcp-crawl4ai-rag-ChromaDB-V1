@@ -825,6 +825,16 @@ body {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
+/* Force override Mermaid's default yellow fills with higher specificity */
+.mermaid svg g rect[fill="#ffd93d"],
+.mermaid svg g rect[fill="rgb(255, 217, 61)"],
+.mermaid svg g rect[fill="#ffff00"],
+.mermaid svg g rect[fill="yellow"] {
+  fill: rgba(17, 24, 39, 0.9) !important;
+  stroke: #a855f7 !important;
+  stroke-width: 2px !important;
+}
+
 .mermaid:hover {
   transform: translateY(-8px) !important;
   border-color: rgba(168, 85, 247, 0.5) !important;
@@ -859,12 +869,15 @@ body {
   height: auto !important;
 }
 
-/* Text elements - proper SVG font styling */
-.mermaid text,
+/* Text elements - Force override with highest specificity */
+.mermaid svg text,
+.mermaid svg g text,
+.mermaid svg g g text,
 .mermaid .nodeLabel,
 .mermaid .edgeLabel,
 .mermaid .cluster-label,
-.mermaid tspan {
+.mermaid svg tspan,
+.mermaid svg g tspan {
   fill: #ffffff !important;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
   font-weight: 400 !important;
@@ -872,9 +885,11 @@ body {
   text-anchor: middle !important;
 }
 
-/* Ensure SVG uses proper font */
-.mermaid svg {
+/* Force override SVG font attribute */
+.mermaid svg,
+.mermaid svg g {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-size: 14px !important;
 }
 
 /* Node styling - rounded corners must be set in Mermaid syntax, not CSS */

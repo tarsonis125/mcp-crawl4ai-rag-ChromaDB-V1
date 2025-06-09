@@ -42,7 +42,7 @@ export const Button: React.FC<ButtonProps> = ({
       group
     `,
     secondary: `bg-black/90 border text-white border-${accentColor}-500 text-${accentColor}-400`,
-    outline: `bg-transparent border text-gray-800 dark:text-white border-${accentColor}-500 hover:bg-${accentColor}-500/5`,
+    outline: `bg-white dark:bg-transparent border text-gray-800 dark:text-white border-${accentColor}-500 hover:bg-${accentColor}-500/10`,
     ghost: 'bg-transparent text-gray-700 dark:text-white hover:bg-gray-100/50 dark:hover:bg-white/5'
   };
   // Neon line color mapping

@@ -10,9 +10,7 @@ import type {
   UpdateTaskRequest,
   DatabaseTaskStatus,
   UITaskStatus,
-  MCPToolResponse,
-  ProjectManagementEvent,
-  PaginatedResponse
+  ProjectManagementEvent
 } from '../types/project';
 
 import { 
@@ -24,7 +22,7 @@ import {
   formatValidationErrors
 } from '../lib/projectSchemas';
 
-import { statusMappings, dbTaskToUITask, uiStatusToDBStatus } from '../types/project';
+import { dbTaskToUITask, uiStatusToDBStatus } from '../types/project';
 
 // API configuration
 const API_BASE_URL = process.env.NODE_ENV === 'production' 

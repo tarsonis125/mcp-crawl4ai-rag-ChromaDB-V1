@@ -118,8 +118,8 @@ export const SettingsPage = () => {
         </div>
 
         {/* Right Column */}
-        <div className="space-y-6">
-          <motion.div variants={itemVariants}>
+        <div className="space-y-10">
+          <motion.div variants={itemVariants} className="py-6">
             <APIKeysSection />
           </motion.div>
           <motion.div variants={itemVariants}>

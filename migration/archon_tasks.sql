@@ -5,7 +5,7 @@ create extension if not exists "pgcrypto";
 -- Drop existing enum if present
 DROP TYPE IF EXISTS task_status;
 -- Create task_status enum
-CREATE TYPE task_status AS ENUM ('todo','doing','blocked','done');
+CREATE TYPE task_status AS ENUM ('todo','doing','review','done');
 
 -- Assignee enumeration
 -- Drop existing enum if present

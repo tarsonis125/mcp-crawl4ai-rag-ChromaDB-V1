@@ -42,91 +42,57 @@ export default {
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
-      // Mermaid diagram theming - Glass morphism neon style
+      // Proper Mermaid configuration according to official docs
       mermaid: {
-        theme: {
-          light: 'base', 
-          dark: 'base'
-        },
+        theme: 'base',
         options: {
-          themeVariables: {
+          darkMode: true,
+          themeVariables: {            
             // Primary colors - Purple neon theme
-            primaryColor: '#8b5cf6',
-            primaryTextColor: '#ffffff',
+            primaryColor: '#1f2937',
+            primaryTextColor: '#ffffff', 
             primaryBorderColor: '#a855f7',
-            lineColor: '#a855f7',
             
             // Secondary colors
-            secondaryColor: '#1f2937',
+            secondaryColor: '#374151',
             secondaryTextColor: '#ffffff',
-            secondaryBorderColor: '#6b7280',
+            secondaryBorderColor: '#a855f7',
             
             // Tertiary colors  
-            tertiaryColor: '#111827',
+            tertiaryColor: '#4b5563',
             tertiaryTextColor: '#ffffff',
-            tertiaryBorderColor: '#4b5563',
+            tertiaryBorderColor: '#a855f7',
             
-            // Background colors
-            background: '#000000',
-            mainBkg: 'rgba(17, 24, 39, 0.8)',
-            secondBkg: 'rgba(31, 41, 55, 0.8)',
-            tertiaryBkg: 'rgba(75, 85, 99, 0.6)',
+            // Background and main colors
+            background: '#111827',
+            mainBkg: '#1f2937',
             
-            // Node colors
-            nodeBkg: 'rgba(17, 24, 39, 0.8)',
-            nodeTextColor: '#ffffff',
+            // Lines and text
+            lineColor: '#a855f7',
+            textColor: '#ffffff',
+            
+            // Font configuration
+            fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            fontSize: '14px',
+            
+            // Flowchart specific variables
             nodeBorder: '#a855f7',
+            clusterBkg: '#374151',
+            clusterBorder: '#a855f7',
+            defaultLinkColor: '#a855f7',
+            edgeLabelBackground: '#111827',
+            nodeTextColor: '#ffffff',
             
-            // Cluster/subgraph colors
-            clusterBkg: 'rgba(31, 41, 55, 0.6)',
-            clusterBorder: '#8b5cf6',
+            // Sequence diagram specific
+            actorBkg: '#1f2937',
+            actorBorder: '#a855f7',
+            actorTextColor: '#ffffff',
             
-            // Edge/arrow colors
-            edgeLabelBackground: 'rgba(17, 24, 39, 0.9)',
-            edgeLabelColor: '#ffffff',
-            
-            // Special element colors
-            activeTaskBkgColor: '#8b5cf6',
-            activeTaskBorderColor: '#a855f7',
-            gridColor: 'rgba(139, 92, 246, 0.2)',
-            section0: '#8b5cf6',
-            section1: '#a855f7',
-            section2: '#c084fc',
-            
-            // Git diagram colors
-            git0: '#8b5cf6',
-            git1: '#a855f7',
-            git2: '#c084fc',
-            git3: '#ddd6fe',
-            gitBranchLabel0: '#ffffff',
-            gitBranchLabel1: '#ffffff',
-            gitBranchLabel2: '#ffffff',
-            gitBranchLabel3: '#ffffff',
-            
-            // Journey diagram colors
-            cScale0: '#8b5cf6',
-            cScale1: '#a855f7',  
-            cScale2: '#c084fc',
-            cScaleLabel0: '#ffffff',
-            cScaleLabel1: '#ffffff',
-            cScaleLabel2: '#ffffff',
-            
-            // Flowchart colors
-            flowchartNodeBkg: 'rgba(17, 24, 39, 0.8)',
-            flowchartNodeBorder: '#a855f7',
-            flowchartLinkColor: '#a855f7',
-            flowchartInvLinkColor: '#8b5cf6',
-            
-            // Class diagram colors
+            // Class diagram
             classText: '#ffffff',
-            classBorderColor: '#a855f7',
-            classBkgColor: 'rgba(17, 24, 39, 0.8)',
             
-            // State diagram colors
+            // State diagram
             labelColor: '#ffffff',
-            stateLabelColor: '#ffffff',
-            stateBkg: 'rgba(17, 24, 39, 0.8)',
-            stateBorder: '#a855f7',
           }
         },
       },

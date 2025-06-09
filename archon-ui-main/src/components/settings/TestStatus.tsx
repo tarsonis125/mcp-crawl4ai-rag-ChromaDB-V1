@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Terminal, RefreshCw, Play, Square, Clock, CheckCircle, XCircle, FileText, ChevronUp, ChevronDown } from 'lucide-react';
-import { Card } from '../ui/Card';
+import { Terminal, RefreshCw, Play, Square, Clock, CheckCircle, XCircle, FileText, ChevronUp } from 'lucide-react';
+// Card component not used but preserved for future use
+// import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { testService, TestExecution, TestStreamMessage, TestType } from '../../services/testService';
 import { useToast } from '../../contexts/ToastContext';
@@ -380,13 +381,13 @@ export const TestStatus = () => {
   };
 
   const formatLogLine = (log: string, index: number) => {
-    let textColor = 'text-gray-300';
-    if (log.includes('PASS') || log.includes('✓') || log.includes('passed')) textColor = 'text-green-400';
-    if (log.includes('FAIL') || log.includes('✕') || log.includes('failed')) textColor = 'text-red-400';
-    if (log.includes('Error:') || log.includes('ERROR')) textColor = 'text-red-400';
-    if (log.includes('Warning:') || log.includes('WARN')) textColor = 'text-yellow-400';
-    if (log.includes('Status:') || log.includes('Duration:') || log.includes('Execution ID:')) textColor = 'text-cyan-400';
-    if (log.startsWith('>')) textColor = 'text-blue-400';
+    let textColor = 'text-gray-700 dark:text-gray-300';
+    if (log.includes('PASS') || log.includes('✓') || log.includes('passed')) textColor = 'text-green-600 dark:text-green-400';
+    if (log.includes('FAIL') || log.includes('✕') || log.includes('failed')) textColor = 'text-red-600 dark:text-red-400';
+    if (log.includes('Error:') || log.includes('ERROR')) textColor = 'text-red-600 dark:text-red-400';
+    if (log.includes('Warning:') || log.includes('WARN')) textColor = 'text-yellow-600 dark:text-yellow-400';
+    if (log.includes('Status:') || log.includes('Duration:') || log.includes('Execution ID:')) textColor = 'text-cyan-600 dark:text-cyan-400';
+    if (log.startsWith('>')) textColor = 'text-blue-600 dark:text-blue-400';
 
     return (
       <div key={index} className={`${textColor} py-0.5 whitespace-pre-wrap font-mono`}>
@@ -450,7 +451,7 @@ export const TestStatus = () => {
                 {result.status === 'failed' && <XCircle className="w-3 h-3 text-red-500 flex-shrink-0" />}
                 {result.status === 'skipped' && <Square className="w-3 h-3 text-yellow-500 flex-shrink-0" />}
                 
-                <span className="flex-1 text-gray-300 font-mono text-xs truncate">{result.name}</span>
+                <span className="flex-1 text-gray-700 dark:text-gray-300 font-mono text-xs truncate">{result.name}</span>
                 
                 {result.duration && (
                   <span className="text-xs text-gray-500 flex-shrink-0">
@@ -472,22 +473,22 @@ export const TestStatus = () => {
               {/* Error header with toggle */}
               <button
                 onClick={() => setErrorsExpanded(!isErrorsExpanded)}
-                className="w-full flex items-center justify-between p-2 bg-red-900/20 border border-red-800 hover:bg-red-900/30 transition-all duration-300 ease-in-out flex-shrink-0"
+                className="w-full flex items-center justify-between p-2 bg-red-100/80 dark:bg-red-900/20 border border-red-300 dark:border-red-800 hover:bg-red-200 dark:hover:bg-red-900/30 transition-all duration-300 ease-in-out flex-shrink-0"
               >
                 <div className="flex items-center gap-2">
-                  <XCircle className="w-3 h-3 text-red-400" />
-                  <h4 className="text-xs font-medium text-red-400">
+                  <XCircle className="w-3 h-3 text-red-600 dark:text-red-400" />
+                  <h4 className="text-xs font-medium text-red-600 dark:text-red-400">
                     Errors ({testState.logs.filter(log => log.includes('Error:') || log.includes('ERROR')).length})
                   </h4>
                 </div>
                 <div className={`transform transition-transform duration-300 ease-in-out ${isErrorsExpanded ? 'rotate-180' : ''}`}>
-                  <ChevronUp className="w-4 h-4 text-red-400" />
+                  <ChevronUp className="w-4 h-4 text-red-600 dark:text-red-400" />
                 </div>
               </button>
               
               {/* Collapsible error content */}
               <div 
-                className={`bg-red-900/20 border-x border-b border-red-800 overflow-hidden transition-all duration-300 ease-in-out ${
+                className={`bg-red-50 dark:bg-red-900/20 border-x border-b border-red-300 dark:border-red-800 overflow-hidden transition-all duration-300 ease-in-out ${
                   isErrorsExpanded ? 'flex-1' : 'h-0'
                 }`}
               >
@@ -501,16 +502,16 @@ export const TestStatus = () => {
                       
                       return (
                         <div key={index} className={`p-2 rounded ${
-                          isMainError ? 'bg-red-800/30 border-l-4 border-red-500' :
-                          isAssertion ? 'bg-red-700/20 border-l-2 border-red-400' :
-                          isTraceback ? 'bg-gray-800/50 border-l-2 border-gray-500' :
-                          'bg-red-900/10'
+                          isMainError ? 'bg-red-200/80 dark:bg-red-800/30 border-l-4 border-red-500' :
+                          isAssertion ? 'bg-red-100/80 dark:bg-red-700/20 border-l-2 border-red-400' :
+                          isTraceback ? 'bg-gray-100 dark:bg-gray-800/50 border-l-2 border-gray-500' :
+                          'bg-red-50 dark:bg-red-900/10'
                         }`}>
-                          <div className="text-red-300 text-xs font-mono whitespace-pre-wrap break-words">
+                          <div className="text-red-700 dark:text-red-300 text-xs font-mono whitespace-pre-wrap break-words">
                             {log}
                           </div>
                           {isMainError && (
-                            <div className="mt-1 text-xs text-red-400">
+                            <div className="mt-1 text-xs text-red-600 dark:text-red-400">
                               <span className="font-medium">Error Type:</span> {
                                 log.includes('Health_check') ? 'Health Check Failure' :
                                 log.includes('AssertionError') ? 'Test Assertion Failed' :
@@ -524,9 +525,9 @@ export const TestStatus = () => {
                     })}
                   
                   {/* Error summary */}
-                  <div className="mt-4 p-2 bg-red-900/30 rounded border border-red-700">
-                    <h5 className="text-red-400 font-medium text-xs mb-2">Error Summary:</h5>
-                    <div className="text-xs text-red-300 space-y-1">
+                  <div className="mt-4 p-2 bg-red-100/80 dark:bg-red-900/30 rounded border border-red-300 dark:border-red-700">
+                    <h5 className="text-red-600 dark:text-red-400 font-medium text-xs mb-2">Error Summary:</h5>
+                    <div className="text-xs text-red-700 dark:text-red-300 space-y-1">
                       <div>Total Errors: {testState.logs.filter(log => log.includes('ERROR:') || log.includes('FAILED')).length}</div>
                       <div>Assertion Failures: {testState.logs.filter(log => log.includes('AssertionError')).length}</div>
                       <div>Test Type: {testType === 'mcp' ? 'Python MCP Tools' : 'React UI Components'}</div>
@@ -596,13 +597,13 @@ export const TestStatus = () => {
         </div>
       </div>
       
-      <div className="bg-gray-900 border border-gray-800 rounded-md p-4 h-64 relative">
+      <div className="bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-md p-4 h-64 relative">
         {displayMode === 'pretty' ? (
           renderPrettyResults(testState, testType)
         ) : (
           <div 
             ref={testType === 'mcp' ? mcpTerminalRef : uiTerminalRef}
-            className="h-full overflow-y-auto font-mono text-xs"
+            className="h-full overflow-y-auto font-mono text-xs text-gray-700 dark:text-gray-300"
           >
             {testState.logs.map((log, index) => formatLogLine(log, index))}
           </div>
@@ -615,8 +616,8 @@ export const TestStatus = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Terminal className="w-5 h-5 text-orange-400" />
-          <h2 className="text-xl font-semibold text-white">Test Status</h2>
+          <Terminal className="w-5 h-5 text-orange-500 dark:text-orange-400" />
+          <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Test Status</h2>
         </div>
         
         {/* Display mode toggle */}

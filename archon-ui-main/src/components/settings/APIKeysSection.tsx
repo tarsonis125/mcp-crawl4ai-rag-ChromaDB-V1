@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Key, Plus, Trash2 } from 'lucide-react';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
@@ -13,7 +13,8 @@ interface CustomCredential {
 }
 
 export const APIKeysSection = () => {
-  const [credentials, setCredentials] = useState<Credential[]>([]);
+  // Not currently used but kept for future integration with system credentials
+  const [_credentials, setCredentials] = useState<Credential[]>([]);
   const [customCredentials, setCustomCredentials] = useState<CustomCredential[]>([]);
   const [newCredential, setNewCredential] = useState<CustomCredential>({ key: '', value: '', description: '' });
   const [showKeys, setShowKeys] = useState(false);
@@ -159,29 +160,25 @@ export const APIKeysSection = () => {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 my-8">
       <div className="flex items-center mb-4">
         <h2 className="text-xl font-semibold text-gray-800 dark:text-white flex items-center">
           <Key className="mr-2 text-pink-500" size={20} />
           API Keys
         </h2>
       </div>
-      <Card accentColor="pink" className="space-y-5 relative">
-        {/* Show Keys button - positioned in top right of card */}
-        <div className="absolute top-4 right-4 z-10">
-          <Button
-            variant="primary"
-            accentColor="pink"
-            size="sm"
-            onClick={() => setShowKeys(!showKeys)}
-          >
-            {showKeys ? 'Hide Keys' : 'Show Keys'}
-          </Button>
-        </div>
+      <Card accentColor="pink" className="my-6 p-6">
+        <div className="space-y-4">
 
-        {/* Feature filter chips */}
-        <div className="flex flex-wrap gap-2">
-          {features.map((feature) => (
+        {/* Description text */}
+        <p className="text-sm text-gray-600 dark:text-zinc-400 mb-2">
+          Manage your API keys and credentials for various services used by Archon.
+        </p>
+
+        {/* Feature filter chips and show keys button */}
+        <div className="flex flex-wrap gap-2 justify-between items-center">
+          <div className="flex flex-wrap gap-2">
+            {features.map((feature) => (
             <button
               key={feature.id}
               onClick={() => setSelectedFeature(feature.id)}
@@ -196,6 +193,17 @@ export const APIKeysSection = () => {
               {feature.name}
             </button>
           ))}
+          </div>
+          
+          {/* Show Keys button */}
+          <Button
+            variant="primary"
+            accentColor="pink"
+            size="sm"
+            onClick={() => setShowKeys(!showKeys)}
+          >
+            {showKeys ? 'Hide Keys' : 'Show Keys'}
+          </Button>
         </div>
 
         {/* API Keys */}
@@ -213,8 +221,9 @@ export const APIKeysSection = () => {
                 />
               </div>
               <Button
-                variant="secondary"
+                variant="outline"
                 onClick={() => handleDeleteCredential(cred.key)}
+                accentColor="pink"
                 className="mt-6"
               >
                 <Trash2 className="w-4 h-4" />
@@ -252,7 +261,7 @@ export const APIKeysSection = () => {
               accentColor="pink"
             />
             <Button
-              variant="secondary"
+              variant="outline"
               onClick={handleAddCredential}
               disabled={!newCredential.key}
               accentColor="pink"
@@ -264,7 +273,7 @@ export const APIKeysSection = () => {
         </div>
 
         {/* Security Notice */}
-        <div className="p-3 bg-gray-50 dark:bg-black/40 rounded-md flex items-start gap-3">
+        <div className="p-3 mt-6 mb-2 bg-gray-50 dark:bg-black/40 rounded-md flex items-start gap-3">
           <div className="w-5 h-5 text-pink-500 mt-0.5 flex-shrink-0">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
@@ -275,6 +284,7 @@ export const APIKeysSection = () => {
             storage. We recommend using environment variables in production.
           </p>
         </div>
+      </div>
       </Card>
     </div>
   );
