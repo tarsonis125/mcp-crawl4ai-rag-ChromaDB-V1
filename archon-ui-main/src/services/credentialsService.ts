@@ -44,6 +44,18 @@ class CredentialsService {
     return response.json();
   }
 
+  async getCredential(key: string): Promise<{ key: string; value?: string; is_encrypted?: boolean }> {
+    const response = await fetch(`${this.baseUrl}/api/credentials/${key}`);
+    if (!response.ok) {
+      if (response.status === 404) {
+        // Return empty object if credential not found
+        return { key, value: undefined };
+      }
+      throw new Error(`Failed to fetch credential: ${key}`);
+    }
+    return response.json();
+  }
+
   async getRagSettings(): Promise<RagSettings> {
     const ragCredentials = await this.getCredentialsByCategory('rag_strategy');
     const llmCredentials = await this.getCredentialsByCategory('llm_config');

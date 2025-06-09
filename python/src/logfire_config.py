@@ -4,7 +4,7 @@ Logfire Configuration for Archon
 This module sets up Logfire observability for the entire Archon application,
 including FastAPI, MCP server, and background tasks.
 
-Falls back gracefully to standard logging if logfire is not available.
+Falls back gracefully to standard logging if logfire is not available or disabled.
 """
 import os
 import logging
@@ -78,6 +78,40 @@ logging.basicConfig(
     datefmt='%H:%M:%S'
 )
 
+def is_logfire_enabled() -> bool:
+    """
+    Check if logfire is enabled via settings
+    
+    Returns:
+        True if logfire should be used, False to use standard logging
+    """
+    try:
+        # First check environment variable for immediate override
+        env_enabled = os.getenv("LOGFIRE_ENABLED", "").lower()
+        if env_enabled in ("false", "0", "no", "off"):
+            return False
+        if env_enabled in ("true", "1", "yes", "on"):
+            return True
+            
+        # Try to get from credential service (database setting)
+        try:
+            from src.credential_service import credential_service
+            if hasattr(credential_service, '_cache') and credential_service._cache_initialized:
+                cached_value = credential_service._cache.get("LOGFIRE_ENABLED")
+                if cached_value:
+                    if isinstance(cached_value, dict):
+                        value = cached_value.get("value", "true")
+                    else:
+                        value = str(cached_value)
+                    return value.lower() in ("true", "1", "yes", "on")
+        except Exception:
+            pass
+            
+        # Default to True if available and token exists
+        return LOGFIRE_AVAILABLE and bool(os.getenv("LOGFIRE_TOKEN"))
+    except Exception:
+        return False
+
 def setup_logfire(
     token: Optional[str] = None,
     environment: str = "development",
@@ -91,6 +125,10 @@ def setup_logfire(
         environment: Environment name (development, staging, production)
         service_name: Name of the service
     """
+    if not is_logfire_enabled():
+        logging.info("Logfire disabled via settings, using standard logging")
+        return
+        
     if not LOGFIRE_AVAILABLE:
         logging.warning("Logfire not available, using standard logging")
         return
@@ -135,9 +173,9 @@ def get_logger(name: str, **tags) -> "logfire.Logfire":
         **tags: Additional tags to apply to all logs from this logger
     
     Returns:
-        Configured logfire instance with tags
+        Configured logfire instance with tags or mock if disabled
     """
-    if not LOGFIRE_AVAILABLE:
+    if not is_logfire_enabled() or not LOGFIRE_AVAILABLE:
         # Return a mock object that has the same interface
         class MockLogfire:
             def info(self, *args, **kwargs): logging.info(*args)
@@ -163,16 +201,40 @@ def get_logger(name: str, **tags) -> "logfire.Logfire":
             def span(self, *args, **kwargs): return MockSpan()
         return MockLogfire()
 
-class MockSpan:
-    """Mock span for when logfire is not available"""
-    def __enter__(self): return self
-    def __exit__(self, *args): pass
-    def record_exception(self, *args): pass
-    def set_attribute(self, *args): pass
+def get_conditional_logfire():
+    """
+    Get the logfire instance that respects the enabled setting
+    
+    Returns:
+        Real logfire if enabled and available, otherwise MockLogfire
+    """
+    if not is_logfire_enabled() or not LOGFIRE_AVAILABLE:
+        return MockLogfire()
+    return logfire
 
-# Pre-configured loggers for different components
+class MockSpan:
+    """Mock span for when logfire is not available or disabled"""
+    def __init__(self, name=None, **kwargs):
+        self.name = name
+        
+    def __enter__(self): 
+        return self
+        
+    def __exit__(self, *args): 
+        pass
+        
+    def record_exception(self, *args): 
+        pass
+        
+    def set_attribute(self, *args): 
+        pass
+
+# Pre-configured loggers for different components - these will respect the enabled setting
 rag_logger = get_logger("rag", module="rag", service="mcp", component="knowledge")
 mcp_logger = get_logger("mcp", module="mcp", service="mcp", component="server") 
 api_logger = get_logger("api", module="api", service="mcp", component="fastapi")
 search_logger = get_logger("search", module="search", service="mcp", component="vector")
-crawl_logger = get_logger("crawl", module="crawl", service="mcp", component="ingestion") 
+crawl_logger = get_logger("crawl", module="crawl", service="mcp", component="ingestion")
+
+# Export conditional logfire instance
+logfire = get_conditional_logfire() 

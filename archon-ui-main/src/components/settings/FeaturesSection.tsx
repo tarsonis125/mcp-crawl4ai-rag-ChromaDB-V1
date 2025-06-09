@@ -1,18 +1,73 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Moon, Sun, FileText, Layout, Bot, Settings, Flame } from 'lucide-react';
 import { Toggle } from '../ui/Toggle';
 import { useTheme } from '../../contexts/ThemeContext';
+import { credentialsService } from '../../services/credentialsService';
+import { useToast } from '../../contexts/ToastContext';
 
 export const FeaturesSection = () => {
   const {
     theme,
     setTheme
   } = useTheme();
+  const { showToast } = useToast();
   const isDarkMode = theme === 'dark';
   const [projectsEnabled, setProjectsEnabled] = useState(true);
   const [agUILibraryEnabled, setAgUILibraryEnabled] = useState(false);
   const [agentsEnabled, setAgentsEnabled] = useState(false);
   const [logfireEnabled, setLogfireEnabled] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  // Load settings on mount
+  useEffect(() => {
+    loadLogfireSettings();
+  }, []);
+
+  const loadLogfireSettings = async () => {
+    try {
+      setLoading(true);
+      // Try to get the LOGFIRE_ENABLED setting from credentials
+      const response = await credentialsService.getCredential('LOGFIRE_ENABLED');
+      if (response.value !== undefined) {
+        setLogfireEnabled(response.value === 'true');
+      } else {
+        // Default to false if not set
+        setLogfireEnabled(false);
+      }
+    } catch (error) {
+      console.error('Failed to load logfire settings:', error);
+      // Default to false on error
+      setLogfireEnabled(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogfireToggle = async (checked: boolean) => {
+    try {
+      // Update local state immediately for responsive UI
+      setLogfireEnabled(checked);
+
+      // Save to backend
+      await credentialsService.createCredential({
+        key: 'LOGFIRE_ENABLED',
+        value: checked.toString(),
+        is_encrypted: false,
+        category: 'monitoring',
+        description: 'Enable or disable Pydantic Logfire logging and observability'
+      });
+
+      showToast(
+        `Logfire ${checked ? 'enabled' : 'disabled'} successfully!`, 
+        'success'
+      );
+    } catch (error) {
+      console.error('Failed to update logfire setting:', error);
+      // Revert local state on error
+      setLogfireEnabled(!checked);
+      showToast('Failed to update Logfire setting', 'error');
+    }
+  };
 
   const handleThemeToggle = (checked: boolean) => {
     setTheme(checked ? 'dark' : 'light');
@@ -99,7 +154,13 @@ export const FeaturesSection = () => {
             </p>
           </div>
           <div className="flex-shrink-0">
-            <Toggle checked={logfireEnabled} onCheckedChange={setLogfireEnabled} accentColor="orange" icon={<Flame className="w-5 h-5" />} />
+            <Toggle 
+              checked={logfireEnabled} 
+              onCheckedChange={handleLogfireToggle} 
+              accentColor="orange" 
+              icon={<Flame className="w-5 h-5" />}
+              disabled={loading}
+            />
           </div>
         </div>
       </div>

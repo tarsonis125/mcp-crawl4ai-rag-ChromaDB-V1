@@ -70,6 +70,10 @@ INSERT INTO app_credentials (key, value, is_encrypted, category, description) VA
 ('USE_AGENTIC_RAG', 'false', false, 'rag_strategy', 'Enables code example extraction, storage, and specialized code search functionality'),
 ('USE_RERANKING', 'false', false, 'rag_strategy', 'Applies cross-encoder reranking to improve search result relevance');
 
+-- Monitoring Configuration
+INSERT INTO app_credentials (key, value, is_encrypted, category, description) VALUES
+('LOGFIRE_ENABLED', 'true', false, 'monitoring', 'Enable or disable Pydantic Logfire logging and observability platform');
+
 -- Placeholder for sensitive credentials (to be added via Settings UI)
 INSERT INTO app_credentials (key, encrypted_value, is_encrypted, category, description) VALUES
 ('OPENAI_API_KEY', NULL, true, 'api_keys', 'OpenAI API Key for embedding model (text-embedding-3-small). Get from: https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key');
