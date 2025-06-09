@@ -620,39 +620,6 @@ export const projectService = {
     }
   },
 
-  /**
-   * Get version history for task JSONB fields
-   */
-  async getTaskVersionHistory(taskId: string, fieldName: string = 'sources'): Promise<any[]> {
-    try {
-      const response = await callAPI<{versions: any[]}>(`/api/tasks/${taskId}/versions?field_name=${fieldName}`);
-      return response.versions || [];
-    } catch (error) {
-      console.error(`Failed to get task version history for task ${taskId}:`, error);
-      throw error;
-    }
-  },
-
-  /**
-   * Restore a task JSONB field to a specific version
-   */
-  async restoreTaskVersion(taskId: string, versionNumber: number, fieldName: string = 'sources'): Promise<any> {
-    try {
-      const response = await callAPI<any>(`/api/tasks/${taskId}/versions/${versionNumber}/restore?field_name=${fieldName}`, {
-        method: 'POST'
-      });
-      
-      // Get task info for broadcasting
-      const task = await this.getTask(taskId);
-      this.broadcastTaskUpdate('TASK_UPDATED', taskId, task.project_id, { restored_version: versionNumber, field_name: fieldName });
-      
-      return response;
-    } catch (error) {
-      console.error(`Failed to restore task version ${versionNumber} for task ${taskId}:`, error);
-      throw error;
-    }
-  },
-
   // ==================== REAL-TIME SUBSCRIPTIONS ====================
 
   /**

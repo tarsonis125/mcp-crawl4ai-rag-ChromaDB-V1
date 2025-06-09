@@ -17,7 +17,6 @@ CREATE TYPE task_assignee AS ENUM ('User','Archon','AI IDE Agent');
 create table if not exists projects (
   id uuid primary key default gen_random_uuid(),
   title text not null,
-  prd jsonb default '{}'::jsonb,
   docs jsonb default '[]'::jsonb,
   features jsonb default '[]'::jsonb,
   data jsonb default '[]'::jsonb,
@@ -58,12 +57,13 @@ create table if not exists project_sources (
   unique(project_id, source_id)
 );
 
--- Document Versions table for version control of JSONB fields
+-- Document Versions table for version control of project JSONB fields only
+-- UPDATED: Task versioning has been removed - only document versioning is supported
 create table if not exists document_versions (
   id uuid primary key default gen_random_uuid(),
   project_id uuid references projects(id) on delete cascade,
-  task_id uuid references tasks(id) on delete cascade,
-  field_name text not null, -- 'docs', 'features', 'data', 'prd', 'sources', 'code_examples'
+  task_id uuid references tasks(id) on delete cascade, -- DEPRECATED: No longer used, kept for historical data
+  field_name text not null, -- 'docs', 'features', 'data', 'prd' (task fields 'sources', 'code_examples' no longer versioned)
   version_number integer not null,
   content jsonb not null, -- Full snapshot of the field content
   change_summary text, -- Human-readable description of changes
@@ -72,6 +72,7 @@ create table if not exists document_versions (
   created_by text default 'system',
   created_at timestamptz default now(),
   -- Ensure we have either project_id OR task_id, not both
+  -- NOTE: task_id constraint kept for historical data but new versions only use project_id
   constraint chk_project_or_task check (
     (project_id is not null and task_id is null) or 
     (project_id is null and task_id is not null)
@@ -115,7 +116,7 @@ CREATE TRIGGER update_tasks_updated_at
     BEFORE UPDATE ON tasks 
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Soft delete functions
+-- Soft delete functions (keep the core functionality)
 CREATE OR REPLACE FUNCTION archive_task(
     task_id_param UUID,
     archived_by_param TEXT DEFAULT 'system'
@@ -156,49 +157,15 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION restore_task(task_id_param UUID)
-RETURNS BOOLEAN AS $$
-DECLARE
-    task_exists BOOLEAN;
-BEGIN
-    -- Check if task exists and is archived
-    SELECT EXISTS(
-        SELECT 1 FROM tasks 
-        WHERE id = task_id_param AND archived = TRUE
-    ) INTO task_exists;
-    
-    IF NOT task_exists THEN
-        RETURN FALSE;
-    END IF;
-    
-    -- Restore the task
-    UPDATE tasks 
-    SET 
-        archived = FALSE,
-        archived_at = NULL,
-        archived_by = NULL,
-        updated_at = NOW()
-    WHERE id = task_id_param;
-    
-    RETURN TRUE;
-END;
-$$ LANGUAGE plpgsql;
-
--- Create views for active and archived tasks
-CREATE OR REPLACE VIEW active_tasks AS
-SELECT * FROM tasks WHERE archived = FALSE;
-
-CREATE OR REPLACE VIEW archived_tasks AS
-SELECT * FROM tasks WHERE archived = TRUE;
-
--- Add comments to document the new fields
+-- Add comments to document the soft delete fields
 COMMENT ON COLUMN tasks.archived IS 'Soft delete flag - TRUE if task is archived/deleted';
 COMMENT ON COLUMN tasks.archived_at IS 'Timestamp when task was archived';
 COMMENT ON COLUMN tasks.archived_by IS 'User/system that archived the task';
 
 -- Add comments for versioning table
-COMMENT ON TABLE document_versions IS 'Version control for JSONB fields in projects and tasks - tracks all changes with snapshots';
-COMMENT ON COLUMN document_versions.field_name IS 'Name of JSONB field being versioned (docs, features, data, prd, sources, code_examples)';
+COMMENT ON TABLE document_versions IS 'Version control for JSONB fields in projects only - task versioning has been removed to simplify MCP operations';
+COMMENT ON COLUMN document_versions.field_name IS 'Name of JSONB field being versioned (docs, features, data) - task fields and prd removed as unused';
 COMMENT ON COLUMN document_versions.content IS 'Full snapshot of field content at this version';
 COMMENT ON COLUMN document_versions.change_type IS 'Type of change: create, update, delete, restore, backup';
 COMMENT ON COLUMN document_versions.document_id IS 'For docs arrays, the specific document ID that was changed';
+COMMENT ON COLUMN document_versions.task_id IS 'DEPRECATED: No longer used for new versions, kept for historical task version data';

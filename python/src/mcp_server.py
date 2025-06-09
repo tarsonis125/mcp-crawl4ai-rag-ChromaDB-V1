@@ -327,13 +327,13 @@ def register_modules():
             logger.error(f"✗ Error registering Project module: {e}")
             logger.error(traceback.format_exc())
     
-    # Import and register Versioning module
+    # Import and register Versioning module (for document versioning only - task versioning removed)
     try:
         from src.modules.versioning_module import register_versioning_tools
         register_versioning_tools(mcp)
         modules_registered += 1
         if transport != "stdio":
-            logger.info("✓ Versioning module registered")
+            logger.info("✓ Versioning module registered (document versioning only)")
     except ImportError as e:
         if transport != "stdio":
             logger.warning(f"⚠ Versioning module not available: {e}")
