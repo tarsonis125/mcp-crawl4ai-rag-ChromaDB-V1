@@ -564,29 +564,7 @@ export const DocsTab = ({
             </div>
           </div>
 
-          {/* Save Status */}
-          {selectedDocument && (
-            <div className="flex items-center gap-2 mt-4">
-              {isSaving && (
-                <div className="flex items-center gap-2 text-blue-500">
-                  <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                  <span className="text-sm">Saving...</span>
-                </div>
-              )}
-              {isEditing && !isSaving && (
-                <div className="flex items-center gap-2 text-orange-500">
-                  <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                  <span className="text-sm">Unsaved changes</span>
-                </div>
-              )}
-              {!isEditing && !isSaving && (
-                <div className="flex items-center gap-2 text-green-500">
-                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                  <span className="text-sm">All changes saved</span>
-                </div>
-              )}
-            </div>
-          )}
+
         </header>
 
         {/* Document Content */}

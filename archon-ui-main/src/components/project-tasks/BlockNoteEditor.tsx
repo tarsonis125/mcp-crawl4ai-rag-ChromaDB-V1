@@ -393,6 +393,8 @@ export const BlockNoteEditor: React.FC<BlockNoteEditorProps> = ({
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const [isReverted, setIsReverted] = useState(false);
+  const [originalDocument, setOriginalDocument] = useState<ArchonDocument | null>(null);
   
   // Handle different document formats
   const normalizedDocument: ArchonDocument = React.useMemo(() => {
@@ -422,6 +424,13 @@ export const BlockNoteEditor: React.FC<BlockNoteEditorProps> = ({
       updated_at: document.updated_at || new Date().toISOString(),
     };
   }, [document]);
+
+  // Store original document when component loads or document changes
+  useEffect(() => {
+    setOriginalDocument(normalizedDocument);
+    setHasChanges(false);
+    setIsReverted(false);
+  }, [normalizedDocument.id]);
   
   // Convert our document format to BlockNote format for initial content
   const initialContent = convertArchonToBlockNote(normalizedDocument.blocks);
@@ -545,6 +554,8 @@ export const BlockNoteEditor: React.FC<BlockNoteEditorProps> = ({
       // Save the document
       await onSave(updatedDocument);
       setHasChanges(false); // Reset changes after successful save
+      setIsReverted(false); // Clear reverted state
+      setOriginalDocument(updatedDocument); // Update original to saved state
     } catch (error) {
       console.error('Error saving document:', error);
     } finally {
@@ -552,10 +563,24 @@ export const BlockNoteEditor: React.FC<BlockNoteEditorProps> = ({
     }
   };
 
+  // Handle undo changes
+  const handleUndo = () => {
+    if (!originalDocument) return;
+    
+    // Restore editor to original content
+    const originalContent = convertArchonToBlockNote(originalDocument.blocks);
+    editor.replaceBlocks(editor.document, originalContent.length > 0 ? originalContent : []);
+    
+    // Update states
+    setHasChanges(false);
+    setIsReverted(true);
+  };
+
   // Set up change detection (no auto-save)
   useEffect(() => {
     const handleContentChange = () => {
       setHasChanges(true);
+      setIsReverted(false); // Clear reverted state when user starts editing
     };
 
     // Listen for editor changes
@@ -579,6 +604,11 @@ export const BlockNoteEditor: React.FC<BlockNoteEditorProps> = ({
               <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
               Saving...
             </div>
+          ) : isReverted ? (
+            <div className="text-sm text-purple-500 flex items-center gap-1">
+              <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+              Reverted
+            </div>
           ) : hasChanges ? (
             <div className="text-sm text-orange-500 flex items-center gap-1">
               <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
@@ -591,15 +621,26 @@ export const BlockNoteEditor: React.FC<BlockNoteEditorProps> = ({
             </div>
           )}
         </div>
-        {hasChanges && (
-          <button
-            onClick={handleSave}
-            disabled={isLoading}
-            className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Save
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {hasChanges && (
+            <>
+              <button
+                onClick={handleUndo}
+                disabled={isLoading || !originalDocument}
+                className="px-3 py-1 bg-gray-500 text-white rounded text-sm hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Undo
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={isLoading}
+                className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Save
+              </button>
+            </>
+          )}
+        </div>
       </div>
       
       <div className="prose max-w-none">
