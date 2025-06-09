@@ -63,6 +63,24 @@ The **Model Context Protocol** is an open standard that enables AI applications 
 ## 🏗️ MCP Server Architecture
 
 ```mermaid
+%%{init:{
+  'theme':'base',
+  'themeVariables': {
+    'primaryColor':'#1f2937',
+    'primaryTextColor':'#ffffff',
+    'primaryBorderColor':'#8b5cf6',
+    'lineColor':'#a855f7',
+    'textColor':'#ffffff',
+    'fontFamily':'Inter',
+    'fontSize':'14px',
+    'background':'#000000',
+    'mainBkg':'#1f2937',
+    'secondBkg':'#111827',
+    'borderColor':'#8b5cf6',
+    'clusterBkg':'#111827',
+    'clusterBorder':'#8b5cf6'
+  }
+}}%%
 graph TB
     subgraph "🤖 AI Clients"
         Cursor["💻 Cursor IDE<br/>stdio protocol"]
@@ -82,7 +100,7 @@ graph TB
         RAGModule["🧠 RAG Module<br/>7 tools"]
         ProjectModule["📊 Project Module<br/>17 tools"]
         FastAPI["⚡ FastAPI Backend"]
-        Supabase[("🗄️ Supabase Database<br/>pgvector")]
+        Supabase["🗄️ Supabase Database<br/>pgvector"]
         Logfire["🔥 Logfire Dashboard<br/>Real-time Monitoring"]
     end
     
@@ -103,11 +121,6 @@ graph TB
     MCPCore --> Logfire
     RAGModule --> Logfire
     ProjectModule --> Logfire
-
-    style MCPCore fill:#4834d4,stroke:#686de0,stroke-width:3px
-    style Logfire fill:#ff6b6b,stroke:#ff4757,stroke-width:3px
-    style RAGModule fill:#00d2d3,stroke:#01a3a4,stroke-width:2px
-    style ProjectModule fill:#5f27cd,stroke:#341f97,stroke-width:2px
 ```
 
 ## 🛠️ Complete MCP Tools Reference

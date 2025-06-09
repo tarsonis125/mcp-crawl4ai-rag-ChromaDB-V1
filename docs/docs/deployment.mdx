@@ -22,23 +22,24 @@ Archon is designed as a containerized application using Docker and Docker Compos
 ## 🏗️ Architecture Overview
 
 ```mermaid
----
-config:
-  theme: 'base'
-  themeVariables:
-    primaryColor: '#1a1a2e'
-    primaryTextColor: '#00d4ff'
-    primaryBorderColor: '#00d4ff'
-    lineColor: '#00d4ff'
-    secondaryColor: '#16213e'
-    tertiaryColor: '#0f3460'
-    background: '#0a0a1a'
-    mainBkg: '#1a1a2e'
-    secondBkg: '#16213e'
-    textColor: '#ffffff'
-    clusterBkg: '#1a1a2e'
-    clusterBorder: '#00d4ff'
----
+%%{init:{
+  'theme':'base',
+  'themeVariables': {
+    'primaryColor':'#1f2937',
+    'primaryTextColor':'#ffffff',
+    'primaryBorderColor':'#8b5cf6',
+    'lineColor':'#a855f7',
+    'textColor':'#ffffff',
+    'fontFamily':'Inter',
+    'fontSize':'14px',
+    'background':'#000000',
+    'mainBkg':'#1f2937',
+    'secondBkg':'#111827',
+    'borderColor':'#8b5cf6',
+    'clusterBkg':'#111827',
+    'clusterBorder':'#8b5cf6'
+  }
+}}%%
 graph TB
     subgraph "🐳 Docker Compose Stack"
         Frontend["🌐 Frontend Container<br/>React + Nginx<br/>Port 3737"]

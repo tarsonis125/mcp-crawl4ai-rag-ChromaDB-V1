@@ -141,6 +141,24 @@ When you run `docker-compose up -d`, you get:
 ### Architecture Overview
 
 ```mermaid
+%%{init:{
+  'theme':'base',
+  'themeVariables': {
+    'primaryColor':'#1f2937',
+    'primaryTextColor':'#ffffff',
+    'primaryBorderColor':'#8b5cf6',
+    'lineColor':'#a855f7',
+    'textColor':'#ffffff',
+    'fontFamily':'Inter',
+    'fontSize':'14px',
+    'background':'#000000',
+    'mainBkg':'#1f2937',
+    'secondBkg':'#111827',
+    'borderColor':'#8b5cf6',
+    'clusterBkg':'#111827',
+    'clusterBorder':'#8b5cf6'
+  }
+}}%%
 graph TB
     subgraph "🚀 Docker Compose Stack"
         Frontend["🌐 Frontend Container<br/>React + Nginx<br/>Port 3737"]
@@ -162,13 +180,6 @@ graph TB
     MCP --> Logfire
     Backend --> Logfire
     MCP --> Supabase
-
-    classDef containerBox fill:#1a1a2e,stroke:#00d4ff,stroke-width:2px,color:#00d4ff
-    classDef externalBox fill:#16213e,stroke:#00ff88,stroke-width:2px,color:#00ff88
-    classDef coreService fill:#0f3460,stroke:#ff6b6b,stroke-width:2px,color:#ffffff
-    
-    class Frontend,Backend,MCP,Docs coreService
-    class Supabase,OpenAI,Logfire externalBox
 ```
 
 ## ⚡ Quick Test

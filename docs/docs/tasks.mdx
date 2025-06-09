@@ -17,7 +17,7 @@ The Archon task management system provides:
 
 - **Project Organization**: Structured project management with PRDs, features, and documentation
 - **Hierarchical Tasks**: Support for parent-child task relationships
-- **Status Tracking**: Todo, Doing, Blocked, Done status management
+- **Status Tracking**: Todo, Doing, Review, Done status management
 - **MCP Integration**: AI agents can create, update, and query tasks autonomously
 - **Reference Management**: Link tasks to code examples and documentation sources
 - **GitHub Integration**: Connect projects to repositories for context
@@ -25,10 +25,28 @@ The Archon task management system provides:
 ## 🏗️ System Architecture
 
 ```mermaid
+%%{init:{
+  'theme':'base',
+  'themeVariables': {
+    'primaryColor':'#1f2937',
+    'primaryTextColor':'#ffffff',
+    'primaryBorderColor':'#8b5cf6',
+    'lineColor':'#a855f7',
+    'textColor':'#ffffff',
+    'fontFamily':'Inter',
+    'fontSize':'14px',
+    'background':'#000000',
+    'mainBkg':'#1f2937',
+    'secondBkg':'#111827',
+    'borderColor':'#8b5cf6',
+    'clusterBkg':'#111827',
+    'clusterBorder':'#8b5cf6'
+  }
+}}%%
 graph TB
     subgraph "Frontend (React)"
-        TaskUI["Project Management UI"]
-        ProjectUI["Project Dashboard"]
+        TaskUI(Project Management UI)
+        ProjectUI(Project Dashboard)
     end
     
     subgraph "Backend API"
@@ -38,14 +56,14 @@ graph TB
     end
     
     subgraph "Database (Supabase)"
-        ProjectsTable[("projects table")]
-        TasksTable[("tasks table")]
+        ProjectsTable(("projects table"))
+        TasksTable(("tasks table"))
     end
     
     subgraph "AI Clients"
-        Cursor["Cursor IDE"]
-        Windsurf["Windsurf IDE"]
-        Claude["Claude Desktop"]
+        Cursor(Cursor IDE)
+        Windsurf(Windsurf IDE)
+        Claude(Claude Desktop)
     end
     
     TaskUI --> ProjectAPI
@@ -60,9 +78,6 @@ graph TB
     Claude --> MCPTools
     
     MCPTools --> ProjectAPI
-    
-    style MCPTools fill:#4ecdc4
-    style ProjectAPI fill:#ffd93d
 ```
 
 ## 📊 Database Schema
@@ -100,7 +115,7 @@ CREATE TABLE projects (
 ### Tasks Table
 
 ```sql
-CREATE TYPE task_status AS ENUM ('todo','doing','blocked','done');
+CREATE TYPE task_status AS ENUM ('todo','doing','review','done');
 
 CREATE TABLE tasks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -132,7 +147,7 @@ CREATE INDEX idx_tasks_status ON tasks(status);
 | `description` | TEXT | Detailed task description | "Add JWT-based auth to all API endpoints" |
 | `sources` | JSONB | Reference documentation | `[{"name": "JWT Guide", "url": "..."}]` |
 | `code_examples` | JSONB | Related code snippets | `[{"language": "python", "code": "..."}]` |
-| `status` | ENUM | Current task status | `todo`, `doing`, `blocked`, `done` |
+| `status` | ENUM | Current task status | `todo`, `doing`, `review`, `done` |
 
 ## 🚀 Getting Started
 
@@ -311,19 +326,35 @@ AI: [Uses update_task_status MCP tool]
 #### Status Workflow
 
 ```mermaid
-stateDiagram-v2
-    [*] --> todo
-    todo --> doing
-    doing --> blocked
-    doing --> done
-    blocked --> doing
-    blocked --> todo
-    done --> [*]
-    
-    note right of todo : Task is ready to start
-    note right of doing : Work in progress
-    note right of blocked : Waiting for dependencies
-    note right of done : Task completed
+%%{init:{
+  'theme':'base',
+  'themeVariables': {
+    'primaryColor':'#1f2937',
+    'primaryTextColor':'#ffffff',
+    'primaryBorderColor':'#8b5cf6',
+    'lineColor':'#a855f7',
+    'textColor':'#ffffff',
+    'fontFamily':'Inter',
+    'fontSize':'14px',
+    'background':'#000000',
+    'mainBkg':'#1f2937',
+    'secondBkg':'#111827',
+    'borderColor':'#8b5cf6'
+  }
+}}%%
+flowchart TD
+    A["Task Created"] --> B["todo"]
+    B --> C{"Dependencies Met?"}
+    C -->|Yes| D["doing"]
+    C -->|No| E["review"]
+    E --> F{"Dependencies Resolved?"}
+    F -->|Yes| D
+    F -->|No| E
+    D --> G{"Work Complete?"}
+    G -->|Yes| H["done"]
+    G -->|No| I{"Blocked?"}
+    I -->|Yes| E
+    I -->|No| D
 ```
 
 ### Task Filtering and Queries
@@ -345,7 +376,7 @@ curl "http://localhost:8080/api/tasks?parent_task_id=parent-uuid-here"
 
 ```bash
 # Get tasks by status with project filter
-curl "http://localhost:8080/api/tasks?project_id=550e8400-e29b-41d4-a716-446655440000&status=blocked"
+curl "http://localhost:8080/api/tasks?project_id=550e8400-e29b-41d4-a716-446655440000&status=review"
 ```
 
 ## 🤖 MCP Integration
@@ -378,7 +409,7 @@ AI coding assistants can autonomously manage tasks through MCP tools:
 | `update_task` | Modify task details | "Update the task description with new requirements" |
 | `delete_task` | Remove obsolete tasks | "Remove the deprecated API task" |
 | `get_task_subtasks` | Get child tasks | "What subtasks are under the authentication epic?" |
-| `get_tasks_by_status` | Filter by status | "Show me all blocked tasks" |
+| `get_tasks_by_status` | Filter by status | "Show me all review tasks" |
 
 #### Document Management Tools
 
@@ -783,20 +814,20 @@ GROUP BY week
 ORDER BY week;
 ```
 
-### Blocked Tasks Report
+### Review Tasks Report
 
 ```sql
--- Currently blocked tasks with duration
+-- Currently review tasks with duration
 SELECT 
   t.title,
   p.title as project,
   t.description,
   t.updated_at,
-  NOW() - t.updated_at as blocked_duration
+  NOW() - t.updated_at as review_duration
 FROM tasks t
 JOIN projects p ON t.project_id = p.id
-WHERE t.status = 'blocked'
-ORDER BY blocked_duration DESC;
+WHERE t.status = 'review'
+ORDER BY review_duration DESC;
 ```
 
 ## 🔍 Best Practices
@@ -861,16 +892,16 @@ Project: "User Management System"
 
 ```mermaid
 flowchart TD
-    A[Task Created] --> B[todo]
-    B --> C{Dependencies Met?}
-    C -->|Yes| D[doing]
-    C -->|No| E[blocked]
-    E --> F{Dependencies Resolved?}
+    A["Task Created"] --> B["todo"]
+    B --> C{"Dependencies Met?"}
+    C -->|Yes| D["doing"]
+    C -->|No| E["review"]
+    E --> F{"Dependencies Resolved?"}
     F -->|Yes| D
     F -->|No| E
-    D --> G{Work Complete?}
-    G -->|Yes| H[done]
-    G -->|No| I{Blocked?}
+    D --> G{"Work Complete?"}
+    G -->|Yes| H["done"]
+    G -->|No| I{"Blocked?"}
     I -->|Yes| E
     I -->|No| D
 ```

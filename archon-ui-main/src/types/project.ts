@@ -2,7 +2,7 @@
 // Based on database schema in migration/archon_tasks.sql
 
 // Database status enum mapping
-export type DatabaseTaskStatus = 'todo' | 'doing' | 'blocked' | 'done';
+export type DatabaseTaskStatus = 'todo' | 'doing' | 'review' | 'done';
 
 // UI status enum (used in current TasksTab)
 export type UITaskStatus = 'backlog' | 'in-progress' | 'review' | 'complete';
@@ -170,7 +170,7 @@ export const statusMappings = {
   dbToUI: {
     'todo': 'backlog',
     'doing': 'in-progress', 
-    'blocked': 'review', // Map database 'blocked' to UI 'review'
+    'review': 'review', // Map database 'review' to UI 'review'
     'done': 'complete'
   } as const,
   
@@ -178,7 +178,7 @@ export const statusMappings = {
   uiToDB: {
     'backlog': 'todo',
     'in-progress': 'doing',
-    'review': 'blocked', // Map UI 'review' back to database 'blocked'
+    'review': 'review', // Map UI 'review' to database 'review'
     'complete': 'done'
   } as const
 } as const;

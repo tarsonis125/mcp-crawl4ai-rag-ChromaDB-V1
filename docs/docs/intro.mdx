@@ -112,20 +112,38 @@ Ready to get started? Follow our comprehensive setup guide:
 ## 🛠️ Architecture Overview
 
 ```mermaid
+%%{init:{
+  'theme':'base',
+  'themeVariables': {
+    'primaryColor':'#1f2937',
+    'primaryTextColor':'#ffffff',
+    'primaryBorderColor':'#8b5cf6',
+    'lineColor':'#a855f7',
+    'textColor':'#ffffff',
+    'fontFamily':'Inter',
+    'fontSize':'14px',
+    'background':'#000000',
+    'mainBkg':'#1f2937',
+    'secondBkg':'#111827',
+    'borderColor':'#8b5cf6',
+    'clusterBkg':'#111827',
+    'clusterBorder':'#8b5cf6'
+  }
+}}%%
 graph TB
     subgraph "AI Clients"
-        Cursor["Cursor IDE"]
-        Windsurf["Windsurf IDE"] 
-        Claude["Claude Desktop"]
+        Cursor(Cursor IDE)
+        Windsurf(Windsurf IDE)
+        Claude(Claude Desktop)
     end
     
-    subgraph "Archon Stack"
+        subgraph "Archon Stack"
         UI["React Frontend<br/>Port 3737"]
         API["FastAPI Backend<br/>Port 8080"]
         MCP["MCP Server<br/>Port 8051"]
         Docs["Documentation<br/>Port 3838"]
     end
-    
+
     subgraph "External Services"
         Supabase["Supabase<br/>PostgreSQL + Vector DB"]
         OpenAI["OpenAI API<br/>Embeddings"]

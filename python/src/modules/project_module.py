@@ -577,7 +577,7 @@ def register_project_tools(mcp: FastMCP):
         Args:
             ctx: The MCP server provided context
             task_id: UUID of the task to update
-            status: New status - one of 'todo', 'doing', 'blocked', 'done'
+            status: New status - one of 'todo', 'doing', 'review', 'done'
         
         Returns:
             JSON string with update results
@@ -694,7 +694,7 @@ def register_project_tools(mcp: FastMCP):
             task_id: UUID of the task to update
             title: Optional new title
             description: Optional new description  
-            status: Optional new status - one of 'todo', 'doing', 'blocked', 'done'
+            status: Optional new status - one of 'todo', 'doing', 'review', 'done'
             assignee: Optional new assignee - one of 'User', 'Archon', 'AI IDE Agent'
             task_order: Optional new order/priority
             feature: Optional new feature name/label
@@ -910,7 +910,7 @@ def register_project_tools(mcp: FastMCP):
         Args:
             ctx: The MCP server provided context
             project_id: UUID of the project
-            status: Status to filter by - one of 'todo', 'doing', 'blocked', 'done'
+            status: Status to filter by - one of 'todo', 'doing', 'review', 'done'
         
         Returns:
             JSON string with filtered tasks

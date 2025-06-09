@@ -767,7 +767,7 @@ async def get_mcp_tools():
                         "module": "tasks_module",
                         "parameters": [
                             {"name": "task_id", "type": "string", "required": True, "description": "UUID of the task to update"},
-                            {"name": "status", "type": "string", "required": True, "description": "New status - one of 'todo', 'doing', 'blocked', 'done'"}
+                            {"name": "status", "type": "string", "required": True, "description": "New status - one of 'todo', 'doing', 'review', 'done'"}
                         ]
                     },
                     {
@@ -778,7 +778,7 @@ async def get_mcp_tools():
                             {"name": "task_id", "type": "string", "required": True, "description": "UUID of the task to update"},
                             {"name": "title", "type": "string", "required": False, "description": "Optional new title"},
                             {"name": "description", "type": "string", "required": False, "description": "Optional new description"},
-                            {"name": "status", "type": "string", "required": False, "description": "Optional new status - one of 'todo', 'doing', 'blocked', 'done'"}
+                            {"name": "status", "type": "string", "required": False, "description": "Optional new status - one of 'todo', 'doing', 'review', 'done'"}
                         ]
                     },
                     {
@@ -804,7 +804,7 @@ async def get_mcp_tools():
                         "module": "tasks_module",
                         "parameters": [
                             {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project"},
-                            {"name": "status", "type": "string", "required": True, "description": "Status to filter by - one of 'todo', 'doing', 'blocked', 'done'"}
+                            {"name": "status", "type": "string", "required": True, "description": "Status to filter by - one of 'todo', 'doing', 'review', 'done'"}
                         ]
                     }
                 ]

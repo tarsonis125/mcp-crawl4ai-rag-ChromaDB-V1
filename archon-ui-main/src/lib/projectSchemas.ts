@@ -1,14 +1,8 @@
 import { z } from 'zod';
-import type { 
-  DatabaseTaskStatus, 
-  UITaskStatus, 
-  TaskPriority, 
-  ProjectColor 
-} from '../types/project';
 
 // Base validation schemas
-export const DatabaseTaskStatusSchema = z.enum(['todo', 'doing', 'blocked', 'done']);
-export const UITaskStatusSchema = z.enum(['backlog', 'in-progress', 'testing', 'complete']);
+export const DatabaseTaskStatusSchema = z.enum(['todo', 'doing', 'review', 'done']);
+export const UITaskStatusSchema = z.enum(['backlog', 'in-progress', 'review', 'complete']);
 export const TaskPrioritySchema = z.enum(['low', 'medium', 'high', 'critical']);
 export const ProjectColorSchema = z.enum(['cyan', 'purple', 'pink', 'blue', 'orange', 'green']);
 

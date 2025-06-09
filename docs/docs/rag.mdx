@@ -26,27 +26,28 @@ The RAG system is **now fully functional** with 25 MCP tools enabled, comprehens
 ## 🏗️ RAG Architecture with Monitoring
 
 ```mermaid
----
-config:
-  theme: 'base'
-  themeVariables:
-    primaryColor: '#1a1a2e'
-    primaryTextColor: '#00d4ff'
-    primaryBorderColor: '#00d4ff'
-    lineColor: '#00d4ff'
-    secondaryColor: '#16213e'
-    tertiaryColor: '#0f3460'
-    background: '#0a0a1a'
-    mainBkg: '#1a1a2e'
-    secondBkg: '#16213e'
-    textColor: '#ffffff'
-    actorBkg: '#1a1a2e'
-    actorBorder: '#00d4ff'
-    actorTextColor: '#00d4ff'
-    activationBkgColor: '#16213e'
-    activationBorderColor: '#00ff88'
-    sequenceNumberColor: '#00d4ff'
----
+%%{init:{
+  'theme':'base',
+  'themeVariables': {
+    'primaryColor':'#1f2937',
+    'primaryTextColor':'#ffffff',
+    'primaryBorderColor':'#8b5cf6',
+    'lineColor':'#a855f7',
+    'textColor':'#ffffff',
+    'fontFamily':'Inter',
+    'fontSize':'14px',
+    'background':'#000000',
+    'mainBkg':'#1f2937',
+    'secondBkg':'#111827',
+    'borderColor':'#8b5cf6',
+    'actorBkg':'#1f2937',
+    'actorBorder':'#8b5cf6',
+    'actorTextColor':'#ffffff',
+    'activationBkgColor':'#111827',
+    'activationBorderColor':'#a855f7',
+    'sequenceNumberColor':'#a855f7'
+  }
+}}%%
 sequenceDiagram
     participant Client as 🤖 AI Agent
     participant MCP as 🔧 MCP Server

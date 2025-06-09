@@ -18,7 +18,7 @@ const mapUIStatusToDBStatus = (uiStatus: Task['status']): DatabaseTaskStatus => 
   switch (uiStatus) {
     case 'backlog': return 'todo';
     case 'in-progress': return 'doing';
-    case 'review': return 'blocked'; // Map UI 'review' to database 'blocked'
+    case 'review': return 'review'; // Map UI 'review' to database 'review'
     case 'complete': return 'done';
     default: return 'todo';
   }
@@ -28,7 +28,7 @@ const mapDBStatusToUIStatus = (dbStatus: DatabaseTaskStatus): Task['status'] => 
   switch (dbStatus) {
     case 'todo': return 'backlog';
     case 'doing': return 'in-progress';
-    case 'blocked': return 'review'; // Map database 'blocked' to UI 'review'
+    case 'review': return 'review'; // Map database 'review' to UI 'review'
     case 'done': return 'complete';
     default: return 'backlog';
   }
@@ -1060,7 +1060,7 @@ const TempSubtaskAddRow = ({ onSubtaskCreate, inheritedFeature }: TempSubtaskAdd
                       >
                         <option value="backlog">Backlog</option>
                         <option value="in-progress">In Process</option>
-                        <option value="testing">Ready for Testing</option>
+                        <option value="review">Review</option>
                         <option value="complete">Complete</option>
                       </select>
                     </div>

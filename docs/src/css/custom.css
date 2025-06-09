@@ -1,20 +1,39 @@
 /**
- * Archon Documentation - Clean Dark Theme
- * Minimal styling that works with Docusaurus native components
+ * Archon Documentation - Aurora Borealis Glass Theme
+ * Using colors from the Archon neon logo SVG
  */
 
-/* Clean color palette - match your app's theme */
-:root {
-  /* Primary colors */
-  --ifm-color-primary: #a855f7;
-  --ifm-color-primary-dark: #9333ea;
-  --ifm-color-primary-darker: #8b5cf6;
-  --ifm-color-primary-darkest: #7c3aed;
-  --ifm-color-primary-light: #c084fc;
-  --ifm-color-primary-lighter: #d8b4fe;
-  --ifm-color-primary-lightest: #e9d5ff;
+/* Import Inter font from Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap');
 
-  /* Background and text colors */
+/* Aurora borealis color palette from logo SVG */
+:root {
+  /* Primary aurora colors from logo gradient */
+  --aurora-green: #00d38a;
+  --aurora-teal: #0fcaa6;
+  --aurora-blue: #36b5ef;
+  --aurora-cyan: #3fb1ff;
+  --aurora-pink: #fe6aff;
+  --aurora-purple: #d964ff;
+  --aurora-violet: #ab5dff;
+  --aurora-indigo: #8a59ff;
+  --aurora-deep-purple: #7656ff;
+  --aurora-core: #6f55ff;
+  --aurora-magenta: #9a3df8;
+  --aurora-hot-pink: #c624f2;
+  --aurora-electric: #e214ee;
+  --aurora-neon: #ed0fed;
+
+  /* Primary theme colors using aurora palette */
+  --ifm-color-primary: var(--aurora-core);
+  --ifm-color-primary-dark: var(--aurora-indigo);
+  --ifm-color-primary-darker: var(--aurora-violet);
+  --ifm-color-primary-darkest: var(--aurora-purple);
+  --ifm-color-primary-light: var(--aurora-cyan);
+  --ifm-color-primary-lighter: var(--aurora-blue);
+  --ifm-color-primary-lightest: var(--aurora-teal);
+
+  /* Background and surface colors */
   --ifm-background-color: #0a0a0a;
   --ifm-background-surface-color: #111111;
   --ifm-color-content: #ffffff;
@@ -25,9 +44,9 @@
   --ifm-font-color-secondary: #e5e7eb;
   --ifm-heading-color: #ffffff;
   
-  /* Links */
-  --ifm-link-color: #a855f7;
-  --ifm-link-hover-color: #c084fc;
+  /* Links with aurora gradient */
+  --ifm-link-color: var(--aurora-cyan);
+  --ifm-link-hover-color: var(--aurora-pink);
   
   /* Cards and surfaces */
   --ifm-card-background-color: rgba(17, 17, 17, 0.8);
@@ -35,16 +54,17 @@
   /* Navbar */
   --ifm-navbar-background-color: #000000;
   --ifm-navbar-link-color: #ffffff;
-  --ifm-navbar-link-hover-color: #a855f7;
+  --ifm-navbar-link-hover-color: var(--aurora-cyan);
   
-  /* Sidebar */
-  --ifm-sidebar-background-color: #0a0a0a;
+  /* Sidebar - smaller width like TOC */
+  --ifm-sidebar-background-color: rgba(10, 10, 10, 0.8);
+  --ifm-sidebar-width: 240px; /* Much smaller like TOC */
   
   /* Footer */
   --ifm-footer-background-color: #000000;
   --ifm-footer-color: #e5e7eb;
   --ifm-footer-link-color: #a1a1aa;
-  --ifm-footer-link-hover-color: #a855f7;
+  --ifm-footer-link-hover-color: var(--aurora-cyan);
   --ifm-footer-title-color: #ffffff;
   
   /* Code blocks */
@@ -62,15 +82,16 @@ html[data-theme='dark'] {
   /* Override any light mode settings */
 }
 
-/* Fixed grid background for parallax effect */
+/* Fixed grid background for parallax effect with aurora colors */
 html {
   background: 
-    radial-gradient(circle at 25% 25%, rgba(168, 85, 247, 0.1) 0%, transparent 50%),
-    radial-gradient(circle at 75% 75%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
-    linear-gradient(to right, rgba(168, 85, 247, 0.1) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(168, 85, 247, 0.1) 1px, transparent 1px),
+    radial-gradient(circle at 25% 25%, rgba(0, 211, 138, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 75% 75%, rgba(54, 181, 239, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 50% 50%, rgba(237, 15, 237, 0.05) 0%, transparent 70%),
+    linear-gradient(to right, rgba(111, 85, 255, 0.1) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(111, 85, 255, 0.1) 1px, transparent 1px),
     #000000;
-  background-size: 100% 100%, 100% 100%, 60px 60px, 60px 60px;
+  background-size: 100% 100%, 100% 100%, 100% 100%, 60px 60px, 60px 60px;
   background-attachment: fixed;
   min-height: 100vh;
 }
@@ -78,6 +99,47 @@ html {
 body {
   background: transparent;
   color: #ffffff;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Smaller sidebar with glass morphism */
+.theme-doc-sidebar-container {
+  background: rgba(10, 10, 10, 0.8) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border-right: 1px solid rgba(111, 85, 255, 0.2) !important;
+}
+
+.theme-doc-sidebar-menu {
+  font-size: 0.875rem; /* Smaller font like TOC */
+  padding: 0.5rem;
+  background: transparent;
+}
+
+.theme-doc-sidebar-item-link {
+  font-size: 0.875rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  margin-bottom: 2px;
+}
+
+.theme-doc-sidebar-item-link:hover {
+  background: rgba(54, 181, 239, 0.1);
+  color: var(--aurora-cyan);
+  backdrop-filter: blur(10px);
+}
+
+.theme-doc-sidebar-item-link--active {
+  background: linear-gradient(135deg, 
+    rgba(0, 211, 138, 0.15), 
+    rgba(54, 181, 239, 0.15), 
+    rgba(111, 85, 255, 0.15)
+  );
+  border-left: 3px solid var(--aurora-cyan);
+  color: var(--aurora-cyan);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 8px rgba(54, 181, 239, 0.1);
 }
 
 /* Clean navbar styling */
@@ -85,21 +147,23 @@ body {
   border-bottom: 1px solid #333333;
 }
 
-/* ====== HERO SECTION WITH GLASS EFFECT ====== */
+/* ====== HERO SECTION WITH AURORA GLASS EFFECT ====== */
 .hero {
   background: 
-    radial-gradient(ellipse at top, rgba(168, 85, 247, 0.3) 0%, transparent 70%),
-    radial-gradient(ellipse at bottom, rgba(59, 130, 246, 0.2) 0%, transparent 70%),
+    radial-gradient(ellipse at top left, rgba(0, 211, 138, 0.3) 0%, transparent 70%),
+    radial-gradient(ellipse at top right, rgba(54, 181, 239, 0.2) 0%, transparent 70%),
+    radial-gradient(ellipse at bottom, rgba(237, 15, 237, 0.2) 0%, transparent 70%),
     linear-gradient(135deg, #000000 0%, #0a0a0a 100%) !important;
   position: relative;
   overflow: hidden;
-  border-bottom: 1px solid rgba(168, 85, 247, 0.3);
+  border-bottom: 1px solid rgba(111, 85, 255, 0.3);
 }
 
 [data-theme='dark'] .hero {
   background: 
-    radial-gradient(ellipse at top, rgba(168, 85, 247, 0.4) 0%, transparent 70%),
-    radial-gradient(ellipse at bottom, rgba(59, 130, 246, 0.3) 0%, transparent 70%),
+    radial-gradient(ellipse at top left, rgba(0, 211, 138, 0.4) 0%, transparent 70%),
+    radial-gradient(ellipse at top right, rgba(54, 181, 239, 0.3) 0%, transparent 70%),
+    radial-gradient(ellipse at bottom, rgba(237, 15, 237, 0.3) 0%, transparent 70%),
     linear-gradient(135deg, #000000 0%, #0a0a0a 100%) !important;
 }
 
@@ -110,7 +174,13 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(45deg, transparent 30%, rgba(168, 85, 247, 0.1) 50%, transparent 70%);
+  background: linear-gradient(45deg, 
+    transparent 30%, 
+    rgba(0, 211, 138, 0.1) 40%,
+    rgba(54, 181, 239, 0.1) 50%, 
+    rgba(237, 15, 237, 0.1) 60%,
+    transparent 70%
+  );
   animation: shimmer 4s ease-in-out infinite;
 }
 
@@ -121,7 +191,10 @@ body {
 
 .hero__title {
   color: #ffffff !important;
-  text-shadow: 0 0 40px rgba(168, 85, 247, 0.9), 0 0 80px rgba(168, 85, 247, 0.5);
+  text-shadow: 
+    0 0 40px var(--aurora-cyan), 
+    0 0 80px var(--aurora-blue),
+    0 0 120px var(--aurora-green);
   font-weight: 700;
   letter-spacing: -0.025em;
   font-size: 3rem;
@@ -129,20 +202,20 @@ body {
 
 .hero__subtitle {
   color: rgba(255, 255, 255, 0.95) !important;
-  text-shadow: 0 0 30px rgba(168, 85, 247, 0.6);
+  text-shadow: 0 0 30px var(--aurora-cyan);
   font-size: 1.25rem;
   font-weight: 400;
 }
 
-/* Green neon glass button for Get Started */
+/* Aurora neon glass button for Get Started */
 .button--green-neon {
   background: rgba(0, 0, 0, 0.6) !important;
   backdrop-filter: blur(16px);
-  border: 1px solid #00ff88 !important;
-  color: #00ff88 !important;
-  box-shadow: 0 8px 32px rgba(0, 255, 136, 0.3);
+  border: 1px solid var(--aurora-green) !important;
+  color: var(--aurora-green) !important;
+  box-shadow: 0 8px 32px rgba(0, 211, 138, 0.3);
   font-weight: 600;
-  text-shadow: 0 0 10px #00ff88;
+  text-shadow: 0 0 10px var(--aurora-green);
   border-radius: 12px;
   padding: 1rem 2rem;
   font-size: 1.1rem;
@@ -158,17 +231,22 @@ body {
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(0, 255, 136, 0.2), transparent);
+  background: linear-gradient(90deg, 
+    transparent, 
+    rgba(0, 211, 138, 0.2), 
+    rgba(54, 181, 239, 0.2),
+    transparent
+  );
   transition: left 0.5s;
 }
 
 .button--green-neon:hover {
   background: rgba(0, 0, 0, 0.8) !important;
-  border-color: #00cc6a !important;
+  border-color: var(--aurora-cyan) !important;
   transform: translateY(-3px);
-  box-shadow: 0 15px 50px rgba(0, 255, 136, 0.5);
-  color: #00ff88 !important;
-  text-shadow: 0 0 15px #00ff88;
+  box-shadow: 0 15px 50px rgba(54, 181, 239, 0.5);
+  color: var(--aurora-cyan) !important;
+  text-shadow: 0 0 15px var(--aurora-cyan);
   text-decoration: none;
 }
 
@@ -176,7 +254,7 @@ body {
   left: 100%;
 }
 
-/* Clean footer - simple glass effect */
+/* Clean footer - aurora glass effect */
 .footer {
   background: rgba(0, 0, 0, 0.95) !important;
   border-top: 1px solid #333333 !important;
@@ -195,15 +273,7 @@ body {
 }
 
 .footer__link-item:hover {
-  color: #a855f7 !important;
-}
-
-.footer__copyright {
-  color: rgba(255, 255, 255, 0.5) !important;
-  text-align: center !important;
-  margin-top: 2rem !important;
-  padding-top: 1rem !important;
-  border-top: 1px solid #333333 !important;
+  color: var(--aurora-cyan) !important;
 }
 
 /* Code block improvements */
@@ -246,19 +316,19 @@ body {
   border-radius: 8px;
 }
 
-/* ====== INTRO PAGE FEATURE CARDS WITH GLASS NEON CONTAINERS ====== */
+/* ====== INTRO PAGE FEATURE CARDS WITH AURORA GLASS CONTAINERS ====== */
 /* Only apply to intro page feature cards, not other pages */
 .theme-doc-markdown .row .col > div,
 .markdown .row .col > div {
   height: 100%;
   padding: 0.75rem;
-  border-radius: 12px;
+  border-radius: 8px; /* Subtle 8px corners, not pills */
   transition: all 0.3s ease;
   position: relative;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   background: rgba(0, 0, 0, 0.7);
-  border: 1px solid rgba(168, 85, 247, 0.4);
+  border: 1px solid rgba(111, 85, 255, 0.4);
   box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.9);
   min-height: 120px;
 }
@@ -271,9 +341,14 @@ body {
   left: 0;
   right: 0;
   height: 2px;
-  background: linear-gradient(90deg, #a855f7, #3b82f6, #ec4899);
-  box-shadow: 0 0 20px 5px rgba(168, 85, 247, 0.8);
-  border-radius: 12px 12px 0 0;
+  background: linear-gradient(90deg, 
+    var(--aurora-green), 
+    var(--aurora-cyan), 
+    var(--aurora-pink), 
+    var(--aurora-purple)
+  );
+  box-shadow: 0 0 20px 5px rgba(111, 85, 255, 0.8);
+  border-radius: 8px 8px 0 0;
 }
 
 .theme-doc-markdown .row .col > div::after,
@@ -284,8 +359,11 @@ body {
   left: 0;
   right: 0;
   height: 80px;
-  background: linear-gradient(to bottom, rgba(168, 85, 247, 0.15), rgba(168, 85, 247, 0.03));
-  border-radius: 12px 12px 0 0;
+  background: linear-gradient(to bottom, 
+    rgba(111, 85, 255, 0.15), 
+    rgba(111, 85, 255, 0.03)
+  );
+  border-radius: 8px 8px 0 0;
   pointer-events: none;
   z-index: 0;
 }
@@ -299,15 +377,15 @@ body {
 .theme-doc-markdown .row .col > div:hover,
 .markdown .row .col > div:hover {
   transform: translateY(-6px);
-  box-shadow: 0 25px 60px rgba(168, 85, 247, 0.4);
-  border-color: rgba(168, 85, 247, 0.6);
+  box-shadow: 0 25px 60px rgba(54, 181, 239, 0.4);
+  border-color: rgba(54, 181, 239, 0.6);
 }
 
 /* Feature titles and content with enhanced visibility - intro page only */
 .theme-doc-markdown .row .col h3,
 .markdown .row .col h3 {
   color: #ffffff;
-  text-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+  text-shadow: 0 0 10px var(--aurora-cyan);
   font-size: 1rem;
   font-weight: 600;
   margin-bottom: 0.5rem;
@@ -325,17 +403,17 @@ body {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
 
-/* Enhanced SVGs with smaller size and stronger neon glow */
+/* Enhanced SVGs with aurora glow */
 .featureSvg {
   height: 40px;
   width: 40px;
-  filter: drop-shadow(0 0 10px rgba(168, 85, 247, 0.6));
+  filter: drop-shadow(0 0 10px var(--aurora-cyan));
   transition: all 0.3s ease;
   margin-bottom: 0.5rem;
 }
 
 .featureSvg:hover {
-  filter: drop-shadow(0 0 25px rgba(168, 85, 247, 0.9));
+  filter: drop-shadow(0 0 25px var(--aurora-pink));
   transform: scale(1.1);
 }
 
@@ -808,13 +886,13 @@ body {
  * ===================================================================
  */
 
-/* Mermaid Diagram Glass Morphism Styling */
+/* Mermaid Diagram Aurora Glass Morphism Styling */
 .mermaid {
-  /* Dark glass morphism container for dark mode */
-  background: rgba(17, 24, 39, 0.95) !important;
+  /* Dark glass morphism container with aurora theme */
+  background: rgba(10, 10, 10, 0.8) !important;
   backdrop-filter: blur(20px) !important;
-  border-radius: 16px !important;
-  border: 1px solid rgba(139, 92, 246, 0.4) !important;
+  border-radius: 8px !important; /* Subtle corners, not pills */
+  border: 1px solid rgba(111, 85, 255, 0.4) !important;
   padding: 24px !important;
   margin: 24px 0 !important;
   position: relative !important;
@@ -837,13 +915,13 @@ body {
 
 .mermaid:hover {
   transform: translateY(-8px) !important;
-  border-color: rgba(168, 85, 247, 0.5) !important;
+  border-color: var(--aurora-cyan) !important;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 
               0 10px 10px -5px rgba(0, 0, 0, 0.04),
-              0 0 0 1px rgba(139, 92, 246, 0.1) !important;
+              0 0 30px rgba(54, 181, 239, 0.3) !important;
 }
 
-/* Top gradient border */
+/* Top aurora gradient border */
 .mermaid::before {
   content: '' !important;
   position: absolute !important;
@@ -853,9 +931,10 @@ body {
   height: 1px !important;
   background: linear-gradient(90deg, 
     transparent, 
-    rgba(139, 92, 246, 0.8) 20%, 
-    rgba(168, 85, 247, 1) 50%, 
-    rgba(139, 92, 246, 0.8) 80%, 
+    var(--aurora-green) 20%, 
+    var(--aurora-cyan) 40%,
+    var(--aurora-pink) 60%, 
+    var(--aurora-purple) 80%, 
     transparent
   ) !important;
   z-index: 2 !important;
@@ -1036,6 +1115,22 @@ body {
 }
 
 /* Force font styling on all text elements */
+/* Force rounded corners on SVG rectangles - using CSS rx/ry properties (SVG 2 spec) */
+.mermaid svg rect {
+  rx: 8px !important;
+  ry: 8px !important;
+  border-radius: 8px !important; /* Fallback for older browsers */
+}
+
+/* More specific targeting for flowchart nodes */
+.mermaid g.nodes rect,
+.mermaid .node rect,
+.mermaid g[class*="node"] rect {
+  rx: 8px !important;
+  ry: 8px !important;
+  border-radius: 8px !important;
+}
+
 .mermaid * {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
 }
@@ -1098,5 +1193,18 @@ body {
   -webkit-user-select: none !important;
   -moz-user-select: none !important;
   -ms-user-select: none !important;
+}
+
+/* 
+ * JavaScript fallback for browsers that don't support CSS rx/ry properties
+ * This script will run after Mermaid renders and set SVG attributes directly
+ */
+.mermaid-rounded-fallback {
+  /* This class will be added by JavaScript if CSS rx/ry isn't supported */
+}
+
+.mermaid-rounded-fallback rect[rx="0"],
+.mermaid-rounded-fallback rect:not([rx]) {
+  /* For browsers where CSS rx/ry doesn't work, JS will set attributes */
 }
 

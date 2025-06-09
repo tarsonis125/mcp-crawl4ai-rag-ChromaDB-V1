@@ -20,19 +20,37 @@ WebSocket connections enable real-time, bidirectional communication without the 
 ## 🏗️ Architecture
 
 ```mermaid
+%%{init:{
+  'theme':'base',
+  'themeVariables': {
+    'primaryColor':'#1f2937',
+    'primaryTextColor':'#ffffff',
+    'primaryBorderColor':'#8b5cf6',
+    'lineColor':'#a855f7',
+    'textColor':'#ffffff',
+    'fontFamily':'Inter',
+    'fontSize':'14px',
+    'background':'#000000',
+    'mainBkg':'#1f2937',
+    'secondBkg':'#111827',
+    'borderColor':'#8b5cf6',
+    'clusterBkg':'#111827',
+    'clusterBorder':'#8b5cf6'
+  }
+}}%%
 graph TB
     subgraph "React Frontend"
-        UI[User Interface]
-        WS_Client[WebSocket Client Services]
-        State[Component State]
+        UI(User Interface)
+        WS_Client(WebSocket Client Services)
+        State(Component State)
     end
     
     subgraph "Python Backend"
-        FastAPI[FastAPI Application]
-        WS_Manager[WebSocket Manager]
-        Progress[Progress Manager]
-        DB_Detector[Database Change Detector]
-        MCP[MCP Server]
+        FastAPI(FastAPI Application)
+        WS_Manager(WebSocket Manager)
+        Progress(Progress Manager)
+        DB_Detector(Database Change Detector)
+        MCP(MCP Server)
     end
     
     subgraph "WebSocket Endpoints"
@@ -43,9 +61,9 @@ graph TB
     end
     
     subgraph "Database"
-        Tasks[Tasks Table]
-        Projects[Projects Table]
-        Timestamps[updated_at columns]
+        Tasks(Tasks Table)
+        Projects(Projects Table)
+        Timestamps(updated_at columns)
     end
     
     UI --> WS_Client

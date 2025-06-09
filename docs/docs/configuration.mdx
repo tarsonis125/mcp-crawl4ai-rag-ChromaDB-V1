@@ -24,19 +24,35 @@ import Admonition from '@theme/Admonition';
 Based on the actual codebase (`config.py` - 118 lines), Archon's configuration system uses:
 
 ```mermaid
+%%{init:{
+  'theme':'base',
+  'themeVariables': {
+    'primaryColor':'#1f2937',
+    'primaryTextColor':'#ffffff',
+    'primaryBorderColor':'#8b5cf6',
+    'lineColor':'#a855f7',
+    'textColor':'#ffffff',
+    'fontFamily':'Inter',
+    'fontSize':'14px',
+    'background':'#000000',
+    'mainBkg':'#1f2937',
+    'secondBkg':'#111827',
+    'borderColor':'#8b5cf6'
+  }
+}}%%
 graph TD
-    subgraph "Environment Variables"
+        subgraph "Environment Variables"
         Required["🔴 Required Variables<br/>• SUPABASE_URL<br/>• SUPABASE_SERVICE_KEY"]
         Optional["🟡 Optional Variables<br/>• OPENAI_API_KEY<br/>• HOST (default: 0.0.0.0)<br/>• PORT (default: 8051)<br/>• TRANSPORT (default: sse)<br/>• MODEL_CHOICE (default: gpt-4o-mini)"]
         RAGFeatures["🟢 RAG Strategy Flags<br/>• USE_CONTEXTUAL_EMBEDDINGS<br/>• USE_HYBRID_SEARCH<br/>• USE_AGENTIC_RAG<br/>• USE_RERANKING"]
     end
-    
+
     subgraph "Configuration Loading"
         ConfigPy["config.py<br/>Environment Validation"]
         CredentialService["credential_service.py<br/>310 lines - Database Storage"]
         LogfireConfig["logfire_config.py<br/>147 lines - Monitoring"]
     end
-    
+
     subgraph "Runtime Configuration"
         FastAPI["FastAPI Backend<br/>Port 8080"]
         MCPServer["MCP Server<br/>Port 8051"]
@@ -56,11 +72,6 @@ graph TD
     FastAPI --> Monitoring
     MCPServer --> Monitoring
     Database --> Monitoring
-    
-    style Required fill:#ff6b6b
-    style Optional fill:#ffd93d
-    style RAGFeatures fill:#6bcf7f
-    style Monitoring fill:#4ecdc4
 ```
 
 <Admonition type="info" title="Configuration Priority">
@@ -309,6 +320,22 @@ def setup_logfire(service_name: str = "archon-backend"):
 ### Logfire Integration Points
 
 ```mermaid
+%%{init:{
+  'theme':'base',
+  'themeVariables': {
+    'primaryColor':'#1f2937',
+    'primaryTextColor':'#ffffff',
+    'primaryBorderColor':'#8b5cf6',
+    'lineColor':'#a855f7',
+    'textColor':'#ffffff',
+    'fontFamily':'Inter',
+    'fontSize':'14px',
+    'background':'#000000',
+    'mainBkg':'#1f2937',
+    'secondBkg':'#111827',
+    'borderColor':'#8b5cf6'
+  }
+}}%%
 graph LR
     subgraph "Archon Components"
         API["FastAPI Endpoints"]
@@ -333,11 +360,6 @@ graph LR
     
     Traces --> Alerts
     Metrics --> Alerts
-    
-    style Traces fill:#4ecdc4
-    style Metrics fill:#ffd93d
-    style Logs fill:#ff6b6b
-    style Alerts fill:#95a5a6
 ```
 
 ## 🗄️ Database Configuration

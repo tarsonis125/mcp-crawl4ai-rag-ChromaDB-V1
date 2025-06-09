@@ -43,10 +43,31 @@ npm run dev
 ## Component Communication
 
 ```mermaid
+%%{init:{
+  'theme':'base',
+  'themeVariables': {
+    'primaryColor':'#0a0a0a',
+    'primaryTextColor':'#ffffff',
+    'primaryBorderColor':'#6f55ff',
+    'secondaryColor':'#111111',
+    'secondaryBorderColor':'#3fb1ff',
+    'tertiaryColor':'#1a1a1a',
+    'tertiaryBorderColor':'#00d38a',
+    'lineColor':'#3fb1ff',
+    'textColor':'#ffffff',
+    'fontFamily':'Inter',
+    'fontSize':'14px',
+    'background':'#0a0a0a',
+    'mainBkg':'#111111',
+    'secondBkg':'#1a1a1a',
+    'clusterBkg':'rgba(17, 17, 17, 0.8)',
+    'nodeTextColor':'#ffffff'
+  }
+}}%%
 flowchart LR
-  A[User] --> B[React Form]
-  B --> C[API Call]
-  C --> D[Display Answer]
+  A["User"] --> B["React Form"]
+  B --> C["API Call"]
+  C --> D["Display Answer"]
 ```
 
 See [Getting Started](getting-started) for details.

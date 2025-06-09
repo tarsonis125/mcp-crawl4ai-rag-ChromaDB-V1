@@ -12,6 +12,22 @@ Archon employs a comprehensive testing strategy covering unit tests, integration
 Our testing approach follows the testing pyramid:
 
 ```mermaid
+%%{init:{
+  'theme':'base',
+  'themeVariables': {
+    'primaryColor':'#1f2937',
+    'primaryTextColor':'#ffffff',
+    'primaryBorderColor':'#8b5cf6',
+    'lineColor':'#a855f7',
+    'textColor':'#ffffff',
+    'fontFamily':'Inter',
+    'fontSize':'14px',
+    'background':'#000000',
+    'mainBkg':'#1f2937',
+    'secondBkg':'#111827',
+    'borderColor':'#8b5cf6'
+  }
+}}%%
 graph TB
     subgraph "Testing Pyramid"
         E2E["E2E Tests<br/>🔍 User Journeys<br/>Selenium/Playwright"]
@@ -21,10 +37,6 @@ graph TB
 
     Unit --> Integration
     Integration --> E2E
-
-    style Unit fill:#e1f5fe
-    style Integration fill:#f3e5f5
-    style E2E fill:#fff3e0
 ```
 
 ## 📁 Test Directory Structure
