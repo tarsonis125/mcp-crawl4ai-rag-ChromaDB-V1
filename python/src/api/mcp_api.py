@@ -639,6 +639,16 @@ async def get_mcp_tools():
             # Return the expected tools from our modular architecture when server is running
             if is_running:
                 tools_from_server = [
+                    # System Management Tools
+                    {
+                        "name": "health_check",
+                        "description": "Perform a lightweight health check that can respond immediately.",
+                        "module": "system",
+                        "parameters": [
+                            {"name": "random_string", "type": "string", "required": True, "description": "Dummy parameter for no-parameter tools"}
+                        ]
+                    },
+                    
                     # RAG Module Tools
                     {
                         "name": "crawl_single_page",
@@ -663,7 +673,9 @@ async def get_mcp_tools():
                         "name": "get_available_sources",
                         "description": "Get all available sources from the sources table.",
                         "module": "rag_module",
-                        "parameters": []
+                        "parameters": [
+                            {"name": "random_string", "type": "string", "required": True, "description": "Dummy parameter for no-parameter tools"}
+                        ]
                     },
                     {
                         "name": "perform_rag_query",
@@ -721,7 +733,9 @@ async def get_mcp_tools():
                         "name": "list_projects",
                         "description": "List all projects in the system.",
                         "module": "tasks_module",
-                        "parameters": []
+                        "parameters": [
+                            {"name": "random_string", "type": "string", "required": True, "description": "Dummy parameter for no-parameter tools"}
+                        ]
                     },
                     {
                         "name": "get_project",
@@ -732,6 +746,14 @@ async def get_mcp_tools():
                         ]
                     },
                     {
+                        "name": "delete_project",
+                        "description": "Delete a project and all its associated tasks.",
+                        "module": "tasks_module",
+                        "parameters": [
+                            {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project to delete"}
+                        ]
+                    },
+                    {
                         "name": "create_task",
                         "description": "Create a new task under a project.",
                         "module": "tasks_module",
@@ -739,6 +761,9 @@ async def get_mcp_tools():
                             {"name": "project_id", "type": "string", "required": True, "description": "UUID of the parent project"},
                             {"name": "title", "type": "string", "required": True, "description": "Title of the task"},
                             {"name": "description", "type": "string", "required": False, "description": "Optional detailed description"},
+                            {"name": "assignee", "type": "string", "required": False, "description": "Task assignee - one of 'User', 'Archon', 'AI IDE Agent' (default: 'User')"},
+                            {"name": "task_order", "type": "integer", "required": False, "description": "Order/priority of the task (default: 0)"},
+                            {"name": "feature", "type": "string", "required": False, "description": "Optional feature name/label this task belongs to"},
                             {"name": "parent_task_id", "type": "string", "required": False, "description": "Optional UUID of parent task for subtasks"},
                             {"name": "sources", "type": "array", "required": False, "description": "Optional list of source metadata dicts"},
                             {"name": "code_examples", "type": "array", "required": False, "description": "Optional list of code example dicts"}
@@ -778,15 +803,18 @@ async def get_mcp_tools():
                             {"name": "task_id", "type": "string", "required": True, "description": "UUID of the task to update"},
                             {"name": "title", "type": "string", "required": False, "description": "Optional new title"},
                             {"name": "description", "type": "string", "required": False, "description": "Optional new description"},
-                            {"name": "status", "type": "string", "required": False, "description": "Optional new status - one of 'todo', 'doing', 'review', 'done'"}
+                            {"name": "status", "type": "string", "required": False, "description": "Optional new status - one of 'todo', 'doing', 'review', 'done'"},
+                            {"name": "assignee", "type": "string", "required": False, "description": "Optional new assignee - one of 'User', 'Archon', 'AI IDE Agent'"},
+                            {"name": "task_order", "type": "integer", "required": False, "description": "Optional new order/priority"},
+                            {"name": "feature", "type": "string", "required": False, "description": "Optional new feature name/label"}
                         ]
                     },
                     {
                         "name": "delete_task",
-                        "description": "Delete a task and all its subtasks.",
+                        "description": "Archive a task and all its subtasks (soft delete).",
                         "module": "tasks_module",
                         "parameters": [
-                            {"name": "task_id", "type": "string", "required": True, "description": "UUID of the task to delete"}
+                            {"name": "task_id", "type": "string", "required": True, "description": "UUID of the task to archive"}
                         ]
                     },
                     {
@@ -805,6 +833,62 @@ async def get_mcp_tools():
                         "parameters": [
                             {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project"},
                             {"name": "status", "type": "string", "required": True, "description": "Status to filter by - one of 'todo', 'doing', 'review', 'done'"}
+                        ]
+                    },
+                    
+                    # Document Management Tools
+                    {
+                        "name": "add_project_document",
+                        "description": "Add a new document to a project's docs JSONB field using clean MCP format.",
+                        "module": "tasks_module",
+                        "parameters": [
+                            {"name": "project_id", "type": "string", "required": True, "description": "UUID of the parent project"},
+                            {"name": "document_type", "type": "string", "required": True, "description": "Type of document (prd, feature_plan, erd, technical_spec, meeting_notes, api_docs)"},
+                            {"name": "title", "type": "string", "required": True, "description": "Document title"},
+                            {"name": "content", "type": "object", "required": False, "description": "Document content as structured JSON - MUST follow MCP format"},
+                            {"name": "tags", "type": "array", "required": False, "description": "Optional list of tags for categorization"},
+                            {"name": "author", "type": "string", "required": False, "description": "Optional author name (defaults to 'System')"}
+                        ]
+                    },
+                    {
+                        "name": "list_project_documents",
+                        "description": "List all documents in a project's docs JSONB field.",
+                        "module": "tasks_module",
+                        "parameters": [
+                            {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project"}
+                        ]
+                    },
+                    {
+                        "name": "get_project_document",
+                        "description": "Get a specific document from a project's docs JSONB field.",
+                        "module": "tasks_module",
+                        "parameters": [
+                            {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project"},
+                            {"name": "doc_id", "type": "string", "required": True, "description": "UUID of the document"}
+                        ]
+                    },
+                    {
+                        "name": "update_project_document",
+                        "description": "Update a document in a project's docs JSONB field using clean MCP format.",
+                        "module": "tasks_module",
+                        "parameters": [
+                            {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project"},
+                            {"name": "doc_id", "type": "string", "required": True, "description": "UUID of the document to update"},
+                            {"name": "title", "type": "string", "required": False, "description": "Optional new title"},
+                            {"name": "content", "type": "object", "required": False, "description": "Optional new content - MUST follow MCP format when provided"},
+                            {"name": "status", "type": "string", "required": False, "description": "Optional new status (draft, review, approved, archived)"},
+                            {"name": "tags", "type": "array", "required": False, "description": "Optional new tags for categorization"},
+                            {"name": "author", "type": "string", "required": False, "description": "Optional new author name"},
+                            {"name": "version", "type": "string", "required": False, "description": "Optional new version (e.g., '1.1', '2.0')"}
+                        ]
+                    },
+                    {
+                        "name": "delete_project_document",
+                        "description": "Delete a document from a project's docs JSONB field.",
+                        "module": "tasks_module",
+                        "parameters": [
+                            {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project"},
+                            {"name": "doc_id", "type": "string", "required": True, "description": "UUID of the document to delete"}
                         ]
                     }
                 ]

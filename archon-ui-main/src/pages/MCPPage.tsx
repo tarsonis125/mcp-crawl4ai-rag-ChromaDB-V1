@@ -211,12 +211,14 @@ export const MCPPage = () => {
         tool.name.includes('rag') || 
         tool.name.includes('source') || 
         tool.name.includes('search') ||
-        tool.name.includes('upload')
+        tool.name.includes('upload') ||
+        tool.name.includes('delete_source')
       );
     } else if (toolFilter === 'tasks_module') {
       return tools.filter(tool =>
         tool.name.includes('project') ||
-        tool.name.includes('task')
+        tool.name.includes('task') ||
+        tool.name.includes('document')
       );
     }
     
@@ -238,9 +240,10 @@ export const MCPPage = () => {
         // Fallback counting by name patterns
         if (tool.name.includes('crawl') || tool.name.includes('rag') || 
             tool.name.includes('source') || tool.name.includes('search') ||
-            tool.name.includes('upload')) {
+            tool.name.includes('upload') || tool.name.includes('delete_source')) {
           counts.rag_module++;
-        } else if (tool.name.includes('project') || tool.name.includes('task')) {
+        } else if (tool.name.includes('project') || tool.name.includes('task') ||
+                   tool.name.includes('document')) {
           counts.tasks_module++;
         }
       }
@@ -446,6 +449,11 @@ export const MCPPage = () => {
 
       // Map tool names to backend endpoints
       switch (selectedTool.name) {
+        // System Tools
+        case 'health_check':
+          endpoint = '/api/mcp/health';
+          break;
+        
         // RAG Module Tools
         case 'crawl_single_page':
           endpoint = '/api/crawl/single';
@@ -471,6 +479,27 @@ export const MCPPage = () => {
         case 'get_available_sources':
           endpoint = '/api/rag/sources';
           break;
+        case 'search_code_examples':
+          endpoint = '/api/rag/code-examples';
+          body = {
+            query: testParams.query,
+            source_id: testParams.source_id,
+            match_count: testParams.match_count || 5
+          };
+          break;
+        case 'upload_document':
+          endpoint = '/api/rag/upload';
+          body = {
+            file_content: testParams.file_content,
+            filename: testParams.filename,
+            knowledge_type: testParams.knowledge_type || 'technical',
+            tags: testParams.tags ? JSON.parse(testParams.tags) : undefined,
+            chunk_size: testParams.chunk_size || 5000
+          };
+          break;
+        case 'delete_source_tool':
+          endpoint = `/api/rag/sources/${testParams.source_id}`;
+          break;
         
         // Task Management Tools
         case 'list_projects':
@@ -487,12 +516,18 @@ export const MCPPage = () => {
         case 'get_project':
           endpoint = `/api/projects/${testParams.project_id}`;
           break;
+        case 'delete_project':
+          endpoint = `/api/projects/${testParams.project_id}`;
+          break;
         case 'create_task':
           endpoint = '/api/tasks';
           body = {
             project_id: testParams.project_id,
             title: testParams.title,
             description: testParams.description || '',
+            assignee: testParams.assignee || 'User',
+            task_order: testParams.task_order || 0,
+            feature: testParams.feature,
             parent_task_id: testParams.parent_task_id,
             sources: testParams.sources ? JSON.parse(testParams.sources) : undefined,
             code_examples: testParams.code_examples ? JSON.parse(testParams.code_examples) : undefined
@@ -500,6 +535,9 @@ export const MCPPage = () => {
           break;
         case 'list_tasks_by_project':
           endpoint = `/api/projects/${testParams.project_id}/tasks`;
+          if (testParams.include_closed) {
+            endpoint += '?include_closed=true';
+          }
           break;
         case 'get_task':
           endpoint = `/api/tasks/${testParams.task_id}`;
@@ -513,11 +551,55 @@ export const MCPPage = () => {
           body = {
             title: testParams.title,
             description: testParams.description,
-            status: testParams.status
+            status: testParams.status,
+            assignee: testParams.assignee,
+            task_order: testParams.task_order,
+            feature: testParams.feature
           };
           break;
         case 'delete_task':
           endpoint = `/api/tasks/${testParams.task_id}`;
+          break;
+        case 'get_task_subtasks':
+          endpoint = `/api/tasks/${testParams.parent_task_id}/subtasks`;
+          if (testParams.include_closed) {
+            endpoint += '?include_closed=true';
+          }
+          break;
+        case 'get_tasks_by_status':
+          endpoint = `/api/projects/${testParams.project_id}/tasks/status/${testParams.status}`;
+          break;
+        
+        // Document Management Tools
+        case 'add_project_document':
+          endpoint = `/api/projects/${testParams.project_id}/documents`;
+          body = {
+            document_type: testParams.document_type,
+            title: testParams.title,
+            content: testParams.content ? JSON.parse(testParams.content) : undefined,
+            tags: testParams.tags ? JSON.parse(testParams.tags) : undefined,
+            author: testParams.author
+          };
+          break;
+        case 'list_project_documents':
+          endpoint = `/api/projects/${testParams.project_id}/documents`;
+          break;
+        case 'get_project_document':
+          endpoint = `/api/projects/${testParams.project_id}/documents/${testParams.doc_id}`;
+          break;
+        case 'update_project_document':
+          endpoint = `/api/projects/${testParams.project_id}/documents/${testParams.doc_id}`;
+          body = {
+            title: testParams.title,
+            content: testParams.content ? JSON.parse(testParams.content) : undefined,
+            status: testParams.status,
+            tags: testParams.tags ? JSON.parse(testParams.tags) : undefined,
+            author: testParams.author,
+            version: testParams.version
+          };
+          break;
+        case 'delete_project_document':
+          endpoint = `/api/projects/${testParams.project_id}/documents/${testParams.doc_id}`;
           break;
         default:
           throw new Error(`Tool "${selectedTool.name}" is not supported for testing yet`);
@@ -525,16 +607,25 @@ export const MCPPage = () => {
 
       // Determine HTTP method based on tool
       let method = 'POST'; // Default
-      if (selectedTool.name === 'get_available_sources' || 
+      if (selectedTool.name === 'health_check' ||
+          selectedTool.name === 'get_available_sources' || 
           selectedTool.name === 'list_projects' || 
           selectedTool.name === 'get_project' ||
           selectedTool.name === 'list_tasks_by_project' ||
-          selectedTool.name === 'get_task') {
+          selectedTool.name === 'get_task' ||
+          selectedTool.name === 'get_task_subtasks' ||
+          selectedTool.name === 'get_tasks_by_status' ||
+          selectedTool.name === 'list_project_documents' ||
+          selectedTool.name === 'get_project_document') {
         method = 'GET';
       } else if (selectedTool.name === 'update_task_status' || 
-                 selectedTool.name === 'update_task') {
+                 selectedTool.name === 'update_task' ||
+                 selectedTool.name === 'update_project_document') {
         method = 'PUT';
-      } else if (selectedTool.name === 'delete_task') {
+      } else if (selectedTool.name === 'delete_task' ||
+                 selectedTool.name === 'delete_project' ||
+                 selectedTool.name === 'delete_source_tool' ||
+                 selectedTool.name === 'delete_project_document') {
         method = 'DELETE';
       }
 
