@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, X, Search, Upload, Link as LinkIcon, Check, Filter, Brain, Edit3, Save, FileText, Layout, BookOpen } from 'lucide-react';
+import { Plus, X, Search, Upload, Link as LinkIcon, Check, Filter, Brain, Edit3, Save, FileText, Layout, BookOpen, History } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { knowledgeBaseService, KnowledgeItem } from '../../services/knowledgeBaseService';
 import { projectService } from '../../services/projectService';
@@ -10,6 +10,7 @@ import { Badge } from '../ui/Badge';
 import { Select } from '../ui/Select';
 import { CrawlProgressData, crawlProgressService } from '../../services/crawlProgressService';
 import { BlockNoteEditor } from './BlockNoteEditor';
+import { VersionHistoryModal } from './VersionHistoryModal';
 
 
 
@@ -120,6 +121,7 @@ export const DocsTab = ({
   const [isSaving, setIsSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
   
   // Dark mode detection
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -551,6 +553,14 @@ export const DocsTab = ({
                 <Plus className="w-4 h-4" />
                 New Doc
               </Button>
+              <Button
+                onClick={() => setShowVersionHistory(true)}
+                variant="outline"
+                className="flex items-center gap-2"
+              >
+                <History className="w-4 h-4" />
+                History
+              </Button>
             </div>
           </div>
 
@@ -697,6 +707,21 @@ export const DocsTab = ({
             setShowAddSourceModal(false);
           }}
           onStartCrawl={handleStartCrawl}
+        />
+      )}
+
+      {/* Version History Modal */}
+      {showVersionHistory && project && (
+        <VersionHistoryModal
+          projectId={project.id}
+          fieldName="docs"
+          isOpen={showVersionHistory}
+          onClose={() => setShowVersionHistory(false)}
+          onRestore={(versionNumber) => {
+            // Reload documents after restore
+            loadProjectDocuments();
+            setShowVersionHistory(false);
+          }}
         />
       )}
     </div>

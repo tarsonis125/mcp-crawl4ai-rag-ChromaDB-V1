@@ -890,6 +890,86 @@ async def get_mcp_tools():
                             {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project"},
                             {"name": "doc_id", "type": "string", "required": True, "description": "UUID of the document to delete"}
                         ]
+                    },
+                    
+                    # Versioning Module Tools
+                    {
+                        "name": "create_document_version",
+                        "description": "Create a version snapshot for a project JSONB field.",
+                        "module": "versioning_module",
+                        "parameters": [
+                            {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project"},
+                            {"name": "field_name", "type": "string", "required": True, "description": "Name of the JSONB field ('docs', 'features', 'data', 'prd')"},
+                            {"name": "content", "type": "object", "required": True, "description": "The current content to snapshot"},
+                            {"name": "change_summary", "type": "string", "required": False, "description": "Human-readable description of changes"},
+                            {"name": "change_type", "type": "string", "required": False, "description": "Type of change ('create', 'update', 'delete', 'restore')"},
+                            {"name": "document_id", "type": "string", "required": False, "description": "For docs array, the specific document ID"},
+                            {"name": "created_by", "type": "string", "required": False, "description": "Who created this version"}
+                        ]
+                    },
+                    {
+                        "name": "create_task_version",
+                        "description": "Create a version snapshot for a task JSONB field.",
+                        "module": "versioning_module",
+                        "parameters": [
+                            {"name": "task_id", "type": "string", "required": True, "description": "UUID of the task"},
+                            {"name": "field_name", "type": "string", "required": True, "description": "Name of the JSONB field ('sources', 'code_examples')"},
+                            {"name": "content", "type": "object", "required": True, "description": "The current content to snapshot"},
+                            {"name": "change_summary", "type": "string", "required": False, "description": "Human-readable description of changes"},
+                            {"name": "change_type", "type": "string", "required": False, "description": "Type of change ('create', 'update', 'delete', 'restore')"},
+                            {"name": "created_by", "type": "string", "required": False, "description": "Who created this version"}
+                        ]
+                    },
+                    {
+                        "name": "get_document_version_history",
+                        "description": "Get version history for project JSONB fields.",
+                        "module": "versioning_module",
+                        "parameters": [
+                            {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project"},
+                            {"name": "field_name", "type": "string", "required": False, "description": "Optional specific field name to filter by"}
+                        ]
+                    },
+                    {
+                        "name": "get_task_version_history",
+                        "description": "Get version history for task JSONB fields.",
+                        "module": "versioning_module",
+                        "parameters": [
+                            {"name": "task_id", "type": "string", "required": True, "description": "UUID of the task"},
+                            {"name": "field_name", "type": "string", "required": False, "description": "Optional specific field name to filter by"}
+                        ]
+                    },
+                    {
+                        "name": "restore_document_version",
+                        "description": "Restore a project JSONB field to a specific version.",
+                        "module": "versioning_module",
+                        "parameters": [
+                            {"name": "project_id", "type": "string", "required": True, "description": "UUID of the project"},
+                            {"name": "field_name", "type": "string", "required": True, "description": "Name of the JSONB field to restore"},
+                            {"name": "version_number", "type": "integer", "required": True, "description": "Version number to restore to"},
+                            {"name": "restored_by", "type": "string", "required": False, "description": "Who is performing the restore"}
+                        ]
+                    },
+                    {
+                        "name": "restore_task_version",
+                        "description": "Restore a task JSONB field to a specific version.",
+                        "module": "versioning_module",
+                        "parameters": [
+                            {"name": "task_id", "type": "string", "required": True, "description": "UUID of the task"},
+                            {"name": "field_name", "type": "string", "required": True, "description": "Name of the JSONB field to restore"},
+                            {"name": "version_number", "type": "integer", "required": True, "description": "Version number to restore to"},
+                            {"name": "restored_by", "type": "string", "required": False, "description": "Who is performing the restore"}
+                        ]
+                    },
+                    {
+                        "name": "get_version_content",
+                        "description": "Get the content of a specific version for preview or comparison.",
+                        "module": "versioning_module",
+                        "parameters": [
+                            {"name": "project_id", "type": "string", "required": False, "description": "UUID of the project (for document versions)"},
+                            {"name": "task_id", "type": "string", "required": False, "description": "UUID of the task (for task versions)"},
+                            {"name": "field_name", "type": "string", "required": True, "description": "Name of the JSONB field"},
+                            {"name": "version_number", "type": "integer", "required": True, "description": "Version number to retrieve"}
+                        ]
                     }
                 ]
                 

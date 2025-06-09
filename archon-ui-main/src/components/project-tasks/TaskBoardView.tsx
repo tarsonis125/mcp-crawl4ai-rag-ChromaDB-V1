@@ -84,10 +84,8 @@ const DraggableTaskCard = ({
   task,
   index,
   onView,
-  onComplete,
   onDelete,
   onTaskReorder,
-  tasksInStatus
 }: DraggableTaskCardProps) => {
   const [{ isDragging }, drag] = useDrag({
     type: ItemTypes.TASK,
@@ -132,7 +130,9 @@ const DraggableTaskCard = ({
       className={`flip-card h-[140px] w-full cursor-move ${isDragging ? 'opacity-50 scale-95' : 'opacity-100'} transition-all duration-300`} 
       style={{ perspective: '1000px' }}
     >
-      <div className={`relative w-full h-full transition-transform duration-500 transform-style-preserve-3d ${isFlipped ? 'rotate-y-180' : ''}`}>
+      <div 
+        className={`relative w-full h-full transition-transform duration-500 transform-style-preserve-3d ${isFlipped ? 'rotate-y-180' : ''}`}
+      >
         {/* Front side */}
         <div className="absolute w-full h-full backface-hidden bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30 border border-gray-200 dark:border-gray-800 rounded-lg p-3 hover:border-gray-300 dark:hover:border-gray-700 transition-all duration-300 group shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)]">
           {/* Priority indicator */}
@@ -219,24 +219,30 @@ const DraggableTaskCard = ({
         </div>
         
         {/* Back side */}
-        <div className="absolute w-full h-full backface-hidden bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30 border border-gray-200 dark:border-gray-800 rounded-lg p-3 rotate-y-180 transition-all duration-300 group shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)]">
+        <div className={`absolute w-full h-full backface-hidden bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30 border border-gray-200 dark:border-gray-800 rounded-lg rotate-y-180 transition-all duration-300 group shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)] ${isDragging ? 'opacity-0' : 'opacity-100'}`}>
           {/* Priority indicator */}
           <div className={`absolute left-0 top-0 bottom-0 w-[3px] ${getOrderColor(task.task_order)} ${getOrderGlow(task.task_order)} rounded-l-lg opacity-80 group-hover:w-[4px] group-hover:opacity-100 transition-all duration-300`}></div>
           
-          <div className="flex items-center gap-2 mb-2 pl-1.5">
-            <h4 className="font-medium text-gray-900 dark:text-white">
-              {task.title}
-            </h4>
-            <button 
-              onClick={toggleFlip} 
-              className="ml-auto w-5 h-5 rounded-full flex items-center justify-center bg-cyan-100/80 dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-200 dark:hover:bg-cyan-500/30 hover:shadow-[0_0_10px_rgba(34,211,238,0.3)] transition-all duration-300"
-            >
-              <RefreshCw className="w-3 h-3" />
-            </button>
-          </div>
-          
-          <div className="h-[75px] overflow-y-auto text-gray-700 dark:text-gray-300 text-xs mb-2 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-700 scrollbar-track-transparent pr-1 pl-1.5">
-            <p>{task.description}</p>
+          {/* Content container with fixed padding */}
+          <div className="flex flex-col h-full p-3">
+            <div className="flex items-center gap-2 mb-2 pl-1.5">
+              <h4 className="font-medium text-gray-900 dark:text-white truncate max-w-[75%]">
+                {task.title}
+              </h4>
+              <button 
+                onClick={toggleFlip} 
+                className="ml-auto w-5 h-5 rounded-full flex items-center justify-center bg-cyan-100/80 dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-200 dark:hover:bg-cyan-500/30 hover:shadow-[0_0_10px_rgba(34,211,238,0.3)] transition-all duration-300"
+              >
+                <RefreshCw className="w-3 h-3" />
+              </button>
+            </div>
+            
+            {/* Description container with absolute positioning inside parent bounds */}
+            <div className="flex-1 overflow-hidden relative">
+              <div className="absolute inset-0 overflow-y-auto hide-scrollbar pl-1.5 pr-2">
+                <p className="text-xs text-gray-700 dark:text-gray-300 break-words whitespace-pre-wrap">{task.description}</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -271,8 +277,7 @@ const ColumnDropZone = ({
     accept: ItemTypes.TASK,
     drop: (item: { id: string; status: string }) => {
       if (item.status !== status) {
-        // Moving to different status - calculate new order
-        const newOrder = tasks.length + 1;
+        // Moving to different status - use length of current column as new order
         onTaskMove(item.id, status);
       }
     },

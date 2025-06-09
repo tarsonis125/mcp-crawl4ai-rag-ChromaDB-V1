@@ -573,6 +573,86 @@ export const projectService = {
     }
   },
 
+  // ==================== VERSIONING OPERATIONS ====================
+
+  /**
+   * Get version history for project documents
+   */
+  async getDocumentVersionHistory(projectId: string, fieldName: string = 'docs'): Promise<any[]> {
+    try {
+      const response = await callAPI<{versions: any[]}>(`/api/projects/${projectId}/documents/versions?field_name=${fieldName}`);
+      return response.versions || [];
+    } catch (error) {
+      console.error(`Failed to get document version history for project ${projectId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get content of a specific document version for preview
+   */
+  async getVersionContent(projectId: string, versionNumber: number, fieldName: string = 'docs'): Promise<any> {
+    try {
+      const response = await callAPI<{content: any, version: any}>(`/api/projects/${projectId}/documents/versions/${versionNumber}?field_name=${fieldName}`);
+      return response;
+    } catch (error) {
+      console.error(`Failed to get version ${versionNumber} content for project ${projectId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Restore a project document field to a specific version
+   */
+  async restoreDocumentVersion(projectId: string, versionNumber: number, fieldName: string = 'docs'): Promise<any> {
+    try {
+      const response = await callAPI<any>(`/api/projects/${projectId}/documents/versions/${versionNumber}/restore?field_name=${fieldName}`, {
+        method: 'POST'
+      });
+      
+      // Broadcast restore event
+      this.broadcastProjectUpdate('PROJECT_UPDATED', projectId, { restored_version: versionNumber, field_name: fieldName });
+      
+      return response;
+    } catch (error) {
+      console.error(`Failed to restore version ${versionNumber} for project ${projectId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get version history for task JSONB fields
+   */
+  async getTaskVersionHistory(taskId: string, fieldName: string = 'sources'): Promise<any[]> {
+    try {
+      const response = await callAPI<{versions: any[]}>(`/api/tasks/${taskId}/versions?field_name=${fieldName}`);
+      return response.versions || [];
+    } catch (error) {
+      console.error(`Failed to get task version history for task ${taskId}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Restore a task JSONB field to a specific version
+   */
+  async restoreTaskVersion(taskId: string, versionNumber: number, fieldName: string = 'sources'): Promise<any> {
+    try {
+      const response = await callAPI<any>(`/api/tasks/${taskId}/versions/${versionNumber}/restore?field_name=${fieldName}`, {
+        method: 'POST'
+      });
+      
+      // Get task info for broadcasting
+      const task = await this.getTask(taskId);
+      this.broadcastTaskUpdate('TASK_UPDATED', taskId, task.project_id, { restored_version: versionNumber, field_name: fieldName });
+      
+      return response;
+    } catch (error) {
+      console.error(`Failed to restore task version ${versionNumber} for task ${taskId}:`, error);
+      throw error;
+    }
+  },
+
   // ==================== REAL-TIME SUBSCRIPTIONS ====================
 
   /**

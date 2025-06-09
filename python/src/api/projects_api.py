@@ -880,6 +880,43 @@ async def update_project(project_id: str, request: UpdateProjectRequest):
                 
                 prep_span.set_attribute("update_fields_count", len(update_data) - 1)  # -1 for updated_at
             
+            # Create version snapshots for JSONB fields before updating (if versioning is available)
+            if VERSIONING_AVAILABLE:
+                with logfire_logger.span("create_version_snapshots") as version_span:
+                    version_count = 0
+                    try:
+                        # Get current project data for comparison
+                        current_project_response = supabase_client.table("projects").select("*").eq("id", project_id).execute()
+                        if current_project_response.data:
+                            current_project = current_project_response.data[0]
+                            
+                            # Create versions for updated JSONB fields
+                            for field_name in ['docs', 'prd', 'features', 'data']:
+                                if getattr(request, field_name, None) is not None:
+                                    current_content = current_project.get(field_name, {})
+                                    new_content = getattr(request, field_name)
+                                    
+                                    # Only create version if content actually changed
+                                    if current_content != new_content:
+                                        # Create version snapshot using direct function
+                                        await create_document_version_direct(
+                                            project_id=project_id,
+                                            field_name=field_name,
+                                            content=current_content,
+                                            change_summary=f"Updated {field_name} via API",
+                                            change_type="update",
+                                            created_by="api_user"
+                                        )
+                                        version_count += 1
+                                        
+                        version_span.set_attribute("versions_created", version_count)
+                        logfire_logger.info(f"Created {version_count} version snapshots before update")
+                        
+                    except Exception as e:
+                        version_span.set_attribute("error", str(e))
+                        logger.warning(f"Failed to create version snapshots: {e}")
+                        # Don't fail the update, just log the warning
+            
             # Update project in database with monitoring
             with logfire_logger.span("update_project_record") as update_span:
                 response = supabase_client.table("projects").update(update_data).eq("id", project_id).execute()
@@ -998,12 +1035,22 @@ async def update_project(project_id: str, request: UpdateProjectRequest):
                               technical_sources=len(technical_sources),
                               business_sources=len(business_sources))
             
+            # Convert datetime objects to ISO strings before returning (critical for WebSocket serialization)
+            created_at = project["created_at"]
+            updated_at = project["updated_at"]
+            
+            # Ensure datetime objects are converted to strings
+            if hasattr(created_at, 'isoformat'):
+                created_at = created_at.isoformat()
+            if hasattr(updated_at, 'isoformat'):
+                updated_at = updated_at.isoformat()
+            
             return {
                 "id": project["id"],
                 "title": project["title"],
                 "github_repo": project.get("github_repo"),
-                "created_at": project["created_at"],
-                "updated_at": project["updated_at"],
+                "created_at": created_at,
+                "updated_at": updated_at,
                 "prd": project.get("prd", {}),
                 "docs": project.get("docs", []),
                 "features": project.get("features", []),
@@ -1654,4 +1701,170 @@ async def force_task_update_check(project_id: str):
             logfire_logger.error("Failed to force update check", project_id=project_id, error=str(e))
             span.set_attribute("success", False)
             span.set_attribute("error", str(e))
-            raise HTTPException(status_code=500, detail=f"Failed to check for updates: {str(e)}") 
+            raise HTTPException(status_code=500, detail=f"Failed to check for updates: {str(e)}")
+
+# Import versioning module
+try:
+    from ..modules.versioning_module import (
+        get_document_version_history_direct,
+        get_task_version_history_direct,
+        restore_document_version_direct,
+        restore_task_version_direct,
+        get_version_content_direct,
+        create_document_version_direct
+    )
+    VERSIONING_AVAILABLE = True
+    logger.info("✓ Versioning module imported successfully")
+except ImportError as e:
+    logger.warning(f"⚠ Versioning module not available: {e}")
+    VERSIONING_AVAILABLE = False
+
+# ==================== VERSIONING ENDPOINTS ====================
+
+@router.get("/projects/{project_id}/documents/versions")
+async def get_document_version_history(project_id: str, field_name: str = Query("docs")):
+    """Get version history for project document JSONB fields"""
+    if not VERSIONING_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Versioning module not available")
+    
+    try:
+        with logfire_logger.span("api_get_document_version_history") as span:
+            span.set_attribute("project_id", project_id)
+            span.set_attribute("field_name", field_name)
+            
+            # Use direct function that doesn't require MCP context
+            result = await get_document_version_history_direct(project_id, field_name)
+            
+            # Parse JSON result from MCP function
+            result_data = json.loads(result)
+            
+            if result_data.get("success"):
+                return result_data
+            else:
+                raise HTTPException(status_code=400, detail=result_data.get("error", "Unknown error"))
+                
+    except Exception as e:
+        logger.error(f"Failed to get document version history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/projects/{project_id}/documents/versions/{version_number}")
+async def get_version_content(project_id: str, version_number: int, field_name: str = Query("docs")):
+    """Get content of a specific version for preview"""
+    if not VERSIONING_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Versioning module not available")
+    
+    try:
+        with logfire_logger.span("api_get_version_content") as span:
+            span.set_attribute("project_id", project_id)
+            span.set_attribute("field_name", field_name)
+            span.set_attribute("version_number", version_number)
+            
+            # Use direct function
+            result = await get_version_content_direct(
+                project_id=project_id, 
+                task_id=None,
+                field_name=field_name, 
+                version_number=version_number
+            )
+            
+            # Parse JSON result
+            result_data = json.loads(result)
+            
+            if result_data.get("success"):
+                return result_data
+            else:
+                raise HTTPException(status_code=400, detail=result_data.get("error", "Unknown error"))
+                
+    except Exception as e:
+        logger.error(f"Failed to get version content: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/projects/{project_id}/documents/versions/{version_number}/restore")
+async def restore_document_version(project_id: str, version_number: int, field_name: str = Query("docs")):
+    """Restore a project document JSONB field to a specific version"""
+    if not VERSIONING_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Versioning module not available")
+    
+    try:
+        with logfire_logger.span("api_restore_document_version") as span:
+            span.set_attribute("project_id", project_id)
+            span.set_attribute("field_name", field_name)
+            span.set_attribute("version_number", version_number)
+            
+            # Use direct function
+            result = await restore_document_version_direct(
+                project_id=project_id,
+                field_name=field_name,
+                version_number=version_number,
+                restored_by="api_user"
+            )
+            
+            # Parse JSON result
+            result_data = json.loads(result)
+            
+            if result_data.get("success"):
+                return result_data
+            else:
+                raise HTTPException(status_code=400, detail=result_data.get("error", "Unknown error"))
+                
+    except Exception as e:
+        logger.error(f"Failed to restore document version: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/tasks/{task_id}/versions")
+async def get_task_version_history(task_id: str, field_name: str = Query("sources")):
+    """Get version history for task JSONB fields"""
+    if not VERSIONING_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Versioning module not available")
+    
+    try:
+        with logfire_logger.span("api_get_task_version_history") as span:
+            span.set_attribute("task_id", task_id)
+            span.set_attribute("field_name", field_name)
+            
+            # Use direct function
+            result = await get_task_version_history_direct(task_id, field_name)
+            
+            # Parse JSON result
+            result_data = json.loads(result)
+            
+            if result_data.get("success"):
+                return result_data
+            else:
+                raise HTTPException(status_code=400, detail=result_data.get("error", "Unknown error"))
+                
+    except Exception as e:
+        logger.error(f"Failed to get task version history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/tasks/{task_id}/versions/{version_number}/restore")
+async def restore_task_version(task_id: str, version_number: int, field_name: str = Query("sources")):
+    """Restore a task JSONB field to a specific version"""
+    if not VERSIONING_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Versioning module not available")
+    
+    try:
+        with logfire_logger.span("api_restore_task_version") as span:
+            span.set_attribute("task_id", task_id)
+            span.set_attribute("field_name", field_name)
+            span.set_attribute("version_number", version_number)
+            
+            # Use direct function
+            result = await restore_task_version_direct(
+                task_id=task_id,
+                field_name=field_name,
+                version_number=version_number,
+                restored_by="api_user"
+            )
+            
+            # Parse JSON result
+            result_data = json.loads(result)
+            
+            if result_data.get("success"):
+                return result_data
+            else:
+                raise HTTPException(status_code=400, detail=result_data.get("error", "Unknown error"))
+                
+    except Exception as e:
+        logger.error(f"Failed to restore task version: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) 

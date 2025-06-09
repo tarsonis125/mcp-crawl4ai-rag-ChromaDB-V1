@@ -58,6 +58,28 @@ create table if not exists project_sources (
   unique(project_id, source_id)
 );
 
+-- Document Versions table for version control of JSONB fields
+create table if not exists document_versions (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid references projects(id) on delete cascade,
+  task_id uuid references tasks(id) on delete cascade,
+  field_name text not null, -- 'docs', 'features', 'data', 'prd', 'sources', 'code_examples'
+  version_number integer not null,
+  content jsonb not null, -- Full snapshot of the field content
+  change_summary text, -- Human-readable description of changes
+  change_type text default 'update', -- 'create', 'update', 'delete', 'restore', 'backup'
+  document_id text, -- For docs array, store the specific document ID
+  created_by text default 'system',
+  created_at timestamptz default now(),
+  -- Ensure we have either project_id OR task_id, not both
+  constraint chk_project_or_task check (
+    (project_id is not null and task_id is null) or 
+    (project_id is null and task_id is not null)
+  ),
+  -- Unique constraint to prevent duplicate version numbers per field
+  unique(project_id, task_id, field_name, version_number)
+);
+
 -- Create indexes for better performance
 create index if not exists idx_tasks_project_id on tasks(project_id);
 create index if not exists idx_tasks_status on tasks(status);
@@ -67,6 +89,11 @@ create index if not exists idx_tasks_archived on tasks(archived);
 create index if not exists idx_tasks_archived_at on tasks(archived_at);
 create index if not exists idx_project_sources_project_id on project_sources(project_id);
 create index if not exists idx_project_sources_source_id on project_sources(source_id);
+create index if not exists idx_document_versions_project_id on document_versions(project_id);
+create index if not exists idx_document_versions_task_id on document_versions(task_id);
+create index if not exists idx_document_versions_field_name on document_versions(field_name);
+create index if not exists idx_document_versions_version_number on document_versions(version_number);
+create index if not exists idx_document_versions_created_at on document_versions(created_at);
 
 -- Add trigger to automatically update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -168,3 +195,10 @@ SELECT * FROM tasks WHERE archived = TRUE;
 COMMENT ON COLUMN tasks.archived IS 'Soft delete flag - TRUE if task is archived/deleted';
 COMMENT ON COLUMN tasks.archived_at IS 'Timestamp when task was archived';
 COMMENT ON COLUMN tasks.archived_by IS 'User/system that archived the task';
+
+-- Add comments for versioning table
+COMMENT ON TABLE document_versions IS 'Version control for JSONB fields in projects and tasks - tracks all changes with snapshots';
+COMMENT ON COLUMN document_versions.field_name IS 'Name of JSONB field being versioned (docs, features, data, prd, sources, code_examples)';
+COMMENT ON COLUMN document_versions.content IS 'Full snapshot of field content at this version';
+COMMENT ON COLUMN document_versions.change_type IS 'Type of change: create, update, delete, restore, backup';
+COMMENT ON COLUMN document_versions.document_id IS 'For docs arrays, the specific document ID that was changed';

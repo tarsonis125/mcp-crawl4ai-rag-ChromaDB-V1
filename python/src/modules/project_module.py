@@ -1295,7 +1295,49 @@ def register_project_tools(mcp: FastMCP):
                     "error": f"Project with ID {project_id} not found"
                 })
             
-            docs = project_response.data[0].get("docs", [])
+            current_docs = project_response.data[0].get("docs", [])
+            
+            # Create a version snapshot BEFORE making changes
+            try:
+                change_summary = f"Document '{doc_id}' updated"
+                if title and content:
+                    change_summary = f"Updated document '{title}' with new content"
+                elif title:
+                    change_summary = f"Updated document title to '{title}'"
+                elif content:
+                    change_summary = f"Updated document '{doc_id}' content"
+                
+                # Simple INSERT into document_versions table
+                version_data = {
+                    'project_id': project_id,
+                    'field_name': 'docs',
+                    'content': current_docs,
+                    'change_summary': change_summary,
+                    'change_type': 'update',
+                    'document_id': doc_id,
+                    'created_by': author or 'system',
+                    'created_at': datetime.now().isoformat()
+                }
+                
+                # Get current highest version number
+                existing_versions = supabase_client.table("document_versions").select("version_number").eq("project_id", project_id).eq("field_name", "docs").order("version_number", desc=True).limit(1).execute()
+                
+                next_version = 1
+                if existing_versions.data:
+                    next_version = existing_versions.data[0]['version_number'] + 1
+                
+                version_data['version_number'] = next_version
+                
+                version_result = supabase_client.table("document_versions").insert(version_data).execute()
+                
+                if not version_result.data:
+                    # Log warning but continue with update
+                    logger.warning(f"Failed to create version snapshot for document {doc_id}")
+            except Exception as version_error:
+                logger.warning(f"Version creation failed for document {doc_id}: {version_error}")
+            
+            # Make a copy to modify
+            docs = current_docs.copy()
             
             # Find and update the document
             updated = False

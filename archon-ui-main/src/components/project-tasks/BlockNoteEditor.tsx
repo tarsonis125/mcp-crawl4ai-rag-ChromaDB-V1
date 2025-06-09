@@ -392,6 +392,7 @@ export const BlockNoteEditor: React.FC<BlockNoteEditorProps> = ({
   isDarkMode = false,
 }) => {
   const [isLoading, setIsLoading] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
   
   // Handle different document formats
   const normalizedDocument: ArchonDocument = React.useMemo(() => {
@@ -523,8 +524,8 @@ export const BlockNoteEditor: React.FC<BlockNoteEditorProps> = ({
     }
   }, [normalizedDocument.id, normalizedDocument.blocks, editor]);
 
-  // Handle content changes and auto-save
-  const handleChange = async () => {
+  // Handle manual save
+  const handleSave = async () => {
     try {
       setIsLoading(true);
       
@@ -542,7 +543,8 @@ export const BlockNoteEditor: React.FC<BlockNoteEditorProps> = ({
       };
       
       // Save the document
-      onSave(updatedDocument);
+      await onSave(updatedDocument);
+      setHasChanges(false); // Reset changes after successful save
     } catch (error) {
       console.error('Error saving document:', error);
     } finally {
@@ -550,18 +552,10 @@ export const BlockNoteEditor: React.FC<BlockNoteEditorProps> = ({
     }
   };
 
-  // Set up auto-save on content change with debouncing
+  // Set up change detection (no auto-save)
   useEffect(() => {
-    let timeoutId: NodeJS.Timeout;
-
     const handleContentChange = () => {
-      // Clear previous timeout
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-      
-      // Set new timeout for debounced save
-      timeoutId = setTimeout(handleChange, 1000);
+      setHasChanges(true);
     };
 
     // Listen for editor changes
@@ -569,27 +563,43 @@ export const BlockNoteEditor: React.FC<BlockNoteEditorProps> = ({
 
     // Cleanup function
     return () => {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
       if (unsubscribe) {
         unsubscribe();
       }
     };
-  }, [editor, normalizedDocument]);
+  }, [editor]);
 
   return (
     <div className={`blocknote-editor ${className}`}>
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h3 className="text-lg font-semibold">{normalizedDocument.title}</h3>
-          {isLoading && (
+          {isLoading ? (
             <div className="text-sm text-muted-foreground flex items-center gap-1">
               <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
               Saving...
             </div>
+          ) : hasChanges ? (
+            <div className="text-sm text-orange-500 flex items-center gap-1">
+              <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+              Changes made
+            </div>
+          ) : (
+            <div className="text-sm text-green-500 flex items-center gap-1">
+              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+              Saved
+            </div>
           )}
         </div>
+        {hasChanges && (
+          <button
+            onClick={handleSave}
+            disabled={isLoading}
+            className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Save
+          </button>
+        )}
       </div>
       
       <div className="prose max-w-none">

@@ -327,6 +327,21 @@ def register_modules():
             logger.error(f"✗ Error registering Project module: {e}")
             logger.error(traceback.format_exc())
     
+    # Import and register Versioning module
+    try:
+        from src.modules.versioning_module import register_versioning_tools
+        register_versioning_tools(mcp)
+        modules_registered += 1
+        if transport != "stdio":
+            logger.info("✓ Versioning module registered")
+    except ImportError as e:
+        if transport != "stdio":
+            logger.warning(f"⚠ Versioning module not available: {e}")
+    except Exception as e:
+        if transport != "stdio":
+            logger.error(f"✗ Error registering Versioning module: {e}")
+            logger.error(traceback.format_exc())
+    
     # Future UI module will be added here
     # try:
     #     from src.modules.ui_module import register_ui_tools
