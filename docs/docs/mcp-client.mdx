@@ -9,20 +9,9 @@ import Admonition from '@theme/Admonition';
 
 # 🔌 Universal MCP Client Documentation
 
-<div className="hero hero--primary">
-  <div className="container">
-    <h1 className="hero__title">
-      **Connect to Any MCP Server**
-    </h1>
-    <h2 className="hero__subtitle">
-      Universal client for **testing**, **managing**, and **integrating** with any MCP server
-    </h2>
-  </div>
-</div>
-
 ## 🎯 Overview
 
-Archon's Universal MCP Client allows you to connect to and interact with any MCP (Model Context Protocol) server directly from Archon's web interface. Test tools, manage connections, and integrate multiple MCP servers into your workflow with a beautiful, intuitive UI.
+The Universal MCP Client enables connection and interaction with any MCP (Model Context Protocol) server through Archon's web interface. This tool supports testing MCP server connections, managing multiple servers, and validating tool functionality across different transport types.
 
 ## ✨ Key Features
 
@@ -34,10 +23,10 @@ Archon's Universal MCP Client allows you to connect to and interact with any MCP
       </div>
       <div className="card__body">
         <ul>
-          <li>✅ **Multiple transports**: stdio, Docker, SSE, NPX</li>
-          <li>🔄 **Real-time connection status** monitoring</li>
-          <li>🎯 **Automatic tool discovery** from connected servers</li>
-          <li>⚡ **Connection pooling** and session management</li>
+          <li>Multiple transports: stdio, SSE (Streamable HTTP)</li>
+          <li>Real-time connection status monitoring</li>
+          <li>Automatic tool discovery from connected servers</li>
+          <li>Connection pooling and session management</li>
         </ul>
       </div>
     </div>
@@ -49,10 +38,10 @@ Archon's Universal MCP Client allows you to connect to and interact with any MCP
       </div>
       <div className="card__body">
         <ul>
-          <li>🛠️ **Real-time tool execution** with live results</li>
-          <li>📊 **Parameter validation** and type checking</li>
-          <li>🎨 **Beautiful UI** for tool testing and exploration</li>
-          <li>📡 **WebSocket updates** for collaborative workflows</li>
+          <li>Real-time tool execution with live results</li>
+          <li>Parameter validation and type checking</li>
+          <li>Interactive UI for tool testing and exploration</li>
+          <li>WebSocket updates for real-time collaboration</li>
         </ul>
       </div>
     </div>
@@ -77,12 +66,12 @@ The MCP Client tab is part of Archon's main interface. If you don't see it, make
 
 Archon comes with several pre-configured clients for immediate testing:
 
-| Client | Type | Description | Status |
+| Client | Execution Method | Description | Status |
 |--------|------|-------------|---------|
-| **🏰 Archon** | Docker | Your local Archon instance | ✅ Real connection |
-| **🔍 Brave Search** | NPX | Web search capabilities | 🧪 Demo (for UI testing) |
-| **📁 Filesystem** | stdio | Local file operations | 🧪 Demo (for UI testing) |
-| **🐙 GitHub** | SSE | Repository management | 🧪 Demo (for UI testing) |
+| **🏰 Archon** | Docker (stdio transport) | Your local Archon instance | ✅ Real connection |
+| **🔍 Brave Search** | NPX (stdio transport) | Web search capabilities | 🧪 Demo (for UI testing) |
+| **📁 Filesystem** | stdio transport | Local file operations | 🧪 Demo (for UI testing) |
+| **🐙 GitHub** | SSE transport | Repository management | 🧪 Demo (for UI testing) |
 
 ### 3. Test Your First Tool
 
@@ -93,38 +82,14 @@ Archon comes with several pre-configured clients for immediate testing:
 
 ## 🔧 Configuration
 
-### Supported Transport Types
+### Transport Types
+
+The MCP protocol defines two standard transport mechanisms:
 
 <Tabs>
-<TabItem value="docker" label="🐳 Docker" default>
+<TabItem value="stdio" label="📡 stdio" default>
 
-**Best for**: Containerized MCP servers, Archon instances
-
-```json title="Docker Configuration Example"
-{
-  "name": "External Archon",
-  "transport": "docker",
-  "config": {
-    "container": "other-archon-pyserver",
-    "command": ["python", "/app/src/main.py"],
-    "workingDir": "/app",
-    "environment": {
-      "TRANSPORT": "stdio"
-    }
-  }
-}
-```
-
-**Use Cases:**
-- ✅ Connecting to other Archon instances
-- ✅ Containerized MCP servers
-- ✅ Development and testing environments
-- ✅ Isolated server environments
-
-</TabItem>
-<TabItem value="stdio" label="📡 stdio">
-
-**Best for**: Local executables, Python scripts, direct process communication
+**Standard Input/Output transport** - Communication through stdin/stdout streams.
 
 ```json title="stdio Configuration Example"
 {
@@ -141,16 +106,21 @@ Archon comes with several pre-configured clients for immediate testing:
 }
 ```
 
+**Common execution methods using stdio:**
+- **Direct command**: `python server.py`
+- **Docker exec**: `docker exec container python server.py` 
+- **NPX package**: `npx @modelcontextprotocol/server-brave-search`
+
 **Use Cases:**
-- ✅ Local development servers
-- ✅ Python MCP implementations
-- ✅ Direct executable communication
-- ✅ Custom server scripts
+- Local development servers
+- Python/Node.js MCP implementations  
+- Containerized servers (via docker exec)
+- npm-published MCP packages
 
 </TabItem>
-<TabItem value="sse" label="🌐 Server-Sent Events (SSE)">
+<TabItem value="sse" label="🌐 SSE (Streamable HTTP)">
 
-**Best for**: Remote MCP servers, web-based servers, HTTP APIs
+**Server-Sent Events transport** - HTTP-based communication for remote servers.
 
 ```json title="SSE Configuration Example"
 {
@@ -167,35 +137,10 @@ Archon comes with several pre-configured clients for immediate testing:
 ```
 
 **Use Cases:**
-- ✅ Remote MCP servers
-- ✅ Cloud-hosted services
-- ✅ Authenticated endpoints
-- ✅ Cross-network connections
-
-</TabItem>
-<TabItem value="npx" label="📦 NPX">
-
-**Best for**: Node.js MCP packages, npm-published servers
-
-```json title="NPX Configuration Example"
-{
-  "name": "Brave Search MCP",
-  "transport": "npx",
-  "config": {
-    "package": "@modelcontextprotocol/server-brave-search",
-    "args": [],
-    "environment": {
-      "BRAVE_API_KEY": "your-brave-api-key"
-    }
-  }
-}
-```
-
-**Use Cases:**
-- ✅ Published npm MCP packages
-- ✅ Node.js-based servers
-- ✅ Third-party MCP services
-- ✅ Quick package installation
+- Remote MCP servers over HTTP/HTTPS
+- Cloud-hosted services
+- Multi-client server deployments
+- Authenticated endpoints
 
 </TabItem>
 </Tabs>
