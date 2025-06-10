@@ -533,37 +533,53 @@ class MCPService {
    */
   async getAvailableTools(): Promise<MCPTool[]> {
     try {
-      // First try the backend endpoint which has the known tools list
-      const response = await fetch(`${this.baseUrl}/api/mcp/tools`);
-      
-      if (response.ok) {
-        const data = await response.json();
-        // Convert the backend format to MCP tool format
-        const tools: MCPTool[] = data.tools.map((tool: any) => ({
-          name: tool.name,
-          description: tool.description,
-          inputSchema: {
-            type: 'object' as const,
-            properties: tool.parameters.reduce((props: any, param: any) => {
-              props[param.name] = {
-                type: param.type,
-                description: param.description
-              };
-              return props;
-            }, {}),
-            required: tool.parameters.filter((p: any) => p.required).map((p: any) => p.name)
-          }
-        }));
-        return tools;
-      }
-      
-      // If backend fails, try direct MCP call (though this likely won't work with SSE)
+      // Skip the broken backend endpoint and try direct MCP protocol call
+      console.log('Attempting direct MCP tools/list call...');
       const result = await this.makeMCPCall('tools/list');
       const validatedResult = MCPToolsListResponseSchema.parse(result);
+      console.log('Successfully retrieved tools via MCP protocol:', validatedResult.tools.length);
       return validatedResult.tools;
-    } catch (error) {
-      console.error('Failed to get MCP tools:', error);
-      throw error;
+    } catch (mcpError) {
+      console.warn('Direct MCP call failed, falling back to backend endpoint:', mcpError);
+      
+      // Fallback to backend endpoint (which returns debug placeholder)
+      try {
+        const response = await fetch(`${this.baseUrl}/api/mcp/tools`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          console.log('Backend endpoint returned:', data);
+          
+          // If we only get the debug placeholder, return empty array with warning
+          if (data.tools.length === 1 && data.tools[0].name === 'debug_placeholder') {
+            console.warn('Backend returned debug placeholder - MCP tool introspection is not working');
+            // Return empty array instead of the placeholder
+            return [];
+          }
+          
+          // Convert the backend format to MCP tool format
+          const tools: MCPTool[] = data.tools.map((tool: any) => ({
+            name: tool.name,
+            description: tool.description,
+            inputSchema: {
+              type: 'object' as const,
+              properties: tool.parameters.reduce((props: any, param: any) => {
+                props[param.name] = {
+                  type: param.type,
+                  description: param.description
+                };
+                return props;
+              }, {}),
+              required: tool.parameters.filter((p: any) => p.required).map((p: any) => p.name)
+            }
+          }));
+          return tools;
+        }
+        throw new Error('Backend endpoint failed');
+      } catch (backendError) {
+        console.error('Both MCP protocol and backend endpoint failed:', { mcpError, backendError });
+        throw new Error(`Failed to retrieve tools: MCP protocol failed (${mcpError instanceof Error ? mcpError.message : mcpError}), backend also failed (${backendError instanceof Error ? backendError.message : backendError})`);
+      }
     }
   }
 

@@ -82,7 +82,7 @@ docker-compose up -d
 The documentation includes:
 
 - **[Getting Started Guide](http://localhost:3838/docs/getting-started)** - Detailed setup walkthrough
-- **[MCP Integration](http://localhost:3838/docs/mcp-reference)** - Connect Cursor, Windsurf, Claude Desktop
+- **[MCP Integration](http://localhost:3838/docs/mcp-overview)** - Connect Cursor, Windsurf, Claude Desktop
 - **[API Reference](http://localhost:3838/docs/api-reference)** - Complete REST API documentation
 - **[RAG Strategies](http://localhost:3838/docs/rag)** - Configure search and retrieval
 - **[Deployment Guide](http://localhost:3838/docs/deployment)** - Production setup
@@ -157,7 +157,7 @@ cd docs && npm start
 ## 🎯 Next Steps
 
 1. **📖 [Read the Full Documentation](http://localhost:3838)** - Complete setup and usage guides
-2. **🔌 [Connect Your AI Client](http://localhost:3838/docs/mcp-reference)** - Set up Cursor, Windsurf, or Claude Desktop
+2. **🔌 [Connect Your AI Client](http://localhost:3838/docs/mcp-overview)** - Set up Cursor, Windsurf, or Claude Desktop
 3. **📚 [Build Your Knowledge Base](http://localhost:3838/docs/getting-started#building-your-knowledge-base)** - Start crawling and uploading content
 4. **🚀 [Deploy to Production](http://localhost:3838/docs/deployment)** - Scale for team use
 

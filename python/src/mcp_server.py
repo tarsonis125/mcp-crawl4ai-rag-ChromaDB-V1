@@ -34,21 +34,12 @@ from crawl4ai import AsyncWebCrawler, BrowserConfig
 # Add the project root to Python path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# Import Logfire configuration
-from src.logfire_config import setup_logfire, mcp_logger
-
-try:
-    from src.utils import get_supabase_client
-except ImportError as e:
-    logger.error(f"Failed to import utils: {e}")
-    raise
-
 # Load environment variables from the project root .env file
 project_root = Path(__file__).resolve().parent.parent
 dotenv_path = project_root / '.env'
 load_dotenv(dotenv_path, override=True)
 
-# Configure logging
+# Configure logging FIRST before any imports that might use it
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -58,6 +49,15 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Import Logfire configuration
+from src.logfire_config import setup_logfire, mcp_logger
+
+try:
+    from src.utils import get_supabase_client
+except ImportError as e:
+    logger.error(f"Failed to import utils: {e}")
+    raise
 
 @dataclass
 class ArchonContext:
@@ -145,34 +145,9 @@ async def archon_lifespan(server: FastMCP) -> AsyncIterator[ArchonContext]:
     """
     logger.info("🚀 Starting Archon MCP server lifespan...")
     
-    # FIRST THING: CACHE OPENAI KEY IN MEMORY!
-    cached_openai_key = None
-    logger.info("🔑 CACHING OPENAI API KEY IN MEMORY...")
-    try:
-        from src.credential_service import credential_service
-        
-        # Get OpenAI API key and cache it
-        if hasattr(credential_service, '_cache') and credential_service._cache_initialized:
-            cached_value = credential_service._cache.get("OPENAI_API_KEY")
-            if isinstance(cached_value, dict) and cached_value.get("is_encrypted"):
-                encrypted_value = cached_value.get("encrypted_value")
-                if encrypted_value:
-                    try:
-                        cached_openai_key = credential_service._decrypt_value(encrypted_value)
-                    except Exception:
-                        pass
-            elif cached_value:
-                cached_openai_key = str(cached_value)
-        
-        # Fallback to environment variable
-        if not cached_openai_key:
-            cached_openai_key = os.getenv("OPENAI_API_KEY")
-        
-        logger.info(f"✓ OpenAI key cached in memory: {'YES' if cached_openai_key else 'NO'}")
-        
-    except Exception as e:
-        logger.warning(f"⚠ Failed to cache OpenAI key from credentials: {e} - using env fallback")
-        cached_openai_key = os.getenv("OPENAI_API_KEY")
+    # Check OpenAI API key availability (should be set by FastAPI startup)
+    openai_key_available = bool(os.getenv("OPENAI_API_KEY"))
+    logger.info(f"🔑 OpenAI API key status: {'AVAILABLE' if openai_key_available else 'NOT FOUND'}")
     
     # Initialize minimal resources needed for basic operation
     crawler = None
@@ -192,13 +167,10 @@ async def archon_lifespan(server: FastMCP) -> AsyncIterator[ArchonContext]:
             reranking_model=reranking_model
         )
         
-        # STORE CACHED OPENAI KEY IN CONTEXT FOR DIRECT ACCESS
-        context.cached_openai_key = cached_openai_key
-        
         # Set ready status
         context.health_status["status"] = "ready"
         context.health_status["database_ready"] = True
-        context.health_status["openai_key_cached"] = bool(cached_openai_key)
+        context.health_status["openai_key_available"] = openai_key_available
         context.health_status["last_health_check"] = datetime.now().isoformat()
         
         logger.info("✓ Archon context ready - server can accept requests")

@@ -105,4 +105,47 @@ COMMENT ON TABLE mcp_client_health_checks IS 'Historical health check results fo
 
 COMMENT ON COLUMN mcp_clients.connection_config IS 'JSON configuration specific to transport type (host/port for SSE, command/args for stdio, etc.)';
 COMMENT ON COLUMN mcp_clients.is_default IS 'Indicates if this is the default Archon MCP server client';
-COMMENT ON COLUMN mcp_client_tools.tool_schema IS 'Complete JSON schema for the tool including inputSchema and metadata'; 
+COMMENT ON COLUMN mcp_client_tools.tool_schema IS 'Complete JSON schema for the tool including inputSchema and metadata';
+
+-- Enable Row Level Security (RLS) for all MCP client tables
+-- MCP Clients table
+ALTER TABLE mcp_clients ENABLE ROW LEVEL SECURITY;
+
+-- MCP Client Tools table
+ALTER TABLE mcp_client_tools ENABLE ROW LEVEL SECURITY;
+
+-- MCP Client Sessions table
+ALTER TABLE mcp_client_sessions ENABLE ROW LEVEL SECURITY;
+
+-- MCP Client Health Checks table
+ALTER TABLE mcp_client_health_checks ENABLE ROW LEVEL SECURITY;
+
+-- Create RLS policies for service role (full access)
+CREATE POLICY "Allow service role full access to mcp_clients" ON mcp_clients
+    FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Allow service role full access to mcp_client_tools" ON mcp_client_tools
+    FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Allow service role full access to mcp_client_sessions" ON mcp_client_sessions
+    FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Allow service role full access to mcp_client_health_checks" ON mcp_client_health_checks
+    FOR ALL USING (auth.role() = 'service_role');
+
+-- Create RLS policies for authenticated users
+CREATE POLICY "Allow authenticated users to manage mcp_clients" ON mcp_clients
+    FOR ALL TO authenticated
+    USING (true);
+
+CREATE POLICY "Allow authenticated users to read mcp_client_tools" ON mcp_client_tools
+    FOR SELECT TO authenticated
+    USING (true);
+
+CREATE POLICY "Allow authenticated users to read mcp_client_sessions" ON mcp_client_sessions
+    FOR SELECT TO authenticated
+    USING (true);
+
+CREATE POLICY "Allow authenticated users to read mcp_client_health_checks" ON mcp_client_health_checks
+    FOR SELECT TO authenticated
+    USING (true); 

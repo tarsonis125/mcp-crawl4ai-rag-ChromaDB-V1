@@ -169,3 +169,47 @@ COMMENT ON COLUMN document_versions.content IS 'Full snapshot of field content a
 COMMENT ON COLUMN document_versions.change_type IS 'Type of change: create, update, delete, restore, backup';
 COMMENT ON COLUMN document_versions.document_id IS 'For docs arrays, the specific document ID that was changed';
 COMMENT ON COLUMN document_versions.task_id IS 'DEPRECATED: No longer used for new versions, kept for historical task version data';
+
+-- Enable Row Level Security (RLS) for all tables
+-- Projects table
+ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
+
+-- Tasks table
+ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
+
+-- Project Sources junction table
+ALTER TABLE project_sources ENABLE ROW LEVEL SECURITY;
+
+-- Document Versions table
+ALTER TABLE document_versions ENABLE ROW LEVEL SECURITY;
+
+-- Create RLS policies for service role (full access)
+CREATE POLICY "Allow service role full access to projects" ON projects
+    FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Allow service role full access to tasks" ON tasks
+    FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Allow service role full access to project_sources" ON project_sources
+    FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Allow service role full access to document_versions" ON document_versions
+    FOR ALL USING (auth.role() = 'service_role');
+
+-- Create RLS policies for authenticated users
+CREATE POLICY "Allow authenticated users to read and update projects" ON projects
+    FOR ALL TO authenticated
+    USING (true);
+
+CREATE POLICY "Allow authenticated users to read and update tasks" ON tasks
+    FOR ALL TO authenticated
+    USING (true);
+
+CREATE POLICY "Allow authenticated users to read and update project_sources" ON project_sources
+    FOR ALL TO authenticated
+    USING (true);
+
+CREATE POLICY "Allow authenticated users to read document_versions" ON document_versions
+    FOR SELECT TO authenticated
+    USING (true);
+

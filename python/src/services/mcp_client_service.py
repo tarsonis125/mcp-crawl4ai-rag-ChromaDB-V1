@@ -1,400 +1,581 @@
 """
-Database service layer for MCP Client Management.
+Universal MCP Client Service
 
-This service handles all database operations for MCP clients, tools, sessions,
-and health monitoring.
+This service implements a proper MCP client that works exactly like Cursor/Windsurf.
+It connects to MCP servers using real MCP protocol transports:
+- stdio: Direct subprocess communication  
+- docker: Docker exec with stdio transport
+- sse: Server-sent events for remote servers
+- npx: NPX subprocess for Node.js servers
+
+The service is completely independent of FastAPI and uses the official MCP Python SDK.
 """
 
+import asyncio
 import json
 import logging
-from typing import List, Dict, Any, Optional
+import subprocess
+import signal
+import os
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from uuid import UUID
+from typing import Dict, List, Optional, Any, Union, AsyncGenerator
+from dataclasses import dataclass, asdict
+from enum import Enum
 
-from supabase import AsyncClient
-from ..models.mcp_models import (
-    MCPClient, MCPClientCreate, MCPClientUpdate, MCPTool,
-    MCPClientSession, MCPHealthCheck, ClientStatus, TransportType
+from mcp import ClientSession
+from mcp.client.stdio import stdio_client  
+from mcp.client.sse import sse_client
+from mcp.types import (
+    Tool, 
+    CallToolRequest,
+    CallToolResult,
+    ListToolsRequest,
+    InitializeRequest,
+    InitializedNotification
 )
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+class TransportType(str, Enum):
+    STDIO = "stdio"
+    DOCKER = "docker" 
+    SSE = "sse"
+    NPX = "npx"
+
+class ClientStatus(str, Enum):
+    DISCONNECTED = "disconnected"
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+    ERROR = "error"
+
+@dataclass
+class MCPClientConfig:
+    name: str
+    transport_type: TransportType
+    connection_config: Dict[str, Any]
+    auto_connect: bool = False
+    health_check_interval: int = 30
+    is_default: bool = False
+
+@dataclass
+class MCPClientInfo:
+    id: str
+    config: MCPClientConfig
+    status: ClientStatus = ClientStatus.DISCONNECTED
+    last_seen: Optional[datetime] = None
+    last_error: Optional[str] = None
+    tools: List[Tool] = None
+    
+    def __post_init__(self):
+        if self.tools is None:
+            self.tools = []
+
 class MCPClientService:
-    """Service for managing MCP clients in the database."""
+    """
+    Universal MCP Client Service that connects to any MCP server using proper MCP protocol.
     
-    def __init__(self, supabase: AsyncClient):
-        self.supabase = supabase
+    This service works exactly like Cursor/Windsurf MCP clients:
+    - Uses official MCP Python SDK
+    - Supports stdio, SSE, docker exec, NPX transports
+    - Maintains persistent connections
+    - Provides tool discovery and execution
+    """
     
-    # Client CRUD Operations
+    def __init__(self):
+        self.clients: Dict[str, MCPClientInfo] = {}
+        self.sessions: Dict[str, ClientSession] = {}
+        self.processes: Dict[str, subprocess.Popen] = {}
+        self._shutdown_event = asyncio.Event()
+        self._running = False
+        
+    async def start(self):
+        """Start the MCP client service"""
+        if self._running:
+            return
+            
+        self._running = True
+        logger.info("Starting Universal MCP Client Service")
+        
+        # Start background tasks
+        asyncio.create_task(self._health_check_loop())
+        
+    async def stop(self):
+        """Stop the MCP client service"""
+        if not self._running:
+            return
+            
+        logger.info("Stopping Universal MCP Client Service")
+        self._running = False
+        self._shutdown_event.set()
+        
+        # Disconnect all clients
+        for client_id in list(self.clients.keys()):
+            await self.disconnect_client(client_id)
+            
+    # ========================================
+    # CLIENT MANAGEMENT
+    # ========================================
     
-    async def create_client(self, client_data: MCPClientCreate) -> MCPClient:
-        """Create a new MCP client in the database."""
+    async def add_client(self, client_id: str, config: MCPClientConfig) -> MCPClientInfo:
+        """Add a new MCP client configuration"""
+        client_info = MCPClientInfo(
+            id=client_id,
+            config=config
+        )
+        
+        self.clients[client_id] = client_info
+        logger.info(f"Added MCP client: {config.name} ({config.transport_type})")
+        
+        # Auto-connect if requested
+        if config.auto_connect:
+            try:
+                await self.connect_client(client_id)
+            except Exception as e:
+                logger.error(f"Auto-connect failed for {config.name}: {e}")
+                client_info.last_error = str(e)
+                
+        return client_info
+        
+    async def remove_client(self, client_id: str) -> bool:
+        """Remove an MCP client"""
+        if client_id not in self.clients:
+            return False
+            
+        # Disconnect first
+        await self.disconnect_client(client_id)
+        
+        # Remove from tracking
+        del self.clients[client_id]
+        logger.info(f"Removed MCP client: {client_id}")
+        return True
+        
+    def get_client(self, client_id: str) -> Optional[MCPClientInfo]:
+        """Get client info by ID"""
+        return self.clients.get(client_id)
+        
+    def list_clients(self) -> List[MCPClientInfo]:
+        """List all clients"""
+        return list(self.clients.values())
+        
+    # ========================================
+    # CONNECTION MANAGEMENT  
+    # ========================================
+    
+    async def connect_client(self, client_id: str) -> bool:
+        """Connect to an MCP client"""
+        client_info = self.clients.get(client_id)
+        if not client_info:
+            raise ValueError(f"Client not found: {client_id}")
+            
+        if client_info.status == ClientStatus.CONNECTED:
+            return True
+            
+        config = client_info.config
+        client_info.status = ClientStatus.CONNECTING
+        client_info.last_error = None
+        
         try:
-            # Prepare data for insertion
-            insert_data = {
-                "name": client_data.name,
-                "transport_type": client_data.transport_type,
-                "connection_config": client_data.connection_config,
-                "auto_connect": client_data.auto_connect,
-                "health_check_interval": client_data.health_check_interval,
-                "status": "disconnected"
-            }
+            logger.info(f"Connecting to {config.name} via {config.transport_type}")
             
-            # Insert into database
-            result = await self.supabase.table("mcp_clients").insert(insert_data).execute()
+            # Create session based on transport type
+            session = await self._create_session(config)
             
-            if not result.data:
-                raise Exception("Failed to create client - no data returned")
+            # Initialize the MCP session
+            await session.initialize()
             
-            client_record = result.data[0]
+            # Store session
+            self.sessions[client_id] = session
+            client_info.status = ClientStatus.CONNECTED
+            client_info.last_seen = datetime.now(timezone.utc)
             
-            # Convert to MCPClient model
-            client = MCPClient(
-                id=client_record["id"],
-                name=client_record["name"],
-                transport_type=client_record["transport_type"],
-                connection_config=client_record["connection_config"],
-                status=client_record["status"],
-                auto_connect=client_record["auto_connect"],
-                health_check_interval=client_record["health_check_interval"],
-                last_seen=client_record.get("last_seen"),
-                last_error=client_record.get("last_error"),
-                is_default=client_record.get("is_default", False),
-                tools_count=0,  # Will be updated when tools are discovered
-                created_at=datetime.fromisoformat(client_record["created_at"].replace("Z", "+00:00")),
-                updated_at=datetime.fromisoformat(client_record["updated_at"].replace("Z", "+00:00")) if client_record.get("updated_at") else None
+            # Discover tools
+            await self._discover_tools(client_id)
+            
+            logger.info(f"Successfully connected to {config.name}")
+            return True
+            
+        except Exception as e:
+            client_info.status = ClientStatus.ERROR
+            client_info.last_error = str(e)
+            logger.error(f"Failed to connect to {config.name}: {e}")
+            
+            # Cleanup any partial connection
+            await self._cleanup_client_connection(client_id)
+            raise
+            
+    async def disconnect_client(self, client_id: str) -> bool:
+        """Disconnect from an MCP client"""
+        client_info = self.clients.get(client_id)
+        if not client_info:
+            return False
+            
+        logger.info(f"Disconnecting from {client_info.config.name}")
+        
+        await self._cleanup_client_connection(client_id)
+        
+        client_info.status = ClientStatus.DISCONNECTED
+        client_info.tools = []
+        
+        return True
+        
+    async def _cleanup_client_connection(self, client_id: str):
+        """Clean up all resources for a client connection"""
+        # Close session
+        if client_id in self.sessions:
+            try:
+                # MCP sessions don't have explicit close, transport handles it
+                pass  
+            except Exception as e:
+                logger.warning(f"Error closing session for {client_id}: {e}")
+            finally:
+                del self.sessions[client_id]
+                
+        # Terminate process if exists
+        if client_id in self.processes:
+            try:
+                process = self.processes[client_id]
+                if process.poll() is None:  # Still running
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+            except Exception as e:
+                logger.warning(f"Error terminating process for {client_id}: {e}")
+            finally:
+                del self.processes[client_id]
+                
+    # ========================================
+    # TRANSPORT IMPLEMENTATIONS
+    # ========================================
+    
+    async def _create_session(self, config: MCPClientConfig) -> ClientSession:
+        """Create an MCP session based on transport type"""
+        transport_type = config.transport_type
+        connection_config = config.connection_config
+        
+        if transport_type == TransportType.STDIO:
+            return await self._create_stdio_session(config)
+        elif transport_type == TransportType.DOCKER:
+            return await self._create_docker_session(config)
+        elif transport_type == TransportType.SSE:
+            return await self._create_sse_session(config)
+        elif transport_type == TransportType.NPX:
+            return await self._create_npx_session(config)
+        else:
+            raise ValueError(f"Unsupported transport type: {transport_type}")
+            
+    async def _create_stdio_session(self, config: MCPClientConfig) -> ClientSession:
+        """Create stdio transport session (direct subprocess)"""
+        connection_config = config.connection_config
+        
+        command = connection_config.get('command', [])
+        args = connection_config.get('args', [])
+        working_dir = connection_config.get('working_dir')
+        env = connection_config.get('env', {})
+        
+        if isinstance(command, str):
+            full_command = [command] + args
+        else:
+            full_command = command + args
+            
+        logger.info(f"Starting stdio process: {' '.join(full_command)}")
+        
+        # Use the official MCP stdio client
+        stdio_params = {
+            'command': full_command[0],
+            'args': full_command[1:] if len(full_command) > 1 else [],
+        }
+        
+        if working_dir:
+            stdio_params['cwd'] = working_dir
+        if env:
+            stdio_params['env'] = {**os.environ, **env}
+            
+        # Create stdio client session
+        session_context = stdio_client(**stdio_params)
+        read_stream, write_stream = await session_context.__aenter__()
+        
+        # Store the context for cleanup
+        # Note: This is a simplified approach. In production, you'd want proper context management
+        session = ClientSession(read_stream, write_stream)
+        
+        return session
+        
+    async def _create_docker_session(self, config: MCPClientConfig) -> ClientSession:
+        """Create docker exec transport session"""
+        connection_config = config.connection_config
+        
+        container = connection_config.get('container')
+        command = connection_config.get('command', [])
+        working_dir = connection_config.get('working_dir')
+        
+        if not container:
+            raise ValueError("Docker transport requires 'container' in connection_config")
+            
+        # Build docker exec command
+        docker_cmd = ['docker', 'exec', '-i']
+        
+        if working_dir:
+            docker_cmd.extend(['-w', working_dir])
+            
+        docker_cmd.append(container)
+        
+        if isinstance(command, str):
+            docker_cmd.append(command)
+        else:
+            docker_cmd.extend(command)
+            
+        logger.info(f"Starting docker exec: {' '.join(docker_cmd)}")
+        
+        # Use stdio transport with docker exec command
+        stdio_params = {
+            'command': docker_cmd[0],
+            'args': docker_cmd[1:],
+        }
+        
+        session_context = stdio_client(**stdio_params)
+        read_stream, write_stream = await session_context.__aenter__()
+        
+        session = ClientSession(read_stream, write_stream)
+        return session
+        
+    async def _create_sse_session(self, config: MCPClientConfig) -> ClientSession:
+        """Create SSE transport session"""
+        connection_config = config.connection_config
+        
+        url = connection_config.get('url')
+        if not url:
+            raise ValueError("SSE transport requires 'url' in connection_config")
+            
+        logger.info(f"Connecting to SSE endpoint: {url}")
+        
+        # Use the official MCP SSE client
+        session_context = sse_client(url)
+        read_stream, write_stream = await session_context.__aenter__()
+        
+        session = ClientSession(read_stream, write_stream)
+        return session
+        
+    async def _create_npx_session(self, config: MCPClientConfig) -> ClientSession:
+        """Create NPX transport session"""
+        connection_config = config.connection_config
+        
+        package = connection_config.get('package')
+        args = connection_config.get('args', [])
+        
+        if not package:
+            raise ValueError("NPX transport requires 'package' in connection_config")
+            
+        # Build npx command
+        npx_cmd = ['npx', package] + args
+        
+        logger.info(f"Starting NPX process: {' '.join(npx_cmd)}")
+        
+        # Use stdio transport with npx command
+        stdio_params = {
+            'command': npx_cmd[0],
+            'args': npx_cmd[1:],
+        }
+        
+        session_context = stdio_client(**stdio_params)
+        read_stream, write_stream = await session_context.__aenter__()
+        
+        session = ClientSession(read_stream, write_stream)
+        return session
+        
+    # ========================================
+    # TOOL DISCOVERY & EXECUTION
+    # ========================================
+    
+    async def _discover_tools(self, client_id: str):
+        """Discover tools from a connected client"""
+        session = self.sessions.get(client_id)
+        client_info = self.clients.get(client_id)
+        
+        if not session or not client_info:
+            return
+            
+        try:
+            # List available tools
+            result = await session.list_tools()
+            client_info.tools = result.tools
+            client_info.last_seen = datetime.now(timezone.utc)
+            
+            logger.info(f"Discovered {len(result.tools)} tools from {client_info.config.name}")
+            
+        except Exception as e:
+            logger.error(f"Failed to discover tools from {client_info.config.name}: {e}")
+            client_info.last_error = str(e)
+            
+    async def get_client_tools(self, client_id: str) -> List[Tool]:
+        """Get tools from a specific client"""
+        client_info = self.clients.get(client_id)
+        if not client_info:
+            raise ValueError(f"Client not found: {client_id}")
+            
+        if client_info.status != ClientStatus.CONNECTED:
+            return []
+            
+        # Refresh tools if needed
+        if not client_info.tools:
+            await self._discover_tools(client_id)
+            
+        return client_info.tools or []
+        
+    async def call_tool(self, client_id: str, tool_name: str, arguments: Dict[str, Any]) -> CallToolResult:
+        """Call a tool on a specific client"""
+        session = self.sessions.get(client_id)
+        client_info = self.clients.get(client_id)
+        
+        if not session or not client_info:
+            raise ValueError(f"Client not found or not connected: {client_id}")
+            
+        if client_info.status != ClientStatus.CONNECTED:
+            raise RuntimeError(f"Client not connected: {client_id}")
+            
+        try:
+            # Execute the tool call
+            request = CallToolRequest(
+                name=tool_name,
+                arguments=arguments
             )
             
-            logger.info(f"Created MCP client {client.name} with ID {client.id}")
-            return client
+            result = await session.call_tool(request)
+            client_info.last_seen = datetime.now(timezone.utc)
+            
+            logger.info(f"Successfully called tool {tool_name} on {client_info.config.name}")
+            return result
             
         except Exception as e:
-            logger.error(f"Failed to create MCP client {client_data.name}: {e}")
+            logger.error(f"Failed to call tool {tool_name} on {client_info.config.name}: {e}")
+            client_info.last_error = str(e)
             raise
+            
+    async def get_all_tools(self) -> Dict[str, Dict[str, Any]]:
+        """Get tools from all connected clients"""
+        all_tools = {}
+        
+        for client_id, client_info in self.clients.items():
+            if client_info.status == ClientStatus.CONNECTED:
+                try:
+                    tools = await self.get_client_tools(client_id)
+                    all_tools[client_id] = {
+                        'client_name': client_info.config.name,
+                        'tools': [asdict(tool) for tool in tools],
+                        'count': len(tools)
+                    }
+                except Exception as e:
+                    logger.warning(f"Failed to get tools from {client_info.config.name}: {e}")
+                    
+        return all_tools
+        
+    # ========================================
+    # HEALTH CHECKING
+    # ========================================
     
-    async def get_client(self, client_id: str) -> Optional[MCPClient]:
-        """Get an MCP client by ID."""
-        try:
-            result = await self.supabase.table("mcp_clients").select("*").eq("id", client_id).execute()
-            
-            if not result.data:
-                return None
-            
-            client_record = result.data[0]
-            
-            # Get tools count
-            tools_result = await self.supabase.table("mcp_client_tools").select("id").eq("client_id", client_id).execute()
-            tools_count = len(tools_result.data) if tools_result.data else 0
-            
-            return MCPClient(
-                id=client_record["id"],
-                name=client_record["name"],
-                transport_type=client_record["transport_type"],
-                connection_config=client_record["connection_config"],
-                status=client_record["status"],
-                auto_connect=client_record["auto_connect"],
-                health_check_interval=client_record["health_check_interval"],
-                last_seen=datetime.fromisoformat(client_record["last_seen"].replace("Z", "+00:00")) if client_record.get("last_seen") else None,
-                last_error=client_record.get("last_error"),
-                is_default=client_record.get("is_default", False),
-                tools_count=tools_count,
-                created_at=datetime.fromisoformat(client_record["created_at"].replace("Z", "+00:00")),
-                updated_at=datetime.fromisoformat(client_record["updated_at"].replace("Z", "+00:00")) if client_record.get("updated_at") else None
-            )
-            
-        except Exception as e:
-            logger.error(f"Failed to get MCP client {client_id}: {e}")
-            return None
-    
-    async def list_clients(self, include_disconnected: bool = True) -> List[MCPClient]:
-        """List all MCP clients."""
-        try:
-            query = self.supabase.table("mcp_clients").select("*")
-            
-            if not include_disconnected:
-                query = query.neq("status", "disconnected")
-            
-            result = await query.execute()
-            
-            clients = []
-            for client_record in result.data:
-                # Get tools count for each client
-                tools_result = await self.supabase.table("mcp_client_tools").select("id").eq("client_id", client_record["id"]).execute()
-                tools_count = len(tools_result.data) if tools_result.data else 0
+    async def _health_check_loop(self):
+        """Background task to monitor client health"""
+        while self._running:
+            try:
+                await self._perform_health_checks()
+            except Exception as e:
+                logger.error(f"Health check error: {e}")
                 
-                client = MCPClient(
-                    id=client_record["id"],
-                    name=client_record["name"],
-                    transport_type=client_record["transport_type"],
-                    connection_config=client_record["connection_config"],
-                    status=client_record["status"],
-                    auto_connect=client_record["auto_connect"],
-                    health_check_interval=client_record["health_check_interval"],
-                    last_seen=datetime.fromisoformat(client_record["last_seen"].replace("Z", "+00:00")) if client_record.get("last_seen") else None,
-                    last_error=client_record.get("last_error"),
-                    is_default=client_record.get("is_default", False),
-                    tools_count=tools_count,
-                    created_at=datetime.fromisoformat(client_record["created_at"].replace("Z", "+00:00")),
-                    updated_at=datetime.fromisoformat(client_record["updated_at"].replace("Z", "+00:00")) if client_record.get("updated_at") else None
-                )
-                clients.append(client)
-            
-            return clients
-            
-        except Exception as e:
-            logger.error(f"Failed to list MCP clients: {e}")
-            return []
-    
-    async def update_client(self, client_id: str, update_data: MCPClientUpdate) -> Optional[MCPClient]:
-        """Update an MCP client."""
-        try:
-            # Prepare update data
-            update_fields = {}
-            if update_data.name is not None:
-                update_fields["name"] = update_data.name
-            if update_data.connection_config is not None:
-                update_fields["connection_config"] = update_data.connection_config
-            if update_data.auto_connect is not None:
-                update_fields["auto_connect"] = update_data.auto_connect
-            if update_data.health_check_interval is not None:
-                update_fields["health_check_interval"] = update_data.health_check_interval
-            
-            if not update_fields:
-                # No updates to make
-                return await self.get_client(client_id)
-            
-            # Update in database
-            result = await self.supabase.table("mcp_clients").update(update_fields).eq("id", client_id).execute()
-            
-            if not result.data:
-                return None
-            
-            logger.info(f"Updated MCP client {client_id}")
-            return await self.get_client(client_id)
-            
-        except Exception as e:
-            logger.error(f"Failed to update MCP client {client_id}: {e}")
-            return None
-    
-    async def delete_client(self, client_id: str) -> bool:
-        """Delete an MCP client and all related data."""
-        try:
-            # Delete related data first (cascading should handle this, but being explicit)
-            await self.supabase.table("mcp_client_tools").delete().eq("client_id", client_id).execute()
-            await self.supabase.table("mcp_client_sessions").delete().eq("client_id", client_id).execute()
-            await self.supabase.table("mcp_client_health_checks").delete().eq("client_id", client_id).execute()
-            
-            # Delete the client
-            result = await self.supabase.table("mcp_clients").delete().eq("id", client_id).execute()
-            
-            logger.info(f"Deleted MCP client {client_id}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to delete MCP client {client_id}: {e}")
-            return False
-    
-    async def update_client_status(
-        self, 
-        client_id: str, 
-        status: ClientStatus, 
-        error: Optional[str] = None,
-        last_seen: Optional[datetime] = None
-    ) -> bool:
-        """Update client status and last seen timestamp."""
-        try:
-            update_data = {
-                "status": status,
-                "last_error": error
-            }
-            
-            if last_seen:
-                update_data["last_seen"] = last_seen.isoformat()
-            elif status == "connected":
-                update_data["last_seen"] = datetime.now(timezone.utc).isoformat()
-            
-            await self.supabase.table("mcp_clients").update(update_data).eq("id", client_id).execute()
-            
-            logger.debug(f"Updated status for client {client_id}: {status}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to update status for client {client_id}: {e}")
-            return False
-    
-    # Tools Management
-    
-    async def save_client_tools(self, client_id: str, tools: List[MCPTool]) -> bool:
-        """Save discovered tools for a client."""
-        try:
-            # Delete existing tools for this client
-            await self.supabase.table("mcp_client_tools").delete().eq("client_id", client_id).execute()
-            
-            # Insert new tools
-            if tools:
-                tools_data = []
-                for tool in tools:
-                    tools_data.append({
-                        "client_id": client_id,
-                        "tool_name": tool.name,
-                        "tool_description": tool.description,
-                        "tool_schema": {
-                            "name": tool.name,
-                            "description": tool.description,
-                            "inputSchema": tool.inputSchema
-                        }
-                    })
+            # Wait for next check or shutdown
+            try:
+                await asyncio.wait_for(self._shutdown_event.wait(), timeout=30)
+                break  # Shutdown requested
+            except asyncio.TimeoutError:
+                continue  # Continue health checking
                 
-                await self.supabase.table("mcp_client_tools").insert(tools_data).execute()
-            
-            logger.info(f"Saved {len(tools)} tools for client {client_id}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to save tools for client {client_id}: {e}")
-            return False
-    
-    async def get_client_tools(self, client_id: str) -> List[MCPTool]:
-        """Get tools for a specific client."""
-        try:
-            result = await self.supabase.table("mcp_client_tools").select("*").eq("client_id", client_id).execute()
-            
-            tools = []
-            for tool_record in result.data:
-                tool = MCPTool(
-                    name=tool_record["tool_name"],
-                    description=tool_record["tool_description"],
-                    inputSchema=tool_record["tool_schema"].get("inputSchema", {}),
-                    client_id=client_id,
-                    discovered_at=datetime.fromisoformat(tool_record["discovered_at"].replace("Z", "+00:00"))
-                )
-                tools.append(tool)
-            
-            return tools
-            
-        except Exception as e:
-            logger.error(f"Failed to get tools for client {client_id}: {e}")
-            return []
-    
-    async def get_all_tools(self) -> List[MCPTool]:
-        """Get all tools from all clients."""
-        try:
-            # Join with clients to get client names and status
-            result = await self.supabase.table("mcp_client_tools").select(
-                "*, mcp_clients(name, status)"
-            ).execute()
-            
-            tools = []
-            for tool_record in result.data:
-                client_info = tool_record.get("mcp_clients", {})
-                
-                tool = MCPTool(
-                    name=tool_record["tool_name"],
-                    description=tool_record["tool_description"],
-                    inputSchema=tool_record["tool_schema"].get("inputSchema", {}),
-                    client_id=tool_record["client_id"],
-                    client_name=client_info.get("name", "Unknown"),
-                    client_status=client_info.get("status", "unknown"),
-                    discovered_at=datetime.fromisoformat(tool_record["discovered_at"].replace("Z", "+00:00"))
-                )
-                tools.append(tool)
-            
-            return tools
-            
-        except Exception as e:
-            logger.error(f"Failed to get all tools: {e}")
-            return []
-    
-    # Session Management
-    
-    async def create_session(self, client_id: str, process_id: Optional[int] = None) -> str:
-        """Create a new session for a client."""
-        try:
-            session_data = {
-                "client_id": client_id,
-                "process_id": process_id,
-                "is_active": True
-            }
-            
-            result = await self.supabase.table("mcp_client_sessions").insert(session_data).execute()
-            
-            if result.data:
-                session_id = result.data[0]["id"]
-                logger.info(f"Created session {session_id} for client {client_id}")
-                return session_id
-            else:
-                raise Exception("No session data returned")
-                
-        except Exception as e:
-            logger.error(f"Failed to create session for client {client_id}: {e}")
-            raise
-    
-    async def end_session(self, session_id: str) -> bool:
-        """End an active session."""
-        try:
-            update_data = {
-                "session_end": datetime.now(timezone.utc).isoformat(),
-                "is_active": False
-            }
-            
-            await self.supabase.table("mcp_client_sessions").update(update_data).eq("id", session_id).execute()
-            
-            logger.info(f"Ended session {session_id}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to end session {session_id}: {e}")
-            return False
-    
-    # Health Check Management
-    
-    async def record_health_check(
-        self,
-        client_id: str,
-        status: str,
-        response_time_ms: Optional[int] = None,
-        error_message: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
-    ) -> bool:
-        """Record a health check result."""
-        try:
-            health_data = {
-                "client_id": client_id,
-                "status": status,
-                "response_time_ms": response_time_ms,
-                "error_message": error_message,
-                "metadata": metadata or {}
-            }
-            
-            await self.supabase.table("mcp_client_health_checks").insert(health_data).execute()
-            
-            logger.debug(f"Recorded health check for client {client_id}: {status}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to record health check for client {client_id}: {e}")
-            return False
-    
-    async def get_client_health_history(self, client_id: str, limit: int = 10) -> List[MCPHealthCheck]:
-        """Get recent health check history for a client."""
-        try:
-            result = await self.supabase.table("mcp_client_health_checks").select("*").eq("client_id", client_id).order("check_time", desc=True).limit(limit).execute()
-            
-            health_checks = []
-            for record in result.data:
-                health_check = MCPHealthCheck(
-                    id=record["id"],
-                    client_id=record["client_id"],
-                    check_time=datetime.fromisoformat(record["check_time"].replace("Z", "+00:00")),
-                    status=record["status"],
-                    response_time_ms=record.get("response_time_ms"),
-                    error_message=record.get("error_message"),
-                    metadata=record.get("metadata", {})
-                )
-                health_checks.append(health_check)
-            
-            return health_checks
-            
-        except Exception as e:
-            logger.error(f"Failed to get health history for client {client_id}: {e}")
-            return [] 
+    async def _perform_health_checks(self):
+        """Perform health checks on all connected clients"""
+        for client_id, client_info in self.clients.items():
+            if client_info.status == ClientStatus.CONNECTED:
+                try:
+                    # Simple ping by listing tools
+                    await self._discover_tools(client_id)
+                except Exception as e:
+                    logger.warning(f"Health check failed for {client_info.config.name}: {e}")
+                    client_info.status = ClientStatus.ERROR
+                    client_info.last_error = str(e)
+                    
+                    # Attempt reconnection if auto_connect is enabled
+                    if client_info.config.auto_connect:
+                        logger.info(f"Attempting to reconnect {client_info.config.name}")
+                        try:
+                            await self.disconnect_client(client_id)
+                            await self.connect_client(client_id)
+                        except Exception as reconnect_error:
+                            logger.error(f"Reconnection failed for {client_info.config.name}: {reconnect_error}")
+
+# Global service instance
+_mcp_client_service: Optional[MCPClientService] = None
+
+def get_mcp_client_service() -> MCPClientService:
+    """Get the global MCP client service instance"""
+    global _mcp_client_service
+    if _mcp_client_service is None:
+        _mcp_client_service = MCPClientService()
+    return _mcp_client_service
+
+async def start_mcp_client_service() -> MCPClientService:
+    """Start the MCP client service"""
+    service = get_mcp_client_service()
+    await service.start()
+    return service
+
+async def stop_mcp_client_service():
+    """Stop the MCP client service"""
+    global _mcp_client_service
+    if _mcp_client_service:
+        await _mcp_client_service.stop()
+        _mcp_client_service = None
+
+# ========================================
+# EXAMPLE CONFIGURATIONS
+# ========================================
+
+def get_archon_config() -> MCPClientConfig:
+    """Get Archon MCP client configuration (docker exec like Cursor)"""
+    return MCPClientConfig(
+        name="Archon",
+        transport_type=TransportType.DOCKER,
+        connection_config={
+            "container": "archon-pyserver",
+            "command": ["python", "/app/src/main.py"],
+            "working_dir": "/app"
+        },
+        auto_connect=True,
+        health_check_interval=30,
+        is_default=True
+    )
+
+def get_example_sse_config() -> MCPClientConfig:
+    """Get example SSE MCP client configuration"""
+    return MCPClientConfig(
+        name="Remote MCP Server",
+        transport_type=TransportType.SSE,
+        connection_config={
+            "url": "http://localhost:8080/sse"
+        },
+        auto_connect=False,
+        health_check_interval=60
+    )
+
+def get_example_npx_config() -> MCPClientConfig:
+    """Get example NPX MCP client configuration"""
+    return MCPClientConfig(
+        name="NPX MCP Server",
+        transport_type=TransportType.NPX,
+        connection_config={
+            "package": "@modelcontextprotocol/server-filesystem",
+            "args": ["/path/to/allowed/files"]
+        },
+        auto_connect=False
+    ) 

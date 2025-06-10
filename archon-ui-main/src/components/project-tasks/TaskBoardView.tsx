@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useCallback } from 'react';
 import { useDrag, useDrop } from 'react-dnd';
 import { Edit, Trash2, RefreshCw, Tag, User, Bot, Clipboard, List } from 'lucide-react';
 import { Toggle } from '../ui/Toggle';
@@ -177,9 +177,10 @@ const DraggableTaskCard = ({
   
   // Card styling - dynamic height with better subtask expansion
   const baseHeight = 140;
-  const maxSubtaskAreaHeight = 240; // Increased from 128px to accommodate more subtasks
+  // Limit expansion to 2x the card height as per requirement
+  const maxExpandedHeight = baseHeight * 2;
   const expandedHeight = showSubtasks && subtasks.length > 0 
-    ? baseHeight + maxSubtaskAreaHeight + 16 // +16 for padding
+    ? maxExpandedHeight // Limit to 2x original height
     : baseHeight;
   
   const cardScale = 'scale-100';
@@ -203,132 +204,128 @@ const DraggableTaskCard = ({
         className={`relative w-full h-full transition-transform duration-500 transform-style-preserve-3d ${isFlipped ? 'rotate-y-180' : ''}`}
       >
         {/* Front side */}
-        <div className="absolute w-full h-full backface-hidden bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30 border border-gray-200 dark:border-gray-800 rounded-lg p-3 hover:border-gray-300 dark:hover:border-gray-700 transition-all duration-300 group shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)] flex flex-col">
+        <div className="absolute w-full h-full backface-hidden bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30 border border-gray-200 dark:border-gray-800 rounded-lg hover:border-gray-300 dark:hover:border-gray-700 transition-all duration-300 group shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)]">
           {/* Priority indicator */}
           <div className={`absolute left-0 top-0 bottom-0 w-[3px] ${getOrderColor(task.task_order)} ${getOrderGlow(task.task_order)} rounded-l-lg opacity-80 group-hover:w-[4px] group-hover:opacity-100 transition-all duration-300`}></div>
           
-          <div className="flex items-center gap-2 mb-2 pl-1.5">
-            {/* No subtask indicator needed since these are all parent tasks */}
-            
-            <div className="px-2 py-1 rounded-md text-xs font-medium flex items-center gap-1 backdrop-blur-md" 
-                 style={{
-                   backgroundColor: `${task.featureColor}20`,
-                   color: task.featureColor,
-                   boxShadow: `0 0 10px ${task.featureColor}20`
-                 }}
-            >
-              <Tag className="w-3 h-3" />
-              {task.feature}
+          {/* Content container with fixed padding - exactly matching back side structure */}
+          <div className="flex flex-col h-full p-3">
+            <div className="flex items-center gap-2 mb-2 pl-1.5">
+              <div className="px-2 py-1 rounded-md text-xs font-medium flex items-center gap-1 backdrop-blur-md" 
+                   style={{
+                     backgroundColor: `${task.featureColor}20`,
+                     color: task.featureColor,
+                     boxShadow: `0 0 10px ${task.featureColor}20`
+                   }}
+              >
+                <Tag className="w-3 h-3" />
+                {task.feature}
+              </div>
+              
+              {/* Task order display */}
+              <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-white ${getOrderColor(task.task_order)}`}>
+                {task.task_order}
+              </div>
+              
+              {/* Action buttons group */}
+              <div className="ml-auto flex items-center gap-1.5">
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete();
+                  }} 
+                  className="w-5 h-5 rounded-full flex items-center justify-center bg-red-100/80 dark:bg-red-500/20 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-500/30 hover:shadow-[0_0_10px_rgba(239,68,68,0.3)] transition-all duration-300"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onView();
+                  }} 
+                  className="w-5 h-5 rounded-full flex items-center justify-center bg-cyan-100/80 dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-200 dark:hover:bg-cyan-500/30 hover:shadow-[0_0_10px_rgba(34,211,238,0.3)] transition-all duration-300"
+                >
+                  <Edit className="w-3 h-3" />
+                </button>
+                <button 
+                  onClick={toggleFlip} 
+                  className="w-5 h-5 rounded-full flex items-center justify-center bg-cyan-100/80 dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-200 dark:hover:bg-cyan-500/30 hover:shadow-[0_0_10px_rgba(34,211,238,0.3)] transition-all duration-300"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                </button>
+              </div>
             </div>
             
-            {/* Task order display */}
-            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-white ${getOrderColor(task.task_order)}`}>
-              {task.task_order}
-            </div>
+            <h4 className="font-medium text-gray-900 dark:text-white mb-2 pl-1.5 line-clamp-2 overflow-hidden" title={task.title}>
+              {task.title}
+            </h4>
             
-            {/* Action buttons group */}
-            <div className="ml-auto flex items-center gap-1.5">
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete();
-                }} 
-                className="w-5 h-5 rounded-full flex items-center justify-center bg-red-100/80 dark:bg-red-500/20 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-500/30 hover:shadow-[0_0_10px_rgba(239,68,68,0.3)] transition-all duration-300"
-              >
-                <Trash2 className="w-3 h-3" />
-              </button>
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onView();
-                }} 
-                className="w-5 h-5 rounded-full flex items-center justify-center bg-cyan-100/80 dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-200 dark:hover:bg-cyan-500/30 hover:shadow-[0_0_10px_rgba(34,211,238,0.3)] transition-all duration-300"
-              >
-                <Edit className="w-3 h-3" />
-              </button>
-              <button 
-                onClick={toggleFlip} 
-                className="w-5 h-5 rounded-full flex items-center justify-center bg-cyan-100/80 dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-200 dark:hover:bg-cyan-500/30 hover:shadow-[0_0_10px_rgba(34,211,238,0.3)] transition-all duration-300"
-              >
-                <RefreshCw className="w-3 h-3" />
-              </button>
-            </div>
-          </div>
-          
-          <h4 className="font-medium text-gray-900 dark:text-white mb-2 pl-1.5 line-clamp-2 overflow-hidden" title={task.title}>
-            {task.title}
-          </h4>
-          
-          {/* Subtasks display with smooth animations and scrolling */}
-          <div className={`overflow-hidden transition-all duration-500 ease-in-out ${
-            showSubtasks && subtasks.length > 0 
-              ? 'max-h-60 opacity-100' 
-              : 'max-h-0 opacity-0'
-          }`}>
-            <div className="pl-1.5 mb-2 pt-1 max-h-60 overflow-y-auto scrollbar scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-gray-100/50 dark:scrollbar-track-gray-800/50 hover:scrollbar-thumb-gray-400 dark:hover:scrollbar-thumb-gray-500 pr-1 border-l-2 border-cyan-200/30 dark:border-cyan-800/30">
-              <div className="space-y-1">
-                {subtasks.map((subtask, index) => (
-                                    <div 
-                    key={subtask.id} 
-                    className={`flex items-start gap-2 text-xs bg-gray-100/50 dark:bg-gray-800/50 rounded px-2 py-1 transform transition-all duration-300 ease-in-out hover:bg-gray-200/50 dark:hover:bg-gray-700/50 hover:shadow-sm cursor-pointer relative ${
-                      showSubtasks 
-                        ? 'translate-y-0 opacity-100' 
-                        : '-translate-y-2 opacity-0'
-                    }`}
-                    style={{ 
-                      transitionDelay: showSubtasks ? `${index * 50}ms` : '0ms'
-                                          }}
+            {/* Subtasks display - simplified to match back side pattern */}
+            <div className={`flex-1 overflow-hidden relative ${showSubtasks && subtasks.length > 0 ? 'min-h-[200px]' : ''}`}>
+            <div className="absolute inset-0 overflow-y-auto hide-scrollbar pl-1.5 pr-2">
+                <div className="pt-1 border-l-2 border-cyan-200/30 dark:border-cyan-800/30 pr-1 space-y-1">
+                  {subtasks.map((subtask, index) => (
+                    <div 
+                      key={subtask.id} 
+                      className={`flex items-start gap-2 text-xs bg-gray-100/50 dark:bg-gray-800/50 rounded px-2 py-1 transform transition-all duration-300 ease-in-out hover:bg-gray-200/50 dark:hover:bg-gray-700/50 hover:shadow-sm cursor-pointer relative ${
+                        showSubtasks 
+                          ? 'translate-y-0 opacity-100' 
+                          : '-translate-y-2 opacity-0'
+                      }`}
+                      style={{ 
+                        transitionDelay: showSubtasks ? `${index * 50}ms` : '0ms'
+                      }}
                       onClick={(e) => handleSubtaskClick(subtask.id, e)}
                     >
-                                        <span className={`flex-1 text-gray-600 dark:text-gray-400 text-[11px] ${
-                      expandedSubtask === subtask.id ? 'whitespace-normal break-words' : 'truncate'
-                    }`}>
-                      {subtask.title}
-                    </span>
- 
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 flex-shrink-0 ${
-                      subtask.status === 'complete' ? 'bg-green-200 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                      subtask.status === 'in-progress' ? 'bg-blue-200 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
-                      subtask.status === 'review' ? 'bg-purple-200 text-purple-800 dark:bg-purple-900 dark:text-purple-200' :
-                      'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-                    }`}>
-                      {subtask.status === 'backlog' ? 'Backlog' :
-                       subtask.status === 'in-progress' ? 'In Progress' :
-                       subtask.status === 'review' ? 'Review' : 'Complete'}
-                    </span>
-                  </div>
-                ))}
+                      <span className={`flex-1 text-gray-600 dark:text-gray-400 text-[11px] ${
+                        expandedSubtask === subtask.id ? 'whitespace-normal break-words' : 'truncate'
+                      }`}>
+                        {subtask.title}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 flex-shrink-0 ${
+                        subtask.status === 'complete' ? 'bg-green-200 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                        subtask.status === 'in-progress' ? 'bg-blue-200 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
+                        subtask.status === 'review' ? 'bg-purple-200 text-purple-800 dark:bg-purple-900 dark:text-purple-200' :
+                        'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+                      }`}>
+                        {subtask.status === 'backlog' ? 'Backlog' :
+                         subtask.status === 'in-progress' ? 'In Progress' :
+                         subtask.status === 'review' ? 'Review' : 'Complete'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
-          
-          <div className="flex items-center justify-between mt-auto pt-2 pl-1.5 pr-3">
-            <div className="flex items-center gap-2">
-              <div className="flex items-center justify-center w-5 h-5 rounded-full bg-white/80 dark:bg-black/70 border border-gray-300/50 dark:border-gray-700/50 backdrop-blur-md" 
-                   style={{boxShadow: getAssigneeGlow(task.assignee?.name || 'User')}}
+            
+            <div className="flex items-center justify-between mt-auto pt-2 pl-1.5 pr-3">
+              <div className="flex items-center gap-2">
+                <div className="flex items-center justify-center w-5 h-5 rounded-full bg-white/80 dark:bg-black/70 border border-gray-300/50 dark:border-gray-700/50 backdrop-blur-md" 
+                     style={{boxShadow: getAssigneeGlow(task.assignee?.name || 'User')}}
+                >
+                  {getAssigneeIcon(task.assignee?.name || 'User')}
+                </div>
+                <span className="text-gray-600 dark:text-gray-400 text-xs">{task.assignee?.name || 'User'}</span>
+              </div>
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigator.clipboard.writeText(task.id);
+                  // Optional: Add a small toast or visual feedback here
+                  const button = e.currentTarget;
+                  const originalHTML = button.innerHTML;
+                  button.innerHTML = '<span class="text-green-500">Copied!</span>';
+                  setTimeout(() => {
+                    button.innerHTML = originalHTML;
+                  }, 2000);
+                }}
+                className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+                title="Copy Task ID to clipboard"
               >
-                {getAssigneeIcon(task.assignee?.name || 'User')}
-              </div>
-              <span className="text-gray-600 dark:text-gray-400 text-xs">{task.assignee?.name || 'User'}</span>
+                <Clipboard className="w-3 h-3" />
+                <span>Task ID</span>
+              </button>
             </div>
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                navigator.clipboard.writeText(task.id);
-                // Optional: Add a small toast or visual feedback here
-                const button = e.currentTarget;
-                const originalHTML = button.innerHTML;
-                button.innerHTML = '<span class="text-green-500">Copied!</span>';
-                setTimeout(() => {
-                  button.innerHTML = originalHTML;
-                }, 2000);
-              }}
-              className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
-              title="Copy Task ID to clipboard"
-            >
-              <Clipboard className="w-3 h-3" />
-              <span>Task ID</span>
-            </button>
           </div>
         </div>
         
@@ -446,7 +443,7 @@ const ColumnDropZone = ({
       ref={ref} 
       className={`flex flex-col bg-white/20 dark:bg-black/30 ${isOver ? 'bg-gray-100/50 dark:bg-gray-800/20 border-t-2 border-t-[#00ff00] shadow-[inset_0_1px_10px_rgba(0,255,0,0.1)]' : ''} transition-colors duration-200 h-full`}
     >
-      <div className="text-center py-3 relative sticky top-0 z-10 bg-white/80 dark:bg-black/80 backdrop-blur-sm">
+      <div className="text-center py-3 sticky top-0 z-10 bg-white/80 dark:bg-black/80 backdrop-blur-sm">
         <h3 className={`font-mono ${getColumnColor()} text-sm`}>{title}</h3>
         {/* Column header divider with glow */}
         <div className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[1px] ${getColumnGlow()}`}></div>

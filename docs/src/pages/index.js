@@ -530,7 +530,7 @@ function HomepageContent() {
               <h2>🎯 Next Steps</h2>
               <ol>
                 <li><strong><Link to="/getting-started">Set up Archon</Link></strong> - Get your knowledge engine running</li>
-                <li><strong><Link to="/mcp-reference">Connect your AI client</Link></strong> - Integrate with Cursor, Windsurf, or Claude Desktop</li>
+                <li><strong><Link to="/mcp-overview">Connect your AI client</Link></strong> - Integrate with Cursor, Windsurf, or Claude Desktop</li>
                 <li><strong><Link to="/getting-started#building-your-knowledge-base">Build your knowledge base</Link></strong> - Start crawling and uploading content</li>
                 <li><strong><Link to="/rag">Optimize for your use case</Link></strong> - Configure RAG strategies</li>
                 <li><strong><Link to="/deployment">Deploy to production</Link></strong> - Scale for team or enterprise use</li>

@@ -305,5 +305,29 @@ async def set_credential(key: str, value: str, is_encrypted: bool = False,
     return await credential_service.set_credential(key, value, is_encrypted, category, description)
 
 async def initialize_credentials() -> None:
-    """Initialize the credential service by loading all credentials."""
-    await credential_service.load_all_credentials() 
+    """Initialize the credential service by loading all credentials and setting environment variables."""
+    await credential_service.load_all_credentials()
+    
+    # Set critical credentials as environment variables for child processes
+    critical_credentials = [
+        "OPENAI_API_KEY",
+        "HOST", 
+        "PORT",
+        "TRANSPORT",
+        "MODEL_CHOICE",
+        "USE_CONTEXTUAL_EMBEDDINGS",
+        "USE_HYBRID_SEARCH", 
+        "USE_AGENTIC_RAG",
+        "USE_RERANKING"
+    ]
+    
+    for key in critical_credentials:
+        try:
+            value = await credential_service.get_credential(key, decrypt=True)
+            if value:
+                os.environ[key] = str(value)
+                logger.info(f"Set environment variable: {key}")
+        except Exception as e:
+            logger.warning(f"Failed to set environment variable {key}: {e}")
+    
+    logger.info("✅ Credentials loaded and environment variables set") 

@@ -28,6 +28,7 @@ services:
     volumes:
       - ./python/src:/app/src
       - ./python/tests:/app/tests
+      - /var/run/docker.sock:/var/run/docker.sock
 
   frontend:
     build: ./archon-ui-main

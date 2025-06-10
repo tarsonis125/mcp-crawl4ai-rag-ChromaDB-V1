@@ -5,7 +5,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import { useToast } from '../contexts/ToastContext';
-import { mcpService, ServerStatus, LogEntry, ServerConfig } from '../services/mcpService';
+import { mcpServerService, ServerStatus, LogEntry, ServerConfig } from '../services/mcpServerService';
 import { MCPClients } from '../components/mcp/MCPClients';
 
 /**
@@ -71,7 +71,7 @@ export const MCPPage = () => {
       if (statusPollInterval.current) {
         clearInterval(statusPollInterval.current);
       }
-      mcpService.disconnectLogs();
+      mcpServerService.disconnectLogs();
     };
   }, []);
 
@@ -79,12 +79,12 @@ export const MCPPage = () => {
   useEffect(() => {
     if (serverStatus.status === 'running') {
       // Fetch historical logs first (last 100 entries)
-      mcpService.getLogs({ limit: 100 }).then(historicalLogs => {
+      mcpServerService.getLogs({ limit: 100 }).then(historicalLogs => {
         setLogs(historicalLogs);
       }).catch(console.error);
 
       // Then start streaming new logs via WebSocket
-      mcpService.streamLogs((log) => {
+      mcpServerService.streamLogs((log) => {
         setLogs(prev => [...prev, log]);
       }, { autoReconnect: true });
       
@@ -93,7 +93,7 @@ export const MCPPage = () => {
         loadConfiguration();
       }
     } else {
-      mcpService.disconnectLogs();
+      mcpServerService.disconnectLogs();
     }
   }, [serverStatus.status]);
 
@@ -110,7 +110,7 @@ export const MCPPage = () => {
    */
   const loadStatus = async () => {
     try {
-      const status = await mcpService.getStatus();
+      const status = await mcpServerService.getStatus();
       setServerStatus(status);
       setIsLoading(false);
     } catch (error) {
@@ -125,7 +125,7 @@ export const MCPPage = () => {
    */
   const loadConfiguration = async () => {
     try {
-      const cfg = await mcpService.getConfiguration();
+      const cfg = await mcpServerService.getConfiguration();
       console.log('Loaded configuration:', cfg);
       setConfig(cfg);
     } catch (error) {
@@ -150,7 +150,7 @@ export const MCPPage = () => {
       setIsStarting(true);
       // Update transport before starting
       await updateTransport(selectedTransport);
-      const response = await mcpService.startServer();
+      const response = await mcpServerService.startServer();
       showToast(response.message, 'success');
       // Immediately refresh status
       await loadStatus();
@@ -164,7 +164,7 @@ export const MCPPage = () => {
   const handleStopServer = async () => {
     try {
       setIsStopping(true);
-      const response = await mcpService.stopServer();
+      const response = await mcpServerService.stopServer();
       showToast(response.message, 'success');
       // Clear logs when server stops
       setLogs([]);
@@ -179,7 +179,7 @@ export const MCPPage = () => {
 
   const handleClearLogs = async () => {
     try {
-      await mcpService.clearLogs();
+      await mcpServerService.clearLogs();
       setLogs([]);
       showToast('Logs cleared', 'success');
     } catch (error) {

@@ -69,66 +69,29 @@ class MCPServerManager:
             
             try:
                 # Set up environment variables for the MCP server
+                # Use environment variables that were set during FastAPI startup from credential service
                 env = os.environ.copy()
                 
-                # Try to get credentials from database first, fallback to env vars
-                try:
-                    from ..credential_service import credential_service
-                    
-                    # Get configuration from database
-                    openai_key = await credential_service.get_credential('OPENAI_API_KEY', decrypt=True)
-                    model_choice = await credential_service.get_credential('MODEL_CHOICE', 'gpt-4o-mini')
-                    transport = await credential_service.get_credential('TRANSPORT', 'sse')
-                    host = await credential_service.get_credential('HOST', '0.0.0.0')
-                    port = await credential_service.get_credential('PORT', '8051')
-                    
-                    # RAG strategy flags
-                    use_contextual = await credential_service.get_credential('USE_CONTEXTUAL_EMBEDDINGS', 'false')
-                    use_hybrid = await credential_service.get_credential('USE_HYBRID_SEARCH', 'false')
-                    use_agentic = await credential_service.get_credential('USE_AGENTIC_RAG', 'false')
-                    use_reranking = await credential_service.get_credential('USE_RERANKING', 'false')
-                    
-                    env.update({
-                        'OPENAI_API_KEY': str(openai_key) if openai_key else '',
-                        'SUPABASE_URL': os.getenv('SUPABASE_URL', ''),
-                        'SUPABASE_SERVICE_KEY': os.getenv('SUPABASE_SERVICE_KEY', ''),
-                        'HOST': str(host),
-                        'PORT': str(port),
-                        'TRANSPORT': str(transport),
-                        'MODEL_CHOICE': str(model_choice),
-                        'USE_CONTEXTUAL_EMBEDDINGS': str(use_contextual).lower(),
-                        'USE_HYBRID_SEARCH': str(use_hybrid).lower(),
-                        'USE_AGENTIC_RAG': str(use_agentic).lower(),
-                        'USE_RERANKING': str(use_reranking).lower(),
-                    })
-                    
-                    self._add_log('INFO', 'Using database configuration')
-                    mcp_logger.info("MCP server configuration loaded from database", 
-                                  transport=transport, host=host, port=port, model=model_choice)
-                    
-                except Exception as e:
-                    # Log the error but don't fallback to environment variables
-                    # All configuration should come from the database
-                    self._add_log('ERROR', f'Failed to load credentials from database: {e}')
-                    self._add_log('ERROR', 'Please ensure all credentials are set via the Settings page')
-                    mcp_logger.error("Failed to load MCP server credentials from database", error=str(e))
-                    
-                    # Set minimal environment for MCP server with empty values
-                    env.update({
-                        'OPENAI_API_KEY': '',  # Don't override database credentials
-                        'SUPABASE_URL': os.getenv('SUPABASE_URL', ''),  # Still need these for connection
-                        'SUPABASE_SERVICE_KEY': os.getenv('SUPABASE_SERVICE_KEY', ''),
-                        'HOST': '0.0.0.0',
-                        'PORT': '8051',
-                        'TRANSPORT': 'sse',
-                        'MODEL_CHOICE': 'gpt-4o-mini',
-                        'USE_CONTEXTUAL_EMBEDDINGS': 'false',
-                        'USE_HYBRID_SEARCH': 'false',
-                        'USE_AGENTIC_RAG': 'false',
-                        'USE_RERANKING': 'false',
-                    })
-                    
-                    self._add_log('WARNING', 'Started MCP server with default configuration due to database error')
+                # Verify and log key environment variables
+                openai_key_found = bool(env.get('OPENAI_API_KEY'))
+                transport = env.get('TRANSPORT', 'sse')
+                host = env.get('HOST', '0.0.0.0')
+                port = env.get('PORT', '8051')
+                model_choice = env.get('MODEL_CHOICE', 'gpt-4o-mini')
+                
+                # Ensure Supabase environment variables are available
+                env.update({
+                    'SUPABASE_URL': os.getenv('SUPABASE_URL', ''),
+                    'SUPABASE_SERVICE_KEY': os.getenv('SUPABASE_SERVICE_KEY', ''),
+                })
+                
+                # Debug logging
+                self._add_log('INFO', f'MCP server environment - OpenAI key: {"Found" if openai_key_found else "Not found"}')
+                self._add_log('INFO', f'Configuration: transport={transport}, host={host}, port={port}, model={model_choice}')
+                
+                mcp_logger.info("MCP server configuration from environment", 
+                              transport=transport, host=host, port=port, model=model_choice, 
+                              openai_key_available=openai_key_found)
                 
                 # Start the MCP server process (using uv like the old working version)
                 cmd = ['uv', 'run', 'python', 'src/mcp_server.py']

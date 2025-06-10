@@ -26,10 +26,18 @@ module.exports = {
     },
     {
       type: 'category',
+      label: 'MCP',
+      items: [
+        'mcp-overview',
+        'mcp-server',
+        'mcp-client',
+      ],
+    },
+    {
+      type: 'category',
       label: 'API Reference',
       items: [
         'api-reference',
-        'mcp-reference',
       ],
     },
     {

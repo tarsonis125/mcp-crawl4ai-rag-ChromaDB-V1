@@ -1,0 +1,772 @@
+---
+title: 🔌 MCP Client Documentation  
+sidebar_position: 7
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import Admonition from '@theme/Admonition';
+
+# 🔌 Universal MCP Client Documentation
+
+<div className="hero hero--primary">
+  <div className="container">
+    <h1 className="hero__title">
+      **Connect to Any MCP Server**
+    </h1>
+    <h2 className="hero__subtitle">
+      Universal client for **testing**, **managing**, and **integrating** with any MCP server
+    </h2>
+  </div>
+</div>
+
+## 🎯 Overview
+
+Archon's Universal MCP Client allows you to connect to and interact with any MCP (Model Context Protocol) server directly from Archon's web interface. Test tools, manage connections, and integrate multiple MCP servers into your workflow with a beautiful, intuitive UI.
+
+## ✨ Key Features
+
+<div className="row">
+  <div className="col col--6">
+    <div className="card">
+      <div className="card__header">
+        <h3>🌐 **Universal Connectivity**</h3>
+      </div>
+      <div className="card__body">
+        <ul>
+          <li>✅ **Multiple transports**: stdio, Docker, SSE, NPX</li>
+          <li>🔄 **Real-time connection status** monitoring</li>
+          <li>🎯 **Automatic tool discovery** from connected servers</li>
+          <li>⚡ **Connection pooling** and session management</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div className="col col--6">
+    <div className="card">
+      <div className="card__header">
+        <h3>🧪 **Interactive Testing**</h3>
+      </div>
+      <div className="card__body">
+        <ul>
+          <li>🛠️ **Real-time tool execution** with live results</li>
+          <li>📊 **Parameter validation** and type checking</li>
+          <li>🎨 **Beautiful UI** for tool testing and exploration</li>
+          <li>📡 **WebSocket updates** for collaborative workflows</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+## 🚀 Quick Start
+
+### 1. Access the MCP Client
+
+1. **Open Archon**: Navigate to `http://localhost:3737`
+2. **Go to MCP Page**: Click on "MCP" in the sidebar
+3. **Switch to Client Tab**: Click the "MCP Clients" tab
+
+<Admonition type="tip" icon="💡" title="First Time Setup">
+
+The MCP Client tab is part of Archon's main interface. If you don't see it, make sure Archon is running and you've accessed the correct URL.
+
+</Admonition>
+
+### 2. Pre-configured Clients
+
+Archon comes with several pre-configured clients for immediate testing:
+
+| Client | Type | Description | Status |
+|--------|------|-------------|---------|
+| **🏰 Archon** | Docker | Your local Archon instance | ✅ Real connection |
+| **🔍 Brave Search** | NPX | Web search capabilities | 🧪 Demo (for UI testing) |
+| **📁 Filesystem** | stdio | Local file operations | 🧪 Demo (for UI testing) |
+| **🐙 GitHub** | SSE | Repository management | 🧪 Demo (for UI testing) |
+
+### 3. Test Your First Tool
+
+1. **Select Archon Client**: Click on the Archon client card
+2. **Browse Available Tools**: See all 25 tools from your local server
+3. **Try a Health Check**: Click on `health_check` and execute it
+4. **View Real Results**: See live data from your Archon instance
+
+## 🔧 Configuration
+
+### Supported Transport Types
+
+<Tabs>
+<TabItem value="docker" label="🐳 Docker" default>
+
+**Best for**: Containerized MCP servers, Archon instances
+
+```json title="Docker Configuration Example"
+{
+  "name": "External Archon",
+  "transport": "docker",
+  "config": {
+    "container": "other-archon-pyserver",
+    "command": ["python", "/app/src/main.py"],
+    "workingDir": "/app",
+    "environment": {
+      "TRANSPORT": "stdio"
+    }
+  }
+}
+```
+
+**Use Cases:**
+- ✅ Connecting to other Archon instances
+- ✅ Containerized MCP servers
+- ✅ Development and testing environments
+- ✅ Isolated server environments
+
+</TabItem>
+<TabItem value="stdio" label="📡 stdio">
+
+**Best for**: Local executables, Python scripts, direct process communication
+
+```json title="stdio Configuration Example"
+{
+  "name": "Local Python MCP",
+  "transport": "stdio", 
+  "config": {
+    "command": "python",
+    "args": ["/path/to/mcp-server.py"],
+    "workingDir": "/path/to/server",
+    "environment": {
+      "PYTHONPATH": "/path/to/server"
+    }
+  }
+}
+```
+
+**Use Cases:**
+- ✅ Local development servers
+- ✅ Python MCP implementations
+- ✅ Direct executable communication
+- ✅ Custom server scripts
+
+</TabItem>
+<TabItem value="sse" label="🌐 Server-Sent Events (SSE)">
+
+**Best for**: Remote MCP servers, web-based servers, HTTP APIs
+
+```json title="SSE Configuration Example"
+{
+  "name": "Remote MCP Server",
+  "transport": "sse",
+  "config": {
+    "url": "https://example.com/mcp/sse",
+    "headers": {
+      "Authorization": "Bearer your-token-here",
+      "Content-Type": "application/json"
+    }
+  }
+}
+```
+
+**Use Cases:**
+- ✅ Remote MCP servers
+- ✅ Cloud-hosted services
+- ✅ Authenticated endpoints
+- ✅ Cross-network connections
+
+</TabItem>
+<TabItem value="npx" label="📦 NPX">
+
+**Best for**: Node.js MCP packages, npm-published servers
+
+```json title="NPX Configuration Example"
+{
+  "name": "Brave Search MCP",
+  "transport": "npx",
+  "config": {
+    "package": "@modelcontextprotocol/server-brave-search",
+    "args": [],
+    "environment": {
+      "BRAVE_API_KEY": "your-brave-api-key"
+    }
+  }
+}
+```
+
+**Use Cases:**
+- ✅ Published npm MCP packages
+- ✅ Node.js-based servers
+- ✅ Third-party MCP services
+- ✅ Quick package installation
+
+</TabItem>
+</Tabs>
+
+### Adding a New Client
+
+<Admonition type="info" icon="🚧" title="Database Integration Coming Soon">
+
+Currently, the UI shows pre-configured demo clients. Full database integration for custom client management is in development. You can modify the demo configurations in the code for testing.
+
+</Admonition>
+
+**Current Process (Demo Mode):**
+
+1. **Modify Configuration**: Edit `archon-ui-main/src/components/mcp/MCPClients.tsx`
+2. **Add Client Object**: Include your server configuration
+3. **Test Connection**: Use the UI to test your new configuration
+
+**Example Addition:**
+```typescript title="MCPClients.tsx modification"
+const demoClients = [
+  // ... existing clients
+  {
+    id: 'my-server',
+    name: 'My Custom Server',
+    description: 'My custom MCP server description',
+    transport: 'stdio' as const,
+    status: 'disconnected' as const,
+    config: {
+      command: 'python',
+      args: ['/path/to/my-server.py']
+    }
+  }
+];
+```
+
+**Coming Soon: Database Management**
+- ✅ Add/edit/delete clients via UI
+- ✅ Persistent client configurations
+- ✅ Connection management and monitoring
+- ✅ Advanced configuration options
+
+## 🎮 Using the Client Interface
+
+### Client Management
+
+<div className="row">
+  <div className="col col--6">
+    <div className="card">
+      <div className="card__header">
+        <h4>📋 **Client Cards**</h4>
+      </div>
+      <div className="card__body">
+        <ul>
+          <li>**Status Indicators**: Real-time connection status</li>
+          <li>**Transport Badges**: Visual transport type identification</li>
+          <li>**Tool Counts**: Number of available tools per client</li>
+          <li>**Quick Actions**: Connect, disconnect, test buttons</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div className="col col--6">
+    <div className="card">
+      <div className="card__header">
+        <h4>🛠️ **Tool Testing Panel**</h4>
+      </div>
+      <div className="card__body">
+        <ul>
+          <li>**Tool Discovery**: Automatic tool enumeration</li>
+          <li>**Parameter Forms**: Auto-generated input forms</li>
+          <li>**Real-time Execution**: Live tool execution</li>
+          <li>**Result Display**: Formatted response viewing</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+### Connection States
+
+| Status | Icon | Description | Actions Available |
+|--------|------|-------------|-------------------|
+| **Connected** | 🟢 | Active connection to MCP server | Test tools, disconnect |
+| **Connecting** | 🟡 | Establishing connection | Wait, cancel |
+| **Disconnected** | 🔴 | No active connection | Connect, configure |
+| **Error** | ❌ | Connection failed or error state | Retry, check configuration |
+
+### Tool Testing Workflow
+
+1. **Select Client**: Click on a connected client card
+2. **Browse Tools**: View available tools in the testing panel
+3. **Select Tool**: Click on the tool you want to test
+4. **Fill Parameters**: Complete any required parameters
+5. **Execute**: Click "Call Tool" to execute
+6. **View Results**: See real-time results in the response area
+
+<Tabs>
+<TabItem value="archon-tools" label="🏰 Archon Tools" default>
+
+**Testing Archon's local tools:**
+
+```javascript title="Example: health_check tool"
+// Tool: health_check
+// Parameters: None required
+// Expected Response:
+{
+  "status": "healthy",
+  "server": "running", 
+  "database": "connected",
+  "tools_available": 25,
+  "version": "2.0.0"
+}
+```
+
+```javascript title="Example: perform_rag_query tool"
+// Tool: perform_rag_query  
+// Parameters: 
+{
+  "query": "authentication best practices",
+  "match_count": 5
+}
+// Response: Relevant knowledge base results
+```
+
+</TabItem>
+<TabItem value="demo-tools" label="🧪 Demo Tools">
+
+**Testing demo client tools:**
+
+```javascript title="Example: Brave Search (Demo)"
+// Tool: web_search
+// Parameters:
+{
+  "query": "Model Context Protocol MCP",
+  "count": 10
+}
+// Response: Simulated search results (demo data)
+```
+
+**Note**: Demo clients return simulated data for UI testing. Only Archon client returns real results.
+
+</TabItem>
+</Tabs>
+
+## 🔍 Real vs Demo Clients
+
+<Admonition type="important" icon="🎯" title="Understanding Client Types">
+
+Archon's MCP Client UI currently includes both **real connections** (Archon) and **demo clients** (for UI testing). Here's how to distinguish them:
+
+</Admonition>
+
+### 🏰 Real Clients
+
+**Archon Client:**
+- ✅ **Real Connection**: Actually connects to your local MCP server
+- ✅ **Live Tools**: All 25 tools work with real data
+- ✅ **Real Results**: Actual responses from your knowledge base
+- 🔥 **Badge**: "Real MCP Tools" badge in tool testing panel
+
+### 🧪 Demo Clients  
+
+**Brave Search, Filesystem, GitHub:**
+- 🎨 **UI Testing**: For demonstrating the interface
+- 📊 **Simulated Data**: Returns mock responses
+- 🧪 **Tool Examples**: Shows what tools would be available
+- ⚠️ **Badge**: "Demo" badge in client cards
+
+### Making Demo Clients Real
+
+To convert demo clients to real connections:
+
+1. **Install the actual MCP server** (e.g., Brave Search MCP package)
+2. **Configure proper transport settings** (stdio, NPX, etc.)
+3. **Update client configuration** with real server details
+4. **Test connection** and verify tools work
+
+## 🔧 Troubleshooting
+
+### Real-time Updates
+
+The MCP Client interface includes WebSocket integration for real-time updates:
+
+- **Connection Status**: Live connection state changes
+- **Tool Availability**: Real-time tool discovery updates  
+- **Execution Results**: Live tool execution feedback
+- **Error Notifications**: Instant error reporting
+
+### Debug Information
+
+<Tabs>
+<TabItem value="client-debug" label="🔍 Client Debugging" default>
+
+**View client connection details:**
+
+```javascript title="Browser Developer Tools"
+// Check WebSocket connections
+console.log(window.mcpClientConnections);
+
+// View tool execution logs
+console.log(window.mcpToolExecutions);
+
+// Debug connection errors
+console.log(window.mcpClientErrors);
+```
+
+</TabItem>
+<TabItem value="server-debug" label="🛠️ Server Debugging">
+
+**Monitor server-side MCP client operations:**
+
+```bash
+# View MCP client service logs
+docker logs archon-pyserver | grep "mcp_client"
+
+# Debug specific client connections
+docker exec archon-pyserver python -c "
+from src.services.mcp_client_service import MCPClientService
+service = MCPClientService()
+print('Active connections:', service.list_connections())
+"
+```
+
+</TabItem>
+</Tabs>
+
+### Common Issues
+
+#### Connection Problems
+
+**Symptoms:**
+- Client shows "Error" status
+- Tools not loading
+- Connection timeouts
+
+**Solutions:**
+
+<Tabs>
+<TabItem value="docker-issues" label="🐳 Docker Transport" default>
+
+```bash
+# Check if target container exists
+docker ps | grep your-container-name
+
+# Test docker exec access
+docker exec -i your-container-name echo "test"
+
+# Verify MCP server in container
+docker exec your-container-name python /path/to/mcp-server.py --test
+```
+
+</TabItem>
+<TabItem value="stdio-issues" label="📡 stdio Transport">
+
+```bash
+# Test command execution
+python /path/to/mcp-server.py --test
+
+# Check file permissions
+ls -la /path/to/mcp-server.py
+
+# Verify Python path
+which python
+```
+
+</TabItem>
+<TabItem value="sse-issues" label="🌐 SSE Transport">
+
+```bash
+# Test SSE endpoint
+curl -N -H "Accept: text/event-stream" https://your-server.com/sse
+
+# Check network connectivity
+ping your-server.com
+
+# Verify SSL certificates for HTTPS endpoints
+```
+
+</TabItem>
+</Tabs>
+
+#### Tool Execution Failures
+
+**Common causes and solutions:**
+
+1. **Missing Parameters**: Ensure all required parameters are provided
+2. **Type Mismatches**: Check parameter types match tool schema
+3. **Authentication**: Verify API keys and credentials are configured
+4. **Server Errors**: Check MCP server logs for detailed error messages
+
+## 🔮 Advanced Features
+
+### Multi-Client Workflows
+
+**Combine tools from different MCP servers:**
+
+1. **Knowledge Gathering**: Use Brave Search to find information
+2. **Data Processing**: Process results with Archon's RAG tools
+3. **File Management**: Save results using Filesystem MCP
+4. **Version Control**: Commit changes with GitHub MCP
+
+### Custom Client Integration
+
+**For advanced users, integrate custom MCP servers:**
+
+```python title="Custom MCP Server Integration"
+from src.services.mcp_client_service import MCPClientService
+
+# Create client configuration
+config = {
+    "name": "Custom Server",
+    "transport": "stdio",
+    "config": {
+        "command": "python",
+        "args": ["/path/to/custom-server.py"]
+    }
+}
+
+# Add to client service
+client_service = MCPClientService()
+client_id = await client_service.add_client(config)
+await client_service.connect_client(client_id)
+```
+
+### Automation & Scripting
+
+**Use the MCP Client programmatically:**
+
+```javascript title="Frontend Integration"
+// Connect to client
+await mcpClientService.connectClient('archon');
+
+// Execute tool
+const result = await mcpClientService.callTool(
+  'archon', 
+  'perform_rag_query',
+  { query: 'authentication', match_count: 5 }
+);
+
+// Process results
+console.log('RAG Results:', result);
+```
+
+## 🚀 Future Enhancements
+
+### Planned Features
+
+<div className="row">
+  <div className="col col--6">
+    <div className="card">
+      <div className="card__header">
+        <h4>🗄️ **Database Integration**</h4>
+      </div>
+      <div className="card__body">
+        <ul>
+          <li>✅ Persistent client configurations</li>
+          <li>✅ Add/edit/delete clients via UI</li>
+          <li>✅ Connection history and analytics</li>
+          <li>✅ Client grouping and organization</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div className="col col--6">
+    <div className="card">
+      <div className="card__header">
+        <h4>🤖 **Agent Integration**</h4>
+      </div>
+      <div className="card__body">
+        <ul>
+          <li>✅ Multi-client tool access for agents</li>
+          <li>✅ Tool routing and conflict resolution</li>
+          <li>✅ Agent-specific client preferences</li>
+          <li>✅ Real-time tool availability updates</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+### Advanced Monitoring
+
+- **📊 Tool Usage Analytics**: Track which tools are used most
+- **⚡ Performance Metrics**: Monitor tool execution times  
+- **🔄 Connection Health**: Advanced connection monitoring
+- **📈 Scaling Insights**: Multi-client performance optimization
+
+## 💡 Best Practices
+
+### Security
+
+1. **Credential Management**: Store API keys securely, never in client configs
+2. **Transport Security**: Use HTTPS/WSS for remote connections
+3. **Access Control**: Limit client access based on security requirements
+4. **Input Validation**: Sanitize all tool parameters
+
+### Performance
+
+1. **Connection Pooling**: Reuse connections when possible
+2. **Tool Caching**: Cache tool schemas and metadata  
+3. **Async Operations**: Use async patterns for multiple clients
+4. **Resource Management**: Properly close unused connections
+
+### Reliability
+
+1. **Error Handling**: Implement comprehensive error handling
+2. **Retry Logic**: Add retry mechanisms for transient failures
+3. **Health Monitoring**: Regular health checks for all clients
+4. **Graceful Degradation**: Handle client failures gracefully
+
+## 📚 Integration Examples
+
+### Popular MCP Servers
+
+<Tabs>
+<TabItem value="brave" label="🔍 Brave Search" default>
+
+**Setup Brave Search MCP:**
+
+```bash
+# Install via NPX
+npx @modelcontextprotocol/server-brave-search
+
+# Configuration
+{
+  "name": "Brave Search",
+  "transport": "npx",
+  "config": {
+    "package": "@modelcontextprotocol/server-brave-search",
+    "environment": {
+      "BRAVE_API_KEY": "your-api-key"
+    }
+  }
+}
+```
+
+**Available Tools:**
+- `web_search`: Search the web
+- `local_search`: Find local businesses
+
+</TabItem>
+<TabItem value="github" label="🐙 GitHub">
+
+**Setup GitHub MCP:**
+
+```bash
+# Install GitHub MCP
+npm install @modelcontextprotocol/server-github
+
+# Configuration  
+{
+  "name": "GitHub",
+  "transport": "npx",
+  "config": {
+    "package": "@modelcontextprotocol/server-github",
+    "environment": {
+      "GITHUB_PERSONAL_ACCESS_TOKEN": "your-token"
+    }
+  }
+}
+```
+
+**Available Tools:**
+- `create_repository`: Create new repos
+- `search_repositories`: Search GitHub
+- `create_issue`: Create issues
+- `get_file_contents`: Read files
+
+</TabItem>
+<TabItem value="filesystem" label="📁 Filesystem">
+
+**Setup Filesystem MCP:**
+
+```bash
+# Install Filesystem MCP
+npm install @modelcontextprotocol/server-filesystem
+
+# Configuration
+{
+  "name": "Filesystem", 
+  "transport": "npx",
+  "config": {
+    "package": "@modelcontextprotocol/server-filesystem",
+    "args": ["/allowed/path"]
+  }
+}
+```
+
+**Available Tools:**
+- `read_file`: Read file contents
+- `write_file`: Write to files  
+- `create_directory`: Create directories
+- `list_directory`: List directory contents
+
+</TabItem>
+</Tabs>
+
+### Custom Server Example
+
+**Create a simple custom MCP server:**
+
+```python title="custom_mcp_server.py"
+import asyncio
+import json
+from mcp.server import Server
+from mcp.server.models import InitializationOptions
+from mcp.types import Tool, TextContent
+
+app = Server("custom-server")
+
+@app.list_tools()
+async def handle_list_tools() -> list[Tool]:
+    return [
+        Tool(
+            name="hello_world",
+            description="Say hello to the world",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Name to greet"}
+                },
+                "required": ["name"]
+            }
+        )
+    ]
+
+@app.call_tool()
+async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
+    if name == "hello_world":
+        person_name = arguments.get("name", "World")
+        return [TextContent(type="text", text=f"Hello, {person_name}!")]
+
+async def main():
+    async with Server.run(
+        transport="stdio",
+        initialization_options=InitializationOptions(
+            server_name="custom-server",
+            server_version="1.0.0"
+        )
+    ) as server:
+        await server.wait_for_shutdown()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+**Add to MCP Client:**
+```json
+{
+  "name": "Custom Hello Server",
+  "transport": "stdio", 
+  "config": {
+    "command": "python",
+    "args": ["custom_mcp_server.py"]
+  }
+}
+```
+
+---
+
+<div className="text--center">
+  <p><strong>🌟 Ready to connect to the MCP ecosystem?</strong></p>
+  <p>Start exploring and testing MCP servers with Archon's Universal MCP Client!</p>
+  
+  <div className="margin-top--lg">
+    <a href="/mcp-server" className="button button--secondary button--lg margin-right--md">
+      ← MCP Server Docs
+    </a>
+    <a href="/mcp-overview" className="button button--primary button--lg">
+      🔌 MCP Overview →
+    </a>
+  </div>
+</div> 

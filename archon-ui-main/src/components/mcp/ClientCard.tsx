@@ -1,19 +1,25 @@
-import React, { useEffect, useState, useRef, createElement } from 'react';
-import { Server, Activity, Clock, ChevronRight, Hammer } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { Server, Activity, Clock, ChevronRight, Hammer, Settings } from 'lucide-react';
 import { Client } from './MCPClients';
+
 interface ClientCardProps {
   client: Client;
   onSelect: () => void;
+  onEdit?: (client: Client) => void;
 }
+
 export const ClientCard = ({
   client,
-  onSelect
+  onSelect,
+  onEdit
 }: ClientCardProps) => {
   const [isFlipped, setIsFlipped] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const particlesRef = useRef<HTMLDivElement>(null);
+
   // Special styling for Archon client
-  const isArchonClient = client.isArchon === true;
+  const isArchonClient = client.name.includes('Archon') || client.name.includes('archon');
+
   // Status-based styling
   const statusConfig = {
     online: {
@@ -38,176 +44,219 @@ export const ClientCard = ({
       pulse: 'bg-pink-400'
     }
   };
-  // Handle mouse movement for neon trail effect
+
+  // Handle mouse movement for bioluminescent effect
   useEffect(() => {
     if (!isArchonClient || !particlesRef.current) return;
 
-    let trailPoints: {x: number, y: number, timestamp: number}[] = [];
-    let trailSvg: SVGElement | null = null;
-    let lastMoveTime = 0;
+    let currentMousePos = { x: 0, y: 0 };
+    let glowOrganisms: HTMLDivElement[] = [];
+    let isMousePresent = false;
 
-    const createTrailSvg = () => {
-      if (trailSvg) return trailSvg;
+    const createBioluminescentOrganism = (targetX: number, targetY: number, delay = 0) => {
+      const organism = document.createElement('div');
+      organism.className = 'absolute rounded-full pointer-events-none';
       
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('class', 'absolute inset-0 pointer-events-none');
-      svg.setAttribute('width', '100%');
-      svg.setAttribute('height', '100%');
-      svg.style.overflow = 'visible';
+      const startX = targetX + (Math.random() - 0.5) * 100;
+      const startY = targetY + (Math.random() - 0.5) * 100;
+      const size = 8 + Math.random() * 12;
       
-      particlesRef.current?.appendChild(svg);
-      trailSvg = svg;
-      return svg;
+      organism.style.left = `${startX}px`;
+      organism.style.top = `${startY}px`;
+      organism.style.width = `${size}px`;
+      organism.style.height = `${size}px`;
+      organism.style.transform = 'translate(-50%, -50%)';
+      organism.style.opacity = '0';
+      
+      const hues = [180, 200, 220, 240, 260, 280];
+      const hue = hues[Math.floor(Math.random() * hues.length)];
+      
+      organism.style.background = 'transparent';
+      
+      organism.style.boxShadow = `
+        0 0 ${size * 2}px hsla(${hue}, 90%, 60%, 0.4),
+        0 0 ${size * 4}px hsla(${hue}, 80%, 50%, 0.25),
+        0 0 ${size * 6}px hsla(${hue}, 70%, 40%, 0.15),
+        0 0 ${size * 8}px hsla(${hue}, 60%, 30%, 0.08)
+      `;
+      
+      organism.style.filter = `blur(${2 + Math.random() * 3}px) opacity(0.6)`;
+      
+      particlesRef.current?.appendChild(organism);
+      
+      setTimeout(() => {
+        const duration = 1200 + Math.random() * 800;
+        
+        organism.style.transition = `all ${duration}ms cubic-bezier(0.2, 0.0, 0.1, 1)`;
+        organism.style.left = `${targetX + (Math.random() - 0.5) * 50}px`;
+        organism.style.top = `${targetY + (Math.random() - 0.5) * 50}px`;
+        organism.style.opacity = '0.8';
+        organism.style.transform = 'translate(-50%, -50%) scale(1.2)';
+        
+        setTimeout(() => {
+          if (!isMousePresent) {
+            organism.style.transition = `all 2500ms cubic-bezier(0.6, 0.0, 0.9, 1)`;
+            organism.style.left = `${startX + (Math.random() - 0.5) * 300}px`;
+            organism.style.top = `${startY + (Math.random() - 0.5) * 300}px`;
+            organism.style.opacity = '0';
+            organism.style.transform = 'translate(-50%, -50%) scale(0.2)';
+            organism.style.filter = `blur(${8 + Math.random() * 5}px) opacity(0.2)`;
+          }
+        }, duration + 800);
+        
+        setTimeout(() => {
+          if (particlesRef.current?.contains(organism)) {
+            particlesRef.current.removeChild(organism);
+            const index = glowOrganisms.indexOf(organism);
+            if (index > -1) glowOrganisms.splice(index, 1);
+          }
+        }, duration + 2000);
+        
+      }, delay);
+      
+      return organism;
     };
 
-    const updateTrail = () => {
-      if (!trailSvg || trailPoints.length < 2) return;
+    const spawnOrganismsTowardMouse = () => {
+      if (!isMousePresent) return;
       
-      // Clear existing path
-      trailSvg.innerHTML = '';
-      
-      // Create smooth path through all points
-      let pathData = `M ${trailPoints[0].x} ${trailPoints[0].y}`;
-      
-      for (let i = 1; i < trailPoints.length; i++) {
-        const currentPoint = trailPoints[i];
-        const prevPoint = trailPoints[i - 1];
-        
-        // Create smooth curve between points
-        const controlX = (prevPoint.x + currentPoint.x) / 2;
-        const controlY = (prevPoint.y + currentPoint.y) / 2;
-        
-        pathData += ` Q ${controlX} ${controlY} ${currentPoint.x} ${currentPoint.y}`;
+      const count = 3 + Math.random() * 4;
+      for (let i = 0; i < count; i++) {
+        const organism = createBioluminescentOrganism(
+          currentMousePos.x,
+          currentMousePos.y,
+          i * 100
+        );
+        glowOrganisms.push(organism);
       }
-      
-      // Create the glowing trail path
-      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      path.setAttribute('d', pathData);
-      path.setAttribute('stroke', 'rgba(59, 130, 246, 0.8)');
-      path.setAttribute('stroke-width', '3');
-      path.setAttribute('fill', 'none');
-      path.setAttribute('stroke-linecap', 'round');
-      path.setAttribute('stroke-linejoin', 'round');
-      
-      // Add glow effects with multiple paths
-      const glowPath1 = path.cloneNode() as SVGPathElement;
-      glowPath1.setAttribute('stroke', 'rgba(168, 85, 247, 0.6)');
-      glowPath1.setAttribute('stroke-width', '6');
-      glowPath1.setAttribute('filter', 'blur(2px)');
-      
-      const glowPath2 = path.cloneNode() as SVGPathElement;
-      glowPath2.setAttribute('stroke', 'rgba(59, 130, 246, 0.4)');
-      glowPath2.setAttribute('stroke-width', '10');
-      glowPath2.setAttribute('filter', 'blur(4px)');
-      
-      // Add paths in order (largest glow first)
-      trailSvg.appendChild(glowPath2);
-      trailSvg.appendChild(glowPath1);
-      trailSvg.appendChild(path);
-      
-      // Animate the trail fade
-      const fadeAnimation = trailSvg.animate([
-        { opacity: 1 },
-        { opacity: 0 }
-      ], {
-        duration: 2000,
-        easing: 'ease-out',
-        fill: 'forwards'
-      });
+    };
+
+    const handleMouseEnter = () => {
+      isMousePresent = true;
+      clearInterval(ambientInterval);
+      ambientInterval = setInterval(createAmbientGlow, 1500);
     };
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!particlesRef.current) return;
       
-      // Throttle movement tracking
-      const now = Date.now();
-      if (now - lastMoveTime < 30) return;
-      lastMoveTime = now;
-      
       const rect = particlesRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-
-      // Add new point to trail
-      trailPoints.push({ x, y, timestamp: now });
+      currentMousePos.x = e.clientX - rect.left;
+      currentMousePos.y = e.clientY - rect.top;
       
-      // Remove old points (keep trail length manageable)
-      trailPoints = trailPoints.filter(point => now - point.timestamp < 1500);
+      isMousePresent = true;
       
-      // Create/update trail SVG
-      createTrailSvg();
-      updateTrail();
+      if (Math.random() < 0.4) {
+        spawnOrganismsTowardMouse();
+      }
     };
+
+    const handleMouseLeave = () => {
+      setTimeout(() => {
+        isMousePresent = false;
+        clearInterval(ambientInterval);
+      }, 800);
+    };
+
+    const createAmbientGlow = () => {
+      if (!particlesRef.current || isMousePresent) return;
+      
+      const x = Math.random() * particlesRef.current.clientWidth;
+      const y = Math.random() * particlesRef.current.clientHeight;
+      const organism = createBioluminescentOrganism(x, y);
+      
+      organism.style.opacity = '0.3';
+      organism.style.filter = `blur(${4 + Math.random() * 4}px) opacity(0.4)`;
+      organism.style.animation = 'pulse 4s ease-in-out infinite';
+      organism.style.transform = 'translate(-50%, -50%) scale(0.8)';
+      
+      glowOrganisms.push(organism);
+    };
+
+    let ambientInterval = setInterval(createAmbientGlow, 1500);
 
     const cardElement = particlesRef.current;
-    if (isHovered) {
-      cardElement.addEventListener('mousemove', handleMouseMove);
-    }
+    cardElement.addEventListener('mouseenter', handleMouseEnter);
+    cardElement.addEventListener('mousemove', handleMouseMove);
+    cardElement.addEventListener('mouseleave', handleMouseLeave);
 
     return () => {
+      cardElement.removeEventListener('mouseenter', handleMouseEnter);
       cardElement.removeEventListener('mousemove', handleMouseMove);
-      // Clean up trail SVG
-      if (trailSvg && particlesRef.current?.contains(trailSvg)) {
-        particlesRef.current.removeChild(trailSvg);
-      }
-      trailPoints = [];
-      trailSvg = null;
+      cardElement.removeEventListener('mouseleave', handleMouseLeave);
+      clearInterval(ambientInterval);
     };
-  }, [isArchonClient, isHovered]);
+  }, [isArchonClient]);
+
   const currentStatus = statusConfig[client.status];
+
   // Handle card flip
   const toggleFlip = (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsFlipped(!isFlipped);
   };
-  // Generate more tools for some clients to demonstrate scrolling
-  const extendedTools = client.status === 'online' ? [...client.tools, {
-    id: `extra-1-${client.id}`,
-    name: 'network_monitor',
-    description: 'Monitor network traffic and detect anomalies',
-    parameters: []
-  }, {
-    id: `extra-2-${client.id}`,
-    name: 'security_scan',
-    description: 'Run comprehensive security vulnerability scans',
-    parameters: []
-  }, {
-    id: `extra-3-${client.id}`,
-    name: 'log_analyzer',
-    description: 'Parse and analyze system logs for issues',
-    parameters: []
-  }, {
-    id: `extra-4-${client.id}`,
-    name: 'backup_manager',
-    description: 'Manage system backups and restoration points',
-    parameters: []
-  }] : client.tools;
+
+  // Handle edit
+  const handleEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onEdit?.(client);
+  };
+
   // Special background for Archon client
   const archonBackground = isArchonClient ? 'bg-gradient-to-b from-white/80 via-blue-50/30 to-white/60 dark:from-white/10 dark:via-blue-900/10 dark:to-black/30' : 'bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30';
 
-
-  return <div className={`flip-card h-[220px] cursor-pointer ${isArchonClient ? 'order-first' : ''}`} style={{
-    perspective: '1500px'
-  }} onClick={onSelect} onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
+  return (
+    <div 
+      className={`flip-card h-[220px] cursor-pointer ${isArchonClient ? 'order-first' : ''}`} 
+      style={{ perspective: '1500px' }} 
+      onClick={onSelect} 
+      onMouseEnter={() => setIsHovered(true)} 
+      onMouseLeave={() => setIsHovered(false)}
+    >
       <div className={`relative w-full h-full transition-all duration-500 transform-style-preserve-3d ${isFlipped ? 'rotate-y-180' : ''} ${isHovered && !isFlipped ? 'hover-lift' : ''}`}>
         {/* Front Side */}
-        <div className={`absolute w-full h-full backface-hidden backdrop-blur-md ${archonBackground} rounded-xl p-5 ${currentStatus.border} ${currentStatus.glow} transition-all duration-300 ${isArchonClient ? 'archon-card-border' : ''}`} ref={isArchonClient ? particlesRef : undefined}>
+        <div 
+          className={`absolute w-full h-full backface-hidden backdrop-blur-md ${archonBackground} rounded-xl p-5 ${currentStatus.border} ${currentStatus.glow} transition-all duration-300 ${isArchonClient ? 'archon-card-border overflow-hidden' : ''}`} 
+          ref={isArchonClient ? particlesRef : undefined}
+        >
           {/* Particle container for Archon client */}
-          {isArchonClient && <div className="absolute inset-0 rounded-xl overflow-hidden pointer-events-none">
+          {isArchonClient && (
+            <div className="absolute inset-0 rounded-xl overflow-hidden pointer-events-none">
               <div className="particles-container"></div>
-            </div>}
+            </div>
+          )}
+
           {/* Subtle aurora glow effect for Archon client */}
-          {isArchonClient && <div className="absolute inset-0 rounded-xl overflow-hidden opacity-20">
+          {isArchonClient && (
+            <div className="absolute inset-0 rounded-xl overflow-hidden opacity-20">
               <div className="absolute -inset-[100px] bg-[radial-gradient(circle,rgba(59,130,246,0.8)_0%,rgba(168,85,247,0.6)_40%,transparent_70%)] blur-3xl animate-[pulse_8s_ease-in-out_infinite]"></div>
-            </div>}
+            </div>
+          )}
+
+          {/* Edit button - top right corner */}
+          {onEdit && (
+            <button 
+              onClick={handleEdit} 
+              className={`absolute top-3 right-3 p-1.5 rounded-full ${isArchonClient ? 'bg-blue-200/50 dark:bg-blue-900/50 hover:bg-blue-300/50 dark:hover:bg-blue-800/50' : 'bg-gray-200/50 dark:bg-gray-800/50 hover:bg-gray-300/50 dark:hover:bg-gray-700/50'} transition-colors transform hover:scale-110 transition-transform duration-200 z-20`} 
+              title="Edit client configuration"
+            >
+              <Settings className={`w-4 h-4 ${isArchonClient ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'}`} />
+            </button>
+          )}
+
           {/* Client info */}
           <div className="flex items-start">
-            {isArchonClient ? <div className="p-3 rounded-lg bg-gradient-to-br from-blue-500/20 to-purple-500/20 mr-3 relative pulse-soft">
+            {isArchonClient ? (
+              <div className="p-3 rounded-lg bg-gradient-to-br from-blue-500/20 to-purple-500/20 mr-3 relative pulse-soft">
                 <img src="/logo-neon.svg" alt="Archon" className="w-6 h-6 drop-shadow-[0_0_8px_rgba(59,130,246,0.8)] animate-glow-pulse" />
                 <div className="absolute inset-0 rounded-lg bg-blue-500/10 animate-pulse opacity-60"></div>
-              </div> : <div className={`p-3 rounded-lg bg-${currentStatus.color}-500/10 text-${currentStatus.color}-400 mr-3 pulse-soft`}>
+              </div>
+            ) : (
+              <div className={`p-3 rounded-lg bg-${currentStatus.color}-500/10 text-${currentStatus.color}-400 mr-3 pulse-soft`}>
                 <Server className="w-6 h-6" />
-              </div>}
+              </div>
+            )}
+            
             <div>
               <h3 className={`font-bold text-gray-800 dark:text-white text-lg ${isArchonClient ? 'bg-gradient-to-r from-blue-400 to-purple-500 text-transparent bg-clip-text animate-text-shimmer' : ''}`}>
                 {client.name}
@@ -217,39 +266,33 @@ export const ClientCard = ({
               </p>
             </div>
           </div>
+
           <div className="mt-5 space-y-2">
             <div className="flex items-center text-sm">
               <Clock className="w-4 h-4 text-gray-500 dark:text-gray-400 mr-2" />
-              <span className="text-gray-700 dark:text-gray-300">
-                Last seen:{' '}
-              </span>
+              <span className="text-gray-700 dark:text-gray-300">Last seen:</span>
               <span className="text-gray-600 dark:text-gray-400 ml-auto">
                 {client.lastSeen}
               </span>
             </div>
             <div className="flex items-center text-sm">
               <Activity className="w-4 h-4 text-gray-500 dark:text-gray-400 mr-2" />
-              <span className="text-gray-700 dark:text-gray-300">
-                Version:{' '}
-              </span>
+              <span className="text-gray-700 dark:text-gray-300">Version:</span>
               <span className={`text-gray-600 dark:text-gray-400 ml-auto ${isArchonClient ? 'font-medium text-blue-600 dark:text-blue-400' : ''}`}>
                 {client.version}
               </span>
             </div>
-            {client.cpuUsage !== undefined && <div className="mt-4">
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-gray-600 dark:text-gray-400">CPU</span>
-                  <span className={`${client.cpuUsage > 80 ? 'text-pink-500' : client.cpuUsage > 60 ? 'text-orange-500' : isArchonClient ? 'text-blue-500' : 'text-green-500'}`}>
-                    {client.cpuUsage}%
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 overflow-hidden">
-                  <div className={`h-1.5 rounded-full ${client.cpuUsage > 80 ? 'bg-pink-500' : client.cpuUsage > 60 ? 'bg-orange-500' : isArchonClient ? 'bg-gradient-r-animated' : 'bg-green-500'}`} style={{
-                width: `${client.cpuUsage}%`
-              }}></div>
-                </div>
-              </div>}
+            <div className="flex items-center text-sm">
+              <Hammer className="w-4 h-4 text-gray-500 dark:text-gray-400 mr-2" />
+              <span className="text-gray-700 dark:text-gray-300">Tools:</span>
+              <span className={`text-gray-600 dark:text-gray-400 ml-auto ${isArchonClient ? 'font-medium text-blue-600 dark:text-blue-400' : ''}`}>
+                {client.tools.length} available
+              </span>
+            </div>
+            
+
           </div>
+
           {/* Status badge - moved to bottom left */}
           <div className="absolute bottom-4 left-4">
             <div className={`px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 border ${currentStatus.badge}`}>
@@ -260,6 +303,7 @@ export const ClientCard = ({
               {client.status.charAt(0).toUpperCase() + client.status.slice(1)}
             </div>
           </div>
+
           {/* Tools button - with Hammer icon */}
           <button 
             onClick={toggleFlip} 
@@ -269,29 +313,66 @@ export const ClientCard = ({
             <Hammer className={`w-4 h-4 ${isArchonClient ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'}`} />
           </button>
         </div>
+
         {/* Back Side */}
         <div className={`absolute w-full h-full backface-hidden backdrop-blur-md ${archonBackground} rounded-xl p-5 rotate-y-180 ${currentStatus.border} ${currentStatus.glow} transition-all duration-300 ${isArchonClient ? 'archon-card-border' : ''}`}>
           {/* Subtle aurora glow effect for Archon client */}
-          {isArchonClient && <div className="absolute inset-0 rounded-xl overflow-hidden opacity-20">
+          {isArchonClient && (
+            <div className="absolute inset-0 rounded-xl overflow-hidden opacity-20">
               <div className="absolute -inset-[100px] bg-[radial-gradient(circle,rgba(59,130,246,0.8)_0%,rgba(168,85,247,0.6)_40%,transparent_70%)] blur-3xl animate-[pulse_8s_ease-in-out_infinite]"></div>
-            </div>}
+            </div>
+          )}
+
+          {/* Edit button - also on back side */}
+          {onEdit && (
+            <button 
+              onClick={handleEdit} 
+              className={`absolute top-3 right-3 p-1.5 rounded-full ${isArchonClient ? 'bg-blue-200/50 dark:bg-blue-900/50 hover:bg-blue-300/50 dark:hover:bg-blue-800/50' : 'bg-gray-200/50 dark:bg-gray-800/50 hover:bg-gray-300/50 dark:hover:bg-gray-700/50'} transition-colors transform hover:scale-110 transition-transform duration-200 z-20`} 
+              title="Edit client configuration"
+            >
+              <Settings className={`w-4 h-4 ${isArchonClient ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'}`} />
+            </button>
+          )}
+
           <h3 className={`font-bold text-gray-800 dark:text-white mb-3 flex items-center ${isArchonClient ? 'bg-gradient-to-r from-blue-400 to-purple-500 text-transparent bg-clip-text animate-text-shimmer' : ''}`}>
             <Hammer className={`w-4 h-4 mr-2 ${isArchonClient ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'}`} />
-            Available Tools
+            Available Tools ({client.tools.length})
           </h3>
+
           <div className="space-y-2 overflow-y-auto max-h-[140px] pr-1 hide-scrollbar">
-            {extendedTools.map(tool => <div key={tool.id} className={`p-2 rounded-md ${isArchonClient ? 'bg-blue-50/50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/50 hover:border-blue-300 dark:hover:border-blue-600/50' : 'bg-gray-100/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 hover:border-gray-300 dark:hover:border-gray-600/50'} transition-colors transform hover:translate-x-1 transition-transform duration-200`}>
-                <div className="flex items-center justify-between">
-                  <span className={`font-mono text-xs ${isArchonClient ? 'text-blue-600 dark:text-blue-400' : 'text-blue-600 dark:text-blue-400'}`}>
-                    {tool.name}
-                  </span>
-                  <ChevronRight className="w-3 h-3 text-gray-400" />
-                </div>
-                <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                  {tool.description}
+            {client.tools.length === 0 ? (
+              <div className="text-center py-4">
+                <p className="text-gray-500 dark:text-gray-400 text-sm">
+                  {client.status === 'offline' 
+                    ? 'Client offline - tools unavailable'
+                    : 'No tools discovered'}
                 </p>
-              </div>)}
+              </div>
+            ) : (
+              client.tools.map(tool => (
+                <div 
+                  key={tool.id} 
+                  className={`p-2 rounded-md ${isArchonClient ? 'bg-blue-50/50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/50 hover:border-blue-300 dark:hover:border-blue-600/50' : 'bg-gray-100/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700/50 hover:border-gray-300 dark:hover:border-gray-600/50'} transition-colors transform hover:translate-x-1 transition-transform duration-200`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className={`font-mono text-xs ${isArchonClient ? 'text-blue-600 dark:text-blue-400' : 'text-blue-600 dark:text-blue-400'}`}>
+                      {tool.name}
+                    </span>
+                    <ChevronRight className="w-3 h-3 text-gray-400" />
+                  </div>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
+                    {tool.description}
+                  </p>
+                  {tool.parameters.length > 0 && (
+                    <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                      {tool.parameters.length} parameter{tool.parameters.length !== 1 ? 's' : ''}
+                    </p>
+                  )}
+                </div>
+              ))
+            )}
           </div>
+
           {/* Status badge - also at bottom left on back side */}
           <div className="absolute bottom-4 left-4">
             <div className={`px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 border ${currentStatus.badge}`}>
@@ -302,6 +383,7 @@ export const ClientCard = ({
               {client.status.charAt(0).toUpperCase() + client.status.slice(1)}
             </div>
           </div>
+
           {/* Flip button - back to front */}
           <button 
             onClick={toggleFlip} 
@@ -312,5 +394,6 @@ export const ClientCard = ({
           </button>
         </div>
       </div>
-    </div>;
+    </div>
+  );
 };

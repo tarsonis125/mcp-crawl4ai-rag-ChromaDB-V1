@@ -1,0 +1,960 @@
+---
+title: 🛠️ MCP Server Documentation
+sidebar_position: 6
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import Admonition from '@theme/Admonition';
+
+# 🛠️ Archon MCP Server Documentation
+
+<div className="hero hero--primary">
+  <div className="container">
+    <h1 className="hero__title">
+      **Connect Any AI Client to Archon**
+    </h1>
+    <h2 className="hero__subtitle">
+      Expose 25 powerful tools to **Cursor**, **Windsurf**, **Claude Desktop**, and more
+    </h2>
+  </div>
+</div>
+
+## 🎯 Overview
+
+Archon's MCP Server exposes your knowledge base and project management capabilities to any MCP-compatible AI client. With **25 comprehensive tools**, real-time Logfire monitoring, and multiple transport options, you can supercharge your AI workflows instantly.
+
+## 📊 MCP Server Architecture
+
+```mermaid
+%%{init:{
+  'theme':'base',
+  'themeVariables': {
+    'primaryColor':'#1f2937',
+    'primaryTextColor':'#ffffff',
+    'primaryBorderColor':'#8b5cf6',
+    'lineColor':'#a855f7',
+    'textColor':'#ffffff',
+    'fontFamily':'Inter',
+    'fontSize':'14px',
+    'background':'#000000',
+    'mainBkg':'#1f2937',
+    'secondBkg':'#111827',
+    'borderColor':'#8b5cf6',
+    'clusterBkg':'#111827',
+    'clusterBorder':'#8b5cf6'
+  }
+}}%%
+graph TB
+    subgraph "🤖 AI Clients"
+        Cursor["💻 Cursor IDE<br/>stdio protocol"]
+        Windsurf["🏄 Windsurf IDE<br/>stdio protocol"]
+        Claude["🧠 Claude Desktop<br/>stdio protocol"]
+        Other["🔧 Other MCP Clients<br/>SSE/WebSocket"]
+    end
+    
+    subgraph "🔥 Archon MCP Server (Port 8051)"
+        MCPCore["⚡ MCP Core Server<br/>+ Logfire Monitoring"]
+        Tools["🛠️ 25 MCP Tools"]
+        Health["🏥 Health Check"]
+    end
+    
+    subgraph "🏗️ Backend Services"
+        RAGModule["🧠 RAG Module<br/>7 tools"]
+        ProjectModule["📊 Project Module<br/>17 tools"]
+        FastAPI["⚡ FastAPI Backend"]
+        Supabase["🗄️ Supabase Database<br/>pgvector"]
+        Logfire["🔥 Logfire Dashboard<br/>Real-time Monitoring"]
+    end
+    
+    Cursor -.->|JSON-RPC| MCPCore
+    Windsurf -.->|JSON-RPC| MCPCore
+    Claude -.->|JSON-RPC| MCPCore
+    Other -.->|SSE| MCPCore
+    
+    MCPCore --> Tools
+    MCPCore --> Health
+    
+    Tools --> RAGModule
+    Tools --> ProjectModule
+    RAGModule --> FastAPI
+    ProjectModule --> FastAPI
+    FastAPI --> Supabase
+    MCPCore --> Logfire
+    RAGModule --> Logfire
+    ProjectModule --> Logfire
+```
+
+## 📊 Available Tools
+
+<Admonition type="info" icon="🛠️" title="25 Powerful MCP Tools">
+
+Archon provides the most comprehensive MCP tool collection available, organized into logical categories for maximum productivity.
+
+</Admonition>
+
+### 🧠 Knowledge Management Tools (7 tools)
+
+| Tool | Description | Use Case |
+|------|-------------|----------|
+| `perform_rag_query` | Semantic search across crawled content | "Find all documentation about authentication" |
+| `search_code_examples` | Search code with AI summaries | "Show me React hook examples" |
+| `crawl_single_page` | Index individual web pages | Add specific documentation pages |
+| `smart_crawl_url` | Intelligent multi-page crawling | Index entire documentation sites |
+| `upload_document` | Process and index documents | Add PDFs, markdown files, etc. |
+| `get_available_sources` | List all indexed sources | See what knowledge is available |
+| `delete_source_tool` | Remove indexed sources | Clean up old or irrelevant content |
+
+### 📊 Project Management Tools (17 tools)
+
+| Category | Tools | Description |
+|----------|-------|-------------|
+| **Projects** | `create_project`, `list_projects`, `get_project`, `delete_project` | Full project lifecycle management |
+| **Tasks** | `create_task`, `list_tasks_by_project`, `get_task`, `update_task`, `update_task_status`, `delete_task` | Comprehensive task management |
+| **Subtasks** | `get_task_subtasks`, `get_tasks_by_status` | Hierarchical task organization |
+| **Documents** | `add_project_document`, `list_project_documents`, `get_project_document`, `update_project_document`, `delete_project_document` | Document management with versioning |
+| **Versioning** | `create_document_version`, `get_document_version_history`, `get_version_content`, `restore_document_version` | Complete version control |
+| **Features** | `get_project_features` | Feature tracking and organization |
+
+### 🏥 System Health Tools (1 tool)
+
+| Tool | Description | Use Case |
+|------|-------------|----------|
+| `health_check` | Comprehensive system diagnostics | Monitor server health and performance |
+
+## 🚀 Setup
+
+### Prerequisites
+
+- **Docker**: Archon runs in containers
+- **AI Client**: Cursor, Windsurf, Claude Desktop, or any MCP client
+- **Network Access**: AI client must reach Archon's Docker container
+
+### 1. Start Archon
+
+<Tabs>
+<TabItem value="docker" label="🐳 Docker (Recommended)" default>
+
+```bash
+# Start Archon with Docker Compose
+cd archon
+docker-compose up -d
+
+# Verify containers are running
+docker-compose ps
+```
+
+**Expected output:**
+```
+NAME                IMAGE               STATUS
+archon-pyserver     archon:latest       Up 30 seconds (healthy)
+archon-ui           archon-ui:latest    Up 30 seconds
+archon-postgres     postgres:17         Up 30 seconds (healthy)
+```
+
+</TabItem>
+<TabItem value="local" label="💻 Local Development">
+
+```bash
+# Start backend services
+cd python
+python -m uvicorn src.api.main:app --host 0.0.0.0 --port 8080
+
+# Start MCP server (separate terminal)
+cd python
+python src/mcp_server.py
+```
+
+</TabItem>
+</Tabs>
+
+### 2. Configure Your AI Client
+
+<Tabs>
+<TabItem value="cursor" label="💻 Cursor IDE" default>
+
+**1. Open Cursor Settings**
+- `Ctrl/Cmd + ,` → Search "MCP"
+- Or edit `~/.cursor/mcp.json` directly
+
+**2. Add Archon Configuration**
+
+```json title="~/.cursor/mcp.json"
+{
+  "mcpServers": {
+    "archon": {
+      "command": "docker",
+      "args": [
+        "exec", "-i",
+        "-e", "TRANSPORT=stdio",
+        "archon-pyserver",
+        "python", "src/mcp_server.py"
+      ]
+    }
+  }
+}
+```
+
+**3. Restart Cursor**
+- Close and reopen Cursor to load the new configuration
+
+</TabItem>
+<TabItem value="windsurf" label="🏄 Windsurf IDE">
+
+**1. Open Windsurf Settings**
+- Navigate to MCP settings in preferences
+
+**2. Add Server Configuration**
+
+```json title="windsurf-mcp.json"
+{
+  "mcpServers": {
+    "archon": {
+      "command": "docker",
+      "args": [
+        "exec", "-i",
+        "-e", "TRANSPORT=stdio", 
+        "archon-pyserver",
+        "python", "src/mcp_server.py"
+      ]
+    }
+  }
+}
+```
+
+</TabItem>
+<TabItem value="claude" label="🧠 Claude Desktop">
+
+**1. Locate Configuration File**
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+**2. Add Archon Server**
+
+```json title="claude_desktop_config.json"
+{
+  "mcpServers": {
+    "archon": {
+      "command": "docker",
+      "args": [
+        "exec", "-i",
+        "-e", "TRANSPORT=stdio",
+        "archon-pyserver", 
+        "python", "src/mcp_server.py"
+      ]
+    }
+  }
+}
+```
+
+**3. Restart Claude Desktop**
+
+</TabItem>
+<TabItem value="custom" label="🔧 Custom Client">
+
+**For any MCP-compatible client:**
+
+```bash
+# Direct command execution
+docker exec -i \
+  -e TRANSPORT=stdio \
+  archon-pyserver \
+  python src/mcp_server.py
+```
+
+**Or use SSE transport:**
+```
+POST http://localhost:8051/sse
+Content-Type: application/json
+
+{
+  "jsonrpc": "2.0",
+  "method": "initialize",
+  "id": 1,
+  "params": {
+    "protocolVersion": "2024-11-05",
+    "capabilities": {},
+    "clientInfo": {
+      "name": "custom-client",
+      "version": "1.0.0"
+    }
+  }
+}
+```
+
+</TabItem>
+</Tabs>
+
+### 3. First Tool Call {#first-tool-call}
+
+Test your connection by making a simple tool call:
+
+<Tabs>
+<TabItem value="health" label="🏥 Health Check" default>
+
+**In your AI client, ask:**
+```
+Check the health of the Archon system
+```
+
+**Expected response:**
+```json
+{
+  "status": "healthy",
+  "server": "running",
+  "database": "connected", 
+  "tools_available": 25,
+  "version": "2.0.0"
+}
+```
+
+</TabItem>
+<TabItem value="rag" label="🧠 RAG Query">
+
+**Ask your AI client:**
+```
+Search the knowledge base for information about authentication
+```
+
+**The AI will use the `perform_rag_query` tool to search your indexed content.**
+
+</TabItem>
+<TabItem value="project" label="📊 Create Project">
+
+**Ask your AI client:**
+```
+Create a new project called "My AI App" with a basic description
+```
+
+**The AI will use the `create_project` tool to set up project management.**
+
+</TabItem>
+</Tabs>
+
+## ⚙️ Environment Setup {#environment-setup}
+
+### Environment Variables
+
+<Admonition type="note" icon="🔧" title="Environment Configuration">
+
+Archon uses environment variables for configuration. These are set automatically in Docker, but you can customize them as needed.
+
+</Admonition>
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TRANSPORT` | `stdio` | MCP transport type (`stdio`, `sse`, `websocket`) |
+| `MCP_PORT` | `8051` | Port for SSE/WebSocket transports |
+| `LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARN`, `ERROR`) |
+| `LOGFIRE_TOKEN` | *(required)* | Logfire monitoring token |
+| `DATABASE_URL` | *(auto)* | PostgreSQL connection string |
+| `OPENAI_API_KEY` | *(required)* | OpenAI API key for embeddings |
+
+### Transport Configuration
+
+<Tabs>
+<TabItem value="stdio" label="📡 stdio (Default)" default>
+
+**Best for**: IDE integrations (Cursor, Windsurf, Claude Desktop)
+
+```bash
+# Set in Docker environment
+TRANSPORT=stdio
+
+# Or pass during execution
+docker exec -i -e TRANSPORT=stdio archon-pyserver python src/mcp_server.py
+```
+
+**Characteristics:**
+- ✅ Direct JSON-RPC over stdin/stdout
+- ✅ No network configuration needed
+- ✅ Maximum compatibility
+- ✅ Lowest latency
+
+</TabItem>
+<TabItem value="sse" label="🌐 Server-Sent Events (SSE)">
+
+**Best for**: Web-based clients, remote connections
+
+```bash
+# Set in Docker environment
+TRANSPORT=sse
+MCP_PORT=8051
+```
+
+**Endpoint:** `http://localhost:8051/sse`
+
+**Characteristics:**
+- ✅ HTTP-based, firewall-friendly
+- ✅ Works with web browsers
+- ✅ Good for remote connections
+- ⚠️ Requires network configuration
+
+</TabItem>
+<TabItem value="websocket" label="📡 WebSocket">
+
+**Best for**: Real-time applications, custom clients
+
+```bash
+# Set in Docker environment  
+TRANSPORT=websocket
+MCP_PORT=8051
+```
+
+**Endpoint:** `ws://localhost:8051/ws`
+
+**Characteristics:**
+- ✅ Full-duplex communication
+- ✅ Real-time updates
+- ✅ Custom client integration
+- ⚠️ More complex setup
+
+</TabItem>
+</Tabs>
+
+## 🔍 Monitoring {#monitoring}
+
+### Logfire Integration
+
+<Admonition type="tip" icon="🔥" title="Real-time Monitoring">
+
+Archon includes comprehensive Logfire integration for real-time monitoring of all MCP tool calls, performance metrics, and error tracking.
+
+</Admonition>
+
+**Setup Logfire:**
+
+1. **Get Logfire Token**
+   - Visit [Logfire Dashboard](https://logfire.pydantic.dev)
+   - Create account and project
+   - Get your project token
+
+2. **Configure Token**
+   ```bash
+   # In docker-compose.yml or environment
+   LOGFIRE_TOKEN=your_token_here
+   ```
+
+3. **View Real-time Traces**
+   - Visit your Logfire dashboard
+   - See every tool call with timing
+   - Monitor performance and errors
+
+### Server Logs
+
+<Tabs>
+<TabItem value="docker-logs" label="🐳 Docker Logs" default>
+
+```bash
+# View MCP server logs
+docker logs archon-pyserver -f
+
+# View specific service logs
+docker-compose logs mcp-server -f
+
+# All services
+docker-compose logs -f
+```
+
+</TabItem>
+<TabItem value="log-levels" label="📊 Log Levels">
+
+```bash
+# Debug mode for troubleshooting
+docker exec -e LOG_LEVEL=DEBUG archon-pyserver python src/mcp_server.py
+
+# Production mode
+docker exec -e LOG_LEVEL=INFO archon-pyserver python src/mcp_server.py
+```
+
+**Log Level Details:**
+- `DEBUG`: All operations, JSON messages, detailed traces
+- `INFO`: Tool calls, connection events, performance metrics  
+- `WARN`: Recoverable errors, deprecated usage
+- `ERROR`: Critical failures, connection issues
+
+</TabItem>
+</Tabs>
+
+### Health Monitoring
+
+```bash
+# Check server health
+curl http://localhost:8051/health
+
+# Expected response
+{
+  "status": "healthy",
+  "server": "running",
+  "database": "connected",
+  "tools_available": 25,
+  "version": "2.0.0",
+  "uptime": "0:05:23",
+  "memory_usage": "45.2 MB"
+}
+```
+
+## 🔧 Troubleshooting {#troubleshooting}
+
+### Common Issues
+
+<Admonition type="warning" icon="⚠️" title="Most Common Issues">
+
+The majority of MCP server issues stem from **environment configuration** and **credential management**. Follow this troubleshooting guide systematically.
+
+</Admonition>
+
+#### 🔑 OpenAI API Key Issues
+
+**Symptoms:**
+- `KeyError: 'OPENAI_API_KEY'` errors in logs
+- RAG queries failing
+- Embedding operations not working
+
+**Solutions:**
+
+<Tabs>
+<TabItem value="check-key" label="1️⃣ Check API Key" default>
+
+```bash
+# Check if environment variable is set
+docker exec archon-pyserver env | grep OPENAI
+
+# Should show:
+# OPENAI_API_KEY=sk-...your-key-here
+
+# If not set, check credential service
+docker exec archon-pyserver python -c "
+import os
+from src.services.credential_service import CredentialService
+cs = CredentialService()
+cs.load_credentials()
+print('OPENAI_API_KEY:', os.getenv('OPENAI_API_KEY', 'NOT SET'))
+"
+```
+
+</TabItem>
+<TabItem value="set-key" label="2️⃣ Set API Key">
+
+**Option A: Via Database (Recommended)**
+```sql
+-- Connect to PostgreSQL
+docker exec -it archon-postgres psql -U archon -d archon
+
+-- Insert or update OpenAI key
+INSERT INTO credentials (key, value) 
+VALUES ('OPENAI_API_KEY', 'sk-your-key-here')
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+
+-- Verify
+SELECT key, substring(value, 1, 10) || '...' as value_preview 
+FROM credentials WHERE key = 'OPENAI_API_KEY';
+```
+
+**Option B: Via Environment Variable**
+```bash
+# In docker-compose.yml
+services:
+  archon-pyserver:
+    environment:
+      - OPENAI_API_KEY=sk-your-key-here
+```
+
+</TabItem>
+<TabItem value="restart" label="3️⃣ Restart Services">
+
+```bash
+# Restart containers to load new credentials
+docker-compose restart archon-pyserver
+
+# Or restart entire stack
+docker-compose down && docker-compose up -d
+
+# Verify credentials loaded
+docker exec archon-pyserver python -c "
+import os
+print('OPENAI_API_KEY loaded:', bool(os.getenv('OPENAI_API_KEY')))
+"
+```
+
+</TabItem>
+</Tabs>
+
+#### 🔌 Connection Issues
+
+**Symptoms:**
+- "Connection refused" in AI client
+- MCP server not responding
+- Tools not appearing in client
+
+**Diagnostic Steps:**
+
+<Tabs>
+<TabItem value="container" label="1️⃣ Check Containers" default>
+
+```bash
+# Verify all containers running
+docker-compose ps
+
+# Expected status: Up and healthy
+# If any containers are down:
+docker-compose up -d
+
+# Check container health
+docker inspect archon-pyserver | grep -A 5 Health
+```
+
+</TabItem>
+<TabItem value="network" label="2️⃣ Network Connectivity">
+
+```bash
+# Test container network connectivity
+docker exec archon-pyserver curl -f http://localhost:8051/health
+
+# Expected: {"status": "healthy", ...}
+
+# Test from host
+curl http://localhost:8051/health
+
+# If SSE endpoint fails, check port mapping:
+docker port archon-pyserver
+```
+
+</TabItem>
+<TabItem value="stdio" label="3️⃣ stdio Transport">
+
+```bash
+# Test stdio transport directly
+docker exec -i archon-pyserver python src/mcp_server.py
+
+# Should start and wait for input
+# Test with initialization message:
+echo '{"jsonrpc":"2.0","method":"initialize","id":1,"params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}' | docker exec -i archon-pyserver python src/mcp_server.py
+```
+
+</TabItem>
+</Tabs>
+
+#### 🗄️ Database Issues
+
+**Symptoms:**
+- "Connection to database failed"
+- Tools return database errors
+- Project/task operations failing
+
+**Solutions:**
+
+<Tabs>
+<TabItem value="db-check" label="1️⃣ Check Database" default>
+
+```bash
+# Check PostgreSQL container
+docker-compose ps archon-postgres
+
+# Connect to database
+docker exec -it archon-postgres psql -U archon -d archon
+
+# Test basic query
+\dt  # List tables
+
+# Check if main tables exist
+SELECT tablename FROM pg_tables WHERE schemaname = 'public';
+```
+
+</TabItem>
+<TabItem value="db-init" label="2️⃣ Initialize Database">
+
+```bash
+# Run database migrations
+docker exec archon-pyserver python -c "
+from src.services.database_service import DatabaseService
+db = DatabaseService()
+print('Database connection:', db.test_connection())
+"
+
+# If migrations needed:
+docker exec archon-pyserver alembic upgrade head
+```
+
+</TabItem>
+<TabItem value="db-reset" label="3️⃣ Reset Database (Last Resort)">
+
+```bash
+# ⚠️ This will delete all data!
+docker-compose down -v
+docker-compose up -d
+
+# Wait for containers to start, then test
+docker exec archon-pyserver python -c "
+from src.services.credential_service import CredentialService
+cs = CredentialService()
+cs.load_credentials()
+print('Database reset and credentials loaded')
+"
+```
+
+</TabItem>
+</Tabs>
+
+#### 🧠 Tool-Specific Issues
+
+**RAG Tools Not Working:**
+
+```bash
+# Check if sources exist
+docker exec archon-pyserver python -c "
+from src.modules.rag_module import RAGModule
+rag = RAGModule()
+sources = rag.get_available_sources()
+print(f'Available sources: {sources}')
+"
+
+# If no sources, crawl some content:
+# Use perform_rag_query tool or crawl_single_page via AI client
+```
+
+**Project Tools Failing:**
+
+```bash
+# Check project tables
+docker exec -it archon-postgres psql -U archon -d archon -c "
+SELECT COUNT(*) as project_count FROM projects;
+SELECT COUNT(*) as task_count FROM tasks;
+"
+
+# Create test project to verify functionality
+docker exec archon-pyserver python -c "
+from src.modules.project_module import ProjectModule
+pm = ProjectModule()
+result = pm.create_project('Test Project', {})
+print(f'Test project created: {result}')
+"
+```
+
+### 🚨 Emergency Recovery
+
+If all else fails, here's a complete reset procedure:
+
+<Tabs>
+<TabItem value="full-reset" label="🔄 Complete Reset" default>
+
+```bash
+# 1. Stop all services
+docker-compose down -v
+
+# 2. Remove all containers and volumes
+docker system prune -f
+docker volume prune -f
+
+# 3. Rebuild from scratch
+docker-compose build --no-cache
+docker-compose up -d
+
+# 4. Wait for services to start
+sleep 30
+
+# 5. Set up credentials
+docker exec -it archon-postgres psql -U archon -d archon -c "
+INSERT INTO credentials (key, value) 
+VALUES ('OPENAI_API_KEY', 'sk-your-actual-key-here');
+"
+
+# 6. Restart to load credentials
+docker-compose restart archon-pyserver
+
+# 7. Test functionality
+docker exec archon-pyserver python src/mcp_server.py --test
+```
+
+</TabItem>
+<TabItem value="config-verify" label="✅ Verify Configuration">
+
+```bash
+# Check all environment variables
+docker exec archon-pyserver env | grep -E "(OPENAI|DATABASE|LOGFIRE|TRANSPORT)"
+
+# Verify MCP server can start
+docker exec archon-pyserver python -c "
+import sys
+sys.path.append('/app/src')
+from mcp_server import main
+print('MCP server import successful')
+"
+
+# Test database connection
+docker exec archon-pyserver python -c "
+from src.services.database_service import DatabaseService
+db = DatabaseService()
+print('Database connection:', db.test_connection())
+"
+
+# Verify all tools load
+docker exec archon-pyserver python -c "
+from src.mcp_server import get_available_tools
+tools = get_available_tools()
+print(f'Available tools: {len(tools)}')
+for tool in tools[:5]:  # Show first 5
+    print(f'  - {tool.name}')
+"
+```
+
+</TabItem>
+</Tabs>
+
+### 📞 Getting Help
+
+If you're still experiencing issues:
+
+1. **Check Logs**: `docker logs archon-pyserver -f`
+2. **Verify Environment**: All required credentials set
+3. **Test Connectivity**: Container networking and port access
+4. **Review Configuration**: AI client MCP configuration 
+5. **Monitor with Logfire**: Real-time debugging traces
+
+<Admonition type="info" icon="🆘" title="Community Support">
+
+Join our community for help with complex issues:
+- **GitHub Issues**: Report bugs and feature requests
+- **Discord**: Real-time community support  
+- **Documentation**: Comprehensive guides and examples
+
+</Admonition>
+
+## 🚀 Custom Tools {#custom-tools}
+
+### Custom Tool Development
+
+Create your own MCP tools by extending Archon's architecture:
+
+```python title="src/modules/custom_module.py"
+from typing import Any, Dict
+from mcp.server.models import Tool
+from mcp.types import TextContent
+
+class CustomModule:
+    def get_tools(self) -> list[Tool]:
+        return [
+            Tool(
+                name="custom_tool",
+                description="Your custom tool description",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "param": {"type": "string", "description": "Parameter description"}
+                    },
+                    "required": ["param"]
+                }
+            )
+        ]
+    
+    async def custom_tool(self, param: str) -> list[TextContent]:
+        # Your custom logic here
+        result = f"Processed: {param}"
+        return [TextContent(type="text", text=result)]
+```
+
+### Adding Custom Tools
+
+1. **Create Module**: Add your module to `src/modules/`
+2. **Register Tools**: Import in `mcp_server.py`
+3. **Test Tools**: Use the health check to verify registration
+4. **Monitor Usage**: View tool calls in Logfire dashboard
+
+## ⚡ Performance {#performance}
+
+### Performance Tuning
+
+**Database Optimization:**
+```sql
+-- Optimize for RAG queries
+CREATE INDEX CONCURRENTLY idx_crawled_pages_embedding ON crawled_pages USING ivfflat (embedding);
+
+-- Optimize for project queries  
+CREATE INDEX idx_tasks_project_status ON tasks(project_id, status);
+CREATE INDEX idx_tasks_updated ON tasks(updated_at DESC);
+```
+
+**Connection Pooling:**
+```python title="Database connection optimization"
+# Configure in database_service.py
+DATABASE_CONFIG = {
+    "pool_size": 20,
+    "max_overflow": 30,
+    "pool_timeout": 30,
+    "pool_recycle": 3600
+}
+```
+
+### Scaling Considerations
+
+**Horizontal Scaling:**
+- Run multiple MCP server instances
+- Use load balancer for SSE/WebSocket transports
+- Scale database with read replicas
+
+**High Availability:**
+- Database clustering with PostgreSQL
+- Container orchestration with Kubernetes
+- Health checks and auto-restart policies
+
+## 📈 Monitoring & Analytics
+
+### Logfire Dashboards
+
+Create custom dashboards to monitor:
+- **Tool Usage**: Most popular tools and usage patterns
+- **Performance**: Response times and throughput
+- **Errors**: Error rates and failure patterns
+- **Clients**: Which AI clients are connecting
+
+### Custom Metrics
+
+```python title="Add custom metrics to your tools"
+import logfire
+
+async def custom_tool(self, param: str):
+    with logfire.span("custom_tool", param=param):
+        # Your tool logic
+        result = process(param)
+        logfire.info("Tool completed", result_size=len(result))
+        return result
+```
+
+## 🎯 Best Practices
+
+### Security
+
+1. **Credential Management**: Store API keys securely in database
+2. **Access Control**: Limit tool access based on client capabilities  
+3. **Input Validation**: Sanitize all tool inputs
+4. **Rate Limiting**: Implement rate limiting for high-volume usage
+
+### Performance
+
+1. **Connection Reuse**: Keep database connections pooled
+2. **Caching**: Cache frequently accessed data
+3. **Async Operations**: Use async/await for I/O operations
+4. **Resource Cleanup**: Properly close connections and clean up resources
+
+### Reliability
+
+1. **Error Handling**: Comprehensive error handling in all tools
+2. **Health Checks**: Regular health monitoring and alerting
+3. **Graceful Degradation**: Fallback mechanisms for external dependencies
+4. **Resource Limits**: Set appropriate memory and CPU limits
+
+---
+
+<div className="text--center">
+  <p><strong>🎉 Ready to supercharge your AI workflows?</strong></p>
+  <p>You now have everything needed to connect any AI client to Archon's powerful MCP server!</p>
+  
+  <div className="margin-top--lg">
+    <a href="/mcp-client" className="button button--primary button--lg margin-right--md">
+      🔌 Explore MCP Client →
+    </a>
+    <a href="/mcp-overview" className="button button--secondary button--lg">
+      ← Back to MCP Overview
+    </a>
+  </div>
+</div> 

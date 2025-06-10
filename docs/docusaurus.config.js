@@ -163,7 +163,7 @@ export default {
             title: 'API & Integration',
             items: [
               { label: 'API Reference', to: '/api-reference' },
-              { label: 'MCP Integration', to: '/mcp-reference' },
+              { label: 'MCP Integration', to: '/mcp-overview' },
               { label: 'Task Management', to: '/tasks' },
             ],
           },
