@@ -175,9 +175,9 @@ const DraggableTaskCard = ({
   // Get subtasks for this parent task
   const subtasks = allTasks.filter(t => t.parent_task_id === task.id);
   
-  // Card styling - dynamic height with limited subtask expansion
+  // Card styling - dynamic height with better subtask expansion
   const baseHeight = 140;
-  const maxSubtaskAreaHeight = 128; // 32 * 4 (max-h-32 = 128px)
+  const maxSubtaskAreaHeight = 240; // Increased from 128px to accommodate more subtasks
   const expandedHeight = showSubtasks && subtasks.length > 0 
     ? baseHeight + maxSubtaskAreaHeight + 16 // +16 for padding
     : baseHeight;
@@ -262,15 +262,15 @@ const DraggableTaskCard = ({
           {/* Subtasks display with smooth animations and scrolling */}
           <div className={`overflow-hidden transition-all duration-500 ease-in-out ${
             showSubtasks && subtasks.length > 0 
-              ? 'max-h-32 opacity-100' 
+              ? 'max-h-60 opacity-100' 
               : 'max-h-0 opacity-0'
           }`}>
-            <div className="pl-1.5 mb-2 pt-1 max-h-32 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent hover:scrollbar-thumb-gray-400 dark:hover:scrollbar-thumb-gray-500 pr-1">
+            <div className="pl-1.5 mb-2 pt-1 max-h-60 overflow-y-auto scrollbar scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-gray-100/50 dark:scrollbar-track-gray-800/50 hover:scrollbar-thumb-gray-400 dark:hover:scrollbar-thumb-gray-500 pr-1 border-l-2 border-cyan-200/30 dark:border-cyan-800/30">
               <div className="space-y-1">
                 {subtasks.map((subtask, index) => (
                                     <div 
                     key={subtask.id} 
-                    className={`flex items-start gap-2 text-xs bg-gray-100/50 dark:bg-gray-800/50 rounded px-2 py-1 transform transition-all duration-300 ease-in-out hover:bg-gray-200/50 dark:hover:bg-gray-700/50 cursor-pointer relative ${
+                    className={`flex items-start gap-2 text-xs bg-gray-100/50 dark:bg-gray-800/50 rounded px-2 py-1 transform transition-all duration-300 ease-in-out hover:bg-gray-200/50 dark:hover:bg-gray-700/50 hover:shadow-sm cursor-pointer relative ${
                       showSubtasks 
                         ? 'translate-y-0 opacity-100' 
                         : '-translate-y-2 opacity-0'
