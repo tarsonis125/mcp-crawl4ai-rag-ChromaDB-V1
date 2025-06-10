@@ -169,10 +169,23 @@ export const FeaturesTab = ({ project }: FeaturesTabProps) => {
   // Load features from project or show empty state
   useEffect(() => {
     if (project?.features && Array.isArray(project.features) && project.features.length > 0) {
-      // Use project features data
-      setNodes(project.features)
+      // Ensure all nodes have required properties with defaults
+      const normalizedNodes = project.features.map((node: any, index: number) => ({
+        ...node,
+        // Ensure position exists with sensible defaults
+        position: node.position || {
+          x: 250 + (index % 3) * 250, // Spread horizontally
+          y: 200 + Math.floor(index / 3) * 150 // Stack vertically
+        },
+        // Ensure type exists (fallback based on data structure)
+        type: node.type || (node.data?.route ? 'page' : 'service'),
+        // Ensure data exists
+        data: node.data || { label: 'Unknown', type: 'Unknown Component' }
+      }));
+      
+      setNodes(normalizedNodes)
       // Generate edges based on the flow (simplified logic)
-      const generatedEdges = generateEdgesFromNodes(project.features)
+      const generatedEdges = generateEdgesFromNodes(normalizedNodes)
       setEdges(generatedEdges)
     } else {
       // Show empty state - no nodes or edges
@@ -186,8 +199,12 @@ export const FeaturesTab = ({ project }: FeaturesTabProps) => {
   const generateEdgesFromNodes = (nodes: Node[]): Edge[] => {
     const edges: Edge[] = []
     
-    // Sort nodes by y position to create a logical flow
-    const sortedNodes = [...nodes].sort((a, b) => a.position.y - b.position.y)
+    // Sort nodes by y position to create a logical flow (with safety check for position)
+    const sortedNodes = [...nodes].sort((a, b) => {
+      const aY = a.position?.y || 0;
+      const bY = b.position?.y || 0;
+      return aY - bY;
+    })
     
     for (let i = 0; i < sortedNodes.length - 1; i++) {
       const currentNode = sortedNodes[i]
@@ -425,7 +442,12 @@ export const FeaturesTab = ({ project }: FeaturesTabProps) => {
           />
           <div 
             className="p-4 rounded-lg bg-[#1a2c3b]/80 border border-cyan-500/30 min-w-[200px] backdrop-blur-sm transition-all duration-300 group-hover:border-cyan-500/70 group-hover:shadow-[0_5px_15px_rgba(34,211,238,0.15)] cursor-pointer"
-            onClick={(e) => handleNodeClick(e, { id, data } as Node)}
+            onClick={(e) => {
+              const actualNode = nodes.find(node => node.id === id);
+              if (actualNode) {
+                handleNodeClick(e, actualNode);
+              }
+            }}
           >
             <div className="flex items-center justify-between gap-2 mb-2">
               <div className="flex items-center gap-2">
@@ -436,7 +458,10 @@ export const FeaturesTab = ({ project }: FeaturesTabProps) => {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleNodeClick(e, { id, data } as Node);
+                    const actualNode = nodes.find(node => node.id === id);
+                    if (actualNode) {
+                      handleNodeClick(e, actualNode);
+                    }
                   }}
                   className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-cyan-600/20 rounded"
                   title="Edit node"
@@ -477,7 +502,12 @@ export const FeaturesTab = ({ project }: FeaturesTabProps) => {
           />
           <div 
             className="p-4 rounded-lg bg-[#2d1a3b]/80 border border-fuchsia-500/30 min-w-[200px] backdrop-blur-sm transition-all duration-300 group-hover:border-fuchsia-500/70 group-hover:shadow-[0_5px_15px_rgba(217,70,239,0.15)] cursor-pointer"
-            onClick={(e) => handleNodeClick(e, { id, data } as Node)}
+            onClick={(e) => {
+              const actualNode = nodes.find(node => node.id === id);
+              if (actualNode) {
+                handleNodeClick(e, actualNode);
+              }
+            }}
           >
             <div className="flex items-center justify-between gap-2 mb-2">
               <div className="flex items-center gap-2">
@@ -488,7 +518,10 @@ export const FeaturesTab = ({ project }: FeaturesTabProps) => {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleNodeClick(e, { id, data } as Node);
+                    const actualNode = nodes.find(node => node.id === id);
+                    if (actualNode) {
+                      handleNodeClick(e, actualNode);
+                    }
                   }}
                   className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-fuchsia-600/20 rounded"
                   title="Edit node"
@@ -514,7 +547,7 @@ export const FeaturesTab = ({ project }: FeaturesTabProps) => {
         </div>
       );
     }
-  }), [handleNodeClick, handleDeleteNode]);
+  }), [handleNodeClick, handleDeleteNode, nodes]);
 
   if (loading) {
     return (

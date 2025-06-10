@@ -1,6 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { useDrag, useDrop } from 'react-dnd';
-import { Edit, Trash2, RefreshCw, Tag, User, Bot, Clipboard } from 'lucide-react';
+import { Edit, Trash2, RefreshCw, Tag, User, Bot, Clipboard, List } from 'lucide-react';
+import { Toggle } from '../ui/Toggle';
 
 export interface Task {
   id: string;
@@ -14,6 +15,7 @@ export interface Task {
   feature: string;
   featureColor: string;
   task_order: number;
+  parent_task_id?: string; // Added for subtask support
 }
 
 interface TaskBoardViewProps {
@@ -23,6 +25,9 @@ interface TaskBoardViewProps {
   onTaskDelete: (taskId: string) => void;
   onTaskMove: (taskId: string, newStatus: Task['status']) => void;
   onTaskReorder: (taskId: string, newOrder: number, status: Task['status']) => void;
+  showSubtasks?: boolean;
+  showSubtasksToggle?: boolean;
+  onShowSubtasksChange?: (show: boolean) => void;
 }
 
 const ItemTypes = {
@@ -78,6 +83,10 @@ interface DraggableTaskCardProps {
   onDelete: () => void;
   onTaskReorder: (taskId: string, newOrder: number, status: Task['status']) => void;
   tasksInStatus: Task[];
+  allTasks?: Task[];
+  hoveredTaskId?: string | null;
+  onTaskHover?: (taskId: string | null) => void;
+  showSubtasks?: boolean;
 }
 
 const DraggableTaskCard = ({
@@ -86,7 +95,19 @@ const DraggableTaskCard = ({
   onView,
   onDelete,
   onTaskReorder,
+  allTasks = [],
+  hoveredTaskId,
+  onTaskHover,
+  showSubtasks = false,
 }: DraggableTaskCardProps) => {
+  // Use useCallback to stabilize the state setter
+  const [expandedSubtask, setExpandedSubtask] = useState<string | null>(null);
+  
+  const handleSubtaskClick = useCallback((subtaskId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedSubtask(prev => prev === subtaskId ? null : subtaskId);
+  }, []); // Empty dependency array to keep it stable
+  
   const [{ isDragging }, drag] = useDrag({
     type: ItemTypes.TASK,
     item: { id: task.id, status: task.status, index },
@@ -124,21 +145,71 @@ const DraggableTaskCard = ({
     setIsFlipped(!isFlipped);
   };
 
+  // Calculate hover effects for parent-child relationships
+  const getRelatedTaskIds = () => {
+    const relatedIds = new Set<string>();
+    
+    if (task.parent_task_id) {
+      // If this is a subtask, include parent
+      relatedIds.add(task.parent_task_id);
+    } else {
+      // If this is a parent task, include all subtasks
+      const subtasks = allTasks.filter(t => t.parent_task_id === task.id);
+      subtasks.forEach(subtask => relatedIds.add(subtask.id));
+    }
+    
+    return relatedIds;
+  };
+
+  const relatedTaskIds = getRelatedTaskIds();
+  const isHighlighted = hoveredTaskId ? relatedTaskIds.has(hoveredTaskId) || hoveredTaskId === task.id : false;
+
+  const handleMouseEnter = () => {
+    onTaskHover?.(task.id);
+  };
+
+  const handleMouseLeave = () => {
+    onTaskHover?.(null);
+  };
+
+  // Get subtasks for this parent task
+  const subtasks = allTasks.filter(t => t.parent_task_id === task.id);
+  
+  // Card styling - dynamic height with limited subtask expansion
+  const baseHeight = 140;
+  const maxSubtaskAreaHeight = 128; // 32 * 4 (max-h-32 = 128px)
+  const expandedHeight = showSubtasks && subtasks.length > 0 
+    ? baseHeight + maxSubtaskAreaHeight + 16 // +16 for padding
+    : baseHeight;
+  
+  const cardScale = 'scale-100';
+  const cardOpacity = 'opacity-100';
+  const highlightGlow = isHighlighted ? 'shadow-[0_0_20px_rgba(34,211,238,0.6)] ring-2 ring-cyan-400/50' : '';
+  const hoverGlow = 'hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] hover:ring-1 hover:ring-cyan-400/30';
+
   return (
     <div 
       ref={(node) => drag(drop(node))}
-      className={`flip-card h-[140px] w-full cursor-move ${isDragging ? 'opacity-50 scale-95' : 'opacity-100'} transition-all duration-300`} 
-      style={{ perspective: '1000px' }}
+      className={`flip-card w-full cursor-move ${cardScale} ${cardOpacity} ${isDragging ? 'opacity-50 scale-90' : ''} transition-all duration-500 ease-in-out ${highlightGlow} ${hoverGlow}`} 
+      style={{ 
+        perspective: '1000px',
+        height: `${expandedHeight}px`,
+        transition: 'height 0.5s ease-in-out'
+      }}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       <div 
         className={`relative w-full h-full transition-transform duration-500 transform-style-preserve-3d ${isFlipped ? 'rotate-y-180' : ''}`}
       >
         {/* Front side */}
-        <div className="absolute w-full h-full backface-hidden bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30 border border-gray-200 dark:border-gray-800 rounded-lg p-3 hover:border-gray-300 dark:hover:border-gray-700 transition-all duration-300 group shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)]">
+        <div className="absolute w-full h-full backface-hidden bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30 border border-gray-200 dark:border-gray-800 rounded-lg p-3 hover:border-gray-300 dark:hover:border-gray-700 transition-all duration-300 group shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)] flex flex-col">
           {/* Priority indicator */}
           <div className={`absolute left-0 top-0 bottom-0 w-[3px] ${getOrderColor(task.task_order)} ${getOrderGlow(task.task_order)} rounded-l-lg opacity-80 group-hover:w-[4px] group-hover:opacity-100 transition-all duration-300`}></div>
           
           <div className="flex items-center gap-2 mb-2 pl-1.5">
+            {/* No subtask indicator needed since these are all parent tasks */}
+            
             <div className="px-2 py-1 rounded-md text-xs font-medium flex items-center gap-1 backdrop-blur-md" 
                  style={{
                    backgroundColor: `${task.featureColor}20`,
@@ -188,7 +259,50 @@ const DraggableTaskCard = ({
             {task.title}
           </h4>
           
-          <div className="flex items-center justify-between absolute bottom-3 left-3 right-3 pl-1.5">
+          {/* Subtasks display with smooth animations and scrolling */}
+          <div className={`overflow-hidden transition-all duration-500 ease-in-out ${
+            showSubtasks && subtasks.length > 0 
+              ? 'max-h-32 opacity-100' 
+              : 'max-h-0 opacity-0'
+          }`}>
+            <div className="pl-1.5 mb-2 pt-1 max-h-32 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent hover:scrollbar-thumb-gray-400 dark:hover:scrollbar-thumb-gray-500 pr-1">
+              <div className="space-y-1">
+                {subtasks.map((subtask, index) => (
+                                    <div 
+                    key={subtask.id} 
+                    className={`flex items-start gap-2 text-xs bg-gray-100/50 dark:bg-gray-800/50 rounded px-2 py-1 transform transition-all duration-300 ease-in-out hover:bg-gray-200/50 dark:hover:bg-gray-700/50 cursor-pointer relative ${
+                      showSubtasks 
+                        ? 'translate-y-0 opacity-100' 
+                        : '-translate-y-2 opacity-0'
+                    }`}
+                    style={{ 
+                      transitionDelay: showSubtasks ? `${index * 50}ms` : '0ms'
+                                          }}
+                      onClick={(e) => handleSubtaskClick(subtask.id, e)}
+                    >
+                                        <span className={`flex-1 text-gray-600 dark:text-gray-400 text-[11px] ${
+                      expandedSubtask === subtask.id ? 'whitespace-normal break-words' : 'truncate'
+                    }`}>
+                      {subtask.title}
+                    </span>
+ 
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 flex-shrink-0 ${
+                      subtask.status === 'complete' ? 'bg-green-200 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                      subtask.status === 'in-progress' ? 'bg-blue-200 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
+                      subtask.status === 'review' ? 'bg-purple-200 text-purple-800 dark:bg-purple-900 dark:text-purple-200' :
+                      'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+                    }`}>
+                      {subtask.status === 'backlog' ? 'Backlog' :
+                       subtask.status === 'in-progress' ? 'In Progress' :
+                       subtask.status === 'review' ? 'Review' : 'Complete'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex items-center justify-between mt-auto pt-2 pl-1.5 pr-3">
             <div className="flex items-center gap-2">
               <div className="flex items-center justify-center w-5 h-5 rounded-full bg-white/80 dark:bg-black/70 border border-gray-300/50 dark:border-gray-700/50 backdrop-blur-md" 
                    style={{boxShadow: getAssigneeGlow(task.assignee?.name || 'User')}}
@@ -259,6 +373,10 @@ interface ColumnDropZoneProps {
   onTaskComplete: (taskId: string) => void;
   onTaskDelete: (taskId: string) => void;
   onTaskReorder: (taskId: string, newOrder: number, status: Task['status']) => void;
+  allTasks: Task[];
+  showSubtasks: boolean;
+  hoveredTaskId: string | null;
+  onTaskHover: (taskId: string | null) => void;
 }
 
 const ColumnDropZone = ({
@@ -269,7 +387,11 @@ const ColumnDropZone = ({
   onTaskView,
   onTaskComplete,
   onTaskDelete,
-  onTaskReorder
+  onTaskReorder,
+  allTasks,
+  showSubtasks,
+  hoveredTaskId,
+  onTaskHover
 }: ColumnDropZoneProps) => {
   const ref = useRef<HTMLDivElement>(null);
   
@@ -316,8 +438,8 @@ const ColumnDropZone = ({
     }
   };
 
-  // Sort tasks by task_order
-  const sortedTasks = [...tasks].sort((a, b) => a.task_order - b.task_order);
+  // Just use the tasks as-is since they're already parent tasks only
+  const organizedTasks = tasks;
 
   return (
     <div 
@@ -331,7 +453,7 @@ const ColumnDropZone = ({
       </div>
       
       <div className="px-1 flex-1 overflow-y-auto space-y-3 py-3">
-        {sortedTasks.map((task, index) => (
+        {organizedTasks.map((task, index) => (
           <DraggableTaskCard
             key={task.id}
             task={task}
@@ -340,7 +462,11 @@ const ColumnDropZone = ({
             onComplete={() => onTaskComplete(task.id)}
             onDelete={() => onTaskDelete(task.id)}
             onTaskReorder={onTaskReorder}
-            tasksInStatus={sortedTasks}
+            tasksInStatus={organizedTasks}
+            allTasks={allTasks}
+            hoveredTaskId={hoveredTaskId}
+            onTaskHover={onTaskHover}
+            showSubtasks={showSubtasks}
           />
         ))}
       </div>
@@ -354,62 +480,116 @@ export const TaskBoardView = ({
   onTaskComplete,
   onTaskDelete,
   onTaskMove,
-  onTaskReorder
+  onTaskReorder,
+  showSubtasks = false,
+  showSubtasksToggle = false,
+  onShowSubtasksChange
 }: TaskBoardViewProps) => {
-  // Group tasks by status
+  const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
+
+  // Simple task filtering for board view - only show parent tasks
   const getTasksByStatus = (status: Task['status']) => {
-    return tasks.filter(task => task.status === status);
+    // Always only show parent tasks in columns
+    // Subtasks will be displayed inside parent cards when showSubtasks is true
+    const parentTasks = tasks
+      .filter(task => task.status === status && !task.parent_task_id)
+      .sort((a, b) => a.task_order - b.task_order);
+    
+    return parentTasks;
   };
 
   return (
-    <div className="grid grid-cols-4 gap-0 h-full min-h-[70vh]">
-      {/* Backlog Column */}
-      <ColumnDropZone
-        status="backlog"
-        title="Backlog"
-        tasks={getTasksByStatus('backlog')}
-        onTaskMove={onTaskMove}
-        onTaskView={onTaskView}
-        onTaskComplete={onTaskComplete}
-        onTaskDelete={onTaskDelete}
-        onTaskReorder={onTaskReorder}
-      />
-      
-      {/* In Progress Column */}
-      <ColumnDropZone
-        status="in-progress"
-        title="In Process"
-        tasks={getTasksByStatus('in-progress')}
-        onTaskMove={onTaskMove}
-        onTaskView={onTaskView}
-        onTaskComplete={onTaskComplete}
-        onTaskDelete={onTaskDelete}
-        onTaskReorder={onTaskReorder}
-      />
-      
-      {/* Review Column */}
-      <ColumnDropZone
-        status="review"
-        title="Review"
-        tasks={getTasksByStatus('review')}
-        onTaskMove={onTaskMove}
-        onTaskView={onTaskView}
-        onTaskComplete={onTaskComplete}
-        onTaskDelete={onTaskDelete}
-        onTaskReorder={onTaskReorder}
-      />
-      
-      {/* Complete Column */}
-      <ColumnDropZone
-        status="complete"
-        title="Complete"
-        tasks={getTasksByStatus('complete')}
-        onTaskMove={onTaskMove}
-        onTaskView={onTaskView}
-        onTaskComplete={onTaskComplete}
-        onTaskDelete={onTaskDelete}
-        onTaskReorder={onTaskReorder}
-      />
+    <div className="flex flex-col h-full min-h-[70vh]">
+      {/* Show Subtasks Toggle */}
+      {showSubtasksToggle && onShowSubtasksChange && (
+        <div className="mb-4 flex justify-end">
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-gradient-to-r from-blue-500/5 to-blue-500/0">
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-gray-800 dark:text-white text-sm">
+                Show Subtasks
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Display subtasks indented under parent tasks
+              </p>
+            </div>
+            <div className="flex-shrink-0">
+              <Toggle 
+                checked={showSubtasks} 
+                onCheckedChange={onShowSubtasksChange} 
+                accentColor="blue" 
+                icon={<List className="w-5 h-5" />} 
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Board Columns */}
+      <div className="grid grid-cols-4 gap-0 flex-1">
+        {/* Backlog Column */}
+        <ColumnDropZone
+          status="backlog"
+          title="Backlog"
+          tasks={getTasksByStatus('backlog')}
+          onTaskMove={onTaskMove}
+          onTaskView={onTaskView}
+          onTaskComplete={onTaskComplete}
+          onTaskDelete={onTaskDelete}
+          onTaskReorder={onTaskReorder}
+          allTasks={tasks}
+          showSubtasks={showSubtasks}
+          hoveredTaskId={hoveredTaskId}
+          onTaskHover={setHoveredTaskId}
+        />
+        
+        {/* In Progress Column */}
+        <ColumnDropZone
+          status="in-progress"
+          title="In Process"
+          tasks={getTasksByStatus('in-progress')}
+          onTaskMove={onTaskMove}
+          onTaskView={onTaskView}
+          onTaskComplete={onTaskComplete}
+          onTaskDelete={onTaskDelete}
+          onTaskReorder={onTaskReorder}
+          allTasks={tasks}
+          showSubtasks={showSubtasks}
+          hoveredTaskId={hoveredTaskId}
+          onTaskHover={setHoveredTaskId}
+        />
+        
+        {/* Review Column */}
+        <ColumnDropZone
+          status="review"
+          title="Review"
+          tasks={getTasksByStatus('review')}
+          onTaskMove={onTaskMove}
+          onTaskView={onTaskView}
+          onTaskComplete={onTaskComplete}
+          onTaskDelete={onTaskDelete}
+          onTaskReorder={onTaskReorder}
+          allTasks={tasks}
+          showSubtasks={showSubtasks}
+          hoveredTaskId={hoveredTaskId}
+          onTaskHover={setHoveredTaskId}
+        />
+        
+        {/* Complete Column */}
+        <ColumnDropZone
+          status="complete"
+          title="Complete"
+          tasks={getTasksByStatus('complete')}
+          onTaskMove={onTaskMove}
+          onTaskView={onTaskView}
+          onTaskComplete={onTaskComplete}
+          onTaskDelete={onTaskDelete}
+          onTaskReorder={onTaskReorder}
+          allTasks={tasks}
+          showSubtasks={showSubtasks}
+          hoveredTaskId={hoveredTaskId}
+          onTaskHover={setHoveredTaskId}
+        />
+      </div>
     </div>
   );
 }; 

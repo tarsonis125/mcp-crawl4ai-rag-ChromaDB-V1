@@ -119,6 +119,22 @@ export const DataTab = ({ project }: DataTabProps) => {
 
   // Note: Removed aggressive WebSocket cleanup to prevent interference with normal connection lifecycle
 
+  // Helper function to normalize nodes to ensure required properties
+  const normalizeNode = (node: any): Node => {
+    return {
+      id: node.id || `node-${Date.now()}-${Math.random()}`,
+      type: node.type || 'table',
+      position: {
+        x: node.position?.x || 100,
+        y: node.position?.y || 100
+      },
+      data: {
+        label: node.data?.label || 'Untitled',
+        columns: node.data?.columns || ['id (PK) - UUID']
+      }
+    };
+  };
+
   useEffect(() => {
     console.log('DataTab project data:', project?.data);
     
@@ -135,7 +151,9 @@ export const DataTab = ({ project }: DataTabProps) => {
         } else if (firstItem.type === 'erd' && firstItem.nodes && firstItem.edges) {
           console.log('Setting ERD view with structured array data');
           setViewMode('erd');
-          setNodes(firstItem.nodes);
+          // Normalize nodes to ensure required properties
+          const normalizedNodes = firstItem.nodes.map(normalizeNode);
+          setNodes(normalizedNodes);
           // Fix any ArrowClosed marker types in loaded edges
           const sanitizedEdges = firstItem.edges.map((edge: any) => ({
             ...edge,
@@ -148,7 +166,9 @@ export const DataTab = ({ project }: DataTabProps) => {
         } else {
           console.log('Setting ERD view for array data');
           setViewMode('erd');
-          setNodes(project.data);
+          // Normalize nodes to ensure required properties
+          const normalizedNodes = project.data.map(normalizeNode);
+          setNodes(normalizedNodes);
           setEdges([]);
         }
       } else if (typeof project.data === 'object' && !Array.isArray(project.data) && 
@@ -158,7 +178,9 @@ export const DataTab = ({ project }: DataTabProps) => {
         // Handle direct object format: {"type": "erd", "nodes": [...], "edges": [...]}
         console.log('Setting ERD view with direct object data');
         setViewMode('erd');
-        setNodes((project.data as any).nodes);
+        // Normalize nodes to ensure required properties
+        const normalizedNodes = (project.data as any).nodes.map(normalizeNode);
+        setNodes(normalizedNodes);
         // Fix any ArrowClosed marker types in loaded edges
         const sanitizedEdges = (project.data as any).edges.map((edge: any) => ({
           ...edge,
@@ -382,7 +404,11 @@ export const DataTab = ({ project }: DataTabProps) => {
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                handleNodeClick(e, { id, data } as Node);
+                // Find the actual node from the nodes array instead of creating a fake one
+                const actualNode = nodes.find(node => node.id === id);
+                if (actualNode) {
+                  handleNodeClick(e, actualNode);
+                }
               }}
               className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-cyan-600/20 rounded"
               title="Edit table"
@@ -422,7 +448,7 @@ export const DataTab = ({ project }: DataTabProps) => {
         </div>
       </div>
     )
-  }), [handleNodeClick, handleDeleteNode]);
+  }), [handleNodeClick, handleDeleteNode, nodes]);
 
   if (loading) {
     return (

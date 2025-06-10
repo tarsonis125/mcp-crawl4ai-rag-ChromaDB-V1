@@ -621,7 +621,7 @@ export const TaskTableView = ({
       // Add parent task
       organizedTasks.push({ ...parentTask, isSubtask: false, indentLevel: 0 });
       
-      // Add its subtasks if showSubtasks is true
+      // Add its subtasks if showSubtasks is true AND subtasks are present in the task list
       if (showSubtasks) {
         const taskSubtasks = subtasks
           .filter(subtask => subtask.parent_task_id === parentTask.id)
@@ -636,7 +636,49 @@ export const TaskTableView = ({
     return organizedTasks;
   };
 
-  const filteredTasks = statusFilter === 'all' ? tasks : tasks.filter(task => task.status === statusFilter);
+  // Apply status filtering carefully to preserve parent-child relationships
+  let statusFilteredTasks: Task[];
+  
+  if (statusFilter === 'all') {
+    statusFilteredTasks = tasks;
+  } else {
+    // When filtering by status and showing subtasks, we need to include:
+    // 1. Tasks that match the status filter
+    // 2. Parent tasks of subtasks that match the status filter (even if parent doesn't match)
+    // 3. Subtasks of parent tasks that match the status filter (even if subtask doesn't match)
+    
+    const directMatches = tasks.filter(task => task.status === statusFilter);
+    const taskIds = new Set(directMatches.map(task => task.id));
+    
+    if (showSubtasks) {
+      // Include parent tasks of matching subtasks
+      directMatches.forEach(task => {
+        if (task.parent_task_id) {
+          const parentTask = tasks.find(t => t.id === task.parent_task_id);
+          if (parentTask && !taskIds.has(parentTask.id)) {
+            taskIds.add(parentTask.id);
+          }
+        }
+      });
+      
+      // Include subtasks of matching parent tasks
+      directMatches.forEach(task => {
+        if (!task.parent_task_id) { // if it's a parent task
+          const subtasks = tasks.filter(t => t.parent_task_id === task.id);
+          subtasks.forEach(subtask => {
+            if (!taskIds.has(subtask.id)) {
+              taskIds.add(subtask.id);
+            }
+          });
+        }
+      });
+    }
+    
+    statusFilteredTasks = tasks.filter(task => taskIds.has(task.id));
+  }
+  
+  const filteredTasks = organizeTasksHierarchically(statusFilteredTasks);
+  
   const statuses: Task['status'][] = ['backlog', 'in-progress', 'review', 'complete'];
 
   // Get column header color and glow based on header type (matching board view style)
@@ -729,7 +771,7 @@ export const TaskTableView = ({
             </div>
             <div className="flex-shrink-0">
               <Toggle 
-                checked={showSubtasksToggle} 
+                checked={showSubtasks} 
                 onCheckedChange={onShowSubtasksChange} 
                 accentColor="blue" 
                 icon={<List className="w-5 h-5" />} 
@@ -741,12 +783,12 @@ export const TaskTableView = ({
 
       <table className="w-full border-collapse table-fixed">
         <colgroup>
-          <col className="w-16" /> {/* Order - fixed small width */}
-          <col className="w-auto" />  {/* Task - takes remaining space */}
-          <col className="w-24" />   {/* Status - compact */}
-          <col className="w-28" />   {/* Feature - smaller width */}
-          <col className="w-32" />   {/* Assignee - compact */}
-          <col className="w-40" />   {/* Actions - fixed width for buttons */}
+          <col className="w-16" />
+          <col className="w-auto" />
+          <col className="w-24" />
+          <col className="w-28" />
+          <col className="w-32" />
+          <col className="w-40" />
         </colgroup>
         <thead>
           <tr className="bg-white/80 dark:bg-black/80 backdrop-blur-sm sticky top-0 z-10">
@@ -796,30 +838,7 @@ export const TaskTableView = ({
           </tr>
         </thead>
         <tbody>
-          {statusFilter === 'all' ? (
-            // Grouped by status when showing all
-            statuses.map((status) => {
-              const statusTasks = getTasksByStatus(status);
-              const organizedTasks = organizeTasksHierarchically(statusTasks);
-              return organizedTasks.map((task, index) => (
-                <DraggableTaskRow
-                  key={task.id}
-                  task={task}
-                  index={index}  // This is the correct index within this status group
-                  onTaskView={onTaskView}
-                  onTaskComplete={onTaskComplete}
-                  onTaskDelete={onTaskDelete}
-                  onTaskReorder={onTaskReorder}
-                  onTaskUpdate={onTaskUpdate}
-                  tasksInStatus={statusTasks}  // Pass the tasks in this specific status
-                  isSubtask={task.isSubtask}
-                  indentLevel={task.indentLevel}
-                />
-              ));
-            }).flat()  // Flatten the array since map returns arrays
-          ) : (
-            // Single status filter
-            organizeTasksHierarchically(getTasksByStatus(statusFilter)).map((task, index) => (
+          {filteredTasks.map((task, index) => (
               <DraggableTaskRow
                 key={task.id}
                 task={task}
@@ -829,12 +848,11 @@ export const TaskTableView = ({
                 onTaskDelete={onTaskDelete}
                 onTaskReorder={onTaskReorder}
                 onTaskUpdate={onTaskUpdate}
-                tasksInStatus={getTasksByStatus(statusFilter)}
+                tasksInStatus={filteredTasks}
                 isSubtask={task.isSubtask}
                 indentLevel={task.indentLevel}
               />
-            ))
-          )}
+            ))}
           {/* Add Task Row */}
           <AddTaskRow onTaskCreate={onTaskCreate} tasks={tasks} statusFilter={statusFilter} />
         </tbody>

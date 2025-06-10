@@ -25,6 +25,46 @@ export interface ServerConfig {
   model?: string;
 }
 
+// Multi-client interfaces
+export interface MCPClientConfig {
+  name: string;
+  transport_type: 'sse' | 'stdio' | 'docker' | 'npx';
+  connection_config: Record<string, any>;
+  auto_connect?: boolean;
+  health_check_interval?: number;
+  is_default?: boolean;
+}
+
+export interface MCPClient {
+  id: string;
+  name: string;
+  transport_type: 'sse' | 'stdio' | 'docker' | 'npx';
+  connection_config: Record<string, any>;
+  status: 'connected' | 'disconnected' | 'connecting' | 'error';
+  auto_connect: boolean;
+  health_check_interval: number;
+  last_seen: string | null;
+  last_error: string | null;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MCPClientTool {
+  id: string;
+  client_id: string;
+  tool_name: string;
+  tool_description: string | null;
+  tool_schema: Record<string, any>;
+  discovered_at: string;
+}
+
+export interface ToolCallRequest {
+  client_id: string;
+  tool_name: string;
+  arguments: Record<string, any>;
+}
+
 interface StreamLogOptions {
   autoReconnect?: boolean;
   reconnectDelay?: number;
@@ -79,6 +119,10 @@ class MCPService {
   private logWebSocket: WebSocket | null = null;
   private reconnectTimeout: NodeJS.Timeout | null = null;
   public isReconnecting = false;
+
+  // ========================================
+  // SERVER MANAGEMENT (Original functionality)
+  // ========================================
 
   async startServer(): Promise<ServerResponse> {
     const response = await fetch(`${this.baseUrl}/api/mcp/start`, {
@@ -240,6 +284,199 @@ class MCPService {
     }
   }
 
+  // ========================================
+  // CLIENT MANAGEMENT (New functionality)
+  // ========================================
+
+  /**
+   * Get all configured MCP clients
+   */
+  async getClients(): Promise<MCPClient[]> {
+    const response = await fetch(`${this.baseUrl}/api/mcp/clients/`);
+
+    if (!response.ok) {
+      throw new Error('Failed to get MCP clients');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Create a new MCP client
+   */
+  async createClient(config: MCPClientConfig): Promise<MCPClient> {
+    const response = await fetch(`${this.baseUrl}/api/mcp/clients/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config)
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to create MCP client');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Get a specific MCP client
+   */
+  async getClient(clientId: string): Promise<MCPClient> {
+    const response = await fetch(`${this.baseUrl}/api/mcp/clients/${clientId}`);
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to get MCP client');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Update an MCP client
+   */
+  async updateClient(clientId: string, updates: Partial<MCPClientConfig>): Promise<MCPClient> {
+    const response = await fetch(`${this.baseUrl}/api/mcp/clients/${clientId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to update MCP client');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Delete an MCP client
+   */
+  async deleteClient(clientId: string): Promise<{ success: boolean; message: string }> {
+    const response = await fetch(`${this.baseUrl}/api/mcp/clients/${clientId}`, {
+      method: 'DELETE'
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to delete MCP client');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Connect to an MCP client
+   */
+  async connectClient(clientId: string): Promise<{ success: boolean; message: string }> {
+    const response = await fetch(`${this.baseUrl}/api/mcp/clients/${clientId}/connect`, {
+      method: 'POST'
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to connect to MCP client');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Disconnect from an MCP client
+   */
+  async disconnectClient(clientId: string): Promise<{ success: boolean; message: string }> {
+    const response = await fetch(`${this.baseUrl}/api/mcp/clients/${clientId}/disconnect`, {
+      method: 'POST'
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to disconnect from MCP client');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Get client status and health
+   */
+  async getClientStatus(clientId: string): Promise<{
+    client_id: string;
+    status: string;
+    last_seen: string | null;
+    last_error: string | null;
+    is_active: boolean;
+  }> {
+    const response = await fetch(`${this.baseUrl}/api/mcp/clients/${clientId}/status`);
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to get client status');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Get tools from a specific client
+   */
+  async getClientTools(clientId: string): Promise<{
+    client_id: string;
+    tools: MCPClientTool[];
+    count: number;
+  }> {
+    const response = await fetch(`${this.baseUrl}/api/mcp/clients/${clientId}/tools`);
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to get client tools');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Test a client configuration before saving
+   */
+  async testClientConfig(config: MCPClientConfig): Promise<{ success: boolean; message: string }> {
+    const response = await fetch(`${this.baseUrl}/api/mcp/clients/test-config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config)
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to test client configuration');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Call a tool on a specific client
+   */
+  async callClientTool(request: ToolCallRequest): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/api/mcp/clients/tools/call`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request)
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to call client tool');
+    }
+
+    return response.json();
+  }
+
+  // ========================================
+  // LEGACY TOOL FUNCTIONALITY (Updated for multi-client)
+  // ========================================
+
   /**
    * Make an MCP call to the running server via SSE
    */
@@ -292,20 +529,12 @@ class MCPService {
   }
 
   /**
-   * Get available tools from the running MCP server
+   * Get available tools from the running MCP server (legacy - for Archon default client)
    */
   async getAvailableTools(): Promise<MCPTool[]> {
     try {
       // First try the backend endpoint which has the known tools list
-      const getApiBaseUrl = () => {
-  const protocol = window.location.protocol;
-  const host = window.location.hostname;
-  const port = '8080'; // Backend API port
-  return `${protocol}//${host}:${port}`;
-};
-
-const baseUrl = (import.meta as any).env?.VITE_API_URL || getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/api/mcp/tools`);
+      const response = await fetch(`${this.baseUrl}/api/mcp/tools`);
       
       if (response.ok) {
         const data = await response.json();
@@ -339,7 +568,7 @@ const baseUrl = (import.meta as any).env?.VITE_API_URL || getApiBaseUrl();
   }
 
   /**
-   * Call a specific MCP tool
+   * Call a specific MCP tool (legacy - for Archon default client)
    */
   async callTool(name: string, arguments_: Record<string, any>): Promise<any> {
     try {
@@ -350,6 +579,46 @@ const baseUrl = (import.meta as any).env?.VITE_API_URL || getApiBaseUrl();
       return result;
     } catch (error) {
       console.error(`Failed to call MCP tool ${name}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get aggregated tools from all connected clients
+   */
+  async getAllAvailableTools(): Promise<{
+    archon_tools: MCPTool[];
+    client_tools: { client: MCPClient; tools: MCPClientTool[] }[];
+    total_count: number;
+  }> {
+    try {
+      // Get Archon tools (default client)
+      const archonTools = await this.getAvailableTools();
+      
+      // Get all clients and their tools
+      const clients = await this.getClients();
+      const clientTools = await Promise.all(
+        clients
+          .filter(client => client.status === 'connected' && !client.is_default)
+          .map(async (client) => {
+            try {
+              const toolsData = await this.getClientTools(client.id);
+              return { client, tools: toolsData.tools };
+            } catch {
+              return { client, tools: [] };
+            }
+          })
+      );
+
+      const totalCount = archonTools.length + clientTools.reduce((sum, ct) => sum + ct.tools.length, 0);
+
+      return {
+        archon_tools: archonTools,
+        client_tools: clientTools,
+        total_count: totalCount
+      };
+    } catch (error) {
+      console.error('Failed to get all available tools:', error);
       throw error;
     }
   }

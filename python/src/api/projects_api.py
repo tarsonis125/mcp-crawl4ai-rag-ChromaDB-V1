@@ -1514,7 +1514,10 @@ async def task_updates_websocket(websocket: WebSocket, project_id: str, session_
         
         # Send initial task state
         supabase_client = get_supabase_client()
-        tasks_response = supabase_client.table("tasks").select("*").eq("project_id", project_id).eq("archived", "false").order("task_order").execute()
+        # Match the main API query exactly - handle NULL archived values
+        query = supabase_client.table("tasks").select("*").eq("project_id", project_id)
+        query = query.or_("archived.is.null,archived.eq.false")
+        tasks_response = query.order("task_order").execute()
         
         initial_data = {
             "type": "initial_tasks",

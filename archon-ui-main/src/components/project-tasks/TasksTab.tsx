@@ -75,6 +75,7 @@ export const TasksTab = ({
   const [isLoadingSubtasks, setIsLoadingSubtasks] = useState<boolean>(false);
   const [isSavingTask, setIsSavingTask] = useState<boolean>(false);
   const [showSubtasksInTable, setShowSubtasksInTable] = useState(false);
+  const [showSubtasksInBoard, setShowSubtasksInBoard] = useState(false);
   
   // Accordion state
   const [isSubtasksExpanded, setIsSubtasksExpanded] = useState(false);
@@ -103,6 +104,12 @@ export const TasksTab = ({
         onConnectionEstablished: () => {
           console.log('✅ Task updates WebSocket connected');
           setIsWebSocketConnected(true);
+        },
+        
+        onInitialTasks: (initialWebSocketTasks) => {
+          const uiTasks: Task[] = initialWebSocketTasks.map(mapDatabaseTaskToUITask);
+          setTasks(uiTasks);
+          onTasksChange(uiTasks);
         },
         
         onTaskCreated: (newTask) => {
@@ -143,7 +150,6 @@ export const TasksTab = ({
 
         // Handle bulk task updates from MCP DatabaseChangeDetector
         onTasksChange: (updatedTasks) => {
-          console.log('🔄 Real-time bulk task updates from MCP:', updatedTasks);
           setTasks(prev => {
             const updated = [...prev];
             
@@ -736,15 +742,6 @@ export const TasksTab = ({
     ));
   };
 
-  // Filter out subtasks from main task list if showSubtasksInTable is false
-  const getFilteredTasks = () => {
-    if (showSubtasksInTable) {
-      return tasks; // Show all tasks including subtasks
-    }
-    // Filter out tasks that have a parent_task_id (i.e., subtasks)
-    return tasks.filter(task => !task.parent_task_id);
-  };
-
 // SubtaskAddRow component for inline subtask creation
 interface SubtaskAddRowProps {
   parentTaskId: string;
@@ -930,7 +927,7 @@ const TempSubtaskAddRow = ({ onSubtaskCreate, inheritedFeature }: TempSubtaskAdd
         <div className="relative h-[calc(100vh-220px)] overflow-auto">
           {viewMode === 'table' ? (
             <TaskTableView
-              tasks={getFilteredTasks()}
+              tasks={tasks}
               onTaskView={openEditModal}
               onTaskComplete={completeTask}
               onTaskDelete={deleteTask}
@@ -938,17 +935,20 @@ const TempSubtaskAddRow = ({ onSubtaskCreate, inheritedFeature }: TempSubtaskAdd
               onTaskCreate={createTaskInline}
               onTaskUpdate={updateTaskInline}
               showSubtasks={showSubtasksInTable}
-              showSubtasksToggle={showSubtasksInTable}
+              showSubtasksToggle={true}
               onShowSubtasksChange={setShowSubtasksInTable}
             />
           ) : (
             <TaskBoardView
-              tasks={tasks.filter(task => !task.parent_task_id)} // Never show subtasks in board view
+              tasks={tasks}
               onTaskView={openEditModal}
               onTaskComplete={completeTask}
               onTaskDelete={deleteTask}
               onTaskMove={moveTask}
               onTaskReorder={handleTaskReorder}
+              showSubtasks={showSubtasksInBoard}
+              showSubtasksToggle={true}
+              onShowSubtasksChange={setShowSubtasksInBoard}
             />
           )}
         </div>

@@ -27,6 +27,7 @@ from .logfire_config import setup_logfire, api_logger
 # Import modular API routers
 from .api.settings_api import router as settings_router
 from .api.mcp_api import router as mcp_router
+from .api.mcp_client_api import router as mcp_client_router
 from .api.knowledge_api import router as knowledge_router  
 from .api.projects_api import router as projects_router
 from .api.tests_api import router as tests_router
@@ -202,6 +203,7 @@ app.add_middleware(
 # Include API routers
 app.include_router(settings_router)
 app.include_router(mcp_router)
+app.include_router(mcp_client_router)
 app.include_router(knowledge_router)
 app.include_router(projects_router)
 app.include_router(tests_router)
@@ -218,7 +220,8 @@ async def root():
         "status": "healthy",
         "modules": [
             "settings",
-            "mcp", 
+            "mcp",
+            "mcp-clients", 
             "knowledge",
             "projects"
         ]
