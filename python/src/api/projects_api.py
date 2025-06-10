@@ -673,8 +673,7 @@ async def _create_project_background(progress_id: str, request: CreateProjectReq
         # Create project data structure
         project_data = {
             "title": request.title,
-            "prd": generated_prd or request.prd or {},
-            "docs": [],
+            "docs": [],  # Will add PRD as a document in docs array after project creation
             "features": [],
             "data": [],
             "created_at": datetime.now().isoformat(),
@@ -696,6 +695,53 @@ async def _create_project_background(progress_id: str, request: CreateProjectReq
         if response.data:
             project = response.data[0]
             project_id = project["id"]
+            
+            # Create and add PRD document to docs array
+            try:
+                await project_creation_manager.update_progress(progress_id, {
+                    'percentage': 96,
+                    'step': 'creating_prd_document',
+                    'log': '📄 Creating PRD document in project...' 
+                })
+                
+                # Create PRD document structure
+                prd_content = generated_prd or request.prd or {}
+                prd_doc_title = f"{request.title} - Product Requirements Document"
+                
+                # Create an appropriate format for the document
+                new_doc = {
+                    "id": str(uuid.uuid4()),
+                    "document_type": "prd",
+                    "title": prd_doc_title,
+                    "content": prd_content,
+                    "tags": ["prd", "requirements"],
+                    "status": "draft",
+                    "version": "1.0",
+                    "author": "System",
+                    "created_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat()
+                }
+                
+                # Get current project data to update docs array
+                current_docs = project.get("docs", [])
+                updated_docs = current_docs + [new_doc]
+                
+                # Update project with the new document in docs array
+                supabase_client.table("projects").update({
+                    "docs": updated_docs,
+                    "updated_at": datetime.now().isoformat()
+                }).eq("id", project_id).execute()
+                
+                # Update project data with the added document
+                project["docs"] = updated_docs
+                
+            except Exception as doc_error:
+                logger.warning(f"Error creating PRD document: {doc_error}")
+                await project_creation_manager.update_progress(progress_id, {
+                    'percentage': 96,
+                    'step': 'prd_document_error',
+                    'log': f'⚠️ Failed to create PRD document: {str(doc_error)}'
+                })
             
             # Save technical and business sources to project_sources table
             if request.technical_sources or request.business_sources:

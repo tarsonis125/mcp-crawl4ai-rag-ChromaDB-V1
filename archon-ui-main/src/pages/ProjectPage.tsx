@@ -146,10 +146,7 @@ export function ProjectPage({
         description: newProjectForm.description,
         color: newProjectForm.color,
         icon: 'Briefcase', // Default icon
-        prd: {
-          overview: newProjectForm.description,
-          status: 'planning'
-        },
+        // PRD data will be added as a document in the docs array by backend
         docs: [],
         features: [],
         data: []

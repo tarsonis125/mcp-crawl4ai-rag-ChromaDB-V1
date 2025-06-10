@@ -144,8 +144,7 @@ def register_project_tools(mcp: FastMCP):
                 # Create the project first
                 project_data = {
                     "title": title.strip(),
-                    "prd": prd or {},
-                    "docs": [],
+                    "docs": [],  # Will add PRD as a document in docs array after project creation
                     "features": [],
                     "data": [],
                     "created_at": datetime.now().isoformat(),
@@ -174,6 +173,39 @@ def register_project_tools(mcp: FastMCP):
                     logger.info(f"Project created successfully with ID: {project_id}")
                     mcp_logger.info("Project created successfully", project_id=project_id, title=title)
                     span.set_attribute("project_id", project_id)
+                    
+                    # Create PRD document in the docs array
+                    try:
+                        # Format the PRD content
+                        prd_content = prd or create_fallback_prd(title)
+                        
+                        # Create PRD document
+                        prd_doc_title = f"{title} - Product Requirements Document"
+                        doc_response = await add_project_document(
+                            ctx=ctx,
+                            project_id=project_id,
+                            document_type="prd",
+                            title=prd_doc_title,
+                            content=prd_content,
+                            tags=["prd", "requirements"],
+                            author="System"
+                        )
+                        
+                        # Parse the response to check for success
+                        doc_result = json.loads(doc_response)
+                        if not doc_result.get("success"):
+                            logger.warning(f"Failed to create PRD document: {doc_result.get('error')}")
+                            mcp_logger.warning("Failed to create PRD document", error=doc_result.get('error'))
+                            # Continue with project creation but return a warning
+                            return create_project_success_response(project, warning="Project created but PRD document creation failed")
+                            
+                    except Exception as doc_error:
+                        logger.warning(f"Error creating PRD document: {doc_error}")
+                        mcp_logger.warning("Error creating PRD document", error=str(doc_error))
+                        return create_project_success_response(project, warning="Project created but PRD document creation failed")
+                        
+                    # All successful - return success response with project info
+                    return create_project_success_response(project)
                     
                 except Exception as db_error:
                     logger.error(f"Database error creating project: {db_error}")

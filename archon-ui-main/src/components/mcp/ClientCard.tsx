@@ -38,35 +38,120 @@ export const ClientCard = ({
       pulse: 'bg-pink-400'
     }
   };
-  // Handle mouse movement for particle effects
+  // Handle mouse movement for neon trail effect
   useEffect(() => {
     if (!isArchonClient || !particlesRef.current) return;
+
+    let trailPoints: {x: number, y: number, timestamp: number}[] = [];
+    let trailSvg: SVGElement | null = null;
+    let lastMoveTime = 0;
+
+    const createTrailSvg = () => {
+      if (trailSvg) return trailSvg;
+      
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'absolute inset-0 pointer-events-none');
+      svg.setAttribute('width', '100%');
+      svg.setAttribute('height', '100%');
+      svg.style.overflow = 'visible';
+      
+      particlesRef.current?.appendChild(svg);
+      trailSvg = svg;
+      return svg;
+    };
+
+    const updateTrail = () => {
+      if (!trailSvg || trailPoints.length < 2) return;
+      
+      // Clear existing path
+      trailSvg.innerHTML = '';
+      
+      // Create smooth path through all points
+      let pathData = `M ${trailPoints[0].x} ${trailPoints[0].y}`;
+      
+      for (let i = 1; i < trailPoints.length; i++) {
+        const currentPoint = trailPoints[i];
+        const prevPoint = trailPoints[i - 1];
+        
+        // Create smooth curve between points
+        const controlX = (prevPoint.x + currentPoint.x) / 2;
+        const controlY = (prevPoint.y + currentPoint.y) / 2;
+        
+        pathData += ` Q ${controlX} ${controlY} ${currentPoint.x} ${currentPoint.y}`;
+      }
+      
+      // Create the glowing trail path
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', pathData);
+      path.setAttribute('stroke', 'rgba(59, 130, 246, 0.8)');
+      path.setAttribute('stroke-width', '3');
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke-linecap', 'round');
+      path.setAttribute('stroke-linejoin', 'round');
+      
+      // Add glow effects with multiple paths
+      const glowPath1 = path.cloneNode() as SVGPathElement;
+      glowPath1.setAttribute('stroke', 'rgba(168, 85, 247, 0.6)');
+      glowPath1.setAttribute('stroke-width', '6');
+      glowPath1.setAttribute('filter', 'blur(2px)');
+      
+      const glowPath2 = path.cloneNode() as SVGPathElement;
+      glowPath2.setAttribute('stroke', 'rgba(59, 130, 246, 0.4)');
+      glowPath2.setAttribute('stroke-width', '10');
+      glowPath2.setAttribute('filter', 'blur(4px)');
+      
+      // Add paths in order (largest glow first)
+      trailSvg.appendChild(glowPath2);
+      trailSvg.appendChild(glowPath1);
+      trailSvg.appendChild(path);
+      
+      // Animate the trail fade
+      const fadeAnimation = trailSvg.animate([
+        { opacity: 1 },
+        { opacity: 0 }
+      ], {
+        duration: 2000,
+        easing: 'ease-out',
+        fill: 'forwards'
+      });
+    };
+
     const handleMouseMove = (e: MouseEvent) => {
       if (!particlesRef.current) return;
+      
+      // Throttle movement tracking
+      const now = Date.now();
+      if (now - lastMoveTime < 30) return;
+      lastMoveTime = now;
+      
       const rect = particlesRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
-      // Create a particle
-      const particle = document.createElement('div');
-      particle.className = 'absolute w-1 h-1 rounded-full bg-blue-400/40 dark:bg-blue-400/60';
-      particle.style.left = `${x}px`;
-      particle.style.top = `${y}px`;
-      particle.style.boxShadow = '0 0 8px rgba(59, 130, 246, 0.6)';
-      particle.style.animation = 'particle-fade 1.5s ease-out forwards';
-      particlesRef.current.appendChild(particle);
-      // Remove particle after animation completes
-      setTimeout(() => {
-        if (particlesRef.current?.contains(particle)) {
-          particlesRef.current.removeChild(particle);
-        }
-      }, 1500);
+
+      // Add new point to trail
+      trailPoints.push({ x, y, timestamp: now });
+      
+      // Remove old points (keep trail length manageable)
+      trailPoints = trailPoints.filter(point => now - point.timestamp < 1500);
+      
+      // Create/update trail SVG
+      createTrailSvg();
+      updateTrail();
     };
+
     const cardElement = particlesRef.current;
     if (isHovered) {
       cardElement.addEventListener('mousemove', handleMouseMove);
     }
+
     return () => {
       cardElement.removeEventListener('mousemove', handleMouseMove);
+      // Clean up trail SVG
+      if (trailSvg && particlesRef.current?.contains(trailSvg)) {
+        particlesRef.current.removeChild(trailSvg);
+      }
+      trailPoints = [];
+      trailSvg = null;
     };
   }, [isArchonClient, isHovered]);
   const currentStatus = statusConfig[client.status];
@@ -99,6 +184,8 @@ export const ClientCard = ({
   }] : client.tools;
   // Special background for Archon client
   const archonBackground = isArchonClient ? 'bg-gradient-to-b from-white/80 via-blue-50/30 to-white/60 dark:from-white/10 dark:via-blue-900/10 dark:to-black/30' : 'bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30';
+
+
   return <div className={`flip-card h-[220px] cursor-pointer ${isArchonClient ? 'order-first' : ''}`} style={{
     perspective: '1500px'
   }} onClick={onSelect} onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
@@ -174,7 +261,11 @@ export const ClientCard = ({
             </div>
           </div>
           {/* Tools button - with Hammer icon */}
-          <button onClick={toggleFlip} className={`absolute bottom-4 right-4 p-1.5 rounded-full ${isArchonClient ? 'bg-blue-200/50 dark:bg-blue-900/50 hover:bg-blue-300/50 dark:hover:bg-blue-800/50' : 'bg-gray-200/50 dark:bg-gray-800/50 hover:bg-gray-300/50 dark:hover:bg-gray-700/50'} transition-colors transform hover:scale-110 transition-transform duration-200`} title="View available tools">
+          <button 
+            onClick={toggleFlip} 
+            className={`absolute bottom-4 right-4 p-1.5 rounded-full ${isArchonClient ? 'bg-blue-200/50 dark:bg-blue-900/50 hover:bg-blue-300/50 dark:hover:bg-blue-800/50' : 'bg-gray-200/50 dark:bg-gray-800/50 hover:bg-gray-300/50 dark:hover:bg-gray-700/50'} transition-colors transform hover:scale-110 transition-transform duration-200 z-10`} 
+            title="View available tools"
+          >
             <Hammer className={`w-4 h-4 ${isArchonClient ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'}`} />
           </button>
         </div>
@@ -212,7 +303,11 @@ export const ClientCard = ({
             </div>
           </div>
           {/* Flip button - back to front */}
-          <button onClick={toggleFlip} className={`absolute bottom-4 right-4 p-1.5 rounded-full ${isArchonClient ? 'bg-blue-200/50 dark:bg-blue-900/50 hover:bg-blue-300/50 dark:hover:bg-blue-800/50' : 'bg-gray-200/50 dark:bg-gray-800/50 hover:bg-gray-300/50 dark:hover:bg-gray-700/50'} transition-colors transform hover:scale-110 transition-transform duration-200`} title="Show client details">
+          <button 
+            onClick={toggleFlip} 
+            className={`absolute bottom-4 right-4 p-1.5 rounded-full ${isArchonClient ? 'bg-blue-200/50 dark:bg-blue-900/50 hover:bg-blue-300/50 dark:hover:bg-blue-800/50' : 'bg-gray-200/50 dark:bg-gray-800/50 hover:bg-gray-300/50 dark:hover:bg-gray-700/50'} transition-colors transform hover:scale-110 transition-transform duration-200 z-10`} 
+            title="Show client details"
+          >
             <Server className={`w-4 h-4 ${isArchonClient ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'}`} />
           </button>
         </div>

@@ -74,7 +74,8 @@ export interface CreateProjectRequest {
   icon?: string;
   color?: ProjectColor;
   github_repo?: string;
-  prd?: Record<string, any>;
+  // Note: PRD data should be stored as a document in the docs array with document_type="prd"
+  // not as a direct 'prd' field since this column doesn't exist in the database
   docs?: any[];
   features?: any[];
   data?: any[];
