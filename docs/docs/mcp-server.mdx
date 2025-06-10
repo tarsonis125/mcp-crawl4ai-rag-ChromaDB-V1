@@ -7,24 +7,13 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import Admonition from '@theme/Admonition';
 
-# 🛠️ Archon MCP Server Documentation
+# Archon MCP Server Documentation
 
-<div className="hero hero--primary">
-  <div className="container">
-    <h1 className="hero__title">
-      **Connect Any AI Client to Archon**
-    </h1>
-    <h2 className="hero__subtitle">
-      Expose 25 powerful tools to **Cursor**, **Windsurf**, **Claude Desktop**, and more
-    </h2>
-  </div>
-</div>
+## Overview
 
-## 🎯 Overview
+Archon's MCP Server exposes your knowledge base and project management capabilities to any MCP-compatible AI client. With 25 comprehensive tools, real-time Logfire monitoring, and multiple transport options, you can integrate Archon with your preferred AI development environment.
 
-Archon's MCP Server exposes your knowledge base and project management capabilities to any MCP-compatible AI client. With **25 comprehensive tools**, real-time Logfire monitoring, and multiple transport options, you can supercharge your AI workflows instantly.
-
-## 📊 MCP Server Architecture
+## MCP Server Architecture
 
 ```mermaid
 %%{init:{
@@ -85,15 +74,11 @@ graph TB
     ProjectModule --> Logfire
 ```
 
-## 📊 Available Tools
+## Available Tools
 
-<Admonition type="info" icon="🛠️" title="25 Powerful MCP Tools">
+Archon provides 25 MCP tools organized into logical categories:
 
-Archon provides the most comprehensive MCP tool collection available, organized into logical categories for maximum productivity.
-
-</Admonition>
-
-### 🧠 Knowledge Management Tools (7 tools)
+### Knowledge Management Tools (7 tools)
 
 | Tool | Description | Use Case |
 |------|-------------|----------|
@@ -105,7 +90,7 @@ Archon provides the most comprehensive MCP tool collection available, organized 
 | `get_available_sources` | List all indexed sources | See what knowledge is available |
 | `delete_source_tool` | Remove indexed sources | Clean up old or irrelevant content |
 
-### 📊 Project Management Tools (17 tools)
+### Project Management Tools (17 tools)
 
 | Category | Tools | Description |
 |----------|-------|-------------|
@@ -116,13 +101,13 @@ Archon provides the most comprehensive MCP tool collection available, organized 
 | **Versioning** | `create_document_version`, `get_document_version_history`, `get_version_content`, `restore_document_version` | Complete version control |
 | **Features** | `get_project_features` | Feature tracking and organization |
 
-### 🏥 System Health Tools (1 tool)
+### System Health Tools (1 tool)
 
 | Tool | Description | Use Case |
 |------|-------------|----------|
 | `health_check` | Comprehensive system diagnostics | Monitor server health and performance |
 
-## 🚀 Setup
+## Setup {#setup}
 
 ### Prerequisites
 

@@ -7,42 +7,31 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import Admonition from '@theme/Admonition';
 
-# 🔌 Model Context Protocol (MCP) Overview
+# Model Context Protocol (MCP) Overview
 
-<div className="hero hero--primary">
-  <div className="container">
-    <h1 className="hero__title">
-      **Archon's MCP Integration**
-    </h1>
-    <h2 className="hero__subtitle">
-      Connect **any AI client** to your knowledge base with 25 powerful tools and real-time monitoring
-    </h2>
-  </div>
-</div>
+## What is MCP?
 
-## 🎯 What is MCP?
+The Model Context Protocol (MCP) is an open standard that enables AI applications to securely access external data sources and tools. Archon implements both sides of MCP:
 
-The **Model Context Protocol (MCP)** is an open standard that enables AI applications to securely access external data sources and tools. Archon implements both sides of MCP:
-
-- **🛠️ MCP Server**: Exposes 25 powerful tools for knowledge management and task organization
-- **🔌 MCP Client**: Universal client for connecting to any MCP server (including Archon itself)
+- **MCP Server**: Exposes 25 tools for knowledge management and task organization
+- **MCP Client**: Universal client for connecting to any MCP server (including Archon itself)
 
 <div className="row">
   <div className="col col--6">
     <div className="card">
       <div className="card__header">
-        <h3>🛠️ **MCP Server**</h3>
+        <h3>MCP Server</h3>
       </div>
       <div className="card__body">
-        <p>**Archon as an MCP Server** - Expose your knowledge base to AI clients</p>
+        <p>Archon as an MCP Server - Expose your knowledge base to AI clients</p>
         <ul>
-          <li>✅ **25 comprehensive tools** for RAG and project management</li>
-          <li>🔥 **Real-time Logfire monitoring** of all tool calls</li>
-          <li>🌐 **Universal compatibility** with Cursor, Windsurf, Claude Desktop</li>
-          <li>📡 **Multiple transports**: stdio, SSE, WebSocket</li>
+          <li>25 comprehensive tools for RAG and project management</li>
+          <li>Real-time Logfire monitoring of all tool calls</li>
+          <li>Compatible with Cursor, Windsurf, Claude Desktop</li>
+          <li>Multiple transports: stdio, SSE</li>
         </ul>
         <a href="/mcp-server" className="button button--primary">
-          📖 MCP Server Documentation
+          MCP Server Documentation
         </a>
       </div>
     </div>
@@ -50,25 +39,25 @@ The **Model Context Protocol (MCP)** is an open standard that enables AI applica
   <div className="col col--6">
     <div className="card">
       <div className="card__header">
-        <h3>🔌 **MCP Client**</h3>
+        <h3>MCP Client</h3>
       </div>
       <div className="card__body">
-        <p>**Universal MCP Client** - Connect to any MCP server from Archon's UI</p>
+        <p>Universal MCP Client - Connect to any MCP server from Archon's UI</p>
         <ul>
-          <li>🌐 **Connect to any MCP server** (including other Archon instances)</li>
-          <li>🧪 **Interactive tool testing** with real-time results</li>
-          <li>📊 **WebSocket real-time updates** for collaborative workflows</li>
-          <li>🔧 **Multiple transport support** with automatic detection</li>
+          <li>Connect to any MCP server (including other Archon instances)</li>
+          <li>Interactive tool testing with real-time results</li>
+          <li>WebSocket real-time updates for collaborative workflows</li>
+          <li>Multiple transport support with automatic detection</li>
         </ul>
         <a href="/mcp-client" className="button button--primary">
-          🔌 MCP Client Documentation
+          MCP Client Documentation
         </a>
       </div>
     </div>
   </div>
 </div>
 
-## 🏗️ Archon MCP Architecture
+## Archon MCP Architecture
 
 ```mermaid
 %%{init:{
@@ -152,16 +141,16 @@ graph TB
     ClientWS --> FastAPI
 ```
 
-## 🚀 Quick Start Guide
+## Quick Start Guide
 
 <Tabs>
-<TabItem value="server" label="🛠️ Using Archon as MCP Server" default>
+<TabItem value="server" label="Using Archon as MCP Server" default>
 
-**Connect your AI client to Archon's knowledge base:**
+Connect your AI client to Archon's knowledge base:
 
-1. **Start Archon** (Docker or local)
-2. **Configure your AI client** (Cursor, Windsurf, etc.)
-3. **Start using 25 powerful tools** immediately
+1. Start Archon (Docker or local)
+2. Configure your AI client (Cursor, Windsurf, etc.)
+3. Begin using 25 available tools
 
 ```json title="~/.cursor/mcp.json"
 {
@@ -179,23 +168,23 @@ graph TB
 }
 ```
 
-**⚡ Instant Benefits:**
-- 🧠 RAG queries across your crawled knowledge
-- 📊 Create and manage tasks/projects
-- 🔍 Search code examples with AI summaries
-- 📝 Document management with versioning
+**Available capabilities:**
+- RAG queries across your crawled knowledge
+- Create and manage tasks/projects
+- Search code examples with AI summaries
+- Document management with versioning
 
 </TabItem>
-<TabItem value="client" label="🔌 Using Universal MCP Client">
+<TabItem value="client" label="Using Universal MCP Client">
 
-**Connect to any MCP server from Archon's UI:**
+Connect to any MCP server from Archon's UI:
 
-1. **Open Archon UI** → Navigate to MCP Client tab
-2. **Add MCP servers** (Brave Search, GitHub, Filesystem, etc.)
-3. **Test tools interactively** with real-time results
-4. **Monitor all connections** with WebSocket updates
+1. Open Archon UI → Navigate to MCP Client tab
+2. Add MCP servers (Brave Search, GitHub, Filesystem, etc.)
+3. Test tools interactively with real-time results
+4. Monitor all connections with WebSocket updates
 
-**🌐 Connect to Popular MCP Servers:**
+**Connect to Popular MCP Servers:**
 - **Brave Search**: Web search capabilities
 - **GitHub**: Repository management
 - **Filesystem**: Local file operations
