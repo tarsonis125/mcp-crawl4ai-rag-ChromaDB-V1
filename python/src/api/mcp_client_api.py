@@ -59,7 +59,7 @@ class MCPClientConfig(BaseModel):
             if not all(field in v for field in required_fields):
                 raise ValueError(f"stdio transport requires: {required_fields}")
         elif transport == TransportType.DOCKER:
-            required_fields = ['container_name', 'command']
+            required_fields = ['command']
             if not all(field in v for field in required_fields):
                 raise ValueError(f"Docker transport requires: {required_fields}")
         elif transport == TransportType.NPX:

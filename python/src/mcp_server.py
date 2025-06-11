@@ -370,8 +370,12 @@ async def main():
         logger.info(f"   HOST env var: {os.getenv('HOST', 'NOT_SET (will default to localhost)')}")
         logger.info(f"   PORT env var: {os.getenv('PORT', 'NOT_SET (will default to 8051)')}")
         
-        # Auto-detect transport based on how the script was invoked
+        # Determine transport mode
         transport = os.getenv("TRANSPORT")
+        host = os.getenv("HOST", "localhost")
+        port = int(os.getenv("PORT", "8051"))
+        
+        # Auto-detect transport based on how the script was invoked
         if not transport:
             # Check explicitly for docker exec stdio flag first
             if os.getenv("DOCKER_EXEC_STDIO") == "1":
@@ -387,32 +391,41 @@ async def main():
         else:
             logger.info(f"🎯 Transport explicitly set via TRANSPORT env var: {transport}")
         
-        host = os.getenv("HOST", "localhost")
-        port = int(os.getenv("PORT", "8051"))
-        
         logger.info(f"🚀 FINAL CONFIGURATION:")
         logger.info(f"   Transport: {transport}")
         logger.info(f"   Host: {host}")
         logger.info(f"   Port: {port}")
         
-        # Only print when not using stdio to avoid contaminating JSON-RPC stream
-        if transport != "stdio":
-            mcp_logger.info("🔥 Logfire initialized for MCP server")
-            mcp_logger.info("🌟 Starting Archon MCP server", transport=transport)
+        mcp_logger.info("🔥 Logfire initialized for MCP server")
+        mcp_logger.info("🌟 Starting Archon MCP server", transport=transport)
         
-        if transport == 'sse':
-            logger.info("🌐 SSE MODE - Starting Server-Sent Events transport")
+        if transport == 'dual':
+            # Dual mode: Run SSE server, stdio available via docker exec
+            logger.info("🔀 DUAL MODE - SSE server + STDIO via docker exec")
+            logger.info(f"🌐 SSE server: http://{host}:{port}/sse")
+            logger.info(f"🌐 WebSocket: ws://{host}:{port}/ws") 
+            logger.info("📡 STDIO available via: docker exec -i -e TRANSPORT=stdio archon-pyserver uv run python src/mcp_server.py")
+            logger.info("   Web clients use SSE, IDE clients use docker exec with stdio")
+            
+            mcp_logger.info("🔀 Dual mode: SSE server starting", 
+                          sse_url=f"http://{host}:{port}/sse",
+                          stdio_via_exec=True)
+            
+            # Run SSE server (stdio connections come via separate docker exec processes)
+            await mcp.run_sse_async()
+                
+        elif transport == 'sse':
+            logger.info("🌐 SSE MODE - Starting Server-Sent Events transport only")
             logger.info(f"   SSE URL: http://{host}:{port}/sse")
             logger.info(f"   WebSocket URL: ws://{host}:{port}/ws")
             logger.info("   This mode is for web browser clients and HTTP-based connections")
             
-            if transport != "stdio":
-                mcp_logger.info("🌐 SSE server starting", url=f"http://{host}:{port}/sse")
+            mcp_logger.info("🌐 SSE server starting", url=f"http://{host}:{port}/sse")
             await mcp.run_sse_async()
             
         elif transport == 'stdio':
             # Log to stderr in stdio mode to avoid contaminating stdout JSON-RPC stream
-            print("📡 STDIO MODE - Starting Standard Input/Output transport", file=sys.stderr)
+            print("📡 STDIO MODE - Starting Standard Input/Output transport only", file=sys.stderr)
             print("   This mode is for command-line clients like Cursor/Claude", file=sys.stderr)
             print("   All JSON-RPC communication happens via stdin/stdout", file=sys.stderr)
             print("   No HTTP server will be started", file=sys.stderr)
@@ -422,12 +435,13 @@ async def main():
             await mcp.run_stdio_async()
             
         else:
-            error_msg = f"Unsupported transport: {transport}. Use 'sse' or 'stdio'"
+            error_msg = f"Unsupported transport: {transport}. Use 'dual', 'sse', or 'stdio'"
             logger.error(f"💥 {error_msg}")
             raise ValueError(error_msg)
             
     except Exception as e:
-        # Only log to stderr in stdio mode, never stdout (which is used for JSON-RPC)
+        # Handle errors appropriately based on transport mode
+        transport = os.getenv("TRANSPORT", "dual")
         if transport == "stdio":
             print(f"💥 Fatal error in MCP server: {e}", file=sys.stderr)
         else:

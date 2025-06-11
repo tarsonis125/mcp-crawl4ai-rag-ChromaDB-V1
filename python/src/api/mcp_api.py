@@ -74,7 +74,7 @@ class MCPServerManager:
                 
                 # Verify and log key environment variables
                 openai_key_found = bool(env.get('OPENAI_API_KEY'))
-                transport = env.get('TRANSPORT', 'sse')
+                transport = env.get('TRANSPORT', 'dual')
                 host = env.get('HOST', '0.0.0.0')
                 port = env.get('PORT', '8051')
                 model_choice = env.get('MODEL_CHOICE', 'gpt-4o-mini')
