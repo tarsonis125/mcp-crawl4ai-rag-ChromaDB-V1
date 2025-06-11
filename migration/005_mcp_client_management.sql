@@ -90,8 +90,8 @@ INSERT INTO mcp_clients (
     is_default
 ) VALUES (
     'Archon (Default)',
-    'sse',
-    '{"host": "localhost", "port": 8051, "endpoint": "/sse", "timeout": 30}',
+    'docker',
+    '{"container_name": "archon-pyserver", "command": "uv run python src/mcp_server.py", "args": [], "environment": {"TRANSPORT": "stdio", "HOST": "localhost", "PORT": "8051"}}',
     'disconnected',
     true,
     true

@@ -39,6 +39,9 @@ from mcp.types import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Import logfire configuration using established pattern
+from src.logfire_config import mcp_logger
+
 class TransportType(str, Enum):
     STDIO = "stdio"
     DOCKER = "docker" 
@@ -97,7 +100,7 @@ class MCPClientService:
             return
             
         self._running = True
-        logger.info("Starting Universal MCP Client Service")
+        mcp_logger.info("Starting Universal MCP Client Service")
         
         # Start background tasks
         asyncio.create_task(self._health_check_loop())
@@ -107,7 +110,7 @@ class MCPClientService:
         if not self._running:
             return
             
-        logger.info("Stopping Universal MCP Client Service")
+        mcp_logger.info("Stopping Universal MCP Client Service")
         self._running = False
         self._shutdown_event.set()
         
@@ -166,45 +169,65 @@ class MCPClientService:
     
     async def connect_client(self, client_id: str) -> bool:
         """Connect to an MCP client"""
-        client_info = self.clients.get(client_id)
-        if not client_info:
-            raise ValueError(f"Client not found: {client_id}")
+        with mcp_logger.span("mcp_client.connect", client_id=client_id):
+            client_info = self.clients.get(client_id)
+            if not client_info:
+                mcp_logger.error("Client not found", client_id=client_id)
+                raise ValueError(f"Client not found: {client_id}")
+                
+            if client_info.status == ClientStatus.CONNECTED:
+                mcp_logger.info("Client already connected", client_id=client_id, client_name=client_info.config.name)
+                return True
+                
+            config = client_info.config
+            client_info.status = ClientStatus.CONNECTING
+            client_info.last_error = None
             
-        if client_info.status == ClientStatus.CONNECTED:
-            return True
+            mcp_logger.info("Starting client connection", 
+                           client_id=client_id,
+                           client_name=config.name, 
+                           transport_type=config.transport_type,
+                           connection_config=config.connection_config)
             
-        config = client_info.config
-        client_info.status = ClientStatus.CONNECTING
-        client_info.last_error = None
-        
-        try:
-            logger.info(f"Connecting to {config.name} via {config.transport_type}")
-            
-            # Create session based on transport type
-            session = await self._create_session(config)
-            
-            # Initialize the MCP session
-            await session.initialize()
-            
-            # Store session
-            self.sessions[client_id] = session
-            client_info.status = ClientStatus.CONNECTED
-            client_info.last_seen = datetime.now(timezone.utc)
-            
-            # Discover tools
-            await self._discover_tools(client_id)
-            
-            logger.info(f"Successfully connected to {config.name}")
-            return True
-            
-        except Exception as e:
-            client_info.status = ClientStatus.ERROR
-            client_info.last_error = str(e)
-            logger.error(f"Failed to connect to {config.name}: {e}")
-            
-            # Cleanup any partial connection
-            await self._cleanup_client_connection(client_id)
-            raise
+            try:
+                logger.info(f"Connecting to {config.name} via {config.transport_type}")
+                
+                # Create session based on transport type
+                session = await self._create_session(config)
+                mcp_logger.info("Session created successfully", client_id=client_id)
+                
+                # Initialize the MCP session
+                await session.initialize()
+                mcp_logger.info("Session initialized successfully", client_id=client_id)
+                
+                # Store session
+                self.sessions[client_id] = session
+                client_info.status = ClientStatus.CONNECTED
+                client_info.last_seen = datetime.now(timezone.utc)
+                
+                # Discover tools
+                await self._discover_tools(client_id)
+                
+                logger.info(f"Successfully connected to {config.name}")
+                mcp_logger.info("Client connection completed successfully", 
+                               client_id=client_id,
+                               client_name=config.name,
+                               tools_count=len(client_info.tools))
+                return True
+                
+            except Exception as e:
+                mcp_logger.error("Client connection failed", 
+                                client_id=client_id,
+                                client_name=config.name,
+                                error=str(e),
+                                transport_type=config.transport_type)
+                client_info.status = ClientStatus.ERROR
+                client_info.last_error = str(e)
+                logger.error(f"Failed to connect to {config.name}: {e}")
+                
+                # Cleanup any partial connection
+                await self._cleanup_client_connection(client_id)
+                raise
             
     async def disconnect_client(self, client_id: str) -> bool:
         """Disconnect from an MCP client"""
@@ -258,6 +281,10 @@ class MCPClientService:
         transport_type = config.transport_type
         connection_config = config.connection_config
         
+        mcp_logger.info("Creating MCP session", 
+                       transport_type=transport_type,
+                       config=connection_config)
+        
         if transport_type == TransportType.STDIO:
             return await self._create_stdio_session(config)
         elif transport_type == TransportType.DOCKER:
@@ -267,6 +294,7 @@ class MCPClientService:
         elif transport_type == TransportType.NPX:
             return await self._create_npx_session(config)
         else:
+            mcp_logger.error("Unsupported transport type", transport_type=transport_type)
             raise ValueError(f"Unsupported transport type: {transport_type}")
             
     async def _create_stdio_session(self, config: MCPClientConfig) -> ClientSession:
@@ -308,41 +336,48 @@ class MCPClientService:
         
     async def _create_docker_session(self, config: MCPClientConfig) -> ClientSession:
         """Create docker exec transport session"""
-        connection_config = config.connection_config
-        
-        container = connection_config.get('container')
-        command = connection_config.get('command', [])
-        working_dir = connection_config.get('working_dir')
-        
-        if not container:
-            raise ValueError("Docker transport requires 'container' in connection_config")
+        with mcp_logger.span("mcp_client.create_docker_session"):
+            connection_config = config.connection_config
             
-        # Build docker exec command
-        docker_cmd = ['docker', 'exec', '-i']
-        
-        if working_dir:
-            docker_cmd.extend(['-w', working_dir])
+            # For Docker transport, the command and args come from the config
+            command = connection_config.get('command')  # e.g. "docker"
+            args = connection_config.get('args', [])    # e.g. ["exec", "-i", "archon-pyserver", "uv", "run", "python", "src/mcp_server.py"]
             
-        docker_cmd.append(container)
-        
-        if isinstance(command, str):
-            docker_cmd.append(command)
-        else:
-            docker_cmd.extend(command)
+            if not command:
+                mcp_logger.error("Docker transport missing command", config=connection_config)
+                raise ValueError("Docker transport requires 'command' in connection_config")
+                
+            # Build full command - command + args
+            if isinstance(command, str):
+                full_command = [command] + args
+            else:
+                full_command = command + args
             
-        logger.info(f"Starting docker exec: {' '.join(docker_cmd)}")
-        
-        # Use stdio transport with docker exec command
-        stdio_params = {
-            'command': docker_cmd[0],
-            'args': docker_cmd[1:],
-        }
-        
-        session_context = stdio_client(**stdio_params)
-        read_stream, write_stream = await session_context.__aenter__()
-        
-        session = ClientSession(read_stream, write_stream)
-        return session
+            mcp_logger.info("Starting docker process", 
+                           full_command=full_command,
+                           command_str=' '.join(full_command))
+            logger.info(f"Starting docker exec: {' '.join(full_command)}")
+            
+            try:
+                # Use stdio transport with full docker command
+                stdio_params = {
+                    'command': full_command[0],
+                    'args': full_command[1:] if len(full_command) > 1 else [],
+                }
+                
+                mcp_logger.info("Creating stdio client", stdio_params=stdio_params)
+                session_context = stdio_client(**stdio_params)
+                read_stream, write_stream = await session_context.__aenter__()
+                
+                session = ClientSession(read_stream, write_stream)
+                mcp_logger.info("Docker session created successfully")
+                return session
+                
+            except Exception as e:
+                mcp_logger.error("Failed to create docker session", 
+                                error=str(e),
+                                full_command=full_command)
+                raise
         
     async def _create_sse_session(self, config: MCPClientConfig) -> ClientSession:
         """Create SSE transport session"""
@@ -394,23 +429,41 @@ class MCPClientService:
     
     async def _discover_tools(self, client_id: str):
         """Discover tools from a connected client"""
-        session = self.sessions.get(client_id)
-        client_info = self.clients.get(client_id)
-        
-        if not session or not client_info:
-            return
+        with mcp_logger.span("mcp_client.discover_tools", client_id=client_id):
+            session = self.sessions.get(client_id)
+            client_info = self.clients.get(client_id)
             
-        try:
-            # List available tools
-            result = await session.list_tools()
-            client_info.tools = result.tools
-            client_info.last_seen = datetime.now(timezone.utc)
-            
-            logger.info(f"Discovered {len(result.tools)} tools from {client_info.config.name}")
-            
-        except Exception as e:
-            logger.error(f"Failed to discover tools from {client_info.config.name}: {e}")
-            client_info.last_error = str(e)
+            if not session or not client_info:
+                mcp_logger.warning("No session or client info found for tool discovery", 
+                              client_id=client_id,
+                              has_session=session is not None,
+                              has_client_info=client_info is not None)
+                return
+                
+            try:
+                mcp_logger.info("Requesting tools from MCP server", 
+                           client_id=client_id,
+                           client_name=client_info.config.name)
+                # List available tools
+                result = await session.list_tools()
+                client_info.tools = result.tools
+                client_info.last_seen = datetime.now(timezone.utc)
+                
+                mcp_logger.info("Tools discovered successfully", 
+                           client_id=client_id,
+                           client_name=client_info.config.name,
+                           tools_count=len(result.tools),
+                           tool_names=[tool.name for tool in result.tools])
+                
+                logger.info(f"Discovered {len(result.tools)} tools from {client_info.config.name}")
+                
+            except Exception as e:
+                mcp_logger.error("Failed to discover tools", 
+                            client_id=client_id,
+                            client_name=client_info.config.name,
+                            error=str(e))
+                logger.error(f"Failed to discover tools from {client_info.config.name}: {e}")
+                client_info.last_error = str(e)
             
     async def get_client_tools(self, client_id: str) -> List[Tool]:
         """Get tools from a specific client"""

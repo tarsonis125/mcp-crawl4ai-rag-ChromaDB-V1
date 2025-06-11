@@ -290,7 +290,20 @@ export const ClientCard = ({
               </span>
             </div>
             
-
+            {/* Error message display */}
+            {client.status === 'error' && client.lastError && (
+              <div className="mt-3 p-2 bg-red-50/80 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-md">
+                <div className="flex items-start">
+                  <div className="w-3 h-3 rounded-full bg-red-400 mt-0.5 mr-2 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs font-medium text-red-700 dark:text-red-300 mb-1">Last Error:</p>
+                    <p className="text-xs text-red-600 dark:text-red-400 break-words">
+                      {client.lastError}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Status badge - moved to bottom left */}

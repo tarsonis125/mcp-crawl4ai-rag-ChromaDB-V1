@@ -15,6 +15,7 @@ export interface Client {
   version: string;
   tools: Tool[];
   region?: string;
+  lastError?: string;
 }
 
 // Tool interface
@@ -50,7 +51,42 @@ export const MCPClients = memo(() => {
   // Load clients when component mounts
   useEffect(() => {
     loadAllClients();
+    
+    // Set up periodic status checks every 10 seconds
+    const statusInterval = setInterval(() => {
+      // Silently refresh client statuses without loading state
+      refreshClientStatuses();
+    }, 10000);
+    
+    return () => clearInterval(statusInterval);
   }, []);
+
+  /**
+   * Refresh client statuses without showing loading state
+   */
+  const refreshClientStatuses = async () => {
+    try {
+      const dbClients = await mcpClientService.getClients();
+      
+      setClients(prevClients => 
+        prevClients.map(client => {
+          const dbClient = dbClients.find(db => db.id === client.id);
+          if (dbClient) {
+            return {
+              ...client,
+              status: dbClient.status === 'connected' ? 'online' : 
+                     dbClient.status === 'error' ? 'error' : 'offline',
+              lastSeen: dbClient.last_seen ? new Date(dbClient.last_seen).toLocaleString() : 'Never',
+              lastError: dbClient.last_error || undefined
+            };
+          }
+          return client;
+        })
+      );
+    } catch (error) {
+      console.warn('Failed to refresh client statuses:', error);
+    }
+  };
 
   /**
    * Load all clients: Archon (hardcoded) + real database clients
@@ -118,11 +154,10 @@ export const MCPClients = memo(() => {
       lastSeen: dbClient.last_seen ? new Date(dbClient.last_seen).toLocaleString() : 'Never',
       version: config.version || 'Unknown',
       region: config.region || 'Unknown',
-      tools: [] // Will be loaded separately
+      tools: [], // Will be loaded separately
+      lastError: dbClient.last_error || undefined
     };
   };
-
-
 
   /**
    * Load tools from any MCP client using universal client service
@@ -326,6 +361,9 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, onSubm
     port: '',
     command: '',
     package: '',
+    container_name: '',
+    args: '',
+    env: '',
     auto_connect: true
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -359,16 +397,7 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, onSubm
             endpoint: '/sse'
           };
           break;
-        case 'stdio':
-          if (!formData.command) {
-            setError('Command is required for stdio transport');
-            setIsSubmitting(false);
-            return;
-          }
-          connection_config = {
-            command: formData.command
-          };
-          break;
+
         case 'npx':
           if (!formData.package) {
             setError('Package name is required for NPX transport');
@@ -380,13 +409,32 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, onSubm
           };
           break;
         case 'docker':
+        case 'stdio':
           if (!formData.command) {
-            setError('Docker command is required for Docker transport');
+            setError('Command is required');
             setIsSubmitting(false);
             return;
           }
+          // Parse args from string to array (split by spaces, handling quoted strings)
+          const argsArray = formData.args ? 
+            formData.args.split(/\s+/).filter(arg => arg.length > 0) : [];
+          
+          // Parse environment variables if provided
+          let envVars = {};
+          if (formData.env && formData.env.trim()) {
+            try {
+              envVars = JSON.parse(formData.env);
+            } catch (e) {
+              setError('Environment variables must be valid JSON');
+              setIsSubmitting(false);
+              return;
+            }
+          }
+          
           connection_config = {
-            command: formData.command
+            command: formData.command,
+            args: argsArray,
+            ...(Object.keys(envVars).length > 0 ? { env: envVars } : {})
           };
           break;
         default:
@@ -412,6 +460,9 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, onSubm
         port: '',
         command: '',
         package: '',
+        container_name: '',
+        args: '',
+        env: '',
         auto_connect: true
       });
       setError(null);
@@ -497,18 +548,55 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, onSubm
           )}
 
           {(formData.transport_type === 'stdio' || formData.transport_type === 'docker') && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Command *
-              </label>
-              <input 
-                type="text" 
-                value={formData.command}
-                onChange={(e) => setFormData(prev => ({ ...prev, command: e.target.value }))}
-                className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
-                placeholder={formData.transport_type === 'docker' ? "docker run -it mcp-server" : "python mcp_server.py"} 
-              />
-            </div>
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Command *
+                </label>
+                <input 
+                  type="text" 
+                  value={formData.command}
+                  onChange={(e) => setFormData(prev => ({ ...prev, command: e.target.value }))}
+                  className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
+                  placeholder={formData.transport_type === 'docker' ? "docker" : "python"} 
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  {formData.transport_type === 'docker' ? 'Base command (e.g., docker, npx, python)' : 'Executable command (e.g., python, node, ./server)'}
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Arguments
+                </label>
+                <input 
+                  type="text" 
+                  value={formData.args}
+                  onChange={(e) => setFormData(prev => ({ ...prev, args: e.target.value }))}
+                  className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
+                  placeholder={formData.transport_type === 'docker' ? 
+                    "exec -i -e TRANSPORT=stdio archon-pyserver uv run python src/mcp_server.py" : 
+                    "src/mcp_server.py --port 8051"} 
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Space-separated arguments. {formData.transport_type === 'docker' ? 'Include container name and full command path.' : 'Include script path and options.'}
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Environment Variables (JSON)
+                </label>
+                <textarea 
+                  value={formData.env}
+                  onChange={(e) => setFormData(prev => ({ ...prev, env: e.target.value }))}
+                  className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
+                  placeholder='{"TRANSPORT": "stdio", "API_KEY": "your-key"}'
+                  rows={3}
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Optional JSON object with environment variables
+                </p>
+              </div>
+            </>
           )}
 
           {formData.transport_type === 'npx' && (
@@ -576,12 +664,180 @@ interface EditClientDrawerProps {
 }
 
 const EditClientDrawer: React.FC<EditClientDrawerProps> = ({ client, isOpen, onClose, onUpdate }) => {
+  const [editFormData, setEditFormData] = useState({
+    name: client.name,
+    transport_type: 'stdio' as 'sse' | 'stdio' | 'docker' | 'npx',
+    host: '',
+    port: '',
+    command: '',
+    package: '',
+    args: '',
+    env: '',
+    auto_connect: true
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
+
+  // Load current client config when drawer opens
+  useEffect(() => {
+    if (isOpen && client) {
+      // Get client config from the API and populate form
+      loadClientConfig();
+    }
+  }, [isOpen, client.id]);
+
+  const loadClientConfig = async () => {
+    try {
+      const dbClient = await mcpClientService.getClient(client.id);
+      const config = dbClient.connection_config;
+      
+      setEditFormData({
+        name: dbClient.name,
+        transport_type: dbClient.transport_type as any,
+        host: config.host || '',
+        port: config.port?.toString() || '',
+        command: config.command || '',
+        package: config.package || '',
+        args: config.args ? config.args.join(' ') : '',
+        env: config.env ? JSON.stringify(config.env, null, 2) : '',
+        auto_connect: dbClient.auto_connect
+      });
+    } catch (error) {
+      console.error('Failed to load client config:', error);
+      setError('Failed to load client configuration');
+    }
+  };
+
+  const handleUpdateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      // Build connection config based on transport type (same logic as AddClientModal)
+      let connection_config: Record<string, any> = {};
+      
+      switch (editFormData.transport_type) {
+        case 'sse':
+          if (!editFormData.host || !editFormData.port) {
+            setError('Host and port are required for SSE transport');
+            setIsSubmitting(false);
+            return;
+          }
+          connection_config = {
+            host: editFormData.host,
+            port: parseInt(editFormData.port),
+            endpoint: '/sse'
+          };
+          break;
+        case 'docker':
+        case 'stdio':
+          if (!editFormData.command) {
+            setError('Command is required');
+            setIsSubmitting(false);
+            return;
+          }
+          const argsArray = editFormData.args ? 
+            editFormData.args.split(/\s+/).filter(arg => arg.length > 0) : [];
+          
+          let envVars = {};
+          if (editFormData.env && editFormData.env.trim()) {
+            try {
+              envVars = JSON.parse(editFormData.env);
+            } catch (e) {
+              setError('Environment variables must be valid JSON');
+              setIsSubmitting(false);
+              return;
+            }
+          }
+          
+          connection_config = {
+            command: editFormData.command,
+            args: argsArray,
+            ...(Object.keys(envVars).length > 0 ? { env: envVars } : {})
+          };
+          break;
+        case 'npx':
+          if (!editFormData.package) {
+            setError('Package name is required for NPX transport');
+            setIsSubmitting(false);
+            return;
+          }
+          connection_config = {
+            package: editFormData.package
+          };
+          break;
+      }
+
+      // Update client via API
+      const updatedClient = await mcpClientService.updateClient(client.id, {
+        name: editFormData.name,
+        transport_type: editFormData.transport_type,
+        connection_config,
+        auto_connect: editFormData.auto_connect
+      });
+
+      // Update local state
+      const convertedClient = {
+        ...client,
+        name: updatedClient.name,
+        ip: connection_config.host && connection_config.port ? 
+          `${connection_config.host}:${connection_config.port}` : 
+          connection_config.command || 'N/A'
+      };
+      
+      onUpdate(convertedClient);
+      onClose();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to update client');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleConnect = async () => {
+    setIsConnecting(true);
+    try {
+      await mcpClientService.connectClient(client.id);
+      // Reload the client to get updated status
+      loadClientConfig();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to connect');
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      await mcpClientService.disconnectClient(client.id);
+      // Reload the client to get updated status
+      loadClientConfig();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to disconnect');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (confirm(`Are you sure you want to delete "${client.name}"?`)) {
+      try {
+        await mcpClientService.deleteClient(client.id);
+        onClose();
+        // Trigger a reload of the clients list
+        window.location.reload();
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Failed to delete client');
+      }
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-end justify-center z-50" onClick={onClose}>
       <div 
-        className="bg-white/90 dark:bg-black/90 border border-gray-200 dark:border-gray-800 rounded-t-lg p-6 w-full max-w-2xl relative backdrop-blur-lg animate-slide-up"
+        className="bg-white/90 dark:bg-black/90 border border-gray-200 dark:border-gray-800 rounded-t-lg p-6 w-full max-w-2xl relative backdrop-blur-lg animate-slide-up max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-cyan-400 via-blue-500 to-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.6)]"></div>
@@ -591,71 +847,189 @@ const EditClientDrawer: React.FC<EditClientDrawerProps> = ({ client, isOpen, onC
           Edit Client Configuration
         </h3>
         
-        <div className="space-y-4">
-          {/* Client Info Display */}
-          <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
-            <h4 className="font-medium text-gray-900 dark:text-white mb-2">{client.name}</h4>
-            <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
-              <p><span className="font-medium">Status:</span> {client.status}</p>
-              <p><span className="font-medium">Address:</span> {client.ip}</p>
-              <p><span className="font-medium">Version:</span> {client.version}</p>
-              <p><span className="font-medium">Tools:</span> {client.tools.length} available</p>
-              <p><span className="font-medium">Last Seen:</span> {client.lastSeen}</p>
+        <form onSubmit={handleUpdateSubmit} className="space-y-4">
+          {/* Client Name */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Client Name *
+            </label>
+            <input 
+              type="text" 
+              value={editFormData.name}
+              onChange={(e) => setEditFormData(prev => ({ ...prev, name: e.target.value }))}
+              className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
+              required
+            />
+          </div>
+
+          {/* Transport Type */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Transport Type *
+            </label>
+            <select 
+              value={editFormData.transport_type}
+              onChange={(e) => setEditFormData(prev => ({ ...prev, transport_type: e.target.value as any }))}
+              className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            >
+              <option value="sse">SSE (Server-Sent Events)</option>
+              <option value="stdio">stdio (Process)</option>
+              <option value="npx">NPX (Node Package)</option>
+              <option value="docker">Docker (Container)</option>
+            </select>
+          </div>
+
+          {/* Transport-specific fields - same as AddClientModal */}
+          {editFormData.transport_type === 'sse' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Host *</label>
+                <input 
+                  type="text" 
+                  value={editFormData.host}
+                  onChange={(e) => setEditFormData(prev => ({ ...prev, host: e.target.value }))}
+                  className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
+                  placeholder="localhost" 
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Port *</label>
+                <input 
+                  type="number" 
+                  value={editFormData.port}
+                  onChange={(e) => setEditFormData(prev => ({ ...prev, port: e.target.value }))}
+                  className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
+                  placeholder="8051" 
+                />
+              </div>
+            </>
+          )}
+
+          {(editFormData.transport_type === 'stdio' || editFormData.transport_type === 'docker') && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Command *</label>
+                <input 
+                  type="text" 
+                  value={editFormData.command}
+                  onChange={(e) => setEditFormData(prev => ({ ...prev, command: e.target.value }))}
+                  className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
+                  placeholder={editFormData.transport_type === 'docker' ? "docker" : "python"} 
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Arguments</label>
+                <input 
+                  type="text" 
+                  value={editFormData.args}
+                  onChange={(e) => setEditFormData(prev => ({ ...prev, args: e.target.value }))}
+                  className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
+                  placeholder="exec -i archon-pyserver python src/mcp_server.py" 
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Environment Variables (JSON)</label>
+                <textarea 
+                  value={editFormData.env}
+                  onChange={(e) => setEditFormData(prev => ({ ...prev, env: e.target.value }))}
+                  className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
+                  placeholder='{"TRANSPORT": "stdio"}'
+                  rows={3}
+                />
+              </div>
+            </>
+          )}
+
+          {editFormData.transport_type === 'npx' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Package Name *</label>
+              <input 
+                type="text" 
+                value={editFormData.package}
+                onChange={(e) => setEditFormData(prev => ({ ...prev, package: e.target.value }))}
+                className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
+                placeholder="@example/mcp-server" 
+              />
             </div>
+          )}
+
+          {/* Auto Connect */}
+          <div className="flex items-center">
+            <input 
+              type="checkbox" 
+              id="edit_auto_connect"
+              checked={editFormData.auto_connect}
+              onChange={(e) => setEditFormData(prev => ({ ...prev, auto_connect: e.target.checked }))}
+              className="mr-2" 
+            />
+            <label htmlFor="edit_auto_connect" className="text-sm text-gray-700 dark:text-gray-300">
+              Auto-connect on startup
+            </label>
           </div>
 
-          {/* Configuration Notice */}
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-            <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-2">Configuration Management</h4>
-            <p className="text-sm text-blue-700 dark:text-blue-300">
-              Client configuration editing will be available in a future update. For now, you can view the current settings above.
-            </p>
-          </div>
+          {/* Error message */}
+          {error && (
+            <div className="text-red-600 dark:text-red-400 text-sm bg-red-50 dark:bg-red-900/20 p-2 rounded">
+              {error}
+            </div>
+          )}
 
-          {/* Actions */}
+          {/* Action Buttons */}
           <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
-            <h4 className="font-medium text-gray-900 dark:text-white mb-3">Available Actions</h4>
-            <div className="space-y-2">
+            <h4 className="font-medium text-gray-900 dark:text-white mb-3">Quick Actions</h4>
+            <div className="grid grid-cols-2 gap-2">
               <Button 
+                type="button"
                 variant="ghost" 
                 accentColor="green"
-                className="w-full justify-start"
-                disabled={client.status === 'online'}
+                onClick={handleConnect}
+                disabled={isConnecting || client.status === 'online'}
               >
-                {client.status === 'online' ? 'Connected' : 'Connect'}
+                {isConnecting ? 'Connecting...' : client.status === 'online' ? 'Connected' : 'Connect'}
               </Button>
               <Button 
+                type="button"
                 variant="ghost" 
                 accentColor="orange"
-                className="w-full justify-start"
+                onClick={handleDisconnect}
                 disabled={client.status === 'offline'}
               >
                 {client.status === 'offline' ? 'Disconnected' : 'Disconnect'}
               </Button>
               <Button 
+                type="button"
                 variant="ghost" 
                 accentColor="pink"
-                className="w-full justify-start"
+                onClick={handleDelete}
               >
-                Remove Client
+                Delete Client
               </Button>
               <Button 
+                type="button"
                 variant="ghost" 
                 accentColor="cyan"
-                className="w-full justify-start"
+                onClick={() => window.open(`http://localhost:8080/api/mcp/clients/${client.id}/status`, '_blank')}
               >
-                Test Connection
+                Debug Status
               </Button>
             </div>
           </div>
-        </div>
 
-        {/* Close Button */}
-        <div className="flex justify-end mt-6">
-          <Button variant="primary" accentColor="cyan" onClick={onClose}>
-            Close
-          </Button>
-        </div>
+          {/* Form Buttons */}
+          <div className="flex justify-end gap-3 mt-6">
+            <Button type="button" variant="ghost" onClick={onClose} disabled={isSubmitting}>
+              Cancel
+            </Button>
+            <Button 
+              type="submit" 
+              variant="primary" 
+              accentColor="cyan" 
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? 'Updating...' : 'Update Configuration'}
+            </Button>
+          </div>
+        </form>
       </div>
     </div>
   );

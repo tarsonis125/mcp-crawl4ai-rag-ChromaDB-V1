@@ -175,13 +175,7 @@ const DraggableTaskCard = ({
   // Get subtasks for this parent task
   const subtasks = allTasks.filter(t => t.parent_task_id === task.id);
   
-  // Card styling - dynamic height with better subtask expansion
-  const baseHeight = 140;
-  // Limit expansion to 2x the card height as per requirement
-  const maxExpandedHeight = baseHeight * 2;
-  const expandedHeight = showSubtasks && subtasks.length > 0 
-    ? maxExpandedHeight // Limit to 2x original height
-    : baseHeight;
+  // Card styling - using CSS-based height animation for better scrolling
   
   const cardScale = 'scale-100';
   const cardOpacity = 'opacity-100';
@@ -191,12 +185,11 @@ const DraggableTaskCard = ({
   return (
     <div 
       ref={(node) => drag(drop(node))}
-      className={`flip-card w-full cursor-move ${cardScale} ${cardOpacity} ${isDragging ? 'opacity-50 scale-90' : ''} transition-all duration-500 ease-in-out ${highlightGlow} ${hoverGlow}`} 
+      
       style={{ 
-        perspective: '1000px',
-        height: `${expandedHeight}px`,
-        transition: 'height 0.5s ease-in-out'
+        perspective: '1000px'
       }}
+      className={`flip-card w-full cursor-move ${cardScale} ${cardOpacity} ${isDragging ? 'opacity-50 scale-90' : ''} transition-all duration-500 ease-in-out ${highlightGlow} ${hoverGlow} ${showSubtasks && subtasks.length > 0 ? 'card-expanded' : 'card-collapsed'}`}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
@@ -261,9 +254,9 @@ const DraggableTaskCard = ({
             </h4>
             
             {/* Subtasks display - simplified to match back side pattern */}
-            <div className={`flex-1 overflow-hidden relative ${showSubtasks && subtasks.length > 0 ? 'min-h-[200px]' : ''}`}>
-            <div className="absolute inset-0 overflow-y-auto hide-scrollbar pl-1.5 pr-2">
-                <div className="pt-1 border-l-2 border-cyan-200/30 dark:border-cyan-800/30 pr-1 space-y-1">
+            <div className="flex-1 overflow-hidden relative">
+              <div className="absolute inset-0 overflow-y-auto pl-1.5 pr-2" style={{ overflowY: 'auto', maxHeight: showSubtasks ? '200px' : '0px', transition: 'max-height 0.5s ease-in-out' }}>
+                <div className={`pt-1 border-l-2 border-cyan-200/30 dark:border-cyan-800/30 pr-1 space-y-1 ${!showSubtasks ? 'opacity-0' : 'opacity-100'}`}>
                   {subtasks.map((subtask, index) => (
                     <div 
                       key={subtask.id} 

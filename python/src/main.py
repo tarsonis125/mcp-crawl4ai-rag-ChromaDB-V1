@@ -143,13 +143,13 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Starting Archon backend...")
     
     try:
-        # Initialize Logfire first
+        # Initialize credentials from database FIRST - this is the foundation for everything else
+        await initialize_credentials()
+        logger.info("✅ Credentials initialized")
+        
+        # Initialize Logfire after credentials are loaded (so database toggle works)
         setup_logfire(service_name="archon-backend")
         api_logger.info("🔥 Logfire initialized for backend")
-        
-        # Initialize credentials from database
-        await initialize_credentials()
-        api_logger.info("✅ Credentials initialized")
         
         # Initialize crawling context
         try:

@@ -194,16 +194,29 @@ async def archon_lifespan(server: FastMCP) -> AsyncIterator[ArchonContext]:
 
 # Initialize the main FastMCP server
 try:
+    server_host = os.getenv("HOST", "0.0.0.0")
+    server_port = int(os.getenv("PORT", "8051"))
+    
+    logger.info("🏗️ FASTMCP SERVER INITIALIZATION:")
+    logger.info(f"   Server Name: archon-mcp-server")
+    logger.info(f"   Description: Modular MCP server for Archon: RAG, Tasks, and UI tools")
+    logger.info(f"   Host: {server_host}")
+    logger.info(f"   Port: {server_port}")
+    
     mcp = FastMCP(
         "archon-mcp-server",
         description="Modular MCP server for Archon: RAG, Tasks, and UI tools",
         lifespan=archon_lifespan,
-        host=os.getenv("HOST", "0.0.0.0"),
-        port=int(os.getenv("PORT", "8051"))
+        host=server_host,
+        port=server_port
     )
-    logger.info(f"✓ FastMCP server created - host: {os.getenv('HOST', '0.0.0.0')}, port: {int(os.getenv('PORT', '8051'))}")
+    logger.info(f"✓ FastMCP server instance created successfully")
+    logger.info(f"   Available at: http://{server_host}:{server_port} (SSE mode)")
+    logger.info(f"   Docker exec command: docker exec -it <container> uv run python src/mcp_server.py (stdio mode)")
+    
 except Exception as e:
     logger.error(f"✗ Failed to create FastMCP server: {e}")
+    logger.error(traceback.format_exc())
     raise
 
 # Health check endpoint
@@ -257,6 +270,9 @@ async def health_check(ctx: Context) -> str:
             "error": f"Health check failed: {str(e)}",
             "timestamp": datetime.now().isoformat()
         })
+
+# FastMCP automatically handles MCP protocol initialization (initialize/initialized)
+# No need for explicit handlers - the library does this for us
 
 # Import and register all modules
 def register_modules():
@@ -346,9 +362,38 @@ async def main():
         # Initialize Logfire first
         setup_logfire(service_name="archon-mcp-server")
         
-        transport = os.getenv("TRANSPORT", "sse")
+        # Log all environment variables related to transport configuration
+        logger.info("🔧 TRANSPORT CONFIGURATION DEBUG:")
+        logger.info(f"   TRANSPORT env var: {os.getenv('TRANSPORT', 'NOT_SET')}")
+        logger.info(f"   DOCKER_EXEC_STDIO env var: {os.getenv('DOCKER_EXEC_STDIO', 'NOT_SET')}")
+        logger.info(f"   stdin.isatty(): {sys.stdin.isatty()}")
+        logger.info(f"   HOST env var: {os.getenv('HOST', 'NOT_SET (will default to localhost)')}")
+        logger.info(f"   PORT env var: {os.getenv('PORT', 'NOT_SET (will default to 8051)')}")
+        
+        # Auto-detect transport based on how the script was invoked
+        transport = os.getenv("TRANSPORT")
+        if not transport:
+            # Check explicitly for docker exec stdio flag first
+            if os.getenv("DOCKER_EXEC_STDIO") == "1":
+                transport = "stdio"
+                logger.info("🎯 Transport set to STDIO via DOCKER_EXEC_STDIO=1")
+            # Then check if stdin is not a tty (piped input)
+            elif not sys.stdin.isatty():
+                transport = "stdio"
+                logger.info("🎯 Transport set to STDIO via stdin.isatty() = False")
+            else:
+                transport = "sse"
+                logger.info("🎯 Transport set to SSE (default - stdin is a tty)")
+        else:
+            logger.info(f"🎯 Transport explicitly set via TRANSPORT env var: {transport}")
+        
         host = os.getenv("HOST", "localhost")
         port = int(os.getenv("PORT", "8051"))
+        
+        logger.info(f"🚀 FINAL CONFIGURATION:")
+        logger.info(f"   Transport: {transport}")
+        logger.info(f"   Host: {host}")
+        logger.info(f"   Port: {port}")
         
         # Only print when not using stdio to avoid contaminating JSON-RPC stream
         if transport != "stdio":
@@ -356,19 +401,39 @@ async def main():
             mcp_logger.info("🌟 Starting Archon MCP server", transport=transport)
         
         if transport == 'sse':
+            logger.info("🌐 SSE MODE - Starting Server-Sent Events transport")
+            logger.info(f"   SSE URL: http://{host}:{port}/sse")
+            logger.info(f"   WebSocket URL: ws://{host}:{port}/ws")
+            logger.info("   This mode is for web browser clients and HTTP-based connections")
+            
             if transport != "stdio":
                 mcp_logger.info("🌐 SSE server starting", url=f"http://{host}:{port}/sse")
             await mcp.run_sse_async()
+            
         elif transport == 'stdio':
-            # No prints in stdio mode - client expects pure JSON-RPC
+            # Log to stderr in stdio mode to avoid contaminating stdout JSON-RPC stream
+            print("📡 STDIO MODE - Starting Standard Input/Output transport", file=sys.stderr)
+            print("   This mode is for command-line clients like Cursor/Claude", file=sys.stderr)
+            print("   All JSON-RPC communication happens via stdin/stdout", file=sys.stderr)
+            print("   No HTTP server will be started", file=sys.stderr)
+            
+            # For stdio mode, ensure we're running the stdio transport
+            # No prints to stdout in stdio mode - client expects pure JSON-RPC
             await mcp.run_stdio_async()
+            
         else:
-            raise ValueError(f"Unsupported transport: {transport}. Use 'sse' or 'stdio'")
+            error_msg = f"Unsupported transport: {transport}. Use 'sse' or 'stdio'"
+            logger.error(f"💥 {error_msg}")
+            raise ValueError(error_msg)
             
     except Exception as e:
-        mcp_logger.error("💥 Fatal error in main", error=str(e), error_type=type(e).__name__)
-        logger.error(f"💥 Fatal error in main: {e}")
-        logger.error(traceback.format_exc())
+        # Only log to stderr in stdio mode, never stdout (which is used for JSON-RPC)
+        if transport == "stdio":
+            print(f"💥 Fatal error in MCP server: {e}", file=sys.stderr)
+        else:
+            mcp_logger.error("💥 Fatal error in main", error=str(e), error_type=type(e).__name__)
+            logger.error(f"💥 Fatal error in main: {e}")
+            logger.error(traceback.format_exc())
         raise
 
 if __name__ == "__main__":

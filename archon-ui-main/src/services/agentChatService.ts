@@ -44,8 +44,12 @@ class AgentChatService {
   private closeHandlers: Map<string, (event: CloseEvent) => void> = new Map();
   private reconnectTimeouts: Map<string, NodeJS.Timeout> = new Map();
   private reconnectAttempts: Map<string, number> = new Map();
-  private readonly maxReconnectAttempts = 5;
+  private readonly maxReconnectAttempts = 3; // Reduced from 5
   private readonly reconnectDelay = 1000; // 1 second initial delay
+  
+  // Add server status tracking
+  private serverStatus: 'online' | 'offline' | 'unknown' = 'unknown';
+  private statusHandlers: Map<string, (status: 'online' | 'offline' | 'connecting') => void> = new Map();
 
   constructor() {
     this.baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080';
@@ -97,19 +101,78 @@ class AgentChatService {
   }
 
   /**
-   * Schedule a reconnection attempt with exponential backoff
+   * Check if the chat server is online
    */
-  private scheduleReconnect(sessionId: string): void {
+  private async checkServerStatus(): Promise<'online' | 'offline'> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/agent-chat/status`, {
+        method: 'GET',
+        timeout: 5000, // 5 second timeout
+      } as RequestInit);
+      
+      if (response.ok) {
+        this.serverStatus = 'online';
+        return 'online';
+      } else {
+        this.serverStatus = 'offline';
+        return 'offline';
+      }
+    } catch (error) {
+      console.log('Server status check failed:', error);
+      this.serverStatus = 'offline';
+      return 'offline';
+    }
+  }
+
+  /**
+   * Notify status change to all sessions
+   */
+  private notifyStatusChange(status: 'online' | 'offline' | 'connecting'): void {
+    this.statusHandlers.forEach(handler => {
+      try {
+        handler(status);
+      } catch (error) {
+        console.error('Error in status handler:', error);
+      }
+    });
+  }
+
+  /**
+   * Schedule a reconnection attempt with server status checking
+   */
+  private async scheduleReconnect(sessionId: string): Promise<void> {
     const attempts = this.reconnectAttempts.get(sessionId) || 0;
     
     if (attempts >= this.maxReconnectAttempts) {
-      console.error(`Max reconnection attempts (${this.maxReconnectAttempts}) reached for session ${sessionId}`);
+      console.log(`Max reconnection attempts (${this.maxReconnectAttempts}) reached for session ${sessionId}`);
+      
+      // Check server status before giving up
+      const serverStatus = await this.checkServerStatus();
+      if (serverStatus === 'offline') {
+        console.log('Server appears to be offline, stopping automatic reconnection');
+        this.notifyStatusChange('offline');
+        this.cleanupConnection(sessionId);
+        return;
+      }
+      
+      console.error(`Server is online but session ${sessionId} cannot connect after ${this.maxReconnectAttempts} attempts`);
+      this.cleanupConnection(sessionId);
+      return;
+    }
+
+    // Check server status before attempting reconnection
+    this.notifyStatusChange('connecting');
+    const serverStatus = await this.checkServerStatus();
+    
+    if (serverStatus === 'offline') {
+      console.log('Server is offline, stopping automatic reconnection');
+      this.notifyStatusChange('offline');
       this.cleanupConnection(sessionId);
       return;
     }
 
     const delay = this.reconnectDelay * Math.pow(2, attempts);
-    console.log(`Attempting to reconnect in ${delay}ms (attempt ${attempts + 1}/${this.maxReconnectAttempts})`);
+    console.log(`Server is online, attempting to reconnect in ${delay}ms (attempt ${attempts + 1}/${this.maxReconnectAttempts})`);
     
     const timeoutId = setTimeout(() => {
       if (this.reconnectTimeouts.has(sessionId)) {
@@ -365,18 +428,56 @@ class AgentChatService {
     ws.onerror = (error) => {
       console.error(`❌ WebSocket error for session ${sessionId}:`, error);
       console.error(`WebSocket state at error: ${ws.readyState} (0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED)`);
-      if (onError) {
-        onError(error);
+      
+      // Check if this might be a 403 Forbidden error by attempting to verify the session
+      if (ws.readyState === WebSocket.CLOSED) {
+        console.log(`🔍 WebSocket closed immediately, checking if session ${sessionId} is valid`);
+        // Use setTimeout to avoid blocking the error handler
+        setTimeout(async () => {
+          try {
+            const response = await fetch(`${this.baseUrl}/api/agent-chat/sessions/${sessionId}`);
+            if (response.status === 403 || response.status === 404) {
+              console.log(`🚨 Session ${sessionId} is invalid (${response.status}), triggering session recovery`);
+              await this.handleSessionInvalidation(sessionId);
+              return; // Don't call onError since we're handling it
+            }
+          } catch (fetchError) {
+            console.log(`Could not verify session ${sessionId}:`, fetchError);
+          }
+          
+          // If session verification fails or session is valid, call the original error handler
+          if (onError) {
+            onError(error);
+          }
+        }, 100);
+      } else {
+        // Normal error handling for other cases
+        if (onError) {
+          onError(error);
+        }
       }
     };
 
     ws.onclose = (event) => {
       console.log(`🔌 WebSocket closed for session ${sessionId}:`, event.code, event.reason);
-      console.log(`Close event details: wasClean=${event.wasClean}, code=${event.code}`);
+      console.log(`Close event details: wasClean=${event.wasClean}, code=${event.code}, reason="${event.reason}"`);
       this.wsConnections.delete(sessionId);
       
-      // Only try to reconnect if this wasn't an intentional close
-      if (event.code !== 1000) { // 1000 is normal closure
+      // Handle different close codes
+      if (event.code === 4004) {
+        // 4004 = Custom code from backend indicating "Session not found"
+        console.warn(`🚨 Backend says session ${sessionId} not found (code 4004), triggering session recovery`);
+        this.handleSessionInvalidation(sessionId);
+      } else if (event.code === 1006) {
+        // 1006 = abnormal closure, often indicates connection issues
+        console.log(`Connection lost unexpectedly (code 1006) for session ${sessionId}`);
+        this.scheduleReconnect(sessionId);
+      } else if (event.code === 1002 || event.code === 1003) {
+        // 1002/1003 = protocol errors, likely session invalidation
+        console.warn(`Session ${sessionId} may be invalid, attempting session recovery`);
+        this.handleSessionInvalidation(sessionId);
+      } else if (event.code !== 1000) { 
+        // 1000 is normal closure, anything else might need reconnection
         console.log(`Scheduling reconnect for abnormal closure (code ${event.code})`);
         this.scheduleReconnect(sessionId);
       }
@@ -417,6 +518,182 @@ class AgentChatService {
   getConnectionState(sessionId: string): number | null {
     const ws = this.wsConnections.get(sessionId);
     return ws?.readyState ?? null;
+  }
+
+  /**
+   * Handle session invalidation by creating a new session
+   */
+  private async handleSessionInvalidation(oldSessionId: string): Promise<void> {
+    console.log(`🔄 Handling session invalidation for ${oldSessionId}`);
+    
+    try {
+      // Try to verify if the session really doesn't exist
+      const response = await fetch(`${this.baseUrl}/api/agent-chat/sessions/${oldSessionId}`);
+      
+      if (response.status === 403 || response.status === 404) {
+        console.log(`✅ Confirmed session ${oldSessionId} is invalid, creating new session`);
+        
+        // Clean up the old session data
+        this.cleanupConnection(oldSessionId);
+        
+        // Create a new session (assuming same agent type)
+        const newSession = await this.createSession(undefined, 'docs');
+        console.log(`🆕 Created new session: ${newSession.session_id}`);
+        
+        // Transfer handlers to new session
+        const messageHandler = this.messageHandlers.get(oldSessionId);
+        const typingHandler = this.typingHandlers.get(oldSessionId);
+        const streamHandler = this.streamHandlers.get(oldSessionId);
+        const streamCompleteHandler = this.streamCompleteHandlers.get(oldSessionId);
+        const errorHandler = this.errorHandlers.get(oldSessionId);
+        const closeHandler = this.closeHandlers.get(oldSessionId);
+        
+        // Clean up old handlers
+        this.messageHandlers.delete(oldSessionId);
+        this.typingHandlers.delete(oldSessionId);
+        this.streamHandlers.delete(oldSessionId);
+        this.streamCompleteHandlers.delete(oldSessionId);
+        this.errorHandlers.delete(oldSessionId);
+        this.closeHandlers.delete(oldSessionId);
+        
+        // Connect with new session if handlers exist
+        if (messageHandler && typingHandler) {
+          console.log(`🔌 Reconnecting with new session ${newSession.session_id}`);
+          this.connectWebSocket(
+            newSession.session_id,
+            messageHandler,
+            typingHandler,
+            streamHandler,
+            streamCompleteHandler,
+            errorHandler,
+            closeHandler
+          );
+          
+          // Notify about session change via error handler (since we don't have a dedicated callback)
+          if (errorHandler) {
+            const sessionChangeEvent = new Event('sessionchange') as any;
+            sessionChangeEvent.oldSessionId = oldSessionId;
+            sessionChangeEvent.newSessionId = newSession.session_id;
+            errorHandler(sessionChangeEvent);
+          }
+        }
+      } else {
+        // Session exists, might just be a temporary connection issue
+        console.log(`Session ${oldSessionId} still exists, scheduling normal reconnect`);
+        this.scheduleReconnect(oldSessionId);
+      }
+    } catch (error) {
+      console.error(`Error handling session invalidation for ${oldSessionId}:`, error);
+      // Fallback to normal reconnection
+      this.scheduleReconnect(oldSessionId);
+    }
+  }
+
+  /**
+   * Get the current active session ID (useful after session recovery)
+   */
+  getCurrentSessionId(): string | null {
+    // Return the first active session ID, or null if none
+    for (const [sessionId, ws] of this.wsConnections.entries()) {
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        return sessionId;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Get all active session IDs
+   */
+  getActiveSessions(): string[] {
+    return Array.from(this.wsConnections.keys()).filter(sessionId => {
+      const ws = this.wsConnections.get(sessionId);
+      return ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING);
+    });
+  }
+
+  /**
+   * Manually attempt to reconnect (for user-triggered reconnection)
+   */
+  async manualReconnect(sessionId: string): Promise<boolean> {
+    console.log(`🔄 Manual reconnection attempt for session ${sessionId}`);
+    
+    // First check if server is back online
+    this.notifyStatusChange('connecting');
+    const serverStatus = await this.checkServerStatus();
+    
+    if (serverStatus === 'offline') {
+      console.log('Server is still offline');
+      this.notifyStatusChange('offline');
+      return false;
+    }
+    
+    // Clean up any existing connection
+    this.cleanupConnection(sessionId);
+    
+    // Reset reconnect attempts for fresh start
+    this.reconnectAttempts.delete(sessionId);
+    
+    try {
+      // Try to verify/create session first
+      let validSessionId = sessionId;
+      
+      try {
+        // Check if session still exists
+        await this.getSession(sessionId);
+      } catch (error) {
+        // Session doesn't exist, create a new one
+        console.log('Session no longer exists, creating new session');
+        const newSession = await this.createSession(undefined, 'docs');
+        validSessionId = newSession.session_id;
+      }
+      
+      // Reconnect with valid session
+      const messageHandler = this.messageHandlers.get(sessionId);
+      const typingHandler = this.typingHandlers.get(sessionId);
+      
+      if (messageHandler && typingHandler) {
+        this.connectWebSocket(
+          validSessionId,
+          messageHandler,
+          typingHandler,
+          this.streamHandlers.get(sessionId),
+          this.streamCompleteHandlers.get(sessionId),
+          this.errorHandlers.get(sessionId),
+          this.closeHandlers.get(sessionId)
+        );
+        
+        this.notifyStatusChange('online');
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Manual reconnection failed:', error);
+      this.notifyStatusChange('offline');
+      return false;
+    }
+  }
+
+  /**
+   * Subscribe to connection status changes
+   */
+  onStatusChange(sessionId: string, handler: (status: 'online' | 'offline' | 'connecting') => void): void {
+    this.statusHandlers.set(sessionId, handler);
+  }
+
+  /**
+   * Unsubscribe from status changes
+   */
+  offStatusChange(sessionId: string): void {
+    this.statusHandlers.delete(sessionId);
+  }
+
+  /**
+   * Get current server status
+   */
+  getServerStatus(): 'online' | 'offline' | 'unknown' {
+    return this.serverStatus;
   }
 }
 
