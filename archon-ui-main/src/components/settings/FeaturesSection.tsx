@@ -20,26 +20,66 @@ export const FeaturesSection = () => {
 
   // Load settings on mount
   useEffect(() => {
-    loadLogfireSettings();
+    loadSettings();
   }, []);
 
-  const loadLogfireSettings = async () => {
+  const loadSettings = async () => {
     try {
       setLoading(true);
-      // Try to get the LOGFIRE_ENABLED setting from credentials
-      const response = await credentialsService.getCredential('LOGFIRE_ENABLED');
-      if (response.value !== undefined) {
-        setLogfireEnabled(response.value === 'true');
+      
+      // Load both Logfire and Projects settings
+      const [logfireResponse, projectsResponse] = await Promise.all([
+        credentialsService.getCredential('LOGFIRE_ENABLED').catch(() => ({ value: undefined })),
+        credentialsService.getCredential('PROJECTS_ENABLED').catch(() => ({ value: undefined }))
+      ]);
+      
+      // Set Logfire setting
+      if (logfireResponse.value !== undefined) {
+        setLogfireEnabled(logfireResponse.value === 'true');
       } else {
-        // Default to false if not set
         setLogfireEnabled(false);
       }
+      
+      // Set Projects setting
+      if (projectsResponse.value !== undefined) {
+        setProjectsEnabled(projectsResponse.value === 'true');
+      } else {
+        setProjectsEnabled(true); // Default to true
+      }
+      
     } catch (error) {
-      console.error('Failed to load logfire settings:', error);
-      // Default to false on error
+      console.error('Failed to load settings:', error);
+      // Default values on error
       setLogfireEnabled(false);
+      setProjectsEnabled(true);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleProjectsToggle = async (checked: boolean) => {
+    try {
+      // Update local state immediately for responsive UI
+      setProjectsEnabled(checked);
+
+      // Save to backend
+      await credentialsService.createCredential({
+        key: 'PROJECTS_ENABLED',
+        value: checked.toString(),
+        is_encrypted: false,
+        category: 'features',
+        description: 'Enable or disable Projects and Tasks functionality'
+      });
+
+      showToast(
+        `Projects ${checked ? 'enabled' : 'disabled'} successfully!`, 
+        'success'
+      );
+    } catch (error) {
+      console.error('Failed to update projects setting:', error);
+      // Revert local state on error
+      setProjectsEnabled(!checked);
+      showToast('Failed to update Projects setting', 'error');
     }
   };
 
@@ -109,7 +149,13 @@ export const FeaturesSection = () => {
             </p>
           </div>
           <div className="flex-shrink-0">
-            <Toggle checked={projectsEnabled} onCheckedChange={setProjectsEnabled} accentColor="blue" icon={<FileText className="w-5 h-5" />} />
+            <Toggle 
+              checked={projectsEnabled} 
+              onCheckedChange={handleProjectsToggle} 
+              accentColor="blue" 
+              icon={<FileText className="w-5 h-5" />}
+              disabled={loading}
+            />
           </div>
         </div>
 

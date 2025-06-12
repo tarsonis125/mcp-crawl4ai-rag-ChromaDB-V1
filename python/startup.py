@@ -55,8 +55,8 @@ async def check_database_setup():
         return True
     except Exception as e:
         print(f"❌ Database setup incomplete: {e}")
-        print("📝 Please run the credentials_setup.sql file in your Supabase SQL editor")
-        print("   This will create the app_credentials table and initial data")
+        print("📝 Please run the initial_setup.sql file in your Supabase SQL editor")
+        print("   This will create the settings table and initial data")
         print()
         return False
 
@@ -115,8 +115,8 @@ def run_setup_sql():
     print("📋 Database Setup Required:")
     print("   1. Open your Supabase dashboard")
     print("   2. Go to SQL Editor")
-    print("   3. Copy and run the contents of 'credentials_setup.sql'")
-    print("   4. This will create the app_credentials table with default settings")
+    print("   3. Copy and run the contents of 'initial_setup.sql'")
+    print("   4. This will create the settings table with default settings")
     print()
     input("Press Enter when you've completed the SQL setup...")
 

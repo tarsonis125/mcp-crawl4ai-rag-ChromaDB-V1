@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { BookOpen, HardDrive, Settings } from 'lucide-react';
+import { useSettings } from '../../contexts/SettingsContext';
 /**
  * Interface for navigation items
  */
@@ -48,6 +49,8 @@ export const SideNavigation: React.FC<SideNavigationProps> = ({
 }) => {
   // State to track which tooltip is currently visible
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
+  const { projectsEnabled } = useSettings();
+  
   // Default navigation items
   const navigationItems: NavigationItem[] = [{
     path: '/',
@@ -67,22 +70,41 @@ export const SideNavigation: React.FC<SideNavigationProps> = ({
   const logoAlt = 'Knowledge Base Logo';
   // Get current location to determine active route
   const location = useLocation();
-  const isProjectsActive = location.pathname === '/projects';
+  const isProjectsActive = location.pathname === '/projects' && projectsEnabled;
+  
+  const logoClassName = `
+    logo-container p-2 relative rounded-lg transition-all duration-300
+    ${isProjectsActive ? 'bg-gradient-to-b from-white/20 to-white/5 dark:from-white/10 dark:to-black/20 shadow-[0_5px_15px_-5px_rgba(59,130,246,0.3)] dark:shadow-[0_5px_15px_-5px_rgba(59,130,246,0.5)] transform scale-110' : ''}
+    ${projectsEnabled ? 'hover:bg-white/10 dark:hover:bg-white/5 cursor-pointer' : 'opacity-50 cursor-not-allowed'}
+  `;
+  
   return <div data-id={dataId} className={`flex flex-col items-center gap-6 py-6 px-3 rounded-xl backdrop-blur-md bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30 border border-gray-200 dark:border-zinc-800/50 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)] ${className}`}>
-      {/* Logo - Now acts as a link to Projects page */}
-      <Link to="/projects" className={`
-          logo-container p-2 relative rounded-lg transition-all duration-300
-          ${isProjectsActive ? 'bg-gradient-to-b from-white/20 to-white/5 dark:from-white/10 dark:to-black/20 shadow-[0_5px_15px_-5px_rgba(59,130,246,0.3)] dark:shadow-[0_5px_15px_-5px_rgba(59,130,246,0.5)] transform scale-110' : 'hover:bg-white/10 dark:hover:bg-white/5'}
-        `} onMouseEnter={() => setActiveTooltip('logo')} onMouseLeave={() => setActiveTooltip(null)}>
-        <img src={logoSrc} alt={logoAlt} className={`w-8 h-8 transition-all duration-300 ${isProjectsActive ? 'filter drop-shadow-[0_0_8px_rgba(59,130,246,0.7)]' : ''}`} />
-        {/* Active state decorations */}
-        {isProjectsActive && <>
-            <span className="absolute inset-0 rounded-lg border border-blue-300 dark:border-blue-500/30"></span>
-            {/* Neon line positioned below the button with reduced width to respect curved edges */}
-            <span className="absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[2px] bg-blue-500 shadow-[0_0_10px_2px_rgba(59,130,246,0.4)] dark:shadow-[0_0_20px_5px_rgba(59,130,246,0.7)]"></span>
-          </>}
-        <NavTooltip show={activeTooltip === 'logo'} label="Project Management" />
-      </Link>
+      {/* Logo - Conditionally clickable based on Projects enabled */}
+      {projectsEnabled ? (
+        <Link 
+          to="/projects"
+          className={logoClassName}
+          onMouseEnter={() => setActiveTooltip('logo')} 
+          onMouseLeave={() => setActiveTooltip(null)}
+        >
+          <img src={logoSrc} alt={logoAlt} className={`w-8 h-8 transition-all duration-300 ${isProjectsActive ? 'filter drop-shadow-[0_0_8px_rgba(59,130,246,0.7)]' : ''}`} />
+          {/* Active state decorations */}
+          {isProjectsActive && <>
+              <span className="absolute inset-0 rounded-lg border border-blue-300 dark:border-blue-500/30"></span>
+              <span className="absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[2px] bg-blue-500 shadow-[0_0_10px_2px_rgba(59,130,246,0.4)] dark:shadow-[0_0_20px_5px_rgba(59,130,246,0.7)]"></span>
+            </>}
+          <NavTooltip show={activeTooltip === 'logo'} label="Project Management" />
+        </Link>
+      ) : (
+        <div 
+          className={logoClassName}
+          onMouseEnter={() => setActiveTooltip('logo')} 
+          onMouseLeave={() => setActiveTooltip(null)}
+        >
+          <img src={logoSrc} alt={logoAlt} className="w-8 h-8 transition-all duration-300" />
+          <NavTooltip show={activeTooltip === 'logo'} label="Projects Disabled" />
+        </div>
+      )}
       {/* Navigation links */}
       <nav className="flex flex-col gap-4">
         {navigationItems.map(item => {

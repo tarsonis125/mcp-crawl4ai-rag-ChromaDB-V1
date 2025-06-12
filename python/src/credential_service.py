@@ -1,9 +1,12 @@
 """
-Credential Service for managing application settings and sensitive credentials.
-Handles database storage with encryption for sensitive data like API keys.
+Credential management service for Archon backend
+
+Handles loading, storing, and accessing credentials with encryption for sensitive values.
+Credentials include API keys, service credentials, and application configuration.
 """
 
 import os
+import re
 import base64
 import logging
 from typing import Dict, Optional, Any, List
@@ -35,7 +38,10 @@ class CredentialService:
         self._cache_initialized = False
         
     def _get_supabase_client(self) -> Client:
-        """Get or create Supabase client using environment variables."""
+        """
+        Get or create a properly configured Supabase client using environment variables.
+        Uses a robust initialization pattern to ensure project ID is correctly included.
+        """
         if self._supabase is None:
             url = os.getenv("SUPABASE_URL")
             key = os.getenv("SUPABASE_SERVICE_KEY")
@@ -45,7 +51,30 @@ class CredentialService:
                     "SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in environment variables"
                 )
             
-            self._supabase = create_client(url, key)
+            # Extract project ID from URL (required for proper initialization)
+            try:
+                match = re.match(r'https://([^.]+)\.supabase\.co', url)
+                if match:
+                    project_id = match.group(1)
+                    # Initialize with proper headers including project reference and authorization
+                    self._supabase = create_client(
+                        url, 
+                        key,
+                        headers={
+                            "X-Client-Info": "archon-credential-service",
+                            "apikey": key,
+                            "Authorization": f"Bearer {key}"
+                        }
+                    )
+                    logger.info(f"Supabase client initialized for project: {project_id}")
+                else:
+                    logger.warning(f"Could not extract project ID from URL: {url}")
+                    # Fall back to basic initialization
+                    self._supabase = create_client(url, key)
+            except Exception as e:
+                logger.error(f"Error configuring Supabase client: {e}")
+                # Fall back to basic initialization (may not work with settings table)
+                self._supabase = create_client(url, key)
         
         return self._supabase
     
@@ -97,7 +126,7 @@ class CredentialService:
             supabase = self._get_supabase_client()
             
             # Fetch all credentials
-            result = supabase.table("app_credentials").select("*").execute()
+            result = supabase.table("settings").select("*").execute()
             
             credentials = {}
             for item in result.data:
@@ -191,7 +220,7 @@ class CredentialService:
                 self._cache[key] = value
             
             # Upsert to database with proper conflict handling
-            result = supabase.table("app_credentials").upsert(
+            result = supabase.table("settings").upsert(
                 data, 
                 on_conflict="key"  # Specify the unique column for conflict resolution
             ).execute()
@@ -208,7 +237,7 @@ class CredentialService:
         try:
             supabase = self._get_supabase_client()
             
-            result = supabase.table("app_credentials").delete().eq("key", key).execute()
+            result = supabase.table("settings").delete().eq("key", key).execute()
             
             # Remove from cache
             if key in self._cache:
@@ -228,7 +257,7 @@ class CredentialService:
         
         try:
             supabase = self._get_supabase_client()
-            result = supabase.table("app_credentials").select("*").eq("category", category).execute()
+            result = supabase.table("settings").select("*").eq("category", category).execute()
             
             credentials = {}
             for item in result.data:
@@ -252,7 +281,7 @@ class CredentialService:
         """Get all credentials as a list of CredentialItem objects (for Settings UI)."""
         try:
             supabase = self._get_supabase_client()
-            result = supabase.table("app_credentials").select("*").execute()
+            result = supabase.table("settings").select("*").execute()
             
             credentials = []
             for item in result.data:

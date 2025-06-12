@@ -455,4 +455,61 @@ async def restore_document_version_direct(project_id: str, field_name: str, vers
         return json.dumps({
             "success": False,
             "error": f"Error restoring document version: {str(e)}"
+        })
+
+async def create_document_version_direct(
+    project_id: str, 
+    field_name: str, 
+    content: Dict[str, Any], 
+    change_summary: str = None, 
+    change_type: str = "update",
+    document_id: str = None,
+    created_by: str = "system"
+) -> str:
+    """
+    Direct function for creating document version that can be called from FastAPI.
+    """
+    try:
+        supabase_client = get_supabase_client()
+        
+        # Get current highest version number for this project/field
+        existing_versions = supabase_client.table("document_versions").select("version_number").eq("project_id", project_id).eq("field_name", field_name).order("version_number", desc=True).limit(1).execute()
+        
+        next_version = 1
+        if existing_versions.data:
+            next_version = existing_versions.data[0]['version_number'] + 1
+        
+        # Create new version record
+        version_data = {
+            'project_id': project_id,
+            'field_name': field_name,
+            'version_number': next_version,
+            'content': content,
+            'change_summary': change_summary or f"{change_type.capitalize()} {field_name}",
+            'change_type': change_type,
+            'document_id': document_id,
+            'created_by': created_by,
+            'created_at': datetime.now().isoformat()
+        }
+        
+        result = supabase_client.table("document_versions").insert(version_data).execute()
+        
+        if result.data:
+            return json.dumps({
+                "success": True,
+                "version": result.data[0],
+                "project_id": project_id,
+                "field_name": field_name,
+                "version_number": next_version
+            })
+        else:
+            return json.dumps({
+                "success": False,
+                "error": "Failed to create version snapshot"
+            })
+            
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "error": f"Error creating version: {str(e)}"
         }) 

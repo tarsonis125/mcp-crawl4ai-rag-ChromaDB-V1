@@ -91,7 +91,7 @@ def check_supabase_health(client: Client) -> bool:
     """Check if Supabase is accessible."""
     try:
         # Try a simple query to test connection
-        response = client.table("app_credentials").select("key").limit(1).execute()
+        response = client.table("settings").select("key").limit(1).execute()
         return True
     except Exception as e:
         logger.error(f"Supabase health check failed: {e}")
@@ -300,20 +300,25 @@ def register_modules():
             logger.error(f"✗ Error registering RAG module: {e}")
             logger.error(traceback.format_exc())
     
-    # Import and register Project module  
-    try:
-        from src.modules.project_module import register_project_tools
-        register_project_tools(mcp)
-        modules_registered += 1
+    # Import and register Project module - only if Projects are enabled
+    projects_enabled = os.getenv("PROJECTS_ENABLED", "true").lower() == "true"
+    if projects_enabled:
+        try:
+            from src.modules.project_module import register_project_tools
+            register_project_tools(mcp)
+            modules_registered += 1
+            if transport != "stdio":
+                logger.info("✓ Project module registered")
+        except ImportError as e:
+            if transport != "stdio":
+                logger.warning(f"⚠ Project module not available: {e}")
+        except Exception as e:
+            if transport != "stdio":
+                logger.error(f"✗ Error registering Project module: {e}")
+                logger.error(traceback.format_exc())
+    else:
         if transport != "stdio":
-            logger.info("✓ Project module registered")
-    except ImportError as e:
-        if transport != "stdio":
-            logger.warning(f"⚠ Project module not available: {e}")
-    except Exception as e:
-        if transport != "stdio":
-            logger.error(f"✗ Error registering Project module: {e}")
-            logger.error(traceback.format_exc())
+            logger.info("⚠ Project module skipped - Projects are disabled")
     
     # Import and register Versioning module (for document versioning only - task versioning removed)
     try:

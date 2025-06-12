@@ -151,14 +151,25 @@ export const projectService = {
    */
   async listProjects(): Promise<Project[]> {
     try {
+      console.log('[PROJECT SERVICE] Fetching projects from API');
       const projects = await callAPI<Project[]>('/api/projects');
+      console.log('[PROJECT SERVICE] Raw API response:', projects);
       
       // Add computed UI properties
-      return projects.map((project: Project) => ({
-        ...project,
-        progress: project.progress || 0,
-        updated: project.updated || this.formatRelativeTime(project.updated_at)
-      }));
+      const processedProjects = projects.map((project: Project) => {
+        const processed = {
+          ...project,
+          // Explicitly ensure pinned is boolean type
+          pinned: project.pinned === true, 
+          progress: project.progress || 0,
+          updated: project.updated || this.formatRelativeTime(project.updated_at)
+        };
+        console.log(`[PROJECT SERVICE] Processed project ${project.id} (${project.title}), pinned=${processed.pinned}`);
+        return processed;
+      });
+      
+      console.log('[PROJECT SERVICE] All processed projects:', processedProjects.map(p => ({id: p.id, title: p.title, pinned: p.pinned})));
+      return processedProjects;
     } catch (error) {
       console.error('Failed to list projects:', error);
       throw error;
@@ -241,25 +252,40 @@ export const projectService = {
    */
   async updateProject(projectId: string, updates: UpdateProjectRequest): Promise<Project> {
     // Validate input
+    console.log(`[PROJECT SERVICE] Updating project ${projectId} with data:`, updates);
     const validation = validateUpdateProject(updates);
     if (!validation.success) {
+      console.error(`[PROJECT SERVICE] Validation failed:`, validation.error);
       throw new ValidationError(formatValidationErrors(validation.error));
     }
 
     try {
+      console.log(`[PROJECT SERVICE] Sending API request to update project ${projectId}`, validation.data);
       const project = await callAPI<Project>(`/api/projects/${projectId}`, {
         method: 'PUT',
         body: JSON.stringify(validation.data)
       });
       
+      console.log(`[PROJECT SERVICE] API update response:`, project);
+      
       // Broadcast update event
       this.broadcastProjectUpdate('PROJECT_UPDATED', project.id, updates);
       
-      return {
+      // Ensure pinned property is properly handled as boolean
+      const processedProject = {
         ...project,
+        pinned: project.pinned === true,
         progress: project.progress || 0,
         updated: this.formatRelativeTime(project.updated_at)
       };
+      
+      console.log(`[PROJECT SERVICE] Final processed project:`, {
+        id: processedProject.id,
+        title: processedProject.title,
+        pinned: processedProject.pinned
+      });
+      
+      return processedProject;
     } catch (error) {
       console.error(`Failed to update project ${projectId}:`, error);
       throw error;

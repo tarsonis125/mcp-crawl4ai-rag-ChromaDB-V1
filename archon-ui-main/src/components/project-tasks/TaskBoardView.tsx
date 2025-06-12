@@ -177,27 +177,43 @@ const DraggableTaskCard = ({
   
   // Card styling - using CSS-based height animation for better scrolling
   
+  // Card styling constants
   const cardScale = 'scale-100';
   const cardOpacity = 'opacity-100';
-  const highlightGlow = isHighlighted ? 'shadow-[0_0_20px_rgba(34,211,238,0.6)] ring-2 ring-cyan-400/50' : '';
-  const hoverGlow = 'hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] hover:ring-1 hover:ring-cyan-400/30';
+  
+  // Subtle highlight effect for related tasks
+  const highlightGlow = isHighlighted 
+    ? 'ring-1 ring-cyan-400/50 shadow-[0_0_8px_rgba(34,211,238,0.3)]' 
+    : '';
+    
+  // Subtle hover effect with soft border glow
+  const hoverGlow = 'group-hover:border-cyan-300/70 dark:group-hover:border-cyan-500/40';
+  
+  // Base card styles with proper rounded corners
+  const cardBaseStyles = 'bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30 border border-gray-200 dark:border-gray-700 rounded-lg';
+  
+  // Hover styles with more subtle effect
+  const hoverStyles = 'group-hover:shadow-[0_0_12px_rgba(34,211,238,0.15)] dark:group-hover:shadow-[0_0_12px_rgba(34,211,238,0.2)]';
+  
+  // Transition settings
+  const transitionStyles = 'transition-all duration-200 ease-in-out';
 
   return (
     <div 
       ref={(node) => drag(drop(node))}
-      
       style={{ 
-        perspective: '1000px'
+        perspective: '1000px',
+        transformStyle: 'preserve-3d'
       }}
-      className={`flip-card w-full cursor-move ${cardScale} ${cardOpacity} ${isDragging ? 'opacity-50 scale-90' : ''} transition-all duration-500 ease-in-out ${highlightGlow} ${hoverGlow} ${showSubtasks && subtasks.length > 0 ? 'card-expanded' : 'card-collapsed'}`}
+      className={`flip-card w-full cursor-move relative ${cardScale} ${cardOpacity} ${isDragging ? 'opacity-50 scale-90' : ''} ${transitionStyles} ${showSubtasks && subtasks.length > 0 ? 'card-expanded' : 'card-collapsed'} group ${highlightGlow}`}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
       <div 
-        className={`relative w-full h-full transition-transform duration-500 transform-style-preserve-3d ${isFlipped ? 'rotate-y-180' : ''}`}
+        className={`relative w-full h-full transform-style-preserve-3d ${isFlipped ? 'rotate-y-180' : ''}`}
       >
-        {/* Front side */}
-        <div className="absolute w-full h-full backface-hidden bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30 border border-gray-200 dark:border-gray-800 rounded-lg hover:border-gray-300 dark:hover:border-gray-700 transition-all duration-300 group shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)]">
+        {/* Front side with subtle hover effect */}
+        <div className={`absolute w-full h-full backface-hidden ${cardBaseStyles} ${hoverStyles} ${transitionStyles} ${hoverGlow} rounded-lg`}>
           {/* Priority indicator */}
           <div className={`absolute left-0 top-0 bottom-0 w-[3px] ${getOrderColor(task.task_order)} ${getOrderGlow(task.task_order)} rounded-l-lg opacity-80 group-hover:w-[4px] group-hover:opacity-100 transition-all duration-300`}></div>
           
@@ -323,7 +339,8 @@ const DraggableTaskCard = ({
         </div>
         
         {/* Back side */}
-        <div className={`absolute w-full h-full backface-hidden bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30 border border-gray-200 dark:border-gray-800 rounded-lg rotate-y-180 transition-all duration-300 group shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)] ${isDragging ? 'opacity-0' : 'opacity-100'}`}>
+        {/* Back side with same hover effect */}
+        <div className={`absolute w-full h-full backface-hidden ${cardBaseStyles} ${hoverStyles} ${transitionStyles} ${hoverGlow} rounded-lg rotate-y-180 ${isDragging ? 'opacity-0' : 'opacity-100'}`}>
           {/* Priority indicator */}
           <div className={`absolute left-0 top-0 bottom-0 w-[3px] ${getOrderColor(task.task_order)} ${getOrderGlow(task.task_order)} rounded-l-lg opacity-80 group-hover:w-[4px] group-hover:opacity-100 transition-all duration-300`}></div>
           

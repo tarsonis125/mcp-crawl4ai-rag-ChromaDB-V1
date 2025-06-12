@@ -27,7 +27,8 @@ export const CreateProjectSchema = z.object({
   features: z.array(z.any()).optional(),
   data: z.array(z.any()).optional(),
   technical_sources: z.array(z.string()).optional(),
-  business_sources: z.array(z.string()).optional()
+  business_sources: z.array(z.string()).optional(),
+  pinned: z.boolean().optional()
 });
 
 export const UpdateProjectSchema = CreateProjectSchema.partial();
@@ -50,6 +51,7 @@ export const ProjectSchema = z.object({
   icon: z.string().optional(),
   color: ProjectColorSchema.optional(),
   progress: z.number().min(0).max(100).optional(),
+  pinned: z.boolean(),
   updated: z.string().optional() // Human-readable format
 });
 

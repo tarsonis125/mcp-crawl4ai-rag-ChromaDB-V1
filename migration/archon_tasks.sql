@@ -21,6 +21,7 @@ create table if not exists projects (
   features jsonb default '[]'::jsonb,
   data jsonb default '[]'::jsonb,
   github_repo text,
+  pinned boolean default false,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );

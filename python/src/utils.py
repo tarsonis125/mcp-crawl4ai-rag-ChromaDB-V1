@@ -78,6 +78,7 @@ def get_openai_api_key_sync() -> Optional[str]:
 def get_supabase_client() -> Client:
     """
     Get a Supabase client with the URL and key from environment variables.
+    Uses a more robust initialization pattern to handle project ID extraction.
     
     Returns:
         Supabase client instance
@@ -88,6 +89,30 @@ def get_supabase_client() -> Client:
     if not url or not key:
         raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in environment variables")
     
+    # Extract project ID from URL (required for proper initialization)
+    try:
+        import re
+        match = re.match(r'https://([^.]+)\.supabase\.co', url)
+        if match:
+            project_id = match.group(1)
+            # Initialize with proper headers including project reference
+            client = create_client(
+                url, 
+                key,
+                headers={
+                    "X-Client-Info": "archon-backend",
+                    # The headers below are what make the difference
+                    "apikey": key,
+                    "Authorization": f"Bearer {key}"
+                }
+            )
+            print(f"Supabase client initialized for project: {project_id}")
+            return client
+    except Exception as e:
+        logging.error(f"Error extracting project ID from Supabase URL: {e}")
+    
+    # Fallback to standard initialization (though this may not work with the settings table)
+    logging.warning("Could not extract project ID from Supabase URL - falling back to basic initialization")
     return create_client(url, key)
 
 def create_embeddings_batch(texts: List[str], cached_api_key: str = None) -> List[List[float]]:

@@ -429,7 +429,7 @@ CREATE TABLE tasks (
 );
 
 -- Secure credential storage  
-CREATE TABLE app_credentials (
+CREATE TABLE settings (
   id BIGSERIAL PRIMARY KEY,
   key TEXT UNIQUE NOT NULL,
   value TEXT NOT NULL,
@@ -491,7 +491,7 @@ def get_supabase_client():
         )
         
         # Validate connection with simple query
-        test_query = supabase_client.table("app_credentials").select("id").limit(1).execute()
+        test_query = supabase_client.table("settings").select("id").limit(1).execute()
         
         api_logger.info("✅ Database connection validated")
         return supabase_client
@@ -739,7 +739,7 @@ from python.src.utils import get_supabase_client
 
 try:
     client = get_supabase_client()
-    result = client.table("app_credentials").select("id").limit(1).execute()
+    result = client.table("settings").select("id").limit(1).execute()
     print("✅ Database connection successful")
     print(f"Tables accessible: {len(result.data) >= 0}")
 except Exception as e:
@@ -783,7 +783,7 @@ curl -X POST "http://localhost:8080/api/rag/query" \
 # Quick test
 curl -H "apikey: YOUR_SERVICE_KEY" \
      -H "Authorization: Bearer YOUR_SERVICE_KEY" \
-     "https://your-project.supabase.co/rest/v1/app_credentials?select=id&limit=1"
+     "https://your-project.supabase.co/rest/v1/settings?select=id&limit=1"
 ```
 
 </TabItem>

@@ -67,27 +67,47 @@ export function ProjectPage({
 
   // Load projects on component mount
   useEffect(() => {
-    loadProjects();
-    
-    // Load pinned projects from localStorage
-    const loadPinnedProjects = () => {
+    const loadInitialData = async () => {
       try {
-        const pinnedProjects = localStorage.getItem('pinnedProjects');
-        if (pinnedProjects) {
-          const pinnedIds = new Set(JSON.parse(pinnedProjects));
-          setProjects(prev => 
-            prev.map(project => ({
-              ...project,
-              pinned: pinnedIds.has(project.id)
-            }))
-          );
+        console.log(`[INITIAL LOAD] Starting loadInitialData...`);
+        // Load the projects with their database pinned state
+        const projectsData = await projectService.listProjects();
+        console.log(`[INITIAL LOAD] Projects loaded from API:`, projectsData.map(p => ({id: p.id, title: p.title, pinned: p.pinned})));
+        
+        // Sort projects - pinned first, then alphabetically
+        const sortedProjects = [...projectsData].sort((a, b) => {
+          if (a.pinned && !b.pinned) return -1;
+          if (!a.pinned && b.pinned) return 1;
+          return a.title.localeCompare(b.title);
+        });
+        console.log(`[INITIAL LOAD] Projects after sorting:`, sortedProjects.map(p => ({id: p.id, title: p.title, pinned: p.pinned})));
+        
+        setProjects(sortedProjects);
+        
+        // Find pinned project if any
+        const pinnedProject = sortedProjects.find(project => project.pinned);
+        console.log(`[INITIAL LOAD] Pinned project:`, pinnedProject ? {id: pinnedProject.id, title: pinnedProject.title, pinned: pinnedProject.pinned} : 'None');
+        
+        // Always select the pinned project if one exists, otherwise default to first project
+        if (sortedProjects.length > 0) {
+          // Select either the pinned project or the first project if no pinned project
+          const projectToSelect = pinnedProject || sortedProjects[0];
+          console.log(`[INITIAL LOAD] Selecting project:`, {id: projectToSelect.id, title: projectToSelect.title, pinned: projectToSelect.pinned});
+          setSelectedProject(projectToSelect);
+          setShowProjectDetails(true);
+        } else {
+          console.log(`[INITIAL LOAD] No projects to select`);
         }
+        
       } catch (error) {
-        console.error('Failed to load pinned projects from localStorage:', error);
+        console.error('Failed to load projects:', error);
+        setProjectsError(error instanceof Error ? error.message : 'Failed to load projects');
+      } finally {
+        setIsLoadingProjects(false);
       }
     };
     
-    loadPinnedProjects();
+    loadInitialData();
   }, []);
 
   // Load tasks when project is selected
@@ -99,27 +119,41 @@ export function ProjectPage({
 
   const loadProjects = async () => {
     try {
+      console.log(`[LOAD PROJECTS] Starting loadProjects...`);
       setIsLoadingProjects(true);
       setProjectsError(null);
       
       const projectsData = await projectService.listProjects();
+      console.log(`[LOAD PROJECTS] Projects loaded from API:`, projectsData.map(p => ({id: p.id, title: p.title, pinned: p.pinned})));
       
-      // Sort projects - pinned projects first, then alphabetically by title
+      // Sort projects - pinned first, then alphabetically by title
       const sortedProjects = [...projectsData].sort((a, b) => {
-        // First sort by pinned status (pinned projects first)
         if (a.pinned && !b.pinned) return -1;
         if (!a.pinned && b.pinned) return 1;
-        
-        // Then sort alphabetically by title
         return a.title.localeCompare(b.title);
       });
+      console.log(`[LOAD PROJECTS] Projects after sorting:`, sortedProjects.map(p => ({id: p.id, title: p.title, pinned: p.pinned})));
       
       setProjects(sortedProjects);
       
-      // Auto-select first project if none selected
-      if (sortedProjects.length > 0 && !selectedProject) {
+      // Find pinned project if any
+      const pinnedProject = sortedProjects.find(project => project.pinned);
+      console.log(`[LOAD PROJECTS] Pinned project:`, pinnedProject ? {id: pinnedProject.id, title: pinnedProject.title, pinned: pinnedProject.pinned} : 'None');
+      console.log(`[LOAD PROJECTS] Current selected project:`, selectedProject ? {id: selectedProject.id, title: selectedProject.title, pinned: selectedProject.pinned} : 'None');
+      
+      // If there's a pinned project and currently selected project is different,
+      // switch to the pinned project
+      if (pinnedProject && (!selectedProject || selectedProject.id !== pinnedProject.id)) {
+        console.log(`[LOAD PROJECTS] Switching selection to pinned project: ${pinnedProject.title}`);
+        setSelectedProject(pinnedProject);
+        setShowProjectDetails(true);
+      } else if (sortedProjects.length > 0 && !selectedProject) {
+        // No pinned project but we need a default selection
+        console.log(`[LOAD PROJECTS] No pinned project, selecting first project: ${sortedProjects[0].title}`);
         setSelectedProject(sortedProjects[0]);
         setShowProjectDetails(true);
+      } else {
+        console.log(`[LOAD PROJECTS] Keeping current project selection`);
       }
     } catch (error) {
       console.error('Failed to load projects:', error);
@@ -167,51 +201,57 @@ export function ProjectPage({
 
   const { showToast } = useToast();
 
-  const confirmDelete = useCallback((projectId: string, projectTitle: string): Promise<boolean> => {
+  const confirmDelete = useCallback((projectTitle: string): Promise<boolean> => {
     return new Promise((resolve) => {
-      showToast(
-        <div className="flex flex-col space-y-2">
-          <p>Are you sure you want to delete "{projectTitle}"?</p>
-          <p className="text-sm text-gray-600 dark:text-gray-400">This will also delete all associated tasks and cannot be undone.</p>
-          <div className="flex justify-end space-x-2 mt-2">
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={() => {
-                showToast('Deletion cancelled', 'info');
-                resolve(false);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button 
-              variant="primary" 
-              size="sm" 
-              onClick={() => resolve(true)}
-            >
-              Delete
-            </Button>
-          </div>
-        </div>,
-        'warning',
-        0 // No auto-dismiss
-      );
+      const toastId = `delete-confirm-${Date.now()}`;
+      const confirmMessage = `Are you sure you want to delete "${projectTitle}"?\nThis will also delete all associated tasks and cannot be undone.`;
+      showToast(confirmMessage, 'warning', 0);
+      const userChoice = new Promise<boolean>((resolveChoice) => {
+        const handleConfirm = () => {
+          showToast('', 'success', 0); 
+          resolveChoice(true);
+        };
+        const handleCancel = () => {
+          showToast('Deletion cancelled', 'info');
+          resolveChoice(false);
+        };
+        setTimeout(() => {
+          const toast = document.querySelector(`[data-toast-id="${toastId}"]`);
+          if (toast) {
+            const buttonContainer = document.createElement('div');
+            buttonContainer.className = 'flex justify-end space-x-2 mt-2';
+            const cancelBtn = document.createElement('button');
+            cancelBtn.className = 'px-3 py-1 text-sm rounded-md border border-gray-300 hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-700';
+            cancelBtn.textContent = 'Cancel';
+            cancelBtn.onclick = (e) => {
+              e.stopPropagation();
+              handleCancel();
+            };
+            const confirmBtn = document.createElement('button');
+            confirmBtn.className = 'px-3 py-1 text-sm rounded-md bg-red-600 text-white hover:bg-red-700';
+            confirmBtn.textContent = 'Delete';
+            confirmBtn.onclick = (e) => {
+              e.stopPropagation();
+              handleConfirm();
+            };
+            buttonContainer.appendChild(cancelBtn);
+            buttonContainer.appendChild(confirmBtn);
+            toast.appendChild(buttonContainer);
+          }
+        }, 100);
+      });
+      const result = userChoice;
+      resolve(result);
     });
   }, [showToast]);
 
   const handleDeleteProject = async (e: React.MouseEvent, projectId: string, projectTitle: string) => {
     e.stopPropagation();
-    
-    const shouldDelete = await confirmDelete(projectId, projectTitle);
+    const shouldDelete = await confirmDelete(projectTitle);
     if (!shouldDelete) return;
     
     try {
       await projectService.deleteProject(projectId);
-      
-      // Update localStorage if needed
-      const pinnedProjects = JSON.parse(localStorage.getItem('pinnedProjects') || '[]');
-      const updatedPinned = pinnedProjects.filter((id: string) => id !== projectId);
-      localStorage.setItem('pinnedProjects', JSON.stringify(updatedPinned));
       
       // Update UI
       setProjects(prev => prev.filter(p => p.id !== projectId));
@@ -232,39 +272,50 @@ export function ProjectPage({
     e.stopPropagation();
     
     const newPinnedState = !project.pinned;
+    console.log(`[PIN] Toggling pin for project ${project.id} (${project.title}) to ${newPinnedState}`);
     
     try {
-      // Update server
-      await projectService.updateProject(project.id, {
+      // Update the backend first
+      console.log(`[PIN] Sending update to backend: project ${project.id}, pinned=${newPinnedState}`);
+      const updatedProject = await projectService.updateProject(project.id, {
         pinned: newPinnedState
       });
+      console.log(`[PIN] Backend response:`, updatedProject);
       
-      // Update browser storage
-      const pinnedProjects = new Set(JSON.parse(localStorage.getItem('pinnedProjects') || '[]'));
-      
-      if (newPinnedState) {
-        pinnedProjects.add(project.id);
-      } else {
-        pinnedProjects.delete(project.id);
-      }
-      
-      localStorage.setItem('pinnedProjects', JSON.stringify(Array.from(pinnedProjects)));
-      
-      // Update UI
+      // Update local state directly without reloading all projects
       setProjects(prev => {
-        const updated = prev.map(p => 
-          p.id === project.id ? { ...p, pinned: newPinnedState } : p
-        );
+        // Create updated project
+        const updatedProject = { ...project, pinned: newPinnedState };
+        console.log(`[PIN] Updated project object:`, updatedProject);
         
-        return [...updated].sort((a, b) => {
-          if (a.pinned && !b.pinned) return -1;
-          if (!a.pinned && b.pinned) return 1;
-          return a.title.localeCompare(b.title);
-        });
+        // If pinning: unpin all others and move this to the front
+        if (newPinnedState) {
+          console.log(`[PIN] Pinning project - will unpin all others locally`);
+          const unpinnedProjects = prev.map(p => {
+            if (p.id === project.id) return updatedProject;
+            if (p.pinned) console.log(`[PIN] Unpinning project locally: ${p.id} (${p.title})`);
+            return { ...p, pinned: false };
+          });
+          
+          // Re-sort with the newly pinned project first, then alphabetically
+          const sortedProjects = [...unpinnedProjects].sort((a, b) => {
+            if (a.pinned && !b.pinned) return -1;
+            if (!a.pinned && b.pinned) return 1;
+            return a.title.localeCompare(b.title);
+          });
+          console.log(`[PIN] Projects after sorting:`, sortedProjects.map(p => ({id: p.id, title: p.title, pinned: p.pinned})));
+          return sortedProjects;
+        } else {
+          // Just update this project's pin state
+          console.log(`[PIN] Unpinning project - only updating this project locally`);
+          return prev.map(p => p.id === project.id ? updatedProject : p);
+        }
       });
       
+      // Update selected project if necessary
       if (selectedProject?.id === project.id) {
-        setSelectedProject(prev => ({ ...prev!, pinned: newPinnedState }));
+        console.log(`[PIN] Updating selected project's pin state`);
+        setSelectedProject(prev => prev ? { ...prev, pinned: newPinnedState } : null);
       }
       
       showToast(

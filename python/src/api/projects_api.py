@@ -51,6 +51,7 @@ class UpdateProjectRequest(BaseModel):
     data: Optional[List[Any]] = None
     technical_sources: Optional[List[str]] = None  # List of knowledge source IDs
     business_sources: Optional[List[str]] = None   # List of knowledge source IDs
+    pinned: Optional[bool] = None  # Whether this project is pinned to top
 
 class CreateTaskRequest(BaseModel):
     project_id: str
@@ -924,6 +925,23 @@ async def update_project(project_id: str, request: UpdateProjectRequest):
                 if request.data is not None:
                     update_data["data"] = request.data
                 
+                # Handle pinned field and ensure only one project can be pinned at a time
+                if request.pinned is not None:
+                    update_data["pinned"] = request.pinned
+                    
+                    # If pinning this project, unpin all others
+                    if request.pinned:
+                        with logfire_logger.span("unpin_other_projects") as unpin_span:
+                            try:
+                                # Unpin all other projects
+                                supabase_client.table("projects").update({"pinned": False}).neq("id", project_id).eq("pinned", True).execute()
+                                unpin_span.set_attribute("success", True)
+                            except Exception as e:
+                                unpin_span.set_attribute("success", False)
+                                unpin_span.set_attribute("error", str(e))
+                                logger.warning(f"Failed to unpin other projects: {e}")
+                                # Continue with this project's update regardless
+                
                 prep_span.set_attribute("update_fields_count", len(update_data) - 1)  # -1 for updated_at
             
             # Create version snapshots for JSONB fields before updating (if versioning is available)
@@ -1756,9 +1774,7 @@ async def force_task_update_check(project_id: str):
 try:
     from ..modules.versioning_module import (
         get_document_version_history_direct,
-        get_task_version_history_direct,
         restore_document_version_direct,
-        restore_task_version_direct,
         get_version_content_direct,
         create_document_version_direct
     )
@@ -1808,10 +1824,9 @@ async def get_version_content(project_id: str, version_number: int, field_name: 
             span.set_attribute("field_name", field_name)
             span.set_attribute("version_number", version_number)
             
-            # Use direct function
+            # Use direct function (removed task_id parameter since we only support project versioning)
             result = await get_version_content_direct(
                 project_id=project_id, 
-                task_id=None,
                 field_name=field_name, 
                 version_number=version_number
             )
@@ -1859,61 +1874,3 @@ async def restore_document_version(project_id: str, version_number: int, field_n
     except Exception as e:
         logger.error(f"Failed to restore document version: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/tasks/{task_id}/versions")
-async def get_task_version_history(task_id: str, field_name: str = Query("sources")):
-    """Get version history for task JSONB fields"""
-    if not VERSIONING_AVAILABLE:
-        raise HTTPException(status_code=501, detail="Versioning module not available")
-    
-    try:
-        with logfire_logger.span("api_get_task_version_history") as span:
-            span.set_attribute("task_id", task_id)
-            span.set_attribute("field_name", field_name)
-            
-            # Use direct function
-            result = await get_task_version_history_direct(task_id, field_name)
-            
-            # Parse JSON result
-            result_data = json.loads(result)
-            
-            if result_data.get("success"):
-                return result_data
-            else:
-                raise HTTPException(status_code=400, detail=result_data.get("error", "Unknown error"))
-                
-    except Exception as e:
-        logger.error(f"Failed to get task version history: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/tasks/{task_id}/versions/{version_number}/restore")
-async def restore_task_version(task_id: str, version_number: int, field_name: str = Query("sources")):
-    """Restore a task JSONB field to a specific version"""
-    if not VERSIONING_AVAILABLE:
-        raise HTTPException(status_code=501, detail="Versioning module not available")
-    
-    try:
-        with logfire_logger.span("api_restore_task_version") as span:
-            span.set_attribute("task_id", task_id)
-            span.set_attribute("field_name", field_name)
-            span.set_attribute("version_number", version_number)
-            
-            # Use direct function
-            result = await restore_task_version_direct(
-                task_id=task_id,
-                field_name=field_name,
-                version_number=version_number,
-                restored_by="api_user"
-            )
-            
-            # Parse JSON result
-            result_data = json.loads(result)
-            
-            if result_data.get("success"):
-                return result_data
-            else:
-                raise HTTPException(status_code=400, detail=result_data.get("error", "Unknown error"))
-                
-    except Exception as e:
-        logger.error(f"Failed to restore task version: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) 

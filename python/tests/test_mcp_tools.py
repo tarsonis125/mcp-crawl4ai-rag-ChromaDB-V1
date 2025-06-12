@@ -58,7 +58,7 @@ class MockSupabaseClient:
                     "created_at": "2024-01-01"
                 }
             ],
-            "app_credentials": [{"key": "test", "value": "test"}]
+            "settings": [{"key": "test", "value": "test"}]
         }
     
     def table(self, name):

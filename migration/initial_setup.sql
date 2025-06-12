@@ -37,7 +37,7 @@ COMMENT ON COLUMN sources.metadata IS 'JSONB field storing knowledge_type, tags,
 -- } -- Credentials and Configuration Management Table
 -- This table stores both encrypted sensitive data and plain configuration settings
 
-CREATE TABLE IF NOT EXISTS app_credentials (
+CREATE TABLE IF NOT EXISTS settings (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     key VARCHAR(255) UNIQUE NOT NULL,
     value TEXT,                    -- For plain text config values
@@ -50,21 +50,21 @@ CREATE TABLE IF NOT EXISTS app_credentials (
 );
 
 -- Create index for faster lookups
-CREATE INDEX IF NOT EXISTS idx_app_credentials_key ON app_credentials(key);
-CREATE INDEX IF NOT EXISTS idx_app_credentials_category ON app_credentials(category);
+CREATE INDEX IF NOT EXISTS idx_settings_key ON settings(key);
+CREATE INDEX IF NOT EXISTS idx_settings_category ON settings(category);
 
 -- Insert configuration settings from original .env-doc.md
 -- Note: Sensitive values like OPENAI_API_KEY will be added via the Settings UI with encryption
 
 -- Server Configuration
-INSERT INTO app_credentials (key, value, is_encrypted, category, description) VALUES
+INSERT INTO settings (key, value, is_encrypted, category, description) VALUES
 ('TRANSPORT', 'sse', false, 'server_config', 'The transport for the MCP server - either ''sse'' or ''stdio'' (defaults to sse if left empty)'),
 ('HOST', 'localhost', false, 'server_config', 'Host to bind to if using sse as the transport (leave empty if using stdio)'),
 ('PORT', '8051', false, 'server_config', 'Port to listen on if using sse as the transport (leave empty if using stdio)'),
 ('MODEL_CHOICE', 'gpt-4o-mini', false, 'llm_config', 'The LLM you want to use for summaries and contextual embeddings. Generally this is a very cheap and fast LLM like gpt-4o-mini');
 
 -- RAG Strategy Configuration (all default to false)
-INSERT INTO app_credentials (key, value, is_encrypted, category, description) VALUES
+INSERT INTO settings (key, value, is_encrypted, category, description) VALUES
 ('USE_CONTEXTUAL_EMBEDDINGS', 'false', false, 'rag_strategy', 'Enhances embeddings with contextual information for better retrieval'),
 ('CONTEXTUAL_EMBEDDINGS_MAX_WORKERS', '3', false, 'rag_strategy', 'Maximum number of parallel workers for contextual embedding generation (reduces API rate limit pressure)'),
 ('USE_HYBRID_SEARCH', 'false', false, 'rag_strategy', 'Combines vector similarity search with keyword search for better results'),
@@ -72,11 +72,12 @@ INSERT INTO app_credentials (key, value, is_encrypted, category, description) VA
 ('USE_RERANKING', 'false', false, 'rag_strategy', 'Applies cross-encoder reranking to improve search result relevance');
 
 -- Monitoring Configuration
-INSERT INTO app_credentials (key, value, is_encrypted, category, description) VALUES
-('LOGFIRE_ENABLED', 'true', false, 'monitoring', 'Enable or disable Pydantic Logfire logging and observability platform');
+INSERT INTO settings (key, value, is_encrypted, category, description) VALUES
+('LOGFIRE_ENABLED', 'true', false, 'monitoring', 'Enable or disable Pydantic Logfire logging and observability platform'),
+('PROJECTS_ENABLED', 'true', false, 'features', 'Enable or disable Projects and Tasks functionality');
 
 -- Placeholder for sensitive credentials (to be added via Settings UI)
-INSERT INTO app_credentials (key, encrypted_value, is_encrypted, category, description) VALUES
+INSERT INTO settings (key, encrypted_value, is_encrypted, category, description) VALUES
 ('OPENAI_API_KEY', NULL, true, 'api_keys', 'OpenAI API Key for embedding model (text-embedding-3-small). Get from: https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key');
 
 -- Create trigger to automatically update updated_at timestamp
@@ -88,20 +89,20 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
-CREATE TRIGGER update_app_credentials_updated_at 
-    BEFORE UPDATE ON app_credentials 
+CREATE TRIGGER update_settings_updated_at 
+    BEFORE UPDATE ON settings 
     FOR EACH ROW 
     EXECUTE FUNCTION update_updated_at_column();
 
 -- Create RLS (Row Level Security) policies for future security
-ALTER TABLE app_credentials ENABLE ROW LEVEL SECURITY;
+ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
 
 -- Create policy that allows all operations for service role
-CREATE POLICY "Allow service role full access" ON app_credentials
+CREATE POLICY "Allow service role full access" ON settings
     FOR ALL USING (auth.role() = 'service_role');
 
 -- Create policy for authenticated users (adjust as needed for your security requirements)
-CREATE POLICY "Allow authenticated users to read and update" ON app_credentials
+CREATE POLICY "Allow authenticated users to read and update" ON settings
     FOR ALL TO authenticated
     USING (true); -- Enable the pgvector extension
 create extension if not exists vector;
