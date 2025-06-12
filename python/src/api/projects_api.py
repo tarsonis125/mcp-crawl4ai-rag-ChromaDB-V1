@@ -4,7 +4,7 @@ Projects API endpoints for Archon
 Handles:
 - Project management (CRUD operations)
 - Task management with hierarchical structure
-- Streaming project creation with DocsAgent integration
+- Streaming project creation with DocumentAgent integration
 - WebSocket progress updates for project creation
 """
 
@@ -599,25 +599,25 @@ async def _create_project_background(progress_id: str, request: CreateProjectReq
         await project_creation_manager.update_progress(progress_id, {
             'percentage': 10,
             'step': 'initializing_agents',
-            'log': '🤖 Initializing DocsAgent...'
+            'log': '🤖 Initializing DocumentAgent...'
         })
         
         # Get Supabase client
         supabase_client = get_supabase_client()
         
-        # Update progress: DocsAgent processing
+        # Update progress: DocumentAgent processing
         await project_creation_manager.update_progress(progress_id, {
             'percentage': 30,
             'step': 'generating_docs',
             'log': '📝 Generating comprehensive documentation...'
         })
         
-        # Try to use DocsAgent for enhanced documentation
+        # Try to use DocumentAgent for enhanced documentation
         generated_prd = {}
         
         try:
-            # Import DocsAgent (lazy import to avoid startup issues)
-            from ..agents.docs_agent import DocsAgent
+            # Import DocumentAgent (lazy import to avoid startup issues)
+            from ..agents.document_agent import DocumentAgent
             
             await project_creation_manager.update_progress(progress_id, {
                 'percentage': 50,
@@ -625,8 +625,8 @@ async def _create_project_background(progress_id: str, request: CreateProjectReq
                 'log': '🧠 AI is analyzing project requirements...'
             })
             
-            # Initialize and use DocsAgent
-            docs_agent = DocsAgent()
+            # Initialize DocumentAgent
+            document_agent = DocumentAgent()
             
             await project_creation_manager.update_progress(progress_id, {
                 'percentage': 70,
@@ -634,23 +634,56 @@ async def _create_project_background(progress_id: str, request: CreateProjectReq
                 'log': '✨ AI is creating project documentation...'
             })
             
-            # Generate comprehensive PRD
-            agent_result = await docs_agent.create_prd(
-                project_title=request.title,
-                project_description=request.description or 'A new project created in Archon',
-                requirements=[
-                    "User-friendly interface",
-                    "Secure data handling", 
-                    "Scalable architecture"
-                ] if not request.description else [request.description],
-                context={
-                    "github_repo": request.github_repo,
-                    "created_via": "archon_ui"
-                }
+            # Generate comprehensive PRD using conversation
+            prd_request = f"Create a PRD document titled '{request.title} - Product Requirements Document' for a project called '{request.title}'"
+            if request.description:
+                prd_request += f" with the following description: {request.description}"
+            if request.github_repo:
+                prd_request += f" (GitHub repo: {request.github_repo})"
+            
+            # Create a temporary project ID for the agent (will be replaced with actual ID later)
+            temp_project_id = "temp-" + str(uuid.uuid4())
+            
+            # Run the document agent to create PRD
+            agent_result = await document_agent.run_conversation(
+                user_message=prd_request,
+                project_id=temp_project_id,
+                user_id="system"
             )
             
             # Extract PRD content from agent result
-            generated_prd = agent_result.content if hasattr(agent_result, 'content') else {}
+            if agent_result.success and hasattr(agent_result, 'content_preview'):
+                # For now, create a basic PRD structure since the agent creates documents differently
+                generated_prd = {
+                    "project_overview": {
+                        "description": request.description or f"A new project called {request.title}",
+                        "target_completion": "To be determined"
+                    },
+                    "goals": [
+                        "Define project objectives",
+                        "Establish technical requirements",
+                        "Plan implementation strategy"
+                    ],
+                    "scope": {
+                        "frontend": "Frontend technologies and user interface",
+                        "backend": "Backend services and data management"
+                    },
+                    "architecture": {
+                        "frontend": ["React", "TypeScript"],
+                        "backend": ["FastAPI", "Python"]
+                    },
+                    "tech_packages": {
+                        "frontend_dependencies": ["react ^18.0.0", "typescript ^5.0.0"],
+                        "backend_dependencies": ["fastapi ^0.100.0", "pydantic ^2.0.0"]
+                    },
+                    "ui_ux_requirements": {
+                        "color_palette": ["#3B82F6", "#1E40AF"],
+                        "typography": {"headings": "Inter", "body": "Inter"}
+                    },
+                    "coding_standards": ["Follow TypeScript strict mode", "Use Pydantic for validation"]
+                }
+            else:
+                generated_prd = {}
             
             await project_creation_manager.update_progress(progress_id, {
                 'percentage': 85,
@@ -662,7 +695,7 @@ async def _create_project_background(progress_id: str, request: CreateProjectReq
             await project_creation_manager.update_progress(progress_id, {
                 'percentage': 60,
                 'step': 'fallback_mode',
-                'log': '⚠️ DocsAgent not available, using basic project structure'
+                'log': '⚠️ DocumentAgent not available, using basic project structure'
             })
         except Exception as e:
             await project_creation_manager.update_progress(progress_id, {
