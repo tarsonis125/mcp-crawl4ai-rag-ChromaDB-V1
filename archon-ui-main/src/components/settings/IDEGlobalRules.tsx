@@ -9,7 +9,7 @@ export const IDEGlobalRules = () => {
   const { showToast } = useToast();
   
   const globalRules = `We track the progress of the project via Archon. Use the MCP tool
-1. Update all actions to the Dart AI via MCP
+1. Update all actions to Archon via MCP
 2. Make sure to always move tasks from to do, doing, and lastly review, you should not mark tasks complete, until the user has reviewed.
 3. Maintain the description of the task item, and add your notes below the description when completing the task.
 4. Please DO NOT MAKE ASSUMPTIONS!!!!! For any questions of the project please see the Local Rules.`;
