@@ -13,6 +13,7 @@ import { credentialsService, RagSettings } from '../services/credentialsService'
 export const SettingsPage = () => {
   const [ragSettings, setRagSettings] = useState<RagSettings>({
     USE_CONTEXTUAL_EMBEDDINGS: false,
+    CONTEXTUAL_EMBEDDINGS_MAX_WORKERS: 3,
     USE_HYBRID_SEARCH: false,
     USE_AGENTIC_RAG: false,
     USE_RERANKING: false,

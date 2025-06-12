@@ -253,9 +253,9 @@ const DraggableTaskCard = ({
               {task.title}
             </h4>
             
-            {/* Subtasks display - simplified to match back side pattern */}
-            <div className="flex-1 overflow-hidden relative">
-              <div className="absolute inset-0 overflow-y-auto pl-1.5 pr-2" style={{ overflowY: 'auto', maxHeight: showSubtasks ? '400px' : '0px', transition: 'max-height 0.5s ease-in-out' }}>
+            {/* Subtasks display - exactly matching back side pattern for scrolling */}
+            <div className="flex-1 overflow-hidden relative" style={{ display: showSubtasks ? 'block' : 'none' }}>
+              <div className="absolute inset-0 overflow-y-auto hide-scrollbar pl-1.5 pr-2">
                 <div className={`pt-1 border-l-2 border-cyan-200/30 dark:border-cyan-800/30 pr-1 space-y-1 ${!showSubtasks ? 'opacity-0' : 'opacity-100'}`}>
                   {subtasks.map((subtask, index) => (
                     <div 

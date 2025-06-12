@@ -36,6 +36,7 @@ export interface Project {
   color?: ProjectColor;
   progress?: number;
   updated?: string; // Human-readable format
+  pinned?: boolean; // Indicates if project is pinned for priority
 }
 
 // Base Task interface (matches database schema)
@@ -96,6 +97,7 @@ export interface UpdateProjectRequest {
   data?: any[];
   technical_sources?: string[];
   business_sources?: string[];
+  pinned?: boolean;
 }
 
 // Create task request

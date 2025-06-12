@@ -227,18 +227,37 @@ class MCPClientManager:
             }).eq("id", client_id).execute()
             
             try:
-                if transport_type == TransportType.SSE:
-                    client = await self._connect_sse_client(client_id, config)
-                elif transport_type == TransportType.STDIO:
-                    client = await self._connect_stdio_client(client_id, config)
-                elif transport_type == TransportType.DOCKER:
-                    client = await self._connect_docker_client(client_id, config)
-                elif transport_type == TransportType.NPX:
-                    client = await self._connect_npx_client(client_id, config)
-                else:
-                    raise ValueError(f"Unsupported transport type: {transport_type}")
+                # Use the real MCP client service for connections
+                from ..services.mcp_client_service import get_mcp_client_service, MCPClientConfig
+                from ..services.mcp_client_service import TransportType as ServiceTransportType
+                service = get_mcp_client_service()
                 
-                self.active_clients[client_id] = client
+                # Convert API transport type to service transport type
+                service_transport_map = {
+                    "sse": ServiceTransportType.SSE,
+                    "stdio": ServiceTransportType.STDIO,
+                    "docker": ServiceTransportType.DOCKER,
+                    "npx": ServiceTransportType.NPX
+                }
+                
+                # Convert API config to service config
+                service_config = MCPClientConfig(
+                    name=client_data['name'],
+                    transport_type=service_transport_map[transport_type],
+                    connection_config=config,
+                    auto_connect=client_data.get('auto_connect', True),
+                    health_check_interval=client_data.get('health_check_interval', 30),
+                    is_default=client_data.get('is_default', False)
+                )
+                
+                # Add client to service and connect
+                client_info = await service.add_client(client_id, service_config)
+                success = await service.connect_client(client_id)
+                
+                if success:
+                    self.active_clients[client_id] = {"service_client": True}
+                else:
+                    raise ValueError("Service failed to connect client")
                 
                 # Update status to connected
                 supabase.table("mcp_clients").update({
@@ -443,9 +462,36 @@ class MCPClientManager:
     async def _discover_tools(self, client_id: str):
         """Discover available tools from a client and cache them."""
         try:
-            # This would implement MCP protocol tool discovery
-            # For now, placeholder implementation
-            mcp_logger.info("Tool discovery not yet implemented", client_id=client_id)
+            # Get the real MCP client service
+            from ..services.mcp_client_service import get_mcp_client_service
+            service = get_mcp_client_service()
+            
+            # Get tools using the real MCP implementation
+            tools = await service.get_client_tools(client_id)
+            
+            if tools:
+                # Store tools in database for caching
+                supabase = get_supabase_client()
+                
+                # Clear existing tools for this client
+                supabase.table("mcp_client_tools").delete().eq("client_id", client_id).execute()
+                
+                # Insert discovered tools
+                for tool in tools:
+                    tool_data = {
+                        "client_id": client_id,
+                        "tool_name": tool.name,
+                        "tool_description": tool.description,
+                        "tool_schema": tool.inputSchema if hasattr(tool, 'inputSchema') else {}
+                    }
+                    supabase.table("mcp_client_tools").insert(tool_data).execute()
+                
+                mcp_logger.info("Tools discovered and cached", 
+                               client_id=client_id, 
+                               tools_count=len(tools),
+                               tool_names=[tool.name for tool in tools])
+            else:
+                mcp_logger.warning("No tools discovered", client_id=client_id)
             
         except Exception as e:
             mcp_logger.error("Tool discovery failed", client_id=client_id, error=str(e))
@@ -626,12 +672,16 @@ async def call_tool(request: ToolCallRequest):
         span.set_attribute("tool_name", request.tool_name)
         
         try:
-            # This would implement actual tool calling
-            # For now, placeholder implementation
+            # Use the real MCP client service for tool calls
+            from ..services.mcp_client_service import get_mcp_client_service
+            service = get_mcp_client_service()
+            
+            result = await service.call_tool(request.client_id, request.tool_name, request.arguments)
+            
             return {
                 "success": True,
-                "result": f"Tool '{request.tool_name}' called on client '{request.client_id}' with args {request.arguments}",
-                "message": "Tool calling not yet implemented"
+                "result": result,
+                "message": "Tool executed successfully"
             }
         except Exception as e:
             api_logger.error("Failed to call MCP tool", 

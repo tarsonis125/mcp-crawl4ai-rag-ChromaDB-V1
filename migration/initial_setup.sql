@@ -66,6 +66,7 @@ INSERT INTO app_credentials (key, value, is_encrypted, category, description) VA
 -- RAG Strategy Configuration (all default to false)
 INSERT INTO app_credentials (key, value, is_encrypted, category, description) VALUES
 ('USE_CONTEXTUAL_EMBEDDINGS', 'false', false, 'rag_strategy', 'Enhances embeddings with contextual information for better retrieval'),
+('CONTEXTUAL_EMBEDDINGS_MAX_WORKERS', '3', false, 'rag_strategy', 'Maximum number of parallel workers for contextual embedding generation (reduces API rate limit pressure)'),
 ('USE_HYBRID_SEARCH', 'false', false, 'rag_strategy', 'Combines vector similarity search with keyword search for better results'),
 ('USE_AGENTIC_RAG', 'false', false, 'rag_strategy', 'Enables code example extraction, storage, and specialized code search functionality'),
 ('USE_RERANKING', 'false', false, 'rag_strategy', 'Applies cross-encoder reranking to improve search result relevance');

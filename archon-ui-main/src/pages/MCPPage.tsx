@@ -143,13 +143,10 @@ export const MCPPage = () => {
 
   /**
    * Start the MCP server
-   * Updates transport setting before starting if changed
    */
   const handleStartServer = async () => {
     try {
       setIsStarting(true);
-      // Update transport before starting
-      await updateTransport(selectedTransport);
       const response = await mcpServerService.startServer();
       showToast(response.message, 'success');
       // Immediately refresh status

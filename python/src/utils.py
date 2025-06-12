@@ -293,7 +293,9 @@ def add_documents_to_supabase(
     
     # Check if MODEL_CHOICE is set for contextual embeddings
     use_contextual_embeddings = os.getenv("USE_CONTEXTUAL_EMBEDDINGS", "false") == "true"
+    max_workers = int(os.getenv("CONTEXTUAL_EMBEDDINGS_MAX_WORKERS", "3"))
     print(f"\n\nUse contextual embeddings: {use_contextual_embeddings}\n\n")
+    print(f"Max workers for contextual embeddings: {max_workers}\n\n")
     
     # Process in batches to avoid memory issues
     for i in range(0, len(contents), batch_size):
@@ -316,7 +318,7 @@ def add_documents_to_supabase(
             
             # Process in parallel using ThreadPoolExecutor
             contextual_contents = []
-            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
                 # Submit all tasks and collect results
                 future_to_idx = {executor.submit(process_chunk_with_context, arg): idx 
                                 for idx, arg in enumerate(process_args)}

@@ -12,6 +12,7 @@ export interface Credential {
 
 export interface RagSettings {
   USE_CONTEXTUAL_EMBEDDINGS: boolean;
+  CONTEXTUAL_EMBEDDINGS_MAX_WORKERS: number;
   USE_HYBRID_SEARCH: boolean;
   USE_AGENTIC_RAG: boolean;
   USE_RERANKING: boolean;
@@ -62,6 +63,7 @@ class CredentialsService {
     
     const settings: RagSettings = {
       USE_CONTEXTUAL_EMBEDDINGS: false,
+      CONTEXTUAL_EMBEDDINGS_MAX_WORKERS: 3,
       USE_HYBRID_SEARCH: false,
       USE_AGENTIC_RAG: false,
       USE_RERANKING: false,
@@ -73,6 +75,8 @@ class CredentialsService {
       if (cred.key in settings) {
         if (cred.key === 'MODEL_CHOICE') {
           settings[cred.key] = cred.value || 'gpt-4o-mini';
+        } else if (cred.key === 'CONTEXTUAL_EMBEDDINGS_MAX_WORKERS') {
+          settings[cred.key] = parseInt(cred.value || '3', 10);
         } else {
           (settings as any)[cred.key] = cred.value === 'true';
         }

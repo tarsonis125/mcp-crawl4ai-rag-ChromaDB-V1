@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useToast } from '../contexts/ToastContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/project-tasks/Tabs';
@@ -7,7 +8,7 @@ import { FeaturesTab } from '../components/project-tasks/FeaturesTab';
 import { DataTab } from '../components/project-tasks/DataTab';
 import { TasksTab } from '../components/project-tasks/TasksTab';
 import { Button } from '../components/ui/Button';
-import { ChevronRight, ShoppingCart, Code, Briefcase, Layers, Plus, X, AlertCircle, Loader2, Heart, BarChart3 } from 'lucide-react';
+import { ChevronRight, ShoppingCart, Code, Briefcase, Layers, Plus, X, AlertCircle, Loader2, Heart, BarChart3, Trash2, Pin } from 'lucide-react';
 
 // Import our service layer and types
 import { projectService } from '../services/projectService';
@@ -67,6 +68,26 @@ export function ProjectPage({
   // Load projects on component mount
   useEffect(() => {
     loadProjects();
+    
+    // Load pinned projects from localStorage
+    const loadPinnedProjects = () => {
+      try {
+        const pinnedProjects = localStorage.getItem('pinnedProjects');
+        if (pinnedProjects) {
+          const pinnedIds = new Set(JSON.parse(pinnedProjects));
+          setProjects(prev => 
+            prev.map(project => ({
+              ...project,
+              pinned: pinnedIds.has(project.id)
+            }))
+          );
+        }
+      } catch (error) {
+        console.error('Failed to load pinned projects from localStorage:', error);
+      }
+    };
+    
+    loadPinnedProjects();
   }, []);
 
   // Load tasks when project is selected
@@ -82,11 +103,22 @@ export function ProjectPage({
       setProjectsError(null);
       
       const projectsData = await projectService.listProjects();
-      setProjects(projectsData);
+      
+      // Sort projects - pinned projects first, then alphabetically by title
+      const sortedProjects = [...projectsData].sort((a, b) => {
+        // First sort by pinned status (pinned projects first)
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
+        
+        // Then sort alphabetically by title
+        return a.title.localeCompare(b.title);
+      });
+      
+      setProjects(sortedProjects);
       
       // Auto-select first project if none selected
-      if (projectsData.length > 0 && !selectedProject) {
-        setSelectedProject(projectsData[0]);
+      if (sortedProjects.length > 0 && !selectedProject) {
+        setSelectedProject(sortedProjects[0]);
         setShowProjectDetails(true);
       }
     } catch (error) {
@@ -131,6 +163,120 @@ export function ProjectPage({
   const handleProjectSelect = (project: Project) => {
     setSelectedProject(project);
     setShowProjectDetails(true);
+  };
+
+  const { showToast } = useToast();
+
+  const confirmDelete = useCallback((projectId: string, projectTitle: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      showToast(
+        <div className="flex flex-col space-y-2">
+          <p>Are you sure you want to delete "{projectTitle}"?</p>
+          <p className="text-sm text-gray-600 dark:text-gray-400">This will also delete all associated tasks and cannot be undone.</p>
+          <div className="flex justify-end space-x-2 mt-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => {
+                showToast('Deletion cancelled', 'info');
+                resolve(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="primary" 
+              size="sm" 
+              onClick={() => resolve(true)}
+            >
+              Delete
+            </Button>
+          </div>
+        </div>,
+        'warning',
+        0 // No auto-dismiss
+      );
+    });
+  }, [showToast]);
+
+  const handleDeleteProject = async (e: React.MouseEvent, projectId: string, projectTitle: string) => {
+    e.stopPropagation();
+    
+    const shouldDelete = await confirmDelete(projectId, projectTitle);
+    if (!shouldDelete) return;
+    
+    try {
+      await projectService.deleteProject(projectId);
+      
+      // Update localStorage if needed
+      const pinnedProjects = JSON.parse(localStorage.getItem('pinnedProjects') || '[]');
+      const updatedPinned = pinnedProjects.filter((id: string) => id !== projectId);
+      localStorage.setItem('pinnedProjects', JSON.stringify(updatedPinned));
+      
+      // Update UI
+      setProjects(prev => prev.filter(p => p.id !== projectId));
+      
+      if (selectedProject?.id === projectId) {
+        setSelectedProject(null);
+        setShowProjectDetails(false);
+      }
+      
+      showToast(`Project "${projectTitle}" deleted successfully`, 'success');
+    } catch (error) {
+      console.error('Failed to delete project:', error);
+      showToast('Failed to delete project. Please try again.', 'error');
+    }
+  };
+  
+  const handleTogglePin = async (e: React.MouseEvent, project: Project) => {
+    e.stopPropagation();
+    
+    const newPinnedState = !project.pinned;
+    
+    try {
+      // Update server
+      await projectService.updateProject(project.id, {
+        pinned: newPinnedState
+      });
+      
+      // Update browser storage
+      const pinnedProjects = new Set(JSON.parse(localStorage.getItem('pinnedProjects') || '[]'));
+      
+      if (newPinnedState) {
+        pinnedProjects.add(project.id);
+      } else {
+        pinnedProjects.delete(project.id);
+      }
+      
+      localStorage.setItem('pinnedProjects', JSON.stringify(Array.from(pinnedProjects)));
+      
+      // Update UI
+      setProjects(prev => {
+        const updated = prev.map(p => 
+          p.id === project.id ? { ...p, pinned: newPinnedState } : p
+        );
+        
+        return [...updated].sort((a, b) => {
+          if (a.pinned && !b.pinned) return -1;
+          if (!a.pinned && b.pinned) return 1;
+          return a.title.localeCompare(b.title);
+        });
+      });
+      
+      if (selectedProject?.id === project.id) {
+        setSelectedProject(prev => ({ ...prev!, pinned: newPinnedState }));
+      }
+      
+      showToast(
+        newPinnedState 
+          ? `Pinned "${project.title}" to top` 
+          : 'Removed from pinned projects',
+        'info'
+      );
+    } catch (error) {
+      console.error('Failed to update project pin status:', error);
+      showToast('Failed to update project. Please try again.', 'error');
+    }
   };
 
   const handleCreateProject = async () => {
@@ -328,6 +474,29 @@ export function ProjectPage({
                       ` : ''}
                   `}
                 >
+                  {/* Action buttons positioned in top-right corner */}
+                  <div className="absolute top-2 right-2 flex gap-2 z-20">
+                    {/* Pin button */}
+                    <button
+                      onClick={(e) => handleTogglePin(e, project)}
+                      className={`p-1.5 rounded-full ${project.pinned ? 'bg-purple-100 text-purple-700 dark:bg-purple-700/30 dark:text-purple-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'} hover:bg-purple-200 hover:text-purple-800 dark:hover:bg-purple-800/50 dark:hover:text-purple-300 transition-colors`}
+                      title={project.pinned ? 'Unpin project' : 'Pin project'}
+                      aria-label={project.pinned ? 'Unpin project' : 'Pin project'}
+                    >
+                      <Pin className="w-3.5 h-3.5" fill={project.pinned ? 'currentColor' : 'none'} />
+                    </button>
+                    
+                    {/* Delete button */}
+                    <button
+                      onClick={(e) => handleDeleteProject(e, project.id, project.title)}
+                      className="p-1.5 rounded-full bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-600 dark:bg-gray-800/70 dark:text-gray-400 dark:hover:bg-red-900/30 dark:hover:text-red-400 transition-colors"
+                      title="Delete project"
+                      aria-label="Delete project"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  
                   <div className="relative z-10">
                     <div className="flex items-center gap-3 mb-3">
                       <div className={`p-2 rounded-md bg-${project.color || 'blue'}-500/10 text-${project.color || 'blue'}-500`}>

@@ -316,6 +316,7 @@ async def initialize_credentials() -> None:
         "TRANSPORT",
         "MODEL_CHOICE",
         "USE_CONTEXTUAL_EMBEDDINGS",
+        "CONTEXTUAL_EMBEDDINGS_MAX_WORKERS",
         "USE_HYBRID_SEARCH", 
         "USE_AGENTIC_RAG",
         "USE_RERANKING"

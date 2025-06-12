@@ -9,6 +9,7 @@ interface RAGSettingsProps {
   ragSettings: {
     MODEL_CHOICE: string;
     USE_CONTEXTUAL_EMBEDDINGS: boolean;
+    CONTEXTUAL_EMBEDDINGS_MAX_WORKERS: number;
     USE_HYBRID_SEARCH: boolean;
     USE_AGENTIC_RAG: boolean;
     USE_RERANKING: boolean;
@@ -76,10 +77,35 @@ export const RAGSettings = ({
       }]} accentColor="green" />
         {/* RAG Strategy Toggles */}
         <div className="space-y-4 mt-4">
-          <CustomCheckbox id="contextualEmbeddings" checked={ragSettings.USE_CONTEXTUAL_EMBEDDINGS} onChange={e => setRagSettings({
-          ...ragSettings,
-          USE_CONTEXTUAL_EMBEDDINGS: e.target.checked
-        })} label="Use Contextual Embeddings" description="Enhances embeddings with contextual information for better retrieval" />
+          <div>
+            <CustomCheckbox id="contextualEmbeddings" checked={ragSettings.USE_CONTEXTUAL_EMBEDDINGS} onChange={e => setRagSettings({
+            ...ragSettings,
+            USE_CONTEXTUAL_EMBEDDINGS: e.target.checked
+          })} label="Use Contextual Embeddings" description="Enhances embeddings with contextual information for better retrieval" />
+            {ragSettings.USE_CONTEXTUAL_EMBEDDINGS && (
+              <div className="ml-8 mt-3">
+                <label className="block text-sm font-medium text-gray-700 dark:text-zinc-300 mb-2">
+                  Max Workers
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={ragSettings.CONTEXTUAL_EMBEDDINGS_MAX_WORKERS}
+                  onChange={e => setRagSettings({
+                    ...ragSettings,
+                    CONTEXTUAL_EMBEDDINGS_MAX_WORKERS: parseInt(e.target.value, 10) || 3
+                  })}
+                  className="w-24 px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-md 
+                    bg-white dark:bg-gray-800 text-gray-900 dark:text-white
+                    focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                />
+                <p className="text-xs text-gray-600 dark:text-zinc-400 mt-1">
+                  Controls parallel processing to reduce API rate limits (1-20)
+                </p>
+              </div>
+            )}
+          </div>
           <CustomCheckbox id="hybridSearch" checked={ragSettings.USE_HYBRID_SEARCH} onChange={e => setRagSettings({
           ...ragSettings,
           USE_HYBRID_SEARCH: e.target.checked
