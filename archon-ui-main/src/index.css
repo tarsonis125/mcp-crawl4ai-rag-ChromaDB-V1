@@ -200,5 +200,5 @@
 
 /* Ensure scrollable content in expanded cards */
 .card-expanded .flex-1.overflow-hidden > .absolute {
-  max-height: 240px; /* Leave room for padding/margins */
+  /* Removed max-height to allow full scrolling */
 }

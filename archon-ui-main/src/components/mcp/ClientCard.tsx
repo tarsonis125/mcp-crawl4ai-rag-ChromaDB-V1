@@ -1,17 +1,19 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Server, Activity, Clock, ChevronRight, Hammer, Settings } from 'lucide-react';
+import { Server, Activity, Clock, ChevronRight, Hammer, Settings, Trash2 } from 'lucide-react';
 import { Client } from './MCPClients';
 
 interface ClientCardProps {
   client: Client;
   onSelect: () => void;
   onEdit?: (client: Client) => void;
+  onDelete?: (client: Client) => void;
 }
 
 export const ClientCard = ({
   client,
   onSelect,
-  onEdit
+  onEdit,
+  onDelete
 }: ClientCardProps) => {
   const [isFlipped, setIsFlipped] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
@@ -244,6 +246,20 @@ export const ClientCard = ({
             </button>
           )}
 
+          {/* Delete button - only for non-Archon clients */}
+          {!isArchonClient && onDelete && (
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(client);
+              }} 
+              className="absolute top-3 right-12 p-1.5 rounded-full bg-red-200/50 dark:bg-red-900/50 hover:bg-red-300/50 dark:hover:bg-red-800/50 transition-colors transform hover:scale-110 transition-transform duration-200 z-20"
+              title="Delete client"
+            >
+              <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
+            </button>
+          )}
+
           {/* Client info */}
           <div className="flex items-start">
             {isArchonClient ? (
@@ -344,6 +360,20 @@ export const ClientCard = ({
               title="Edit client configuration"
             >
               <Settings className={`w-4 h-4 ${isArchonClient ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'}`} />
+            </button>
+          )}
+
+          {/* Delete button on back side - only for non-Archon clients */}
+          {!isArchonClient && onDelete && (
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(client);
+              }} 
+              className="absolute top-3 right-12 p-1.5 rounded-full bg-red-200/50 dark:bg-red-900/50 hover:bg-red-300/50 dark:hover:bg-red-800/50 transition-colors transform hover:scale-110 transition-transform duration-200 z-20"
+              title="Delete client"
+            >
+              <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
             </button>
           )}
 

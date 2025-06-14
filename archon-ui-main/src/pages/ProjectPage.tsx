@@ -65,6 +65,12 @@ export function ProjectPage({
   const [projectCreationProgress, setProjectCreationProgress] = useState<ProjectCreationProgressData | null>(null);
   const [showCreationProgress, setShowCreationProgress] = useState(false);
 
+  // State for delete confirmation modal
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<{ id: string; title: string } | null>(null);
+
+  const { showToast } = useToast();
+
   // Load projects on component mount
   useEffect(() => {
     const loadInitialData = async () => {
@@ -197,78 +203,46 @@ export function ProjectPage({
   const handleProjectSelect = (project: Project) => {
     setSelectedProject(project);
     setShowProjectDetails(true);
+    setActiveTab('docs'); // Reset to docs tab when a new project is selected
+    loadTasksForProject(project.id); // Load tasks for the selected project
   };
 
-  const { showToast } = useToast();
-
-  const confirmDelete = useCallback((projectTitle: string): Promise<boolean> => {
-    return new Promise((resolve) => {
-      const toastId = `delete-confirm-${Date.now()}`;
-      const confirmMessage = `Are you sure you want to delete "${projectTitle}"?\nThis will also delete all associated tasks and cannot be undone.`;
-      showToast(confirmMessage, 'warning', 0);
-      const userChoice = new Promise<boolean>((resolveChoice) => {
-        const handleConfirm = () => {
-          showToast('', 'success', 0); 
-          resolveChoice(true);
-        };
-        const handleCancel = () => {
-          showToast('Deletion cancelled', 'info');
-          resolveChoice(false);
-        };
-        setTimeout(() => {
-          const toast = document.querySelector(`[data-toast-id="${toastId}"]`);
-          if (toast) {
-            const buttonContainer = document.createElement('div');
-            buttonContainer.className = 'flex justify-end space-x-2 mt-2';
-            const cancelBtn = document.createElement('button');
-            cancelBtn.className = 'px-3 py-1 text-sm rounded-md border border-gray-300 hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-700';
-            cancelBtn.textContent = 'Cancel';
-            cancelBtn.onclick = (e) => {
-              e.stopPropagation();
-              handleCancel();
-            };
-            const confirmBtn = document.createElement('button');
-            confirmBtn.className = 'px-3 py-1 text-sm rounded-md bg-red-600 text-white hover:bg-red-700';
-            confirmBtn.textContent = 'Delete';
-            confirmBtn.onclick = (e) => {
-              e.stopPropagation();
-              handleConfirm();
-            };
-            buttonContainer.appendChild(cancelBtn);
-            buttonContainer.appendChild(confirmBtn);
-            toast.appendChild(buttonContainer);
-          }
-        }, 100);
-      });
-      const result = userChoice;
-      resolve(result);
-    });
-  }, [showToast]);
-
-  const handleDeleteProject = async (e: React.MouseEvent, projectId: string, projectTitle: string) => {
+  const handleDeleteProject = useCallback(async (e: React.MouseEvent, projectId: string, projectTitle: string) => {
     e.stopPropagation();
-    const shouldDelete = await confirmDelete(projectTitle);
-    if (!shouldDelete) return;
-    
+    setProjectToDelete({ id: projectId, title: projectTitle });
+    setShowDeleteConfirm(true);
+  }, [setProjectToDelete, setShowDeleteConfirm]);
+
+  const confirmDeleteProject = useCallback(async () => {
+    if (!projectToDelete) return;
+
     try {
-      await projectService.deleteProject(projectId);
+      await projectService.deleteProject(projectToDelete.id);
       
       // Update UI
-      setProjects(prev => prev.filter(p => p.id !== projectId));
+      setProjects(prev => prev.filter(p => p.id !== projectToDelete.id));
       
-      if (selectedProject?.id === projectId) {
+      if (selectedProject?.id === projectToDelete.id) {
         setSelectedProject(null);
         setShowProjectDetails(false);
       }
       
-      showToast(`Project "${projectTitle}" deleted successfully`, 'success');
+      showToast(`Project "${projectToDelete.title}" deleted successfully`, 'success');
     } catch (error) {
       console.error('Failed to delete project:', error);
       showToast('Failed to delete project. Please try again.', 'error');
+    } finally {
+      setShowDeleteConfirm(false);
+      setProjectToDelete(null);
     }
-  };
+  }, [projectToDelete, setProjects, selectedProject, setSelectedProject, setShowProjectDetails, showToast, setShowDeleteConfirm, setProjectToDelete]);
+
+  const cancelDeleteProject = useCallback(() => {
+    setShowDeleteConfirm(false);
+    setProjectToDelete(null);
+  }, [setShowDeleteConfirm, setProjectToDelete]);
   
-  const handleTogglePin = async (e: React.MouseEvent, project: Project) => {
+  const handleTogglePin = useCallback(async (e: React.MouseEvent, project: Project) => {
     e.stopPropagation();
     
     const newPinnedState = !project.pinned;
@@ -328,7 +302,7 @@ export function ProjectPage({
       console.error('Failed to update project pin status:', error);
       showToast('Failed to update project. Please try again.', 'error');
     }
-  };
+  }, [projectService, setProjects, selectedProject, setSelectedProject, showToast]);
 
   const handleCreateProject = async () => {
     if (!newProjectForm.title.trim()) {
@@ -805,6 +779,90 @@ export function ProjectPage({
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && projectToDelete && (
+        <DeleteConfirmModal
+          itemName={projectToDelete.title}
+          onConfirm={confirmDeleteProject}
+          onCancel={cancelDeleteProject}
+          type="project"
+        />
+      )}
     </motion.div>
   );
 }
+
+// Reusable Delete Confirmation Modal Component
+export interface DeleteConfirmModalProps {
+  itemName: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  type: 'project' | 'task' | 'client';
+}
+
+export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({ itemName, onConfirm, onCancel, type }) => {
+  const getTitle = () => {
+    switch (type) {
+      case 'project': return 'Delete Project';
+      case 'task': return 'Delete Task';
+      case 'client': return 'Delete MCP Client';
+    }
+  };
+
+  const getMessage = () => {
+    switch (type) {
+      case 'project': return `Are you sure you want to delete the "${itemName}" project? This will also delete all associated tasks and documents and cannot be undone.`;
+      case 'task': return `Are you sure you want to delete the "${itemName}" task? This action cannot be undone.`;
+      case 'client': return `Are you sure you want to delete the "${itemName}" client? This will permanently remove its configuration and cannot be undone.`;
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="relative p-6 rounded-md backdrop-blur-md w-full max-w-md
+          bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30
+          border border-gray-200 dark:border-zinc-800/50
+          shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)]
+          before:content-[''] before:absolute before:top-0 before:left-0 before:right-0 before:h-[2px] 
+          before:rounded-t-[4px] before:bg-red-500 
+          before:shadow-[0_0_10px_2px_rgba(239,68,68,0.4)] dark:before:shadow-[0_0_20px_5px_rgba(239,68,68,0.7)]">
+        
+        <div className="relative z-10">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+              <Trash2 className="w-6 h-6 text-red-600 dark:text-red-400" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-white">
+                {getTitle()}
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                This action cannot be undone
+              </p>
+            </div>
+          </div>
+          
+          <p className="text-gray-700 dark:text-gray-300 mb-6">
+            {getMessage()}
+          </p>
+          
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={onCancel}
+              className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onConfirm}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors shadow-lg shadow-red-600/25 hover:shadow-red-700/25"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};

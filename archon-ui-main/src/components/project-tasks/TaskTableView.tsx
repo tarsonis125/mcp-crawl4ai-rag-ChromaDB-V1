@@ -1,7 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useDrag, useDrop } from 'react-dnd';
 import { Check, Trash2, Edit, Tag, User, Bot, Clipboard, Save, Plus, List } from 'lucide-react';
 import { Toggle } from '../ui/Toggle';
+import { useToast } from '../../contexts/ToastContext';
+import { DeleteConfirmModal } from '../../pages/ProjectPage';
+import { projectService } from '../../services/projectService';
+import { ItemTypes, getAssigneeIcon, getAssigneeGlow, getOrderColor, getOrderGlow } from '../../lib/task-utils';
+import { DraggableTaskCard } from './DraggableTaskCard';
 
 export interface Task {
   id: string;
@@ -22,7 +27,7 @@ interface TaskTableViewProps {
   tasks: Task[];
   onTaskView: (task: Task) => void;
   onTaskComplete: (taskId: string) => void;
-  onTaskDelete: (taskId: string) => void;
+  onTaskDelete: (task: Task) => void;
   onTaskReorder: (taskId: string, newOrder: number, status: Task['status']) => void;
   onTaskCreate?: (task: Omit<Task, 'id'>) => Promise<void>;
   onTaskUpdate?: (taskId: string, updates: Partial<Task>) => Promise<void>;
@@ -30,36 +35,6 @@ interface TaskTableViewProps {
   showSubtasksToggle?: boolean;
   onShowSubtasksChange?: (show: boolean) => void;
 }
-
-const ItemTypes = {
-  TASK: 'task'
-};
-
-const getAssigneeIcon = (assigneeName: 'User' | 'Archon' | 'AI IDE Agent') => {
-  switch (assigneeName) {
-    case 'User':
-      return <User className="w-4 h-4 text-blue-500 dark:text-blue-400" />;
-    case 'AI IDE Agent':
-      return <Bot className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />;
-    case 'Archon':
-      return <img src="/logo-neon.svg" alt="Archon" className="w-4 h-4 text-pink-500 dark:text-pink-400" />;
-    default:
-      return <User className="w-4 h-4 text-blue-500 dark:text-blue-400" />;
-  }
-};
-
-const getAssigneeGlow = (assigneeName: 'User' | 'Archon' | 'AI IDE Agent') => {
-  switch (assigneeName) {
-    case 'User':
-      return 'shadow-[0_0_12px_rgba(59,130,246,0.6)] hover:shadow-[0_0_16px_rgba(59,130,246,0.8)]'; // blue glow
-    case 'AI IDE Agent':
-      return 'shadow-[0_0_12px_rgba(16,185,129,0.6)] hover:shadow-[0_0_16px_rgba(16,185,129,0.8)]'; // emerald green glow
-    case 'Archon':
-      return 'shadow-[0_0_12px_rgba(236,72,153,0.6)] hover:shadow-[0_0_16px_rgba(236,72,153,0.8)]'; // pink glow
-    default:
-      return 'shadow-[0_0_10px_rgba(59,130,246,0.5)]';
-  }
-};
 
 const getAssigneeGlassStyle = (assigneeName: 'User' | 'Archon' | 'AI IDE Agent') => {
   switch (assigneeName) {
@@ -87,13 +62,6 @@ const getOrderTextColor = (order: number) => {
   if (order <= 6) return 'text-orange-500 dark:text-orange-400'; // orange text
   if (order <= 10) return 'text-blue-500 dark:text-blue-400'; // blue text
   return 'text-emerald-500 dark:text-emerald-400'; // green text
-};
-
-const getOrderGlow = (order: number) => {
-  if (order <= 3) return 'shadow-[0_0_12px_rgba(244,63,94,0.6)] hover:shadow-[0_0_16px_rgba(244,63,94,0.8)]'; // red glow
-  if (order <= 6) return 'shadow-[0_0_12px_rgba(249,115,22,0.6)] hover:shadow-[0_0_16px_rgba(249,115,22,0.8)]'; // orange glow
-  if (order <= 10) return 'shadow-[0_0_12px_rgba(59,130,246,0.6)] hover:shadow-[0_0_16px_rgba(59,130,246,0.8)]'; // blue glow
-  return 'shadow-[0_0_12px_rgba(16,185,129,0.6)] hover:shadow-[0_0_16px_rgba(16,185,129,0.8)]'; // green glow
 };
 
 // Helper function to reorder tasks properly
@@ -223,7 +191,7 @@ interface DraggableTaskRowProps {
   index: number;
   onTaskView: (task: Task) => void;
   onTaskComplete: (taskId: string) => void;
-  onTaskDelete: (taskId: string) => void;
+  onTaskDelete: (task: Task) => void;
   onTaskReorder: (taskId: string, newOrder: number, status: Task['status']) => void;
   onTaskUpdate?: (taskId: string, updates: Partial<Task>) => Promise<void>;
   tasksInStatus: Task[];
@@ -266,7 +234,7 @@ const DraggableTaskRow = ({
       
       if (draggedIndex === hoveredIndex) return;
       
-      console.log('HOVER: Moving task', draggedItem.id, 'from index', draggedIndex, 'to', hoveredIndex);
+      console.log('HOVER: Moving task', draggedItem.id, 'to index', draggedIndex, 'to', hoveredIndex);
       
       // Move the task immediately for visual feedback
       onTaskReorder(draggedItem.id, hoveredIndex, task.status);
@@ -408,7 +376,7 @@ const DraggableTaskRow = ({
       <td className="p-3">
         <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
           <button 
-            onClick={() => onTaskDelete(task.id)} 
+            onClick={() => onTaskDelete(task)}
             className="p-1.5 rounded-full bg-red-500/20 text-red-500 hover:bg-red-500/30 hover:shadow-[0_0_10px_rgba(239,68,68,0.3)] transition-all duration-300"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -602,6 +570,41 @@ export const TaskTableView = ({
   onShowSubtasksChange
 }: TaskTableViewProps) => {
   const [statusFilter, setStatusFilter] = useState<Task['status'] | 'all'>('backlog');
+
+  // State for delete confirmation modal
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
+
+  const { showToast } = useToast();
+
+  // Handle task deletion (opens confirmation modal)
+  const handleDeleteTask = useCallback((task: Task) => {
+    setTaskToDelete(task);
+    setShowDeleteConfirm(true);
+  }, [setTaskToDelete, setShowDeleteConfirm]);
+
+  // Confirm deletion and execute
+  const confirmDeleteTask = useCallback(async () => {
+    if (!taskToDelete) return;
+
+    try {
+      await projectService.deleteTask(taskToDelete.id); // Call backend service
+      onTaskDelete(taskToDelete); // Notify parent component
+      showToast(`Task "${taskToDelete.title}" deleted successfully`, 'success');
+    } catch (error) {
+      console.error('Failed to delete task:', error);
+      showToast(error instanceof Error ? error.message : 'Failed to delete task', 'error');
+    } finally {
+      setShowDeleteConfirm(false);
+      setTaskToDelete(null);
+    }
+  }, [taskToDelete, onTaskDelete, showToast, setShowDeleteConfirm, setTaskToDelete, projectService]);
+
+  // Cancel deletion
+  const cancelDeleteTask = useCallback(() => {
+    setShowDeleteConfirm(false);
+    setTaskToDelete(null);
+  }, [setShowDeleteConfirm, setTaskToDelete]);
 
   // Group tasks by status and sort by task_order
   const getTasksByStatus = (status: Task['status']) => {
@@ -845,7 +848,7 @@ export const TaskTableView = ({
                 index={index}
                 onTaskView={onTaskView}
                 onTaskComplete={onTaskComplete}
-                onTaskDelete={onTaskDelete}
+                onTaskDelete={handleDeleteTask}
                 onTaskReorder={onTaskReorder}
                 onTaskUpdate={onTaskUpdate}
                 tasksInStatus={filteredTasks}
@@ -857,6 +860,16 @@ export const TaskTableView = ({
           <AddTaskRow onTaskCreate={onTaskCreate} tasks={tasks} statusFilter={statusFilter} />
         </tbody>
       </table>
+
+      {/* Delete Confirmation Modal for Tasks */}
+      {showDeleteConfirm && taskToDelete && (
+        <DeleteConfirmModal
+          itemName={taskToDelete.title}
+          onConfirm={confirmDeleteTask}
+          onCancel={cancelDeleteTask}
+          type="task"
+        />
+      )}
     </div>
   );
 }; 

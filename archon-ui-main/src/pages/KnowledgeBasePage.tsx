@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Search, Grid, List, Plus, Upload, Link as LinkIcon, Share2, Brain, Filter, BoxIcon, Trash2, TestTube } from 'lucide-react';
+import { Search, Grid, List, Plus, Upload, Link as LinkIcon, Share2, Brain, Filter, BoxIcon, Trash2, TestTube, Table } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MindMapView } from '../components/MindMapView';
 import { Card } from '../components/ui/Card';
@@ -15,9 +15,10 @@ import { KnowledgeItem as LegacyKnowledgeItem } from '../types/knowledge';
 import { knowledgeWebSocket } from '../services/websocketService';
 import { CrawlingProgressCard } from '../components/CrawlingProgressCard';
 import { CrawlProgressData, crawlProgressService } from '../services/crawlProgressService';
+import { KnowledgeTable } from '../components/knowledge-base/KnowledgeTable';
 
 export const KnowledgeBasePage = () => {
-  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'mind-map'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'mind-map' | 'table'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [forceReanimate, setForceReanimate] = useState(0);
@@ -150,7 +151,9 @@ export const KnowledgeBasePage = () => {
   }, [searchQuery, loadingStrategy]);
 
   // Filter items based on selected type
-  const filteredItems = knowledgeItems;
+  const filteredItems = knowledgeItems.filter(item => 
+    typeFilter === 'all' ? true : item.metadata.knowledge_type === typeFilter
+  );
 
   // Use our custom staggered entrance hook for the page header
   const {
@@ -320,6 +323,9 @@ export const KnowledgeBasePage = () => {
             <button onClick={() => setViewMode('list')} className={`p-2 ${viewMode === 'list' ? 'bg-green-100 dark:bg-green-500/10 text-green-600 dark:text-green-500' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300'}`} title="List View">
               <List className="w-4 h-4" />
             </button>
+            <button onClick={() => setViewMode('table')} className={`p-2 ${viewMode === 'table' ? 'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-500' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300'}`} title="Table View">
+              <Table className="w-4 h-4" />
+            </button>
             <button onClick={() => setViewMode('mind-map')} className={`p-2 ${viewMode === 'mind-map' ? 'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-500' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300'}`} title="Mind Map View">
               <Share2 className="w-4 h-4" />
             </button>
@@ -340,7 +346,18 @@ export const KnowledgeBasePage = () => {
               {loadingStrategy === 'websocket' ? 'Connecting to live updates...' : 'Loading knowledge items...'}
             </p>
           </div>
-        ) : viewMode === 'mind-map' ? <MindMapView items={transformItemsForMindMap(filteredItems)} /> : <>
+        ) : viewMode === 'mind-map' ? <MindMapView items={transformItemsForMindMap(filteredItems)} /> : 
+        viewMode === 'table' ? (
+          <KnowledgeTable 
+            items={filteredItems} 
+            onDelete={handleDeleteItem} 
+            onTest={(item) => {
+              // Implement test functionality here, perhaps by opening the TestKnowledgeModal
+              console.log('Test item:', item);
+            }}
+          />
+        ) : (
+          <>
             {/* Knowledge Items Grid/List with staggered animation that reanimates on view change */}
             <AnimatePresence mode="wait">
               <motion.div key={`view-${viewMode}-filter-${typeFilter}`} initial="hidden" animate="visible" variants={contentContainerVariants} className={`grid ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' : 'grid-cols-1 gap-3'}`}>
@@ -365,7 +382,8 @@ export const KnowledgeBasePage = () => {
                   </motion.div>)}
               </motion.div>
             </AnimatePresence>
-          </>}
+          </>
+        )}
       </div>
       {/* Add Knowledge Modal */}
       {isAddModalOpen && <AddKnowledgeModal 
@@ -381,7 +399,7 @@ export const KnowledgeBasePage = () => {
 
 interface KnowledgeItemCardProps {
   item: KnowledgeItem;
-  viewMode: 'grid' | 'list';
+  viewMode: 'grid' | 'list' | 'table';
   onDelete: (sourceId: string) => void;
 }
 

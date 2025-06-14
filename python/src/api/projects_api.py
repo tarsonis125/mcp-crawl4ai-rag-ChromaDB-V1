@@ -710,6 +710,7 @@ async def _create_project_background(progress_id: str, request: CreateProjectReq
             "docs": [],  # Will add PRD as a document in docs array after project creation
             "features": [],
             "data": [],
+            "pinned": request.pinned if request.pinned is not None else False, # Explicitly set pinned to False if not provided
             "created_at": datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat()
         }
@@ -1239,24 +1240,29 @@ async def get_project_features(project_id: str):
             raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.get("/projects/{project_id}/tasks")
-async def list_project_tasks(project_id: str, include_archived: bool = False):
-    """List all tasks for a specific project. By default, filters out archived tasks."""
+async def list_project_tasks(project_id: str, include_archived: bool = False, include_subtasks: bool = False):
+    """List all tasks for a specific project. By default, filters out archived tasks and subtasks."""
     with logfire_logger.span("api_list_project_tasks") as span:
         span.set_attribute("endpoint", f"/api/projects/{project_id}/tasks")
         span.set_attribute("method", "GET")
         span.set_attribute("project_id", project_id)
         span.set_attribute("include_archived", include_archived)
+        span.set_attribute("include_subtasks", include_subtasks) # Add this attribute
         
         try:
-            logfire_logger.info("Listing project tasks", project_id=project_id, include_archived=include_archived)
+            logfire_logger.info("Listing project tasks", project_id=project_id, include_archived=include_archived, include_subtasks=include_subtasks) # Add this attribute
             supabase_client = get_supabase_client()
             
-            # Build query to optionally exclude archived tasks
+            # Build query to optionally exclude archived tasks and subtasks
             query = supabase_client.table("tasks").select("*").eq("project_id", project_id)
             
             # Only include non-archived tasks by default (handle NULL as False for backwards compatibility)
             if not include_archived:
                 query = query.or_("archived.is.null,archived.eq.false")
+            
+            # Only include parent tasks by default (exclude subtasks)
+            if not include_subtasks:
+                query = query.is_("parent_task_id", None)
             
             response = query.order("task_order", desc=False).order("created_at", desc=False).execute()
             
@@ -1437,7 +1443,7 @@ async def update_task(task_id: str, request: UpdateTaskRequest):
             
             # Build update data
             update_data = {"updated_at": datetime.now().isoformat()}
-            
+
             if request.title is not None:
                 update_data["title"] = request.title
                 span.set_attribute("updated_title", True)
@@ -1447,6 +1453,7 @@ async def update_task(task_id: str, request: UpdateTaskRequest):
             if request.status is not None:
                 update_data["status"] = request.status
                 span.set_attribute("new_status", request.status)
+                logfire_logger.info(f"[Backend] Received status update: {request.status}")
             if request.assignee is not None:
                 update_data["assignee"] = request.assignee
                 span.set_attribute("new_assignee", request.assignee)
@@ -1456,8 +1463,9 @@ async def update_task(task_id: str, request: UpdateTaskRequest):
             if request.feature is not None:
                 update_data["feature"] = request.feature
                 span.set_attribute("updated_feature", True)
-            
+
             # Update task in database
+            logfire_logger.info(f"[Backend] Attempting Supabase update for task {task_id} with data: {update_data}")
             response = supabase_client.table("tasks").update(update_data).eq("id", task_id).execute()
             
             if response.data:
@@ -1466,6 +1474,7 @@ async def update_task(task_id: str, request: UpdateTaskRequest):
                                   task_id=task_id, 
                                   project_id=project_id,
                                   updated_fields=list(update_data.keys()))
+                logfire_logger.info(f"[Backend] Supabase response data: {updated_task}")
                 span.set_attribute("success", True)
                 
                 # Broadcast real-time update to connected clients
@@ -1477,6 +1486,7 @@ async def update_task(task_id: str, request: UpdateTaskRequest):
                 
                 return {"message": "Task updated successfully", "task": updated_task}
             else:
+                logfire_logger.error(f"[Backend] Supabase update returned no data for task {task_id}. Response: {response}")
                 raise HTTPException(status_code=500, detail="Failed to update task")
                 
         except HTTPException:

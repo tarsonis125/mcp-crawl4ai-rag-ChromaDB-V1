@@ -40,7 +40,7 @@ class CredentialService:
     def _get_supabase_client(self) -> Client:
         """
         Get or create a properly configured Supabase client using environment variables.
-        Uses a robust initialization pattern to ensure project ID is correctly included.
+        Uses the standard Supabase client initialization.
         """
         if self._supabase is None:
             url = os.getenv("SUPABASE_URL")
@@ -51,30 +51,21 @@ class CredentialService:
                     "SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in environment variables"
                 )
             
-            # Extract project ID from URL (required for proper initialization)
             try:
+                # Initialize with standard Supabase client - no need for custom headers
+                self._supabase = create_client(url, key)
+                
+                # Extract project ID from URL for logging purposes only
                 match = re.match(r'https://([^.]+)\.supabase\.co', url)
                 if match:
                     project_id = match.group(1)
-                    # Initialize with proper headers including project reference and authorization
-                    self._supabase = create_client(
-                        url, 
-                        key,
-                        headers={
-                            "X-Client-Info": "archon-credential-service",
-                            "apikey": key,
-                            "Authorization": f"Bearer {key}"
-                        }
-                    )
                     logger.info(f"Supabase client initialized for project: {project_id}")
                 else:
-                    logger.warning(f"Could not extract project ID from URL: {url}")
-                    # Fall back to basic initialization
-                    self._supabase = create_client(url, key)
+                    logger.info("Supabase client initialized successfully")
+                    
             except Exception as e:
-                logger.error(f"Error configuring Supabase client: {e}")
-                # Fall back to basic initialization (may not work with settings table)
-                self._supabase = create_client(url, key)
+                logger.error(f"Error initializing Supabase client: {e}")
+                raise
         
         return self._supabase
     

@@ -493,18 +493,25 @@ export const TasksTab = ({
 
   // Task move function (for board view)
   const moveTask = async (taskId: string, newStatus: Task['status']) => {
+    console.log(`[TasksTab] Attempting to move task ${taskId} to new status: ${newStatus}`);
     try {
       const movingTask = tasks.find(task => task.id === taskId);
-      if (!movingTask) return;
+      if (!movingTask) {
+        console.warn(`[TasksTab] Task ${taskId} not found for move operation.`);
+        return;
+      }
       
       const oldStatus = movingTask.status;
       const newOrder = getNextOrderForStatus(newStatus);
+
+      console.log(`[TasksTab] Moving task ${movingTask.title} from ${oldStatus} to ${newStatus} with order ${newOrder}`);
 
       // Update the task with new status and order
       await projectService.updateTask(taskId, {
         status: mapUIStatusToDBStatus(newStatus),
         task_order: newOrder
       });
+      console.log(`[TasksTab] Successfully updated task ${taskId} status in backend.`);
       
       // Update local state immediately
       const newTasks = tasks.map(task => task.id === taskId ? {
@@ -513,37 +520,43 @@ export const TasksTab = ({
         task_order: newOrder
       } : task);
       updateTasks(newTasks);
+      console.log(`[TasksTab] UI state updated for task ${taskId}.`)
       
       // Reorder the old status to close gaps (if different from new status)
       if (oldStatus !== newStatus) {
+        console.log(`[TasksTab] Reordering tasks in old status ${oldStatus}.`);
         await reorderTasksByStatus(oldStatus);
         
         // Reload tasks to reflect reordering
+        console.log(`[TasksTab] Reloading all tasks after status change and reordering.`);
         const updatedTasks = await projectService.getTasksByProject(projectId);
         const uiTasks: Task[] = updatedTasks.map(mapDatabaseTaskToUITask);
         updateTasks(uiTasks);
+        console.log(`[TasksTab] All tasks reloaded and UI updated.`);
       }
     } catch (error) {
-      console.error('Failed to move task:', error);
+      console.error(`[TasksTab] Failed to move task ${taskId}:`, error);
+      alert(`Failed to move task: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
   const completeTask = (taskId: string) => {
+    console.log(`[TasksTab] Calling completeTask for ${taskId}`);
     moveTask(taskId, 'complete');
   };
 
-  const deleteTask = async (taskId: string) => {
+  const deleteTask = async (task: Task) => {
     try {
-      const deletingTask = tasks.find(task => task.id === taskId);
+      const deletingTask = tasks.find(t => t.id === task.id);
       if (!deletingTask) return;
       
       const taskStatus = deletingTask.status;
       
       // Delete the task
-      await projectService.deleteTask(taskId);
+      await projectService.deleteTask(task.id);
       
       // Update local state immediately
-      const newTasks = tasks.filter(task => task.id !== taskId);
+      const newTasks = tasks.filter(t => t.id !== task.id);
       updateTasks(newTasks);
       
       // Reorder remaining tasks in the same status to close gaps
@@ -555,6 +568,7 @@ export const TasksTab = ({
       updateTasks(uiTasks);
     } catch (error) {
       console.error('Failed to delete task:', error);
+      // Note: The toast notification for deletion is now handled by TaskBoardView and TaskTableView
     }
   };
 
@@ -590,26 +604,35 @@ export const TasksTab = ({
 
   // Inline task update function
   const updateTaskInline = async (taskId: string, updates: Partial<Task>) => {
+    console.log(`[TasksTab] Inline update for task ${taskId} with updates:`, updates);
     try {
       const updateData: Partial<UpdateTaskRequest> = {};
       
       if (updates.title !== undefined) updateData.title = updates.title;
       if (updates.description !== undefined) updateData.description = updates.description;
-      if (updates.status !== undefined) updateData.status = mapUIStatusToDBStatus(updates.status);
+      if (updates.status !== undefined) {
+        console.log(`[TasksTab] Mapping UI status ${updates.status} to DB status.`);
+        updateData.status = mapUIStatusToDBStatus(updates.status);
+        console.log(`[TasksTab] Mapped status for ${taskId}: ${updates.status} -> ${updateData.status}`);
+      }
       if (updates.assignee !== undefined) updateData.assignee = updates.assignee.name;
       if (updates.task_order !== undefined) updateData.task_order = updates.task_order;
       if (updates.feature !== undefined) updateData.feature = updates.feature;
       if (updates.featureColor !== undefined) updateData.featureColor = updates.featureColor;
       
+      console.log(`[TasksTab] Sending update request for task ${taskId} to projectService:`, updateData);
       await projectService.updateTask(taskId, updateData);
+      console.log(`[TasksTab] projectService.updateTask successful for ${taskId}.`);
       
       // Update local state optimistically
       const newTasks = tasks.map(task => 
         task.id === taskId ? { ...task, ...updates } : task
       );
       updateTasks(newTasks);
+      console.log(`[TasksTab] UI state updated optimistically for task ${taskId}.`);
     } catch (error) {
-      console.error('Failed to update task:', error);
+      console.error(`[TasksTab] Failed to update task ${taskId} inline:`, error);
+      alert(`Failed to update task: ${error instanceof Error ? error.message : 'Unknown error'}`);
       throw error;
     }
   };

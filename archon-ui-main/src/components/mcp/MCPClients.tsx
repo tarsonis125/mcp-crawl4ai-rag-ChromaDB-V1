@@ -1,9 +1,11 @@
 import React, { useState, memo, useEffect } from 'react';
-import { Plus, Settings } from 'lucide-react';
+import { Plus, Settings, Trash2, X } from 'lucide-react';
 import { ClientCard } from './ClientCard';
 import { ToolTestingPanel } from './ToolTestingPanel';
 import { Button } from '../ui/Button';
 import { mcpClientService, MCPClient, MCPClientConfig } from '../../services/mcpClientService';
+import { useToast } from '../../contexts/ToastContext';
+import { DeleteConfirmModal } from '../../pages/ProjectPage';
 
 // Client interface (keeping for backward compatibility)
 export interface Client {
@@ -48,6 +50,12 @@ export const MCPClients = memo(() => {
   const [editClient, setEditClient] = useState<Client | null>(null);
   const [isEditDrawerOpen, setIsEditDrawerOpen] = useState(false);
 
+  const { showToast } = useToast();
+
+  // State for delete confirmation modal
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [clientToDelete, setClientToDelete] = useState<Client | null>(null);
+  
   // Load clients when component mounts
   useEffect(() => {
     loadAllClients();
@@ -250,6 +258,35 @@ export const MCPClients = memo(() => {
     setIsEditDrawerOpen(true);
   };
 
+  // Handle client deletion (triggers confirmation modal)
+  const handleDeleteClient = (client: Client) => {
+    setClientToDelete(client);
+    setShowDeleteConfirm(true);
+  };
+
+  // Confirm deletion and execute
+  const confirmDeleteClient = async () => {
+    if (!clientToDelete) return;
+
+    try {
+      await mcpClientService.deleteClient(clientToDelete.id);
+      setClients(prev => prev.filter(c => c.id !== clientToDelete.id));
+      showToast(`MCP Client "${clientToDelete.name}" deleted successfully`, 'success');
+    } catch (error) {
+      console.error('Failed to delete MCP client:', error);
+      showToast(error instanceof Error ? error.message : 'Failed to delete MCP client', 'error');
+    } finally {
+      setShowDeleteConfirm(false);
+      setClientToDelete(null);
+    }
+  };
+
+  // Cancel deletion
+  const cancelDeleteClient = () => {
+    setShowDeleteConfirm(false);
+    setClientToDelete(null);
+  };
+
   if (isLoading) {
     return (
       <div className="relative min-h-[80vh] flex items-center justify-center">
@@ -304,6 +341,7 @@ export const MCPClients = memo(() => {
               client={client} 
               onSelect={() => handleSelectClient(client)}
               onEdit={() => handleEditClient(client)} 
+              onDelete={() => handleDeleteClient(client)}
             />
           ))}
         </div>
@@ -335,11 +373,26 @@ export const MCPClients = memo(() => {
             setEditClient(null);
           }}
           onUpdate={(updatedClient) => {
-            // Update the client in state
-            setClients(prev => prev.map(c => c.id === updatedClient.id ? updatedClient : c));
+            // Update the client in state or remove if deleted
+            setClients(prev => {
+              if (!updatedClient) { // If updatedClient is null, it means deletion
+                return prev.filter(c => c.id !== editClient?.id); // Remove the client that was being edited
+              }
+              return prev.map(c => c.id === updatedClient.id ? updatedClient : c);
+            });
             setIsEditDrawerOpen(false);
             setEditClient(null);
           }}
+        />
+      )}
+
+      {/* Delete Confirmation Modal for Clients */}
+      {showDeleteConfirm && clientToDelete && (
+        <DeleteConfirmModal
+          itemName={clientToDelete.name}
+          onConfirm={confirmDeleteClient}
+          onCancel={cancelDeleteClient}
+          type="client"
         />
       )}
     </div>
@@ -356,7 +409,7 @@ interface AddClientModalProps {
 const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, onSubmit }) => {
   const [formData, setFormData] = useState({
     name: '',
-    transport_type: 'sse' as 'sse' | 'stdio' | 'docker' | 'npx',
+    transport_type: 'sse' as 'sse' | 'stdio',
     host: '',
     port: '',
     command: '',
@@ -398,17 +451,6 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, onSubm
           };
           break;
 
-        case 'npx':
-          if (!formData.package) {
-            setError('Package name is required for NPX transport');
-            setIsSubmitting(false);
-            return;
-          }
-          connection_config = {
-            package: formData.package
-          };
-          break;
-        case 'docker':
         case 'stdio':
           if (!formData.command) {
             setError('Command is required');
@@ -512,8 +554,6 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, onSubm
             >
               <option value="sse">SSE (Server-Sent Events)</option>
               <option value="stdio">stdio (Process)</option>
-              <option value="npx">NPX (Node Package)</option>
-              <option value="docker">Docker (Container)</option>
             </select>
           </div>
 
@@ -547,7 +587,7 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, onSubm
             </>
           )}
 
-          {(formData.transport_type === 'stdio' || formData.transport_type === 'docker') && (
+          {formData.transport_type === 'stdio' && (
             <>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -558,10 +598,10 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, onSubm
                   value={formData.command}
                   onChange={(e) => setFormData(prev => ({ ...prev, command: e.target.value }))}
                   className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
-                  placeholder={formData.transport_type === 'docker' ? "docker" : "python"} 
+                  placeholder="python" 
                 />
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  {formData.transport_type === 'docker' ? 'Base command (e.g., docker, npx, python)' : 'Executable command (e.g., python, node, ./server)'}
+                  Executable command (e.g., python, node, ./server)
                 </p>
               </div>
               <div>
@@ -573,12 +613,10 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, onSubm
                   value={formData.args}
                   onChange={(e) => setFormData(prev => ({ ...prev, args: e.target.value }))}
                   className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
-                  placeholder={formData.transport_type === 'docker' ? 
-                    "exec -i -e TRANSPORT=stdio archon-pyserver uv run python src/mcp_server.py" : 
-                    "src/mcp_server.py --port 8051"} 
+                  placeholder="src/mcp_server.py --port 8051 or docker exec -i -e TRANSPORT=stdio archon-pyserver uv run python src/mcp_server.py" 
                 />
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Space-separated arguments. {formData.transport_type === 'docker' ? 'Include container name and full command path.' : 'Include script path and options.'}
+                  Space-separated arguments. Include script path and options, or container name and full command path for docker.
                 </p>
               </div>
               <div>
@@ -597,21 +635,6 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, onSubm
                 </p>
               </div>
             </>
-          )}
-
-          {formData.transport_type === 'npx' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Package Name *
-              </label>
-              <input 
-                type="text" 
-                value={formData.package}
-                onChange={(e) => setFormData(prev => ({ ...prev, package: e.target.value }))}
-                className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
-                placeholder="@example/mcp-server" 
-              />
-            </div>
           )}
 
           {/* Auto Connect */}
@@ -660,7 +683,7 @@ interface EditClientDrawerProps {
   client: Client;
   isOpen: boolean;
   onClose: () => void;
-  onUpdate: (client: Client) => void;
+  onUpdate: (client: Client | null) => void; // Allow null to indicate deletion
 }
 
 const EditClientDrawer: React.FC<EditClientDrawerProps> = ({ client, isOpen, onClose, onUpdate }) => {
@@ -678,6 +701,12 @@ const EditClientDrawer: React.FC<EditClientDrawerProps> = ({ client, isOpen, onC
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
+
+  // State for delete confirmation modal (moved here)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [clientToDelete, setClientToDelete] = useState<Client | null>(null);
+
+  const { showToast } = useToast(); // Initialize useToast here
 
   // Load current client config when drawer opens
   useEffect(() => {
@@ -874,8 +903,6 @@ const EditClientDrawer: React.FC<EditClientDrawerProps> = ({ client, isOpen, onC
             >
               <option value="sse">SSE (Server-Sent Events)</option>
               <option value="stdio">stdio (Process)</option>
-              <option value="npx">NPX (Node Package)</option>
-              <option value="docker">Docker (Container)</option>
             </select>
           </div>
 
@@ -905,7 +932,7 @@ const EditClientDrawer: React.FC<EditClientDrawerProps> = ({ client, isOpen, onC
             </>
           )}
 
-          {(editFormData.transport_type === 'stdio' || editFormData.transport_type === 'docker') && (
+          {editFormData.transport_type === 'stdio' && (
             <>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Command *</label>
@@ -914,7 +941,7 @@ const EditClientDrawer: React.FC<EditClientDrawerProps> = ({ client, isOpen, onC
                   value={editFormData.command}
                   onChange={(e) => setEditFormData(prev => ({ ...prev, command: e.target.value }))}
                   className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
-                  placeholder={editFormData.transport_type === 'docker' ? "docker" : "python"} 
+                  placeholder="python" 
                 />
               </div>
               <div>
@@ -924,7 +951,7 @@ const EditClientDrawer: React.FC<EditClientDrawerProps> = ({ client, isOpen, onC
                   value={editFormData.args}
                   onChange={(e) => setEditFormData(prev => ({ ...prev, args: e.target.value }))}
                   className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
-                  placeholder="exec -i archon-pyserver python src/mcp_server.py" 
+                  placeholder="src/mcp_server.py --port 8051 or docker exec -i -e TRANSPORT=stdio archon-pyserver uv run python src/mcp_server.py" 
                 />
               </div>
               <div>
@@ -938,19 +965,6 @@ const EditClientDrawer: React.FC<EditClientDrawerProps> = ({ client, isOpen, onC
                 />
               </div>
             </>
-          )}
-
-          {editFormData.transport_type === 'npx' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Package Name *</label>
-              <input 
-                type="text" 
-                value={editFormData.package}
-                onChange={(e) => setEditFormData(prev => ({ ...prev, package: e.target.value }))}
-                className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
-                placeholder="@example/mcp-server" 
-              />
-            </div>
           )}
 
           {/* Auto Connect */}
