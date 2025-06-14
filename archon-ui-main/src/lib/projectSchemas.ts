@@ -63,7 +63,7 @@ export const CreateTaskSchema = z.object({
     .min(1, 'Task title is required')
     .max(255, 'Task title must be less than 255 characters'),
   description: z.string()
-    .max(2000, 'Task description must be less than 2000 characters')
+    .max(10000, 'Task description must be less than 10000 characters')
     .default(''),
   status: DatabaseTaskStatusSchema.default('todo'),
   assignee: AssigneeSchema.default('User'),

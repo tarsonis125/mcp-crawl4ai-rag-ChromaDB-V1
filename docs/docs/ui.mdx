@@ -452,6 +452,62 @@ useEffect(() => {
 - `useRef` for stable function references when needed
 - Local variables inside effects instead of state dependencies
 
+#### **Async Toggle Race Conditions**
+
+**Root Cause**: Rapid clicks or state inconsistencies during async operations (like feature toggles).
+
+```typescript
+// ❌ PROBLEMATIC: No protection against rapid clicks or race conditions
+const handleLogfireToggle = async (checked: boolean) => {
+  setLogfireEnabled(checked); // Immediate state update
+  
+  await credentialsService.createCredential({
+    key: 'LOGFIRE_ENABLED',
+    value: checked.toString(),
+    // ... config
+  });
+  
+  showToast(
+    checked ? 'Logfire Enabled Successfully!' : 'Logfire Now Disabled', 
+    checked ? 'success' : 'warning'
+  );
+  // If user clicks rapidly, multiple toasts can fire with different values!
+};
+
+// ✅ SOLUTION: Use loading state to prevent race conditions
+const handleLogfireToggle = async (checked: boolean) => {
+  if (loading) return; // Prevent duplicate calls while one is in progress
+  
+  try {
+    setLoading(true);
+    setLogfireEnabled(checked);
+    
+    await credentialsService.createCredential({
+      key: 'LOGFIRE_ENABLED',
+      value: checked.toString(),
+      // ... config
+    });
+    
+    showToast(
+      checked ? 'Logfire Enabled Successfully!' : 'Logfire Now Disabled', 
+      checked ? 'success' : 'warning'
+    );
+  } catch (error) {
+    setLogfireEnabled(!checked); // Revert on error
+    showToast('Failed to update Logfire setting', 'error');
+  } finally {
+    setLoading(false);
+  }
+};
+
+// Disable toggle during loading:
+<Toggle 
+  checked={logfireEnabled} 
+  onCheckedChange={handleLogfireToggle} 
+  disabled={loading} // ✅ Prevents interaction during async operation
+/>
+```
+
 #### **Quick Debug Checklist**
 
 When experiencing duplicate toasts or WebSocket issues:
@@ -459,5 +515,6 @@ When experiencing duplicate toasts or WebSocket issues:
 1. **Check for multiple event sources**: Search codebase for the toast message
 2. **Review useEffect dependencies**: Look for state variables modified inside the effect
 3. **Verify single source of truth**: Ensure only one place shows each type of toast
-4. **Test systematically**: Use browser dev tools to trace event firing
+4. **Check async race conditions**: Look for unprotected async toggle handlers
+5. **Test systematically**: Use browser dev tools to trace event firing
 

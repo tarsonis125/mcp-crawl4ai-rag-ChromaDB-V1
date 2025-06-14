@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Key, Plus, Trash2 } from 'lucide-react';
+import { Key, Plus, Trash2, Check, Save, Lock, Unlock } from 'lucide-react';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
@@ -10,6 +10,9 @@ interface CustomCredential {
   key: string;
   value: string;
   description: string;
+  originalValue?: string; // Track original value to detect changes
+  hasChanges?: boolean; // Track if there are unsaved changes
+  is_encrypted?: boolean; // Track if this credential is encrypted
 }
 
 export const APIKeysSection = () => {
@@ -17,9 +20,11 @@ export const APIKeysSection = () => {
   const [_credentials, setCredentials] = useState<Credential[]>([]);
   const [customCredentials, setCustomCredentials] = useState<CustomCredential[]>([]);
   const [newCredential, setNewCredential] = useState<CustomCredential>({ key: '', value: '', description: '' });
+  const [newCredentialIsSecret, setNewCredentialIsSecret] = useState(false); // Toggle for new credential encryption
   const [showKeys, setShowKeys] = useState(false);
   const [selectedFeature, setSelectedFeature] = useState<string>('core');
   const [loading, setLoading] = useState(true);
+  const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set()); // Track which keys are being saved
 
   const { showToast } = useToast();
 
@@ -36,14 +41,48 @@ export const APIKeysSection = () => {
       const allCredentials = await credentialsService.getAllCredentials();
       setCredentials(allCredentials);
       
-      // Separate custom credentials (non-system ones)
-      const customCreds = allCredentials
-        .filter(cred => cred.category === 'api_keys' || cred.category === 'custom')
-        .map(cred => ({
+      // Load credentials from different categories for better OpenAI API key support
+      const apiKeysCredentials = await credentialsService.getCredentialsByCategory('api_keys');
+      const llmConfigCredentials = await credentialsService.getCredentialsByCategory('llm_config');
+      const customCategoryCredentials = await credentialsService.getCredentialsByCategory('custom');
+      
+      // Combine all credential sources
+      const combinedCredentials = [
+        ...apiKeysCredentials,
+        ...llmConfigCredentials,
+        ...customCategoryCredentials
+      ];
+      
+      // Deduplicate credentials by key (in case same key exists in multiple categories)
+      const credentialMap = new Map<string, Credential>();
+      combinedCredentials.forEach(cred => {
+        // Prefer llm_config category for OPENAI_API_KEY, otherwise use first found
+        if (!credentialMap.has(cred.key) || 
+            (cred.key === 'OPENAI_API_KEY' && cred.category === 'llm_config')) {
+          credentialMap.set(cred.key, cred);
+        }
+      });
+      
+      // Convert to array and handle encrypted values
+      const customCreds = Array.from(credentialMap.values()).map(cred => {
+        let displayValue = cred.value || '';
+        
+        // Handle encrypted credentials
+        if (cred.is_encrypted && !cred.value && cred.encrypted_value) {
+          // If we have an encrypted value but no decrypted value, show placeholder
+          displayValue = '';
+        }
+        
+        return {
           key: cred.key,
-          value: cred.value || '', // Show actual values for editing
-          description: cred.description || ''
-        }));
+          value: displayValue,
+          description: cred.description || '',
+          originalValue: displayValue, // Track original value
+          hasChanges: false,
+          is_encrypted: cred.is_encrypted || false
+        };
+      });
+      
       setCustomCredentials(customCreds);
     } catch (err) {
       console.error('Failed to load credentials:', err);
@@ -57,16 +96,24 @@ export const APIKeysSection = () => {
     if (!newCredential.key) return;
     
     try {
-      await credentialsService.createCredential({
+      const result = await credentialsService.createCredential({
         key: newCredential.key,
         value: newCredential.value,
         description: newCredential.description,
-        is_encrypted: newCredential.key.toLowerCase().includes('key') || newCredential.key.toLowerCase().includes('secret'),
+        is_encrypted: newCredentialIsSecret,
         category: 'api_keys'
       });
       
-      setCustomCredentials([...customCredentials, newCredential]);
+      const newCred = {
+        ...newCredential,
+        originalValue: newCredential.value,
+        hasChanges: false,
+        is_encrypted: newCredentialIsSecret
+      };
+      
+      setCustomCredentials([...customCredentials, newCred]);
       setNewCredential({ key: '', value: '', description: '' });
+      setNewCredentialIsSecret(false);
       showToast(`Credential ${newCredential.key} added successfully!`, 'success');
     } catch (err) {
       console.error('Failed to add credential:', err);
@@ -85,27 +132,70 @@ export const APIKeysSection = () => {
     }
   };
 
-  const updateCredentialValue = async (key: string, value: string) => {
+  const updateCredentialValue = (key: string, value: string) => {
     // Update local state immediately for responsiveness
-    setCustomCredentials(customCredentials.map(cred => 
-      cred.key === key ? { ...cred, value } : cred
-    ));
+    setCustomCredentials(customCredentials.map(cred => {
+      if (cred.key === key) {
+        return {
+          ...cred,
+          value,
+          hasChanges: value !== cred.originalValue
+        };
+      }
+      return cred;
+    }));
+  };
 
-    // Debounced save to backend could be implemented here
+  const saveCredentialValue = async (key: string, value: string) => {
     try {
+      setSavingKeys(prev => new Set(prev).add(key));
+      
+      // Find the credential to get its encryption status
+      const credential = customCredentials.find(cred => cred.key === key);
+      const shouldEncrypt = credential?.is_encrypted || false;
+      
       await credentialsService.updateCredential({
         key: key,
         value: value,
         description: '',
-        is_encrypted: key.toLowerCase().includes('key') || key.toLowerCase().includes('secret'),
-        category: 'api_keys'
+        is_encrypted: shouldEncrypt,
+        category: key === 'OPENAI_API_KEY' ? 'llm_config' : 'api_keys'
       });
+      
+      // Update the original value and clear changes flag
+      setCustomCredentials(customCredentials.map(cred => {
+        if (cred.key === key) {
+          return {
+            ...cred,
+            originalValue: value,
+            hasChanges: false
+          };
+        }
+        return cred;
+      }));
+      
+      showToast(`${key} saved successfully!`, 'success');
     } catch (err) {
       console.error('Failed to update credential:', err);
-      showToast('Failed to update credential', 'error');
+      showToast(`Failed to save ${key}`, 'error');
+    } finally {
+      setSavingKeys(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(key);
+        return newSet;
+      });
     }
   };
 
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>, key: string, value: string) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveCredentialValue(key, value);
+    }
+  };
+
+  // Simplified features - comment out for future implementation
+  /*
   const features = [
     { id: 'all', name: 'All Features' },
     { id: 'core', name: 'Core' },
@@ -113,9 +203,19 @@ export const APIKeysSection = () => {
     { id: 'agui', name: 'AG-UI Library' },
     { id: 'agents', name: 'Agents' }
   ];
+  */
 
-  // API keys organized by feature
+  // Simplified to just Core for now
+  const features = [
+    { id: 'core', name: 'Core' }
+  ];
+
+  // API keys organized by feature - simplified to just show all for Core
   const getKeysToDisplay = () => {
+    // Since we only have Core now, show all credentials
+    return customCredentials;
+    
+    /* Future implementation when we add more features:
     if (selectedFeature === 'all') {
       return customCredentials;
     }
@@ -137,6 +237,7 @@ export const APIKeysSection = () => {
           return true;
       }
     });
+    */
   };
 
   if (loading) {
@@ -172,10 +273,10 @@ export const APIKeysSection = () => {
 
         {/* Description text */}
         <p className="text-sm text-gray-600 dark:text-zinc-400 mb-2">
-          Manage your API keys and credentials for various services used by Archon.
+          Manage your API keys and credentials for various services used by Archon. Press Enter or click the save button to save changes.
         </p>
 
-        {/* Feature filter chips and show keys button */}
+        {/* Simplified feature filter - just Core highlighted */}
         <div className="flex flex-wrap gap-2 justify-between items-center">
           <div className="flex flex-wrap gap-2">
             {features.map((feature) => (
@@ -184,10 +285,7 @@ export const APIKeysSection = () => {
               onClick={() => setSelectedFeature(feature.id)}
               className={`
                 px-3 py-1.5 rounded-full text-xs transition-all duration-200
-                ${selectedFeature === feature.id 
-                  ? 'bg-pink-100 dark:bg-pink-900/20 text-pink-600 dark:text-pink-400 ring-1 ring-pink-500/50 shadow-[0_0_8px_rgba(236,72,153,0.3)]' 
-                  : 'bg-gray-100/70 dark:bg-gray-800/50 text-gray-600 dark:text-gray-400 hover:bg-gray-200/70 dark:hover:bg-gray-700/50'
-                }
+                bg-pink-100 dark:bg-pink-900/20 text-pink-600 dark:text-pink-400 ring-1 ring-pink-500/50 shadow-[0_0_8px_rgba(236,72,153,0.3)]
               `}
             >
               {feature.name}
@@ -216,18 +314,41 @@ export const APIKeysSection = () => {
                   type={showKeys ? 'text' : 'password'}
                   value={cred.value}
                   onChange={(e) => updateCredentialValue(cred.key, e.target.value)}
-                  placeholder={cred.description || `Enter ${cred.key}`}
+                  onKeyPress={(e) => handleKeyPress(e, cred.key, cred.value)}
+                  placeholder={
+                    cred.is_encrypted && cred.value === ''
+                      ? `${cred.description || `Enter ${cred.key}`} (encrypted - enter new value to update)`
+                      : (cred.description || `Enter ${cred.key}`)
+                  }
                   accentColor="pink"
                 />
               </div>
-              <Button
-                variant="outline"
-                onClick={() => handleDeleteCredential(cred.key)}
-                accentColor="pink"
-                className="mt-6"
-              >
-                <Trash2 className="w-4 h-4" />
-              </Button>
+              
+              {/* Action button - Save if changes detected, Delete if no changes */}
+              {cred.hasChanges ? (
+                <Button
+                  variant="primary"
+                  onClick={() => saveCredentialValue(cred.key, cred.value)}
+                  accentColor="green"
+                  className="mt-6"
+                  disabled={savingKeys.has(cred.key)}
+                >
+                  {savingKeys.has(cred.key) ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4" />
+                  )}
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  onClick={() => handleDeleteCredential(cred.key)}
+                  accentColor="pink"
+                  className="mt-6"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              )}
             </div>
           ))}
         </div>
@@ -245,14 +366,41 @@ export const APIKeysSection = () => {
               placeholder="e.g., ANTHROPIC_API_KEY"
               accentColor="pink"
             />
-            <Input
-              label="Value"
-              type="password"
-              value={newCredential.value}
-              onChange={(e) => setNewCredential({ ...newCredential, value: e.target.value })}
-              placeholder="Enter value"
-              accentColor="pink"
-            />
+            
+            {/* Value input with Secret toggle */}
+            <div className="relative">
+              <Input
+                label="Value"
+                type="password"
+                value={newCredential.value}
+                onChange={(e) => setNewCredential({ ...newCredential, value: e.target.value })}
+                placeholder="Enter value"
+                accentColor="pink"
+              />
+              
+              {/* Secret toggle button */}
+              <button
+                type="button"
+                onClick={() => setNewCredentialIsSecret(!newCredentialIsSecret)}
+                className={`
+                  absolute right-3 top-8 p-1.5 rounded-md transition-all duration-200
+                  ${newCredentialIsSecret 
+                    ? 'bg-pink-100 dark:bg-pink-900/20 text-pink-600 dark:text-pink-400' 
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+                  }
+                  hover:bg-opacity-80
+                `}
+                title={newCredentialIsSecret ? 'Secret (encrypted)' : 'Not secret (plain text)'}
+              >
+                {newCredentialIsSecret ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+              </button>
+              
+              {/* Secret toggle label */}
+              <label className="absolute right-12 top-8 text-xs text-gray-500 dark:text-gray-400 pointer-events-none">
+                Secret
+              </label>
+            </div>
+            
             <Input
               label="Description (optional)"
               value={newCredential.description}
@@ -279,10 +427,14 @@ export const APIKeysSection = () => {
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
             </svg>
           </div>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            All API keys are encrypted and stored securely in your local
-            storage. We recommend using environment variables in production.
-          </p>
+          <div className="text-sm text-gray-600 dark:text-gray-400">
+            <p className="mb-2">
+              Use the Secret toggle when adding credentials to automatically encrypt sensitive values. Encrypted credentials are stored securely and only decrypted when needed.
+            </p>
+            <p>
+              <strong>💡 Usage:</strong> Press <kbd className="px-1 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Enter</kbd> or click the green save button to save changes.
+            </p>
+          </div>
         </div>
       </div>
       </Card>

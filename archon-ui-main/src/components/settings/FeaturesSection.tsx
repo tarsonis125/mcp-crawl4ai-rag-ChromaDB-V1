@@ -13,8 +13,11 @@ export const FeaturesSection = () => {
   const { showToast } = useToast();
   const isDarkMode = theme === 'dark';
   const [projectsEnabled, setProjectsEnabled] = useState(true);
+  
+  // Commented out for future release
   const [agUILibraryEnabled, setAgUILibraryEnabled] = useState(false);
   const [agentsEnabled, setAgentsEnabled] = useState(false);
+  
   const [logfireEnabled, setLogfireEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -58,7 +61,11 @@ export const FeaturesSection = () => {
   };
 
   const handleProjectsToggle = async (checked: boolean) => {
+    // Prevent duplicate calls while one is already in progress
+    if (loading) return;
+    
     try {
+      setLoading(true);
       // Update local state immediately for responsive UI
       setProjectsEnabled(checked);
 
@@ -72,19 +79,25 @@ export const FeaturesSection = () => {
       });
 
       showToast(
-        `Projects ${checked ? 'enabled' : 'disabled'} successfully!`, 
-        'success'
+        checked ? 'Projects Enabled Successfully!' : 'Projects Now Disabled', 
+        checked ? 'success' : 'warning'
       );
     } catch (error) {
       console.error('Failed to update projects setting:', error);
       // Revert local state on error
       setProjectsEnabled(!checked);
       showToast('Failed to update Projects setting', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleLogfireToggle = async (checked: boolean) => {
+    // Prevent duplicate calls while one is already in progress
+    if (loading) return;
+    
     try {
+      setLoading(true);
       // Update local state immediately for responsive UI
       setLogfireEnabled(checked);
 
@@ -98,14 +111,16 @@ export const FeaturesSection = () => {
       });
 
       showToast(
-        `Logfire ${checked ? 'enabled' : 'disabled'} successfully!`, 
-        'success'
+        checked ? 'Logfire Enabled Successfully!' : 'Logfire Now Disabled', 
+        checked ? 'success' : 'warning'
       );
     } catch (error) {
       console.error('Failed to update logfire setting:', error);
       // Revert local state on error
       setLogfireEnabled(!checked);
       showToast('Failed to update Logfire setting', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -159,7 +174,8 @@ export const FeaturesSection = () => {
           </div>
         </div>
 
-        {/* AG-UI Library Toggle */}
+        {/* COMMENTED OUT FOR FUTURE RELEASE - AG-UI Library Toggle */}
+        {/*
         <div className="flex items-center gap-4 p-4 rounded-lg bg-gradient-to-r from-pink-500/5 to-pink-500/0">
           <div className="flex-1 min-w-0">
             <p className="font-medium text-gray-800 dark:text-white">
@@ -173,8 +189,10 @@ export const FeaturesSection = () => {
             <Toggle checked={agUILibraryEnabled} onCheckedChange={setAgUILibraryEnabled} accentColor="pink" icon={<Layout className="w-5 h-5" />} />
           </div>
         </div>
+        */}
 
-        {/* Agents Toggle */}
+        {/* COMMENTED OUT FOR FUTURE RELEASE - Agents Toggle */}
+        {/*
         <div className="flex items-center gap-4 p-4 rounded-lg bg-gradient-to-r from-green-500/5 to-green-500/0">
           <div className="flex-1 min-w-0">
             <p className="font-medium text-gray-800 dark:text-white">
@@ -188,6 +206,7 @@ export const FeaturesSection = () => {
             <Toggle checked={agentsEnabled} onCheckedChange={setAgentsEnabled} accentColor="green" icon={<Bot className="w-5 h-5" />} />
           </div>
         </div>
+        */}
 
         {/* Pydantic Logfire Toggle */}
         <div className="flex items-center gap-4 p-4 rounded-lg bg-gradient-to-r from-orange-500/5 to-orange-500/0">
