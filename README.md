@@ -59,7 +59,7 @@ SUPABASE_SERVICE_KEY=your-service-key-here
 ### 4. Start Archon
 
 ```bash
-docker-compose up -d
+docker-compose up --build -d
 ```
 
 ### 5. Access & Configure
@@ -89,7 +89,7 @@ The documentation includes:
 
 ## 🛠️ What's Included
 
-When you run `docker-compose up -d`, you get:
+When you run `docker-compose up --build -d`, you get:
 
 ### Core Services
 - **Frontend** (Port 3737): React dashboard for managing knowledge and tasks
