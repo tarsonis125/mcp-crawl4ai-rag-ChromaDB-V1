@@ -87,6 +87,15 @@ export const KnowledgeBasePage = () => {
           setLoading(false);
           setLoadingStrategy('websocket');
           wsConnected = true;
+        } else if (data.type === 'crawl_completed') {
+          console.log('✅ WebSocket: Received crawl completion');
+          if (data.data.success) {
+            showToast('Crawling completed successfully', 'success');
+          } else {
+            showToast('Crawling failed', 'error');
+          }
+          // Reload items to show the new content
+          loadKnowledgeItems();
         }
       };
       
@@ -192,7 +201,7 @@ export const KnowledgeBasePage = () => {
     setProgressItems(prev => prev.filter(item => item.progressId !== data.progressId));
     // Reload knowledge items to show the new item
     loadKnowledgeItems();
-    showToast('Crawling completed successfully', 'success');
+    // Toast will be shown by WebSocket completion event to avoid duplicates
   };
 
   const handleProgressError = (error: string) => {

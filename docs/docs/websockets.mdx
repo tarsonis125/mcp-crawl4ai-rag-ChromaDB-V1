@@ -1645,6 +1645,175 @@ This documentation now reflects the **actual working implementation** that succe
 
 ---
 
+## 🚨 **Common WebSocket Patterns & Anti-Patterns**
+
+### **Duplicate Event Pattern (ANTI-PATTERN)**
+
+**The Problem**: Multiple event sources trigger the same UI action, causing duplicate toasts and unstable state.
+
+```typescript
+// ❌ ANTI-PATTERN: Multiple sources showing the same completion toast
+// Source 1: Progress callback
+const handleProgressComplete = (data: CrawlProgressData) => {
+  console.log('Crawl completed:', data);
+  setProgressItems(prev => prev.filter(item => item.progressId !== data.progressId));
+  loadKnowledgeItems();
+  showToast('Crawling completed successfully', 'success'); // ❌ Toast #1
+};
+
+// Source 2: WebSocket event handler  
+const handleKnowledgeUpdate = (data: any) => {
+  if (data.type === 'crawl_completed') {
+    setKnowledgeItems(data.data.items);
+    showToast('Crawling completed successfully', 'success'); // ❌ Toast #2 (DUPLICATE!)
+  }
+};
+
+// Source 3: API response (hypothetical)
+const completeCrawl = async () => {
+  const response = await api.post('/complete-crawl');
+  showToast('Crawling completed successfully', 'success'); // ❌ Toast #3 (TRIPLE!)
+};
+```
+
+**The Fix**: Single Source of Truth Pattern
+
+```typescript
+// ✅ PATTERN: Single source of truth for completion events
+// Only WebSocket shows completion toast:
+const handleKnowledgeUpdate = (data: any) => {
+  if (data.type === 'crawl_completed') {
+    setKnowledgeItems(data.data.items);
+    showToast('Crawling completed successfully', 'success'); // ✅ Single source!
+  }
+};
+
+// Progress callback does NOT show completion toast:
+const handleProgressComplete = (data: CrawlProgressData) => {
+  console.log('Crawl completed:', data);
+  setProgressItems(prev => prev.filter(item => item.progressId !== data.progressId));
+  loadKnowledgeItems();
+  // No toast - WebSocket will handle completion notification
+};
+
+// API responses only show toasts for direct user actions:
+const deleteCrawl = async () => {
+  await api.delete('/crawl');
+  showToast('Crawl deleted', 'success'); // ✅ Direct user action
+};
+```
+
+### **useEffect Dependency Hell (ANTI-PATTERN)**
+
+**The Problem**: Including unstable dependencies causes infinite re-renders and WebSocket instability.
+
+```typescript
+// ❌ ANTI-PATTERN: Including functions in dependency arrays
+const [backendReady, setBackendReady] = useState(false);
+
+useEffect(() => {
+  const checkHealth = async () => {
+    const response = await fetch('/health');
+    if (response.ok) {
+      setBackendReady(true); // This triggers the effect again!
+      showToast('Backend ready', 'success');
+    }
+  };
+  
+  checkHealth();
+}, [showToast, backendReady]); // ❌ showToast + backendReady cause loops
+
+// ✅ PATTERN: Stable dependencies only
+useEffect(() => {
+  const checkHealth = async () => {
+    const response = await fetch('/health');
+    if (response.ok) {
+      setBackendReady(true); // Set state, but don't depend on it
+      showToast('Backend ready', 'success'); // Call function, but don't depend on it
+    }
+  };
+  
+  checkHealth();
+}, []); // ✅ Empty dependencies - run once on mount
+```
+
+### **WebSocket State Management Best Practices**
+
+#### **1. Connection Lifecycle**
+```typescript
+// ✅ Proper WebSocket lifecycle management
+useEffect(() => {
+  if (!projectId) return;
+  
+  const ws = connectToTaskUpdates(projectId, {
+    onTasksChange: (updatedTasks) => {
+      setTasks(prev => {
+        // Efficient bulk updates
+        const taskMap = new Map(prev.map(task => [task.id, task]));
+        updatedTasks.forEach(task => taskMap.set(task.id, task));
+        return Array.from(taskMap.values());
+      });
+    }
+  });
+  
+  return () => {
+    ws?.close(); // Always clean up
+  };
+}, [projectId]); // Only depend on stable values
+```
+
+#### **2. Event Deduplication**
+```typescript
+// ✅ Handle multiple event types without duplication
+const wsEventHandlers = {
+  initial_tasks: (data) => {
+    setTasks(data.tasks);
+    // No toast for initial load
+  },
+  
+  tasks_updated: (data) => {
+    updateTasksInPlace(data.updated_tasks);
+    // No toast - this is automatic from MCP operations
+  },
+  
+  task_created: (data) => {
+    addTask(data.task);
+    showToast('Task created', 'success'); // ✅ Only for explicit user actions
+  }
+};
+```
+
+#### **3. Database-WebSocket Bridge Pattern**
+```typescript
+// ✅ Clean separation: Database operations trigger WebSocket updates
+// MCP Tool updates database → Database change detector → WebSocket broadcast → UI update
+
+// Backend: Database change detection
+async function detectChanges(projectId: string) {
+  const changedTasks = await db.tasks
+    .where('project_id', projectId)
+    .where('updated_at', '>', lastCheckTime)
+    .select();
+    
+  if (changedTasks.length > 0) {
+    broadcastToWebSockets(projectId, {
+      type: 'tasks_updated',
+      data: { updated_tasks: changedTasks }
+    });
+  }
+}
+
+// Frontend: Single handler for all task updates
+const handleTaskUpdates = (message) => {
+  if (message.type === 'tasks_updated') {
+    // Bulk update without showing toast (automatic operation)
+    updateTasks(message.data.updated_tasks);
+  }
+};
+```
+
+---
+
 **Next Steps**: 
 - Review [API Reference](./api-reference) for endpoint details
 - Check [Server Architecture](./server) for implementation details

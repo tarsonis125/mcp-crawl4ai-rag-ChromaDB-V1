@@ -72,9 +72,13 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
       const maxRetries = 3;
       const retryDelay = 1000;
       
+      let isBackendReady = false; // Track backend readiness locally to avoid dependency on state
+      
       try {
         const credentials = await credentialsService.getCredentialsByCategory('llm_config');
         const openaiKey = credentials.find(cred => cred.key === 'OPENAI_API_KEY');
+        
+        isBackendReady = true; // If we got here, backend is ready
         
         if (!openaiKey || !openaiKey.value || openaiKey.value.trim() === '') {
           showToast('OpenAI API Key missing! Click here to go to Settings and configure it.', 'warning', 8000);
@@ -95,8 +99,8 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
       } catch (error) {
         console.error(`Error checking OpenAI API key (attempt ${retryCount + 1}):`, error);
         
-        // Retry if we haven't exceeded max retries and backend is still ready
-        if (retryCount < maxRetries && backendReady) {
+        // Retry if we haven't exceeded max retries and backend appears ready
+        if (retryCount < maxRetries && isBackendReady) {
           setTimeout(() => {
             checkOpenAIKey(retryCount + 1);
           }, retryDelay * (retryCount + 1)); // Linear backoff for credential check
@@ -111,7 +115,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
     setTimeout(() => {
       checkBackendHealth();
     }, 1000); // Wait 1 second for initial app startup
-  }, [showToast, navigate, hasShownApiKeyToast, backendReady]);
+  }, [showToast, navigate, hasShownApiKeyToast]); // Removed backendReady from dependencies to prevent double execution
 
   return <div className="relative min-h-screen bg-white dark:bg-black overflow-hidden">
       {/* Full-page background grid */}
