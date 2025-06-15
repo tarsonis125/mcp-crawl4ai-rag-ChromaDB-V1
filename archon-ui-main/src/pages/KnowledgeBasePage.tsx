@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Search, Grid, Plus, Upload, Link as LinkIcon, Share2, Brain, Filter, BoxIcon, Trash2, Table, RefreshCw, X, Globe } from 'lucide-react';
+import { Search, Grid, Plus, Upload, Link as LinkIcon, Share2, Brain, Filter, BoxIcon, Trash2, List, RefreshCw, X, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MindMapView } from '../components/MindMapView';
 import { Card } from '../components/ui/Card';
@@ -377,10 +377,20 @@ export const KnowledgeBasePage = () => {
     }
   }, [searchQuery, loadingStrategy]);
 
-  // Filter items based on selected type
-  const filteredItems = knowledgeItems.filter(item => 
-    typeFilter === 'all' ? true : item.metadata.knowledge_type === typeFilter
-  );
+  // Filter items based on selected type and search query
+  const filteredItems = knowledgeItems.filter(item => {
+    // Type filter
+    const typeMatch = typeFilter === 'all' ? true : item.metadata.knowledge_type === typeFilter;
+    
+    // Search filter - search in title, description, tags, and source_id
+    const searchMatch = !searchQuery || 
+      item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.metadata.description && item.metadata.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (item.metadata.tags && item.metadata.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))) ||
+      item.source_id.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    return typeMatch && searchMatch;
+  });
 
   // Group items by domain for grid view
   const groupedItems = viewMode === 'grid' ? groupItemsByDomain(filteredItems) : [];
@@ -575,7 +585,7 @@ export const KnowledgeBasePage = () => {
               <Grid className="w-4 h-4" />
             </button>
             <button onClick={() => setViewMode('table')} className={`p-2 ${viewMode === 'table' ? 'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-500' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300'}`} title="Table View">
-              <Table className="w-4 h-4" />
+              <List className="w-4 h-4" />
             </button>
             <button onClick={() => setViewMode('mind-map')} className={`p-2 ${viewMode === 'mind-map' ? 'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-500' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300'}`} title="Mind Map View">
               <Share2 className="w-4 h-4" />
