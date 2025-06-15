@@ -40,7 +40,11 @@ from src.utils import (
     add_code_examples_to_supabase,
     update_source_info,
     extract_source_summary,
-    search_code_examples
+    search_code_examples,
+    create_embedding,
+    create_embeddings_batch,
+    generate_source_title_and_metadata,
+    process_chunk_with_context
 )
 
 # Helper functions to get settings from credential service
@@ -334,7 +338,13 @@ async def crawl_recursive_with_progress(crawler: AsyncWebCrawler, start_urls: Li
     async def report_progress(percentage: int, message: str, **kwargs):
         """Helper to report progress if callback is available"""
         if progress_callback:
-            await progress_callback('crawling', percentage, message, **kwargs)
+            # Add step information for multi-progress tracking
+            step_info = {
+                'currentStep': message,
+                'stepMessage': message,
+                **kwargs
+            }
+            await progress_callback('crawling', percentage, message, **step_info)
 
     visited = set()
 
@@ -393,6 +403,8 @@ async def crawl_recursive_with_progress(crawler: AsyncWebCrawler, start_urls: Li
 
 
 # Standalone functions for direct import (needed by api_wrapper.py)
+
+
 async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurrent: int = 10, chunk_size: int = 5000) -> str:
     """
     Standalone function for smart crawling that can be imported directly.
@@ -410,13 +422,19 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
         async def report_progress(status: str, percentage: int, message: str, **kwargs):
             """Helper to report progress if callback available"""
             if progress_callback:
-                await progress_callback(status, percentage, message, **kwargs)
+                # Add step information for multi-progress tracking
+                step_info = {
+                    'currentStep': status,
+                    'stepMessage': message,
+                    **kwargs
+                }
+                await progress_callback(status, percentage, message, **step_info)
         
-        await report_progress('analyzing', 5, f'Analyzing URL type: {url}')
+        await report_progress('analyzing', 2, f'Analyzing URL type: {url}')
         
         # Determine crawl strategy based on URL type
         if is_sitemap(url):
-            await report_progress('sitemap', 10, 'Detected sitemap, extracting URLs...')
+            await report_progress('sitemap', 4, 'Detected sitemap, extracting URLs...')
             
             # Parse sitemap and get URLs
             urls = parse_sitemap(url)
@@ -426,29 +444,29 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
                     "error": "Failed to extract URLs from sitemap"
                 })
             
-            await report_progress('sitemap', 15, f'Found {len(urls)} URLs in sitemap')
+            await report_progress('sitemap', 6, f'Found {len(urls)} URLs in sitemap')
             
             # Batch crawl the sitemap URLs
             results = await crawl_batch_with_progress(
-                crawler, urls, max_concurrent, progress_callback, 15, 60
+                crawler, urls, max_concurrent, progress_callback, 6, 22
             )
             crawl_type = "sitemap"
             
         elif is_txt(url):
-            await report_progress('text_file', 10, 'Detected text file, downloading...')
+            await report_progress('text_file', 4, 'Detected text file, downloading...')
             
             # Crawl the text file directly
             results = await crawl_markdown_file(crawler, url)
             crawl_type = "text_file"
             
-            await report_progress('text_file', 60, f'Downloaded text file: {len(results)} file processed')
+            await report_progress('text_file', 22, f'Downloaded text file: {len(results)} file processed')
             
         else:
-            await report_progress('webpage', 10, 'Detected webpage, starting recursive crawl...')
+            await report_progress('webpage', 4, 'Detected webpage, starting recursive crawl...')
             
             # Recursive crawling for regular webpages
             results = await crawl_recursive_with_progress(
-                crawler, [url], max_depth, max_concurrent, progress_callback, 10, 60
+                crawler, [url], max_depth, max_concurrent, progress_callback, 4, 22
             )
             crawl_type = "webpage"
         
@@ -458,7 +476,7 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
                 "error": "No content retrieved from crawling"
             })
         
-        await report_progress('processing', 65, f'Processing {len(results)} pages into chunks...')
+        await report_progress('processing', 24, f'Processing {len(results)} pages into chunks...')
         
         # Process all crawled content
         all_documents = []
@@ -499,27 +517,29 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
                     "metadata": document_metadata
                 })
             
-            # Extract code examples if enabled
+            # Extract code examples if enabled (sequential processing to avoid progress conflicts)
             if get_bool_setting("USE_AGENTIC_RAG", False):
                 code_blocks = extract_code_blocks(markdown_content)
-                if not code_blocks:
-                    continue
-                # Process code examples in parallel
-                with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-                    code_summaries = list(executor.map(process_code_example, code_blocks))
-                
-                for code_block, summary in zip(code_blocks, code_summaries):
-                    all_code_examples.append({
-                        'code_block': code_block,
-                        'summary': summary,
-                        'url': page_url
-                    })
+                if code_blocks:
+                    # Process code examples sequentially to maintain progress accuracy
+                    for j, code_block in enumerate(code_blocks):
+                        summary = process_code_example(code_block)
+                        all_code_examples.append({
+                            'code_block': code_block,
+                            'summary': summary,
+                            'url': page_url
+                        })
+                        
+                        # Report progress for code processing
+                        if j % 5 == 0:  # Every 5 code blocks
+                            code_progress = 24 + int((i + 1) / len(results) * 6) + int((j / len(code_blocks)) * 0.5)
+                            await report_progress('processing', code_progress, f'Processed {j+1}/{len(code_blocks)} code examples')
             
             # Report progress during processing
-            progress_pct = 65 + int((i + 1) / len(results) * 15)  # 65-80%
+            progress_pct = 24 + int((i + 1) / len(results) * 6)  # 24-30%
             await report_progress('processing', progress_pct, f'Processed {i + 1}/{len(results)} pages')
         
-        await report_progress('storing', 80, 'Storing content in database...')
+        await report_progress('storing', 30, 'Storing content in database...')
         
         # Prepare data for Supabase insertion
         urls = [doc['url'] for doc in all_documents]
@@ -531,6 +551,8 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
         # Build url_to_full_document mapping from results
         for page_result in results:
             url_to_full_document[page_result['url']] = page_result['markdown']
+        
+        await report_progress('storing', 35, 'Preparing source information...')
         
         # Track sources and their content for source info creation (BEFORE document insertion)
         source_content_map = {}
@@ -551,26 +573,56 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
             
             source_word_counts[source_id] += word_count
         
+        # STEP 4: Create source records (35-45%)
+        await report_progress('source_creation', 0, f'Creating source records for {len(source_content_map)} sources...')
+        
         # Create sources FIRST (before inserting documents to avoid foreign key constraint)
-        for source_id, content in source_content_map.items():
+        for i, (source_id, content) in enumerate(source_content_map.items()):
             word_count = source_word_counts.get(source_id, 0)
             source_summary = extract_source_summary(source_id, content)
-            update_source_info(supabase_client, source_id, source_summary, word_count, content)
+            
+            # Get metadata from context including update_frequency
+            knowledge_metadata = getattr(ctx, 'knowledge_metadata', {})
+            update_frequency = knowledge_metadata.get('update_frequency', 7)
+            
+            update_source_info(
+                supabase_client, 
+                source_id, 
+                source_summary, 
+                word_count, 
+                content[:5000], 
+                "technical",  # Hardcoded back to working value
+                [],           # Hardcoded back to working value
+                update_frequency
+            )
+            
+            progress_pct = int((i + 1) / len(source_content_map) * 100)
+            await report_progress('source_creation', progress_pct, f'Created source {i+1}/{len(source_content_map)}: {source_id}')
         
-        # Now store documents in Supabase (AFTER sources exist)
-        add_documents_to_supabase(
-            client=supabase_client,
-            urls=urls,
-            chunk_numbers=chunk_numbers,
-            contents=contents,
-            metadatas=metadatas,
-            url_to_full_document=url_to_full_document
-        )
+        # STEP 5: Store documents (45-90%) - Let this step handle its own 0-100% progress
+        try:
+            await store_documents_with_progress(
+                supabase_client=supabase_client,
+                urls=urls,
+                chunk_numbers=chunk_numbers,
+                contents=contents,
+                metadatas=metadatas,
+                url_to_full_document=url_to_full_document,
+                progress_callback=lambda pct, msg: report_progress('document_storage', pct, msg)  # Direct 0-100%
+            )
+            
+        except Exception as e:
+            error_msg = f"Failed to store documents: {str(e)}"
+            await report_progress('error', 0, error_msg)
+            raise Exception(error_msg)
+            
         chunks_stored = len(all_documents)
         
-        # Store code examples if any
+        # STEP 6: Store code examples (90-95%)
         code_examples_stored = 0
         if all_code_examples:
+            await report_progress('code_storage', 0, f'Storing {len(all_code_examples)} code examples...')
+            
             # Prepare data for code examples insertion
             code_urls = [ex['url'] for ex in all_code_examples]
             code_chunk_numbers = [i for i in range(len(all_code_examples))]  # Sequential numbering (0-based)
@@ -587,10 +639,10 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
                 metadatas=code_metadatas
             )
             code_examples_stored = len(all_code_examples)
+            await report_progress('code_storage', 100, f'Stored {code_examples_stored} code examples')
         
-        await report_progress('storing', 90, 'Source information updated...')
-        
-        await report_progress('completed', 100, f'Successfully crawled {len(results)} pages with {chunks_stored} chunks stored')
+        # STEP 7: Finalization (95-100%)
+        await report_progress('finalization', 100, f'Successfully crawled {len(results)} pages with {chunks_stored} chunks stored')
         
         return json.dumps({
             "success": True,
@@ -627,20 +679,59 @@ async def delete_source(ctx, source_id: str) -> str:
         JSON string with deletion results
     """
     try:
-        supabase_client = ctx.request_context.lifespan_context.supabase_client
+        print(f"DEBUG: Starting delete_source for source_id: {source_id}")
+        
+        # Get supabase client with error handling
+        try:
+            supabase_client = ctx.request_context.lifespan_context.supabase_client
+            print(f"DEBUG: Successfully got supabase_client: {type(supabase_client)}")
+        except Exception as client_error:
+            print(f"ERROR: Failed to get supabase_client: {client_error}")
+            return json.dumps({
+                "success": False,
+                "error": f"Failed to get database client: {str(client_error)}"
+            })
         
         # Delete from crawled_pages table
-        pages_response = supabase_client.table("crawled_pages").delete().eq("source_id", source_id).execute()
-        pages_deleted = len(pages_response.data) if pages_response.data else 0
+        try:
+            print(f"DEBUG: Deleting from crawled_pages table for source_id: {source_id}")
+            pages_response = supabase_client.table("crawled_pages").delete().eq("source_id", source_id).execute()
+            pages_deleted = len(pages_response.data) if pages_response.data else 0
+            print(f"DEBUG: Deleted {pages_deleted} pages from crawled_pages")
+        except Exception as pages_error:
+            print(f"ERROR: Failed to delete from crawled_pages: {pages_error}")
+            return json.dumps({
+                "success": False,
+                "error": f"Failed to delete crawled pages: {str(pages_error)}"
+            })
         
         # Delete from code_examples table
-        code_response = supabase_client.table("code_examples").delete().eq("source_id", source_id).execute()
-        code_deleted = len(code_response.data) if code_response.data else 0
+        try:
+            print(f"DEBUG: Deleting from code_examples table for source_id: {source_id}")
+            code_response = supabase_client.table("code_examples").delete().eq("source_id", source_id).execute()
+            code_deleted = len(code_response.data) if code_response.data else 0
+            print(f"DEBUG: Deleted {code_deleted} code examples")
+        except Exception as code_error:
+            print(f"ERROR: Failed to delete from code_examples: {code_error}")
+            return json.dumps({
+                "success": False,
+                "error": f"Failed to delete code examples: {str(code_error)}"
+            })
         
         # Delete from sources table
-        source_response = supabase_client.table("sources").delete().eq("source_id", source_id).execute()
-        source_deleted = len(source_response.data) if source_response.data else 0
+        try:
+            print(f"DEBUG: Deleting from sources table for source_id: {source_id}")
+            source_response = supabase_client.table("sources").delete().eq("source_id", source_id).execute()
+            source_deleted = len(source_response.data) if source_response.data else 0
+            print(f"DEBUG: Deleted {source_deleted} source records")
+        except Exception as source_error:
+            print(f"ERROR: Failed to delete from sources: {source_error}")
+            return json.dumps({
+                "success": False,
+                "error": f"Failed to delete source: {str(source_error)}"
+            })
         
+        print(f"DEBUG: Delete operation completed successfully")
         return json.dumps({
             "success": True,
             "source_id": source_id,
@@ -650,6 +741,10 @@ async def delete_source(ctx, source_id: str) -> str:
         })
         
     except Exception as e:
+        print(f"ERROR: Unexpected error in delete_source: {e}")
+        print(f"ERROR: Exception type: {type(e)}")
+        import traceback
+        print(f"ERROR: Traceback: {traceback.format_exc()}")
         return json.dumps({
             "success": False,
             "error": f"Error deleting source: {str(e)}"
@@ -719,7 +814,7 @@ def register_rag_tools(mcp: FastMCP):
             
             # Create source FIRST (before inserting documents to avoid foreign key constraint)
             source_summary = extract_source_summary(source_id, markdown_content[:5000])
-            update_source_info(supabase_client, source_id, source_summary, total_word_count, markdown_content[:5000])
+            update_source_info(supabase_client, source_id, source_summary, total_word_count, markdown_content[:5000], "technical", [], 0)  # Single page crawls default to never update
             
             # Store in Supabase - prepare data for the function
             urls = [doc['url'] for doc in documents]
@@ -743,9 +838,11 @@ def register_rag_tools(mcp: FastMCP):
             if get_bool_setting("USE_AGENTIC_RAG", False):
                 code_blocks = extract_code_blocks(markdown_content)
                 if code_blocks:
-                    # Process code examples in parallel
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-                        code_summaries = list(executor.map(safe_process_code_example, code_blocks))
+                    # Process code examples sequentially to avoid progress conflicts
+                    code_summaries = []
+                    for code_block in code_blocks:
+                        summary = safe_process_code_example(code_block)
+                        code_summaries.append(summary)
                     
                     # Prepare data for code examples insertion
                     code_urls = [url for _ in code_blocks]  # All from same URL
@@ -1188,7 +1285,7 @@ def register_rag_tools(mcp: FastMCP):
             
             # Create source FIRST (before inserting documents to avoid foreign key constraint)
             source_summary = extract_source_summary(source_id, file_content[:5000])
-            update_source_info(supabase_client, source_id, source_summary, total_word_count, file_content[:5000])
+            update_source_info(supabase_client, source_id, source_summary, total_word_count, file_content[:5000], knowledge_type, tags, 0)  # File uploads default to never update
             
             # Store in Supabase - prepare data for the function
             urls = [doc['url'] for doc in documents]
@@ -1222,3 +1319,162 @@ def register_rag_tools(mcp: FastMCP):
                 "success": False,
                 "error": f"Error uploading document: {str(e)}"
             }) 
+
+async def store_documents_with_progress(
+    supabase_client, 
+    urls: List[str], 
+    chunk_numbers: List[int],
+    contents: List[str], 
+    metadatas: List[Dict[str, Any]],
+    url_to_full_document: Dict[str, str],
+    progress_callback=None,
+    batch_size: int = 20
+) -> None:
+    """
+    Enhanced version of add_documents_to_supabase with progress reporting.
+    Maps internal 0-100% progress to external range via callback.
+    """
+    async def report_progress_internal(percentage: float, message: str):
+        if progress_callback:
+            # The callback will handle mapping to external range (55% to 90%)
+            await progress_callback(percentage, message)
+    
+    # Get unique URLs to delete existing records
+    unique_urls = list(set(urls))
+    
+    await report_progress_internal(0, f'Deleting {len(unique_urls)} existing URL records...')
+    
+    # Delete existing records for these URLs in a single operation
+    try:
+        if unique_urls:
+            supabase_client.table("crawled_pages").delete().in_("url", unique_urls).execute()
+    except Exception as e:
+        await report_progress_internal(0, f'Batch delete failed, using fallback: {str(e)[:50]}...')
+        # Fallback: delete records one by one
+        for i, url in enumerate(unique_urls):
+            try:
+                supabase_client.table("crawled_pages").delete().eq("url", url).execute()
+                if i % 10 == 0:  # Progress every 10 deletions
+                    await report_progress_internal(0 + (i / len(unique_urls)) * 5, f'Deleting records: {i+1}/{len(unique_urls)}')
+            except Exception:
+                pass  # Continue with next URL
+    
+    await report_progress_internal(5, 'Preparing document batches...')
+    
+    # Check if contextual embeddings are enabled
+    use_contextual_embeddings = os.getenv("USE_CONTEXTUAL_EMBEDDINGS", "false") == "true"
+    max_workers = int(os.getenv("CONTEXTUAL_EMBEDDINGS_MAX_WORKERS", "3"))
+    
+    # Process in batches to avoid memory issues
+    total_batches = (len(contents) + batch_size - 1) // batch_size
+    
+    # Use simple linear progress from 5% to 95% without conflicting calculations
+    current_progress = 5.0
+    progress_per_batch = 90.0 / total_batches  # Evenly distribute 90% across all batches
+    
+    for batch_idx in range(0, len(contents), batch_size):
+        batch_end = min(batch_idx + batch_size, len(contents))
+        current_batch = (batch_idx // batch_size) + 1
+        
+        # Get batch slices
+        batch_urls = urls[batch_idx:batch_end]
+        batch_chunk_numbers = chunk_numbers[batch_idx:batch_end]
+        batch_contents = contents[batch_idx:batch_end]
+        batch_metadatas = metadatas[batch_idx:batch_end]
+        
+        await report_progress_internal(current_progress, f'Processing batch {current_batch}/{total_batches} ({len(batch_contents)} chunks)...')
+        
+        # Apply contextual embedding if enabled (sequential processing to avoid progress conflicts)
+        if use_contextual_embeddings:
+            current_progress += progress_per_batch * 0.1  # 10% of batch progress
+            await report_progress_internal(current_progress, f'Applying contextual embeddings to batch {current_batch}...')
+            # Process sequentially to maintain accurate progress reporting
+            contextual_contents = []
+            for j, content in enumerate(batch_contents):
+                url = batch_urls[j]
+                full_document = url_to_full_document.get(url, "")
+                
+                try:
+                    result, success = process_chunk_with_context((url, content, full_document))
+                    contextual_contents.append(result)
+                    if success:
+                        batch_metadatas[j]["contextual_embedding"] = True
+                except Exception as e:
+                    print(f"Error processing chunk {j}: {e}")
+                    contextual_contents.append(content)
+                
+                # Report progress every 5 chunks within this 40% of batch progress
+                if j % 5 == 0 or j == len(batch_contents) - 1:
+                    chunk_progress = (j + 1) / len(batch_contents) * (progress_per_batch * 0.4)
+                    await report_progress_internal(current_progress + chunk_progress, f'Processed {j+1}/{len(batch_contents)} contextual embeddings')
+            
+            current_progress += progress_per_batch * 0.4  # 40% of batch progress for contextual embeddings
+        else:
+            contextual_contents = batch_contents
+            current_progress += progress_per_batch * 0.5  # Skip contextual processing, move to embeddings
+        
+        await report_progress_internal(current_progress, f'Creating embeddings for batch {current_batch}...')
+        
+        # Create embeddings for the entire batch at once - this is another slow operation
+        from src.utils import create_embeddings_batch
+        batch_embeddings = create_embeddings_batch(contextual_contents)
+        
+        current_progress += progress_per_batch * 0.2  # 20% of batch progress for embeddings
+        await report_progress_internal(current_progress, f'Preparing batch {current_batch} for database insertion...')
+        
+        # Prepare batch data
+        batch_data = []
+        for j in range(len(contextual_contents)):
+            from urllib.parse import urlparse
+            chunk_size = len(contextual_contents[j])
+            parsed_url = urlparse(batch_urls[j])
+            source_id = parsed_url.netloc or parsed_url.path
+            
+            data = {
+                "url": batch_urls[j],
+                "chunk_number": batch_chunk_numbers[j],
+                "content": contextual_contents[j],
+                "metadata": {
+                    "chunk_size": chunk_size,
+                    **batch_metadatas[j]
+                },
+                "source_id": source_id,
+                "embedding": batch_embeddings[j]
+            }
+            batch_data.append(data)
+        
+        current_progress += progress_per_batch * 0.1  # 10% of batch progress for preparation
+        await report_progress_internal(current_progress, f'Inserting batch {current_batch} into database...')
+        
+        # Insert batch into Supabase with retry logic
+        max_retries = 3
+        retry_delay = 1.0
+        
+        for retry in range(max_retries):
+            try:
+                supabase_client.table("crawled_pages").insert(batch_data).execute()
+                break  # Success
+            except Exception as e:
+                if retry < max_retries - 1:
+                    await report_progress_internal(current_progress, f'Retry {retry + 1}/{max_retries} for batch {current_batch}...')
+                    import time
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                else:
+                    # Final attempt failed, try individual inserts
+                    await report_progress_internal(current_progress, f'Batch insert failed, trying individual records...')
+                    successful_inserts = 0
+                    for record in batch_data:
+                        try:
+                            supabase_client.table("crawled_pages").insert(record).execute()
+                            successful_inserts += 1
+                        except:
+                            pass
+                    
+                    if successful_inserts == 0:
+                        raise Exception(f"Failed to insert batch {current_batch}: {str(e)}")
+        
+        current_progress += progress_per_batch * 0.2  # 20% of batch progress for database insertion
+        await report_progress_internal(current_progress, f'Completed batch {current_batch}/{total_batches}')
+    
+    await report_progress_internal(100, f'All {len(contents)} document chunks stored successfully') 

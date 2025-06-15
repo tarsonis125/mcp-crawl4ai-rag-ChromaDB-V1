@@ -1,6 +1,14 @@
+export interface ProgressStep {
+  id: string;
+  label: string;
+  percentage: number;
+  status: 'pending' | 'active' | 'completed' | 'error';
+  message?: string;
+}
+
 export interface CrawlProgressData {
   progressId: string;
-  status: 'starting' | 'crawling' | 'completed' | 'error';
+  status: 'starting' | 'crawling' | 'analyzing' | 'sitemap' | 'text_file' | 'webpage' | 'processing' | 'storing' | 'completed' | 'error' | 'waiting';
   percentage: number;
   currentUrl?: string;
   eta?: string;
@@ -11,6 +19,10 @@ export interface CrawlProgressData {
   duration?: string;
   error?: string;
   logs: string[];
+  // New fields for multi-progress tracking
+  steps?: ProgressStep[];
+  currentStep?: string;
+  stepMessage?: string;
 }
 
 interface StreamProgressOptions {
@@ -56,29 +68,60 @@ class CrawlProgressService {
     const ws = new WebSocket(wsUrl);
     this.progressWebSocket = ws;
 
+    // Track last received message time for debugging
+    let lastMessageTime = Date.now();
+    let heartbeatTimeout: NodeJS.Timeout | null = null;
+
     ws.onopen = () => {
       console.log(`🚀 Connected to crawl progress stream: ${progressId}`);
       this.isReconnecting = false;
+      lastMessageTime = Date.now();
+      
+      // Set up heartbeat timeout detection
+      heartbeatTimeout = setTimeout(() => {
+        const timeSinceLastMessage = Date.now() - lastMessageTime;
+        console.warn(`⚠️  No messages received for ${timeSinceLastMessage}ms, connection may be stuck`);
+        if (timeSinceLastMessage > 60000) { // 60 seconds
+          console.error(`❌ Connection appears stuck, forcing reconnection`);
+          ws.close(1006, 'Connection timeout');
+        }
+      }, 65000); // Check after 65 seconds
     };
 
     ws.onmessage = (event) => {
       try {
+        lastMessageTime = Date.now();
         const message = JSON.parse(event.data);
         console.log(`📨 Received WebSocket message:`, message);
         
-        // Ignore ping messages
-        if (message.type === 'ping') {
+        // Ignore ping/heartbeat messages
+        if (message.type === 'ping' || message.type === 'pong' || message.type === 'heartbeat') {
           return;
         }
 
         // Handle progress messages
         if (message.type === 'crawl_progress' || message.type === 'crawl_completed' || message.type === 'crawl_error') {
           if (message.data) {
+            // Validate the message data
+            if (!message.data.progressId) {
+              console.warn('⚠️  Received progress message without progressId:', message);
+              return;
+            }
+            
+            // Ensure percentage is a valid number
+            if (typeof message.data.percentage !== 'number' || isNaN(message.data.percentage)) {
+              console.warn('⚠️  Invalid percentage in progress message:', message.data.percentage);
+              message.data.percentage = 0;
+            }
+            
             onMessage(message.data);
+          } else {
+            console.warn('⚠️  Received progress message without data:', message);
           }
         }
       } catch (error) {
-        console.error('Failed to parse progress message:', error);
+        console.error('❌ Failed to parse progress message:', error);
+        console.error('   Raw message:', event.data);
       }
     };
 
@@ -87,8 +130,16 @@ class CrawlProgressService {
       console.log(`   Close code: ${event.code}, reason: ${event.reason}`);
       this.progressWebSocket = null;
       
-      if (autoReconnect && !this.isReconnecting) {
+      // Clear heartbeat timeout
+      if (heartbeatTimeout) {
+        clearTimeout(heartbeatTimeout);
+        heartbeatTimeout = null;
+      }
+      
+      // Only auto-reconnect for unexpected closures (not normal closure or timeout)
+      if (autoReconnect && !this.isReconnecting && event.code !== 1000 && event.code !== 1006) {
         this.isReconnecting = true;
+        console.log(`🔄 Attempting to reconnect in ${reconnectDelay}ms...`);
         this.reconnectTimeout = setTimeout(() => {
           this.isReconnecting = false;
           this.streamProgress(progressId, onMessage, options);
@@ -99,6 +150,7 @@ class CrawlProgressService {
     ws.onerror = (error) => {
       console.error('❌ Crawl progress WebSocket error:', error);
       console.error('   WebSocket readyState:', ws.readyState);
+      console.error('   WebSocket URL:', wsUrl);
     };
 
     return ws;

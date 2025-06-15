@@ -8,7 +8,14 @@ import {
   Clock, 
   Globe, 
   FileText,
-  RotateCcw
+  RotateCcw,
+  X,
+  Search,
+  Download,
+  Cpu,
+  Database,
+  Code,
+  Zap
 } from 'lucide-react';
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
@@ -21,6 +28,16 @@ interface CrawlingProgressCardProps {
   onError: (error: string) => void;
   onProgress?: (data: CrawlProgressData) => void;
   onRetry?: () => void;
+  onDismiss?: () => void;
+}
+
+interface ProgressStep {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+  percentage: number;
+  status: 'pending' | 'active' | 'completed' | 'error';
+  message?: string;
 }
 
 export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
@@ -28,26 +45,144 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
   onComplete,
   onError,
   onProgress,
-  onRetry
+  onRetry,
+  onDismiss
 }) => {
   const [showLogs, setShowLogs] = useState(false);
+  const [showDetailedProgress, setShowDetailedProgress] = useState(true);
 
-  // No local state for progress data - just use props directly
-  // The parent (KnowledgeBasePage) handles WebSocket and passes updated data via props
+  // Calculate individual progress steps based on current status and percentage
+  const getProgressSteps = (): ProgressStep[] => {
+    const steps: ProgressStep[] = [
+      {
+        id: 'analyzing',
+        label: 'URL Analysis',
+        icon: <Search className="w-4 h-4" />,
+        percentage: 0,
+        status: 'pending'
+      },
+      {
+        id: 'crawling',
+        label: 'Web Crawling',
+        icon: <Globe className="w-4 h-4" />,
+        percentage: 0,
+        status: 'pending'
+      },
+      {
+        id: 'processing',
+        label: 'Content Processing',
+        icon: <Cpu className="w-4 h-4" />,
+        percentage: 0,
+        status: 'pending'
+      },
+      {
+        id: 'source_creation',
+        label: 'Source Creation',
+        icon: <FileText className="w-4 h-4" />,
+        percentage: 0,
+        status: 'pending'
+      },
+      {
+        id: 'document_storage',
+        label: 'Document Storage',
+        icon: <Database className="w-4 h-4" />,
+        percentage: 0,
+        status: 'pending'
+      },
+      {
+        id: 'code_storage',
+        label: 'Code Examples',
+        icon: <Code className="w-4 h-4" />,
+        percentage: 0,
+        status: 'pending'
+      },
+      {
+        id: 'finalization',
+        label: 'Finalization',
+        icon: <Zap className="w-4 h-4" />,
+        percentage: 0,
+        status: 'pending'
+      }
+    ];
 
-  const getStatusDisplay = () => {
-    switch (progressData.status) {
+    // Map current status directly to step progress (no more complex range mapping!)
+    const currentStatus = progressData.status;
+    const currentPercentage = progressData.percentage || 0;
+
+    // Define step order for completion tracking
+    const stepOrder = ['analyzing', 'crawling', 'processing', 'source_creation', 'document_storage', 'code_storage', 'finalization'];
+    
+    // Update step progress based on current status
+    steps.forEach((step, index) => {
+      const stepIndex = stepOrder.indexOf(step.id);
+      const currentStepIndex = stepOrder.indexOf(currentStatus);
+      
+      if (currentStatus === 'error') {
+        if (stepIndex <= currentStepIndex) {
+          step.status = stepIndex === currentStepIndex ? 'error' : 'completed';
+          step.percentage = stepIndex === currentStepIndex ? currentPercentage : 100;
+        } else {
+          step.status = 'pending';
+          step.percentage = 0;
+        }
+      } else if (currentStatus === 'completed') {
+        step.status = 'completed';
+        step.percentage = 100;
+      } else if (step.id === currentStatus) {
+        // This is the active step - use the reported percentage directly
+        step.status = 'active';
+        step.percentage = currentPercentage;
+      } else if (stepIndex < currentStepIndex) {
+        // Previous steps are completed
+        step.status = 'completed';
+        step.percentage = 100;
+      } else {
+        // Future steps are pending
+        step.status = 'pending';
+        step.percentage = 0;
+      }
+
+      // Set specific messages based on current status
+      if (step.status === 'active') {
+        switch (step.id) {
+          case 'analyzing':
+            step.message = 'Detecting URL type...';
+            break;
+          case 'crawling':
+            step.message = `${progressData.processedPages || 0} of ${progressData.totalPages || 0} pages`;
+            break;
+          case 'processing':
+            step.message = 'Chunking content...';
+            break;
+          case 'source_creation':
+            step.message = 'Creating source records...';
+            break;
+          case 'document_storage':
+            step.message = 'Saving to database...';
+            break;
+          case 'code_storage':
+            step.message = 'Extracting code blocks...';
+            break;
+          case 'finalization':
+            step.message = 'Completing crawl...';
+            break;
+        }
+      }
+    });
+
+    return steps;
+  };
+
+  const progressSteps = getProgressSteps();
+  const overallStatus = progressData.status;
+
+  const getOverallStatusDisplay = () => {
+    switch (overallStatus) {
       case 'starting':
         return {
           text: 'Starting crawl...',
           color: 'blue' as const,
           icon: <Clock className="w-4 h-4" />
-        };
-      case 'crawling':
-        return {
-          text: 'Crawling in progress...',
-          color: 'blue' as const,
-          icon: <Globe className="w-4 h-4 animate-spin" />
         };
       case 'completed':
         return {
@@ -62,18 +197,32 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
           icon: <AlertTriangle className="w-4 h-4" />
         };
       default:
+        const activeStep = progressSteps.find(step => step.status === 'active');
         return {
-          text: 'Unknown status',
-          color: 'purple' as const,
-          icon: <Clock className="w-4 h-4" />
+          text: activeStep ? activeStep.label : 'Processing...',
+          color: 'blue' as const,
+          icon: activeStep ? activeStep.icon : <Clock className="w-4 h-4" />
         };
     }
   };
 
-  const status = getStatusDisplay();
+  const status = getOverallStatusDisplay();
 
   const formatNumber = (num: number): string => {
     return num.toLocaleString();
+  };
+
+  const getStepStatusColor = (stepStatus: string) => {
+    switch (stepStatus) {
+      case 'completed':
+        return 'text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-500/10';
+      case 'active':
+        return 'text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-500/10';
+      case 'error':
+        return 'text-pink-600 dark:text-pink-400 bg-pink-100 dark:bg-pink-500/10';
+      default:
+        return 'text-gray-400 dark:text-gray-600 bg-gray-100 dark:bg-gray-500/10';
+    }
   };
 
   return (
@@ -84,7 +233,6 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
           status.color === 'blue' ? 'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' :
           status.color === 'green' ? 'bg-green-100 dark:bg-green-500/10 text-green-600 dark:text-green-400' :
           status.color === 'pink' ? 'bg-pink-100 dark:bg-pink-500/10 text-pink-600 dark:text-pink-400' :
-          status.color === 'purple' ? 'bg-purple-100 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400' :
           'bg-gray-100 dark:bg-gray-500/10 text-gray-600 dark:text-gray-400'
         }`}>
           {status.icon}
@@ -99,35 +247,84 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
             </p>
           )}
         </div>
-        <Badge color={status.color === 'purple' ? 'gray' : status.color}>
-          {progressData.percentage}%
-        </Badge>
+
       </div>
 
-      {/* Progress Bar */}
-      {progressData.status !== 'completed' && (
+
+
+      {/* Detailed Progress Toggle */}
+      {progressData.status !== 'completed' && progressData.status !== 'error' && (
         <div className="mb-4">
-          <div className="w-full bg-gray-200 dark:bg-zinc-800 rounded-full h-2">
-            <motion.div
-              className={`h-2 rounded-full ${
-                status.color === 'blue' ? 'bg-blue-500' :
-                status.color === 'green' ? 'bg-green-500' :
-                status.color === 'pink' ? 'bg-pink-500' :
-                status.color === 'purple' ? 'bg-purple-500' :
-                'bg-gray-500'
-              }`}
-              initial={{ width: 0 }}
-              animate={{ width: `${progressData.percentage}%` }}
-              transition={{ duration: 0.5, ease: 'easeOut' }}
-            />
-          </div>
-          {progressData.eta && (
-            <p className="text-xs text-gray-500 dark:text-zinc-400 mt-1">
-              {progressData.eta}
-            </p>
-          )}
+          <button
+            onClick={() => setShowDetailedProgress(!showDetailedProgress)}
+            className="flex items-center gap-2 text-sm text-gray-600 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-white transition-colors"
+          >
+            <FileText className="w-4 h-4" />
+            <span>Detailed Progress</span>
+            {showDetailedProgress ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
         </div>
       )}
+
+      {/* Multi-Progress Bars */}
+      <AnimatePresence>
+        {showDetailedProgress && progressData.status !== 'completed' && progressData.status !== 'error' && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="overflow-hidden mb-4"
+          >
+            <div className="space-y-3 p-3 bg-gray-50 dark:bg-zinc-900/50 rounded-md">
+              {progressSteps.map((step) => (
+                <div key={step.id} className="flex items-center gap-3">
+                  <div className={`p-1.5 rounded-md ${getStepStatusColor(step.status)}`}>
+                    {step.status === 'active' ? (
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                      >
+                        {step.icon}
+                      </motion.div>
+                    ) : (
+                      step.icon
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {step.label}
+                      </span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {Math.round(step.percentage)}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 dark:bg-zinc-700 rounded-full h-1.5">
+                      <motion.div
+                        className={`h-1.5 rounded-full ${
+                          step.status === 'completed' ? 'bg-green-500' :
+                          step.status === 'active' ? 'bg-blue-500' :
+                          step.status === 'error' ? 'bg-pink-500' :
+                          'bg-gray-300 dark:bg-gray-600'
+                        }`}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${step.percentage}%` }}
+                        transition={{ duration: 0.5, ease: 'easeOut' }}
+                      />
+                    </div>
+                    {step.message && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
+                        {step.message}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Progress Details */}
       <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
@@ -216,17 +413,29 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
       )}
 
       {/* Action Buttons */}
-      {progressData.status === 'error' && onRetry && (
-        <div className="flex justify-end mt-4 pt-4 border-t border-gray-200 dark:border-zinc-800">
-          <Button 
-            onClick={onRetry}
-            variant="primary" 
-            accentColor="blue"
-            className="text-sm"
-          >
-            <RotateCcw className="w-4 h-4 mr-2" />
-            Retry
-          </Button>
+      {progressData.status === 'error' && (onRetry || onDismiss) && (
+        <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-gray-200 dark:border-zinc-800">
+          {onDismiss && (
+            <Button 
+              onClick={onDismiss}
+              variant="ghost" 
+              className="text-sm"
+            >
+              <X className="w-4 h-4 mr-2" />
+              Dismiss
+            </Button>
+          )}
+          {onRetry && (
+            <Button 
+              onClick={onRetry}
+              variant="primary" 
+              accentColor="blue"
+              className="text-sm"
+            >
+              <RotateCcw className="w-4 h-4 mr-2" />
+              Retry
+            </Button>
+          )}
         </div>
       )}
     </Card>

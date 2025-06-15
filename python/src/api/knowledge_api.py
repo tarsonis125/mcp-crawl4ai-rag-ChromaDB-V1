@@ -267,6 +267,19 @@ class CrawlProgressManager:
             if hasattr(value, 'isoformat'):
                 progress_data[key] = value.isoformat()
         
+        # Ensure all values are JSON serializable
+        try:
+            json.dumps(progress_data)  # Test serialization
+        except (TypeError, ValueError) as e:
+            print(f"DEBUG: JSON serialization error for progress_id {progress_id}: {e}")
+            # Create a fallback safe message
+            progress_data = {
+                'progressId': progress_id,
+                'status': str(progress_data.get('status', 'unknown')),
+                'percentage': progress_data.get('percentage', 0),
+                'logs': progress_data.get('logs', [])
+            }
+        
         message = {
             "type": "crawl_progress" if progress_data.get('status') != 'completed' else "crawl_completed",
             "data": progress_data
@@ -274,11 +287,14 @@ class CrawlProgressManager:
         
         print(f"DEBUG: Broadcasting to {len(self.progress_websockets[progress_id])} WebSocket(s) for {progress_id}: {progress_data.get('status')} {progress_data.get('percentage')}%")
         
-        # Send to all connected WebSocket clients
+        # Send to all connected WebSocket clients with improved error handling
         disconnected = []
+        successful_sends = 0
+        
         for websocket in self.progress_websockets[progress_id]:
             try:
                 await websocket.send_json(message)
+                successful_sends += 1
                 print(f"DEBUG: Successfully sent progress update to WebSocket")
             except Exception as e:
                 print(f"DEBUG: Failed to send to WebSocket: {e}")
@@ -287,6 +303,12 @@ class CrawlProgressManager:
         # Clean up disconnected WebSockets
         for ws in disconnected:
             self.remove_websocket(progress_id, ws)
+        
+        print(f"DEBUG: Broadcast completed: {successful_sends} successful, {len(disconnected)} failed")
+        
+        # If all WebSockets failed, log warning
+        if successful_sends == 0 and len(self.progress_websockets.get(progress_id, [])) > 0:
+            print(f"WARNING: All WebSocket connections failed for progress_id: {progress_id}")
 
 # Global progress manager
 progress_manager = CrawlProgressManager()
@@ -459,21 +481,36 @@ async def delete_knowledge_item(source_id: str):
         span.set_attribute("source_id", source_id)
         
         try:
+            print(f"DEBUG: Starting delete_knowledge_item for source_id: {source_id}")
             logfire.info("Deleting knowledge item", source_id=source_id)
             
             # Get crawling context
+            print(f"DEBUG: Getting crawling context...")
             crawling_context = get_crawling_context()
+            print(f"DEBUG: Got crawling context: {type(crawling_context)}")
             
             # Ensure crawling context is initialized once
+            print(f"DEBUG: Checking if context is initialized...")
             if not crawling_context._initialized:
+                print(f"DEBUG: Initializing context...")
                 await crawling_context.initialize()
+                print(f"DEBUG: Context initialized")
+            else:
+                print(f"DEBUG: Context already initialized")
             
             # Create context for the MCP function
+            print(f"DEBUG: Creating context...")
             ctx = crawling_context.create_context()
+            print(f"DEBUG: Created context: {type(ctx)}")
             
             # Call the actual function from rag_module
+            print(f"DEBUG: Importing delete_source function...")
             from src.modules.rag_module import delete_source
+            print(f"DEBUG: Successfully imported delete_source")
+            
+            print(f"DEBUG: Calling delete_source function...")
             result = await delete_source(ctx, source_id)
+            print(f"DEBUG: delete_source returned: {result}")
             
             # Parse JSON string response if needed
             if isinstance(result, str):
@@ -494,6 +531,10 @@ async def delete_knowledge_item(source_id: str):
                 raise HTTPException(status_code=500, detail={'error': result.get('error', 'Deletion failed')})
                 
         except Exception as e:
+            print(f"ERROR: Exception in delete_knowledge_item: {e}")
+            print(f"ERROR: Exception type: {type(e)}")
+            import traceback
+            print(f"ERROR: Traceback: {traceback.format_exc()}")
             logfire.error("Failed to delete knowledge item", error=str(e), source_id=source_id)
             span.set_attribute("error", str(e))
             raise HTTPException(status_code=500, detail={'error': str(e)})
@@ -911,26 +952,50 @@ async def websocket_crawl_progress(websocket: WebSocket, progress_id: str):
         
         print(f"DEBUG: WebSocket registered for progress_id: {progress_id}")
         
-        # Keep connection alive but don't flood with pings
+        # Keep connection alive with improved timeout handling
+        heartbeat_interval = 30.0  # Send heartbeat every 30 seconds
+        client_timeout = 60.0      # Wait up to 60 seconds for client messages
+        
         while True:
             try:
-                # Wait for messages from client (like ping)
-                message = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
-                # Respond to ping messages only
+                # Wait for messages from client (like ping) with timeout
+                message = await asyncio.wait_for(
+                    websocket.receive_text(), 
+                    timeout=heartbeat_interval
+                )
+                
+                print(f"DEBUG: Received client message: {message}")
+                
+                # Respond to ping messages
                 if message == "ping":
                     await websocket.send_json({"type": "pong"})
+                    print(f"DEBUG: Sent pong response to client")
+                    
             except asyncio.TimeoutError:
-                # Send heartbeat every 30 seconds
-                await websocket.send_json({"type": "heartbeat"})
+                # Send heartbeat every heartbeat_interval seconds
+                try:
+                    await websocket.send_json({"type": "heartbeat"})
+                    print(f"DEBUG: Sent heartbeat for progress_id: {progress_id}")
+                except Exception as e:
+                    print(f"DEBUG: Failed to send heartbeat, connection likely dead: {e}")
+                    break
+                    
             except WebSocketDisconnect:
+                print(f"DEBUG: Client disconnected normally for progress_id: {progress_id}")
+                break
+                
+            except Exception as e:
+                print(f"DEBUG: Unexpected error in WebSocket loop: {e}")
                 break
                 
     except WebSocketDisconnect:
         print(f"DEBUG: WebSocket disconnected for progress_id: {progress_id}")
     except Exception as e:
         print(f"DEBUG: WebSocket error for progress_id {progress_id}: {e}")
+        import traceback
         traceback.print_exc()
     finally:
+        print(f"DEBUG: Cleaning up WebSocket for progress_id: {progress_id}")
         progress_manager.remove_websocket(progress_id, websocket)
 
 @router.get("/database/metrics")

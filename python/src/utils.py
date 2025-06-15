@@ -910,7 +910,7 @@ Respond in this exact JSON format:
         }
 
 
-def update_source_info(client: Client, source_id: str, summary: str, word_count: int, content: str = "", knowledge_type: str = "technical", tags: List[str] = None):
+def update_source_info(client: Client, source_id: str, summary: str, word_count: int, content: str = "", knowledge_type: str = "technical", tags: List[str] = None, update_frequency: int = 7):
     """
     Update or insert source information in the sources table with enhanced title and metadata.
     
@@ -922,43 +922,43 @@ def update_source_info(client: Client, source_id: str, summary: str, word_count:
         content: Full content for title/metadata generation
         knowledge_type: Type of knowledge (technical/business)
         tags: List of tags to include in metadata
+        update_frequency: Update frequency in days (1=daily, 7=weekly, 30=monthly, 0=never)
     """
-    try:
-        # Generate title and metadata if content is provided
-        if content:
-            title, metadata = generate_source_title_and_metadata(source_id, content, knowledge_type, tags or [])
-        else:
-            title = f"Content from {source_id}"
-            metadata = {
-                "knowledge_type": knowledge_type,
-                "tags": tags or [],
-                "auto_generated": False
-            }
-        
-        # Try to update existing source
-        result = client.table('sources').update({
-            'title': title,
-            'summary': summary,
-            'total_word_count': word_count,
-            'metadata': metadata,
-            'updated_at': 'now()'
-        }).eq('source_id', source_id).execute()
-        
-        # If no rows were updated, insert new source
-        if not result.data:
-            client.table('sources').insert({
-                'source_id': source_id,
-                'title': title,
-                'summary': summary,
-                'total_word_count': word_count,
-                'metadata': metadata
-            }).execute()
-            print(f"Created new source: {source_id} with title: {title}")
-        else:
-            print(f"Updated source: {source_id} with title: {title}")
-            
-    except Exception as e:
-        print(f"Error updating source {source_id}: {e}")
+    if tags is None:
+        tags = []
+    
+    # Generate enhanced title and metadata using LLM
+    title, metadata = generate_source_title_and_metadata(
+        source_id=source_id, 
+        content=content,  # Pass content as keyword argument
+        knowledge_type=knowledge_type,
+        tags=tags
+    )
+    
+    # Check if source already exists
+    existing_source = client.from_('sources').select('source_id').eq('source_id', source_id).execute()
+    
+    source_data = {
+        'source_id': source_id,
+        'title': title,
+        'summary': summary,
+        'total_word_count': word_count,
+        'metadata': metadata,
+        'update_frequency': update_frequency,  # Store the update frequency
+        'updated_at': 'now()'
+    }
+    
+    if existing_source.data:
+        # Update existing source
+        result = client.from_('sources').update(source_data).eq('source_id', source_id).execute()
+        print(f"Updated existing source: {source_id}")
+    else:
+        # Insert new source
+        source_data['created_at'] = 'now()'
+        result = client.from_('sources').insert(source_data).execute()
+        print(f"Created new source: {source_id}")
+    
+    return result
 
 
 def extract_source_summary(source_id: str, content: str, max_length: int = 500) -> str:

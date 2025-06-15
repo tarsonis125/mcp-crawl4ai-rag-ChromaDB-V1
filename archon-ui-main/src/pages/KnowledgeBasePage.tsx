@@ -204,9 +204,16 @@ export const KnowledgeBasePage = () => {
     // Toast will be shown by WebSocket completion event to avoid duplicates
   };
 
-  const handleProgressError = (error: string) => {
+  const handleProgressError = (error: string, progressId?: string) => {
     console.error('Crawl error:', error);
     showToast(`Crawling failed: ${error}`, 'error');
+    
+    // Auto-remove failed progress items after 5 seconds to prevent UI clutter
+    if (progressId) {
+      setTimeout(() => {
+        setProgressItems(prev => prev.filter(item => item.progressId !== progressId));
+      }, 5000);
+    }
   };
 
   const handleProgressUpdate = (data: CrawlProgressData) => {
@@ -256,7 +263,7 @@ export const KnowledgeBasePage = () => {
         if (data.status === 'completed') {
           handleProgressComplete(data);
         } else if (data.status === 'error') {
-          handleProgressError(data.error || 'Crawling failed');
+          handleProgressError(data.error || 'Crawling failed', progressId);
         }
       }
     };
@@ -369,9 +376,10 @@ export const KnowledgeBasePage = () => {
                     <CrawlingProgressCard 
                       progressData={progressData}
                       onComplete={handleProgressComplete}
-                      onError={handleProgressError}
+                      onError={(error) => handleProgressError(error, progressData.progressId)}
                       onProgress={handleProgressUpdate}
                       onRetry={() => handleRetryProgress(progressData.progressId)}
+                      onDismiss={() => setProgressItems(prev => prev.filter(item => item.progressId !== progressData.progressId))}
                     />
                   </motion.div>
                 ))}
@@ -532,6 +540,71 @@ const AddKnowledgeModal = ({
   const [loading, setLoading] = useState(false);
   const { showToast } = useToast();
 
+  // URL validation function that checks domain existence
+  const validateUrl = async (url: string): Promise<{ isValid: boolean; error?: string; formattedUrl?: string }> => {
+    try {
+      // Basic format validation and URL formatting
+      let formattedUrl = url.trim();
+      if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
+        formattedUrl = `https://${formattedUrl}`;
+      }
+      
+      // Check if it's a valid URL format
+      let urlObj;
+      try {
+        urlObj = new URL(formattedUrl);
+      } catch (urlError) {
+        return { isValid: false, error: 'Please enter a valid URL format (e.g., https://example.com)' };
+      }
+      
+      // Check if hostname has a valid domain structure
+      const hostname = urlObj.hostname;
+      if (!hostname || hostname === 'localhost' || /^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+        // Allow localhost and IP addresses for development
+        return { isValid: true, formattedUrl };
+      }
+      
+      // Check if domain has at least one dot (basic domain validation)
+      if (!hostname.includes('.')) {
+        return { isValid: false, error: 'Please enter a valid domain name (e.g., example.com)' };
+      }
+      
+      // Check if domain has a valid TLD (at least 2 characters after the last dot)
+      const parts = hostname.split('.');
+      const tld = parts[parts.length - 1];
+      if (tld.length < 2) {
+        return { isValid: false, error: 'Please enter a valid domain with a proper extension (e.g., .com, .org)' };
+      }
+      
+      // Basic DNS check by trying to resolve the domain
+      try {
+        const response = await fetch(`https://dns.google/resolve?name=${hostname}&type=A`, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' }
+        });
+        
+        if (response.ok) {
+          const dnsResult = await response.json();
+          if (dnsResult.Status === 0 && dnsResult.Answer && dnsResult.Answer.length > 0) {
+            return { isValid: true, formattedUrl };
+          } else {
+            return { isValid: false, error: `Domain "${hostname}" could not be resolved. Please check the URL.` };
+          }
+        } else {
+          // If DNS check fails, allow the URL (might be a temporary DNS issue)
+          console.warn('DNS check failed, allowing URL anyway:', hostname);
+          return { isValid: true, formattedUrl };
+        }
+      } catch (dnsError) {
+        // If DNS check fails, allow the URL (might be a network issue)
+        console.warn('DNS check error, allowing URL anyway:', dnsError);
+        return { isValid: true, formattedUrl };
+      }
+    } catch (error) {
+      return { isValid: false, error: 'URL validation failed. Please check the URL format.' };
+    }
+  };
+
   const handleSubmit = async () => {
     try {
       setLoading(true);
@@ -542,21 +615,17 @@ const AddKnowledgeModal = ({
           return;
         }
         
-        // Validate and format URL
-        let formattedUrl = url.trim();
-        if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
-          // Auto-prepend https:// if no protocol is specified
-          formattedUrl = `https://${formattedUrl}`;
-          setUrl(formattedUrl); // Update the input field to show the corrected URL
-        }
+        // Validate URL and check domain existence
+        showToast('Validating URL...', 'info');
+        const validation = await validateUrl(url);
         
-        // Additional validation to ensure it's a valid URL format
-        try {
-          new URL(formattedUrl);
-        } catch (urlError) {
-          showToast('Please enter a valid URL (e.g., https://example.com)', 'error');
+        if (!validation.isValid) {
+          showToast(validation.error || 'Invalid URL', 'error');
           return;
         }
+        
+        const formattedUrl = validation.formattedUrl!;
+        setUrl(formattedUrl); // Update the input field to show the corrected URL
         
         const result = await knowledgeBaseService.crawlUrl({
           url: formattedUrl,
