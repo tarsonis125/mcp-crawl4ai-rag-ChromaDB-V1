@@ -141,7 +141,7 @@ const GroupedKnowledgeItemCard = ({
       <div className="font-medium text-white">Grouped Sources:</div>
       {groupedItem.items.map((item, index) => (
         <div key={item.id} className="text-sm text-gray-200">
-          {index + 1}. {item.title}
+          {index + 1}. {item.source_id}
         </div>
       ))}
     </div>
@@ -202,8 +202,14 @@ const GroupedKnowledgeItemCard = ({
               
               {/* Tooltip */}
               {showTooltip && (
-                <div className="absolute bottom-full right-0 mb-2 p-2 bg-gray-900 dark:bg-black border border-gray-700 rounded-md shadow-lg min-w-[200px] z-10">
-                  {tooltipContent}
+                <div className="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-black dark:bg-zinc-800 text-white text-xs rounded-lg py-2 px-3 shadow-lg z-50 whitespace-nowrap max-w-xs">
+                  <div className="font-semibold text-blue-300 mb-1">Grouped Sources:</div>
+                  {groupedItem.items.map((item, index) => (
+                    <div key={index} className="text-gray-300">
+                      {index + 1}. {item.source_id}
+                    </div>
+                  ))}
+                  <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-black dark:border-t-zinc-800"></div>
                 </div>
               )}
             </div>
