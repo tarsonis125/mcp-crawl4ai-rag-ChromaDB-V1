@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, X, Search, Upload, Link as LinkIcon, Check, Filter, Brain, Edit3, Save, FileText, Layout, BookOpen, History } from 'lucide-react';
+import { Plus, X, Search, Upload, Link as LinkIcon, Check, Brain, Save, History } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { knowledgeBaseService, KnowledgeItem } from '../../services/knowledgeBaseService';
 import { projectService } from '../../services/projectService';
@@ -695,7 +695,7 @@ export const DocsTab = ({
           fieldName="docs"
           isOpen={showVersionHistory}
           onClose={() => setShowVersionHistory(false)}
-          onRestore={(versionNumber) => {
+          onRestore={() => {
             // Reload documents after restore
             loadProjectDocuments();
             setShowVersionHistory(false);
@@ -863,18 +863,7 @@ const calculateFeatureCompletion = (tasks: Task[]) => {
   return Math.round(completedFeatures / totalFeatures * 100);
 };
 
-const calculateTaskDistribution = (tasks: Task[]) => {
-  const distribution = tasks.reduce((acc, task) => {
-    acc[task.status] = (acc[task.status] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-  return {
-    backlog: distribution.backlog || 0,
-    inProgress: distribution['in-progress'] || 0,
-    review: distribution.review || 0,
-    complete: distribution.complete || 0
-  };
-};
+
 
 const OverviewCard: React.FC<{
   title: string;

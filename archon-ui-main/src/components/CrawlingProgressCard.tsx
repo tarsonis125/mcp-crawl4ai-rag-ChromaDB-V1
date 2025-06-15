@@ -53,7 +53,53 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
 
   // Calculate individual progress steps based on current status and percentage
   const getProgressSteps = (): ProgressStep[] => {
-    const steps: ProgressStep[] = [
+    // Check if this is an upload operation
+    const isUpload = progressData.uploadType === 'document';
+    
+    const steps: ProgressStep[] = isUpload ? [
+      {
+        id: 'reading',
+        label: 'Reading File',
+        icon: <Download className="w-4 h-4" />,
+        percentage: 0,
+        status: 'pending'
+      },
+      {
+        id: 'extracting',
+        label: 'Text Extraction',
+        icon: <FileText className="w-4 h-4" />,
+        percentage: 0,
+        status: 'pending'
+      },
+      {
+        id: 'chunking',
+        label: 'Content Chunking',
+        icon: <Cpu className="w-4 h-4" />,
+        percentage: 0,
+        status: 'pending'
+      },
+      {
+        id: 'creating_source',
+        label: 'Creating Source',
+        icon: <Database className="w-4 h-4" />,
+        percentage: 0,
+        status: 'pending'
+      },
+      {
+        id: 'summarizing',
+        label: 'AI Summary',
+        icon: <Search className="w-4 h-4" />,
+        percentage: 0,
+        status: 'pending'
+      },
+      {
+        id: 'storing',
+        label: 'Storing Chunks',
+        icon: <Database className="w-4 h-4" />,
+        percentage: 0,
+        status: 'pending'
+      }
+    ] : [
       {
         id: 'analyzing',
         label: 'URL Analysis',
@@ -105,12 +151,14 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
       }
     ];
 
-    // Map current status directly to step progress (no more complex range mapping!)
+    // Map current status directly to step progress
     const currentStatus = progressData.status;
     const currentPercentage = progressData.percentage || 0;
 
     // Define step order for completion tracking
-    const stepOrder = ['analyzing', 'crawling', 'processing', 'source_creation', 'document_storage', 'code_storage', 'finalization'];
+    const stepOrder = isUpload 
+      ? ['reading', 'extracting', 'chunking', 'creating_source', 'summarizing', 'storing']
+      : ['analyzing', 'crawling', 'processing', 'source_creation', 'document_storage', 'code_storage', 'finalization'];
     
     // Update step progress based on current status
     steps.forEach((step, index) => {
@@ -144,28 +192,51 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
 
       // Set specific messages based on current status
       if (step.status === 'active') {
-        switch (step.id) {
-          case 'analyzing':
-            step.message = 'Detecting URL type...';
-            break;
-          case 'crawling':
-            step.message = `${progressData.processedPages || 0} of ${progressData.totalPages || 0} pages`;
-            break;
-          case 'processing':
-            step.message = 'Chunking content...';
-            break;
-          case 'source_creation':
-            step.message = 'Creating source records...';
-            break;
-          case 'document_storage':
-            step.message = 'Saving to database...';
-            break;
-          case 'code_storage':
-            step.message = 'Extracting code blocks...';
-            break;
-          case 'finalization':
-            step.message = 'Completing crawl...';
-            break;
+        if (isUpload) {
+          switch (step.id) {
+            case 'reading':
+              step.message = `Reading ${progressData.fileName || 'file'}...`;
+              break;
+            case 'extracting':
+              step.message = `Extracting text from ${progressData.fileType || 'document'}...`;
+              break;
+            case 'chunking':
+              step.message = 'Breaking into chunks...';
+              break;
+            case 'creating_source':
+              step.message = 'Creating source entry...';
+              break;
+            case 'summarizing':
+              step.message = 'Generating AI summary...';
+              break;
+            case 'storing':
+              step.message = 'Storing in database...';
+              break;
+          }
+        } else {
+          switch (step.id) {
+            case 'analyzing':
+              step.message = 'Detecting URL type...';
+              break;
+            case 'crawling':
+              step.message = `${progressData.processedPages || 0} of ${progressData.totalPages || 0} pages`;
+              break;
+            case 'processing':
+              step.message = 'Chunking content...';
+              break;
+            case 'source_creation':
+              step.message = 'Creating source records...';
+              break;
+            case 'document_storage':
+              step.message = 'Saving to database...';
+              break;
+            case 'code_storage':
+              step.message = 'Extracting code blocks...';
+              break;
+            case 'finalization':
+              step.message = 'Completing crawl...';
+              break;
+          }
         }
       }
     });
@@ -177,24 +248,62 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
   const overallStatus = progressData.status;
 
   const getOverallStatusDisplay = () => {
+    const isUpload = progressData.uploadType === 'document';
+    
     switch (overallStatus) {
       case 'starting':
         return {
-          text: 'Starting crawl...',
+          text: isUpload ? 'Starting upload...' : 'Starting crawl...',
           color: 'blue' as const,
           icon: <Clock className="w-4 h-4" />
         };
       case 'completed':
         return {
-          text: 'Crawling completed!',
+          text: isUpload ? 'Upload completed!' : 'Crawling completed!',
           color: 'green' as const,
           icon: <CheckCircle className="w-4 h-4" />
         };
       case 'error':
         return {
-          text: 'Crawling failed',
+          text: isUpload ? 'Upload failed' : 'Crawling failed',
           color: 'pink' as const,
           icon: <AlertTriangle className="w-4 h-4" />
+        };
+      case 'reading':
+        return {
+          text: 'Reading file...',
+          color: 'blue' as const,
+          icon: <Download className="w-4 h-4" />
+        };
+      case 'extracting':
+        return {
+          text: 'Extracting text...',
+          color: 'blue' as const,
+          icon: <FileText className="w-4 h-4" />
+        };
+      case 'chunking':
+        return {
+          text: 'Processing content...',
+          color: 'blue' as const,
+          icon: <Cpu className="w-4 h-4" />
+        };
+      case 'creating_source':
+        return {
+          text: 'Creating source...',
+          color: 'blue' as const,
+          icon: <Database className="w-4 h-4" />
+        };
+      case 'summarizing':
+        return {
+          text: 'Generating summary...',
+          color: 'blue' as const,
+          icon: <Search className="w-4 h-4" />
+        };
+      case 'storing':
+        return {
+          text: 'Storing chunks...',
+          color: 'blue' as const,
+          icon: <Database className="w-4 h-4" />
         };
       default:
         const activeStep = progressSteps.find(step => step.status === 'active');
@@ -328,40 +437,85 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
 
       {/* Progress Details */}
       <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
-        {progressData.totalPages && progressData.processedPages !== undefined && (
-          <div>
-            <span className="text-gray-500 dark:text-zinc-400">Pages:</span>
-            <span className="ml-2 font-medium text-gray-800 dark:text-white">
-              {progressData.processedPages} of {progressData.totalPages} pages processed
-            </span>
-          </div>
-        )}
-        
-        {progressData.status === 'completed' && (
+        {progressData.uploadType === 'document' ? (
+          // Upload-specific details
           <>
-            {progressData.chunksStored && (
-              <div>
-                <span className="text-gray-500 dark:text-zinc-400">Chunks:</span>
-                <span className="ml-2 font-medium text-gray-800 dark:text-white">
-                  {formatNumber(progressData.chunksStored)} chunks stored
-                </span>
-              </div>
-            )}
-            {progressData.wordCount && (
-              <div>
-                <span className="text-gray-500 dark:text-zinc-400">Words:</span>
-                <span className="ml-2 font-medium text-gray-800 dark:text-white">
-                  {formatNumber(progressData.wordCount)} words processed
-                </span>
-              </div>
-            )}
-            {progressData.duration && (
+            {progressData.fileName && (
               <div className="col-span-2">
-                <span className="text-gray-500 dark:text-zinc-400">Duration:</span>
+                <span className="text-gray-500 dark:text-zinc-400">File:</span>
                 <span className="ml-2 font-medium text-gray-800 dark:text-white">
-                  {progressData.duration}
+                  {progressData.fileName}
                 </span>
               </div>
+            )}
+            {progressData.status === 'completed' && (
+              <>
+                {progressData.chunksStored && (
+                  <div>
+                    <span className="text-gray-500 dark:text-zinc-400">Chunks:</span>
+                    <span className="ml-2 font-medium text-gray-800 dark:text-white">
+                      {formatNumber(progressData.chunksStored)} chunks stored
+                    </span>
+                  </div>
+                )}
+                {progressData.wordCount && (
+                  <div>
+                    <span className="text-gray-500 dark:text-zinc-400">Words:</span>
+                    <span className="ml-2 font-medium text-gray-800 dark:text-white">
+                      {formatNumber(progressData.wordCount)} words processed
+                    </span>
+                  </div>
+                )}
+                {progressData.sourceId && (
+                  <div className="col-span-2">
+                    <span className="text-gray-500 dark:text-zinc-400">Source ID:</span>
+                    <span className="ml-2 font-medium text-gray-800 dark:text-white font-mono text-xs">
+                      {progressData.sourceId}
+                    </span>
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        ) : (
+          // Crawl-specific details
+          <>
+            {progressData.totalPages && progressData.processedPages !== undefined && (
+              <div>
+                <span className="text-gray-500 dark:text-zinc-400">Pages:</span>
+                <span className="ml-2 font-medium text-gray-800 dark:text-white">
+                  {progressData.processedPages} of {progressData.totalPages} pages processed
+                </span>
+              </div>
+            )}
+            
+            {progressData.status === 'completed' && (
+              <>
+                {progressData.chunksStored && (
+                  <div>
+                    <span className="text-gray-500 dark:text-zinc-400">Chunks:</span>
+                    <span className="ml-2 font-medium text-gray-800 dark:text-white">
+                      {formatNumber(progressData.chunksStored)} chunks stored
+                    </span>
+                  </div>
+                )}
+                {progressData.wordCount && (
+                  <div>
+                    <span className="text-gray-500 dark:text-zinc-400">Words:</span>
+                    <span className="ml-2 font-medium text-gray-800 dark:text-white">
+                      {formatNumber(progressData.wordCount)} words processed
+                    </span>
+                  </div>
+                )}
+                {progressData.duration && (
+                  <div className="col-span-2">
+                    <span className="text-gray-500 dark:text-zinc-400">Duration:</span>
+                    <span className="ml-2 font-medium text-gray-800 dark:text-white">
+                      {progressData.duration}
+                    </span>
+                  </div>
+                )}
+              </>
             )}
           </>
         )}

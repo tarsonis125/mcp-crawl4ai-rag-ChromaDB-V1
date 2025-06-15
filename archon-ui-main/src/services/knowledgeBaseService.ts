@@ -1,3 +1,4 @@
+
 /**
  * Knowledge Base service for managing documentation sources
  */
@@ -140,7 +141,7 @@ class KnowledgeBaseService {
   }
 
   /**
-   * Upload a document to the knowledge base
+   * Upload a document to the knowledge base with progress tracking
    */
   async uploadDocument(file: File, metadata: UploadMetadata = {}) {
     const formData = new FormData()

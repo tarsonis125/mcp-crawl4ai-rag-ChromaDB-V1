@@ -707,7 +707,7 @@ async def upload_document(
     tags: Optional[str] = Form(None),
     knowledge_type: Optional[str] = Form("technical")
 ):
-    """Upload and process a document."""
+    """Upload and process a document with progress tracking."""
     with logfire.span("api_upload_document") as span:
         span.set_attribute("endpoint", "/api/documents/upload")
         span.set_attribute("method", "POST")
@@ -716,151 +716,230 @@ async def upload_document(
         span.set_attribute("knowledge_type", knowledge_type)
         
         try:
-            logfire.info("Uploading document", filename=file.filename, content_type=file.content_type, knowledge_type=knowledge_type)
+            logfire.info("Starting document upload", filename=file.filename, content_type=file.content_type, knowledge_type=knowledge_type)
+            
+            # Generate unique progress ID
+            progress_id = str(uuid.uuid4())
+            span.set_attribute("progress_id", progress_id)
             
             # Parse tags
             tag_list = json.loads(tags) if tags else []
             span.set_attribute("tags_count", len(tag_list))
             
-            # Read file content
-            content = await file.read()
-            file_size = len(content)
-            span.set_attribute("file_size", file_size)
-            
-            # Extract text from document using proper processing
-            try:
-                extracted_text = extract_text_from_document(content, file.filename, file.content_type)
-                logfire.info("Document text extracted successfully", 
-                           filename=file.filename, 
-                           extracted_length=len(extracted_text),
-                           content_type=file.content_type)
-            except Exception as e:
-                logfire.error("Document text extraction failed", 
-                             filename=file.filename, 
-                             content_type=file.content_type, 
-                             error=str(e))
-                raise HTTPException(status_code=400, detail={'error': f"Failed to process document: {str(e)}"})
-            
-            # Chunk the extracted text using the same strategy as web crawling
-            chunks = smart_chunk_markdown(extracted_text, chunk_size=5000)
-            logfire.info("Document chunked", filename=file.filename, chunk_count=len(chunks))
-            
-            # Store in database
-            supabase_client = get_supabase_client()
-            
-            # Create source entry first
-            source_id = f"upload_{int(datetime.now().timestamp())}"
-            total_word_count = sum(len(chunk.split()) for chunk in chunks)
-            
-            # Generate summary using the same strategy as web crawling
-            source_summary = extract_source_summary(source_id, extracted_text[:5000])
-            
-            source_data = {
-                "source_id": source_id,
-                "title": file.filename,
-                "summary": source_summary,
-                "metadata": {
-                    "knowledge_type": knowledge_type,
-                    "tags": tag_list,
-                    "source_type": "file",
-                    "file_name": file.filename,
-                    "file_type": file.content_type,
-                    "file_size": file_size,
-                    "chunk_count": len(chunks)
-                },
-                "total_word_count": total_word_count,
-                "update_frequency": 0  # Files don't auto-update, set to never
+            # Read file content immediately to avoid closed file issues
+            file_content = await file.read()
+            file_metadata = {
+                'filename': file.filename,
+                'content_type': file.content_type,
+                'size': len(file_content)
             }
             
-            sources_response = supabase_client.table("sources").insert(source_data).execute()
-            logfire.info("Source created successfully", source_id=source_id)
+            # Start progress tracking
+            progress_manager.start_crawl(progress_id, {
+                'progressId': progress_id,
+                'status': 'starting',
+                'percentage': 0,
+                'currentUrl': f"file://{file.filename}",
+                'logs': [f'Starting upload of {file.filename}'],
+                'uploadType': 'document',
+                'fileName': file.filename,
+                'fileType': file.content_type
+            })
             
-            # Process each chunk and create crawled_pages entries
-            documents = []
-            for i, chunk in enumerate(chunks):
-                section_info = extract_section_info(chunk)
-                
-                document_data = {
-                    "url": f"file://{file.filename}",
-                    "content": chunk,
-                    "source_id": source_id,
-                    "chunk_number": i,
-                    "metadata": {
-                        "title": file.filename,
-                        "knowledge_type": knowledge_type,
-                        "tags": tag_list,
-                        "headers": section_info["headers"],
-                        "char_count": section_info["char_count"],
-                        "word_count": section_info["word_count"],
-                        "file_name": file.filename,
-                        "file_type": file.content_type,
-                        "chunk_index": i,
-                        "source_type": "file"
-                    }
-                }
-                documents.append(document_data)
+            # Start background task for processing with file content and metadata
+            asyncio.create_task(_perform_upload_with_progress(progress_id, file_content, file_metadata, tag_list, knowledge_type))
             
-            # Batch insert all chunks using the same utility function as web crawling
-            try:
-                urls = [doc['url'] for doc in documents]
-                chunk_numbers = [doc['chunk_number'] for doc in documents]
-                contents = [doc['content'] for doc in documents]
-                metadatas = [doc['metadata'] for doc in documents]
-                url_to_full_document = {f"file://{file.filename}": extracted_text}
-                
-                # Use the same batch insert function as web crawling for consistency
-                add_documents_to_supabase(
-                    supabase_client, 
-                    urls, 
-                    chunk_numbers, 
-                    contents, 
-                    metadatas, 
-                    url_to_full_document,
-                    batch_size=20
-                )
-                
-                logfire.info("Document chunks inserted successfully", 
-                           source_id=source_id, 
-                           chunk_count=len(chunks),
-                           total_word_count=total_word_count)
-                
-            except Exception as supabase_error:
-                logfire.error("Failed to insert document chunks", 
-                             error=str(supabase_error), 
-                             error_type=type(supabase_error).__name__,
-                             source_id=source_id,
-                             chunk_count=len(chunks))
-                raise supabase_error
-            
-            logfire.info("Document uploaded successfully", source_id=source_id, filename=file.filename, file_size=file_size)
-            span.set_attribute("source_id", source_id)
+            logfire.info("Document upload started successfully", progress_id=progress_id, filename=file.filename)
             span.set_attribute("success", True)
             
-            return {"message": "Document uploaded successfully", "source_id": source_id}
+            return {
+                "success": True,
+                "progressId": progress_id,
+                "message": "Document upload started",
+                "filename": file.filename
+            }
             
         except Exception as e:
-            logfire.error("Failed to upload document", error=str(e), filename=file.filename, error_type=type(e).__name__)
+            logfire.error("Failed to start document upload", error=str(e), filename=file.filename, error_type=type(e).__name__)
             span.set_attribute("error", str(e))
             span.set_attribute("error_type", type(e).__name__)
-            
-            # Log more details about Supabase errors
-            if hasattr(e, 'details'):
-                logfire.error("Supabase error details", details=str(e.details))
-            if hasattr(e, 'message'):
-                logfire.error("Supabase error message", message=str(e.message))
-            
-            # Try to get more error info from the exception
-            logfire.error("Full exception details", exception_str=str(e), exception_repr=repr(e))
-            
-            # If it's a Supabase error, try to extract more info
-            try:
-                import json
-                if 'supabase' in str(e).lower() or 'postgrest' in str(e).lower():
-                    logfire.error("Potential Supabase/PostgREST error detected", error_content=str(e))
-            except:
-                pass
-                
             raise HTTPException(status_code=500, detail={'error': str(e)})
+
+async def _perform_upload_with_progress(progress_id: str, file_content: bytes, file_metadata: dict, tag_list: List[str], knowledge_type: str):
+    """Perform document upload with progress tracking using callback pattern like web crawl."""
+    try:
+        filename = file_metadata['filename']
+        content_type = file_metadata['content_type']
+        file_size = file_metadata['size']
+        
+        # CRITICAL FIX: Wait for WebSocket to connect before starting work
+        # This prevents the "No WebSockets found" issue where progress updates
+        # are sent before the frontend WebSocket has time to connect
+        print(f"🚀 UPLOAD: Waiting for WebSocket connection for progress_id: {progress_id}")
+        await asyncio.sleep(2.0)  # Give WebSocket time to connect
+        print(f"🚀 UPLOAD: Starting upload work for progress_id: {progress_id}")
+        
+        # Create a progress callback function exactly like web crawl
+        async def progress_callback(status: str, percentage: int, message: str, **kwargs):
+            """Callback function to send progress updates - matches web crawl pattern."""
+            print(f"🚀 UPLOAD: Progress callback called with progress_id: {progress_id}")
+            await progress_manager.update_progress(progress_id, {
+                'status': status,
+                'percentage': percentage,
+                'currentUrl': f"file://{filename}",
+                'log': message,
+                **kwargs
+            })
+            print(f"DEBUG: Upload progress callback - {status}: {percentage}% - {message}")
+        
+        # Step 1: Reading file (already done, but report it)
+        await progress_callback('reading', 10, f'File content loaded ({file_size} bytes)...')
+        
+        # Step 2: Extract text - DO THE WORK THEN REPORT
+        extracted_text = None
+        try:
+            extracted_text = extract_text_from_document(file_content, filename, content_type)
+            logfire.info("Document text extracted successfully", 
+                       filename=filename, 
+                       extracted_length=len(extracted_text),
+                       content_type=content_type)
+            # ONLY report progress AFTER the work is done
+            await progress_callback('extracting', 25, f'Text extracted successfully ({len(extracted_text)} characters)')
+        except Exception as e:
+            await progress_manager.error_crawl(progress_id, f"Failed to extract text: {str(e)}")
+            return
+        
+        # Step 3: Chunk the text - DO THE WORK THEN REPORT
+        chunks = smart_chunk_markdown(extracted_text, chunk_size=5000)
+        logfire.info("Document chunked", filename=filename, chunk_count=len(chunks))
+        # ONLY report progress AFTER the work is done
+        await progress_callback('chunking', 40, f'Document broken into {len(chunks)} chunks')
+        
+        # Step 4: Create source - DO THE WORK THEN REPORT
+        supabase_client = get_supabase_client()
+        source_id = f"upload_{int(datetime.now().timestamp())}"
+        total_word_count = sum(len(chunk.split()) for chunk in chunks)
+        
+        # ONLY report progress AFTER source ID is generated
+        await progress_callback('creating_source', 55, f'Creating source entry for {len(chunks)} chunks...')
+        
+        # Step 5: Generate summary - DO THE WORK THEN REPORT
+        source_summary = extract_source_summary(source_id, extracted_text[:5000])
+        
+        source_data = {
+            "source_id": source_id,
+            "title": filename,
+            "summary": source_summary,
+            "metadata": {
+                "knowledge_type": knowledge_type,
+                "tags": tag_list,
+                "source_type": "file",
+                "file_name": filename,
+                "file_type": content_type,
+                "file_size": file_size,
+                "chunk_count": len(chunks)
+            },
+            "total_word_count": total_word_count,
+            "update_frequency": 0  # Files don't auto-update, set to never
+        }
+        
+        sources_response = supabase_client.table("sources").insert(source_data).execute()
+        logfire.info("Source created successfully", source_id=source_id)
+        # ONLY report progress AFTER source is created
+        await progress_callback('summarizing', 65, f'AI summary generated and source created')
+        
+        # Step 6: Store chunks - DO THE WORK THEN REPORT
+        documents = []
+        for i, chunk in enumerate(chunks):
+            section_info = extract_section_info(chunk)
+            
+            document_data = {
+                "url": f"file://{filename}",
+                "content": chunk,
+                "source_id": source_id,
+                "chunk_number": i,
+                "metadata": {
+                    "title": filename,
+                    "knowledge_type": knowledge_type,
+                    "tags": tag_list,
+                    "headers": section_info["headers"],
+                    "char_count": section_info["char_count"],
+                    "word_count": section_info["word_count"],
+                    "file_name": filename,
+                    "file_type": content_type,
+                    "chunk_index": i,
+                    "source_type": "file"
+                }
+            }
+            documents.append(document_data)
+        
+        # Batch insert all chunks using the same utility function as web crawling
+        try:
+            urls = [doc['url'] for doc in documents]
+            chunk_numbers = [doc['chunk_number'] for doc in documents]
+            contents = [doc['content'] for doc in documents]
+            metadatas = [doc['metadata'] for doc in documents]
+            url_to_full_document = {f"file://{filename}": extracted_text}
+            
+            # Use the same batch insert function as web crawling for consistency
+            add_documents_to_supabase(
+                supabase_client, 
+                urls, 
+                chunk_numbers, 
+                contents, 
+                metadatas, 
+                url_to_full_document,
+                batch_size=20
+            )
+            
+            logfire.info("Document chunks inserted successfully", 
+                       source_id=source_id, 
+                       chunk_count=len(chunks),
+                       total_word_count=total_word_count)
+            
+            # ONLY report progress AFTER chunks are stored
+            await progress_callback('storing', 90, f'All {len(chunks)} chunks stored successfully')
+            
+        except Exception as supabase_error:
+            await progress_manager.error_crawl(progress_id, f"Failed to store chunks: {str(supabase_error)}")
+            return
+        
+        # FINAL COMPLETION - only called after ALL work is done
+        await progress_manager.complete_crawl(progress_id, {
+            'chunksStored': len(chunks),
+            'wordCount': total_word_count,
+            'sourceId': source_id,
+            'log': f'Document upload completed successfully! {len(chunks)} chunks stored.'
+        })
+        
+        # Broadcast to general WebSocket clients
+        await manager.broadcast({
+            "type": "upload_completed",
+            "data": {
+                "filename": filename,
+                "success": True,
+                "message": f'Document upload completed for {filename}',
+                "progressId": progress_id,
+                "sourceId": source_id
+            }
+        })
+        
+        logfire.info("Document uploaded successfully", source_id=source_id, filename=filename, file_size=file_size)
+        
+    except Exception as e:
+        logfire.error("Failed to upload document", error=str(e), filename=file_metadata.get('filename', 'unknown'), error_type=type(e).__name__)
+        await progress_manager.error_crawl(progress_id, f"Upload failed: {str(e)}")
+        
+        # Broadcast error to general WebSocket clients
+        await manager.broadcast({
+            "type": "upload_error",
+            "data": {
+                "filename": file_metadata.get('filename', 'unknown'),
+                "success": False,
+                "error": str(e),
+                "progressId": progress_id
+            }
+        })
 
 @router.post("/rag/query")
 async def perform_rag_query(request: RagQueryRequest):

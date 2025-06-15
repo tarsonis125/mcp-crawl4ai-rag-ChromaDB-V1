@@ -58,7 +58,7 @@ const groupItemsByDomain = (items: KnowledgeItem[]): GroupedKnowledgeItem[] => {
     const firstItem = groupItems[0];
     const isFileGroup = domain.startsWith('file_');
     
-    // Find the latest update timestamp and convert it properly
+    // Find the latest update timestamp and convert it properly to ISO string
     const latestTimestamp = Math.max(...groupItems.map(item => new Date(item.updated_at).getTime()));
     const latestDate = new Date(latestTimestamp);
     

@@ -8,7 +8,7 @@ export interface ProgressStep {
 
 export interface CrawlProgressData {
   progressId: string;
-  status: 'starting' | 'crawling' | 'analyzing' | 'sitemap' | 'text_file' | 'webpage' | 'processing' | 'storing' | 'completed' | 'error' | 'waiting';
+  status: 'starting' | 'crawling' | 'analyzing' | 'sitemap' | 'text_file' | 'webpage' | 'processing' | 'storing' | 'completed' | 'error' | 'waiting' | 'reading' | 'extracting' | 'chunking' | 'creating_source' | 'summarizing';
   percentage: number;
   currentUrl?: string;
   eta?: string;
@@ -23,6 +23,11 @@ export interface CrawlProgressData {
   steps?: ProgressStep[];
   currentStep?: string;
   stepMessage?: string;
+  // Upload-specific fields
+  uploadType?: 'document';
+  fileName?: string;
+  fileType?: string;
+  sourceId?: string;
 }
 
 interface StreamProgressOptions {
@@ -174,29 +179,29 @@ class CrawlProgressService {
   }
 
   // Backward compatibility methods - now just wrappers around streamProgress
-  connect(progressId: string): void {
+  connect(_progressId: string): void {
     // This method is kept for backward compatibility but does nothing
     // Use streamProgress instead
     console.warn('crawlProgressService.connect() is deprecated. Use streamProgress() instead.');
   }
 
-  onProgress(callback: ProgressCallback): void {
+  onProgress(_callback: ProgressCallback): void {
     console.warn('crawlProgressService.onProgress() is deprecated. Pass callback to streamProgress() instead.');
   }
 
-  onCompleted(callback: ProgressCallback): void {
+  onCompleted(_callback: ProgressCallback): void {
     console.warn('crawlProgressService.onCompleted() is deprecated. Pass callback to streamProgress() instead.');
   }
 
-  onError(callback: (error: Error) => void): void {
+  onError(_callback: (error: Error) => void): void {
     console.warn('crawlProgressService.onError() is deprecated. Pass callback to streamProgress() instead.');
   }
 
-  removeProgressCallback(callback: ProgressCallback): void {
+  removeProgressCallback(_callback: ProgressCallback): void {
     // No-op for backward compatibility
   }
 
-  removeErrorCallback(callback: (error: Error) => void): void {
+  removeErrorCallback(_callback: (error: Error) => void): void {
     // No-op for backward compatibility
   }
 }

@@ -10,7 +10,6 @@ import { Badge } from '../components/ui/Badge';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import { useToast } from '../contexts/ToastContext';
 import { knowledgeBaseService, KnowledgeItem, KnowledgeItemMetadata } from '../services/knowledgeBaseService';
-import { performRAGQuery } from '../services/api';
 import { KnowledgeItem as LegacyKnowledgeItem } from '../types/knowledge';
 import { knowledgeWebSocket } from '../services/websocketService';
 import { CrawlingProgressCard } from '../components/CrawlingProgressCard';
@@ -69,6 +68,10 @@ const groupItemsByDomain = (items: KnowledgeItem[]): GroupedKnowledgeItem[] => {
     const firstItem = groupItems[0];
     const isFileGroup = domain.startsWith('file_');
     
+    // Find the latest update timestamp and convert it properly to ISO string
+    const latestTimestamp = Math.max(...groupItems.map(item => new Date(item.updated_at).getTime()));
+    const latestDate = new Date(latestTimestamp);
+    
     return {
       id: isFileGroup ? firstItem.id : `group_${domain}`,
       title: isFileGroup ? firstItem.title : `${domain} (${groupItems.length} sources)`,
@@ -80,7 +83,7 @@ const groupItemsByDomain = (items: KnowledgeItem[]): GroupedKnowledgeItem[] => {
         tags: [...new Set(groupItems.flatMap(item => item.metadata.tags || []))],
       },
       created_at: firstItem.created_at,
-      updated_at: Math.max(...groupItems.map(item => new Date(item.updated_at).getTime())).toString(),
+      updated_at: latestDate.toISOString(),
     };
   });
 };
@@ -445,11 +448,28 @@ export const KnowledgeBasePage = () => {
   // Progress handling functions
   const handleProgressComplete = (data: CrawlProgressData) => {
     console.log('Crawl completed:', data);
-    // Remove from progress items
-    setProgressItems(prev => prev.filter(item => item.progressId !== data.progressId));
-    // Reload knowledge items to show the new item
-    loadKnowledgeItems();
-    // Toast will be shown by WebSocket completion event to avoid duplicates
+    
+    // Update the progress item to show completed state first
+    setProgressItems(prev => 
+      prev.map(item => 
+        item.progressId === data.progressId 
+          ? { ...data, status: 'completed', percentage: 100 }
+          : item
+      )
+    );
+    
+    // Show success toast
+    const message = data.uploadType === 'document' 
+      ? `Document "${data.fileName}" uploaded successfully! ${data.chunksStored || 0} chunks stored.`
+      : `Crawling completed for ${data.currentUrl}! ${data.chunksStored || 0} chunks stored.`;
+    showToast(message, 'success');
+    
+    // Remove from progress items after a brief delay to show completion
+    setTimeout(() => {
+      setProgressItems(prev => prev.filter(item => item.progressId !== data.progressId));
+      // Reload knowledge items to show the new item
+      loadKnowledgeItems();
+    }, 2000); // 2 second delay to show completion state
   };
 
   const handleProgressError = (error: string, progressId?: string) => {
@@ -953,8 +973,34 @@ const AddKnowledgeModal = ({
           tags
         });
         
-        showToast((result as any).message || 'Document uploaded successfully', 'success');
-        onSuccess();
+        if (result.success && result.progressId) {
+          console.log(`📄 Upload started with progressId: ${result.progressId}`);
+          
+          // Start progress tracking for upload
+          onStartCrawl(result.progressId, {
+            currentUrl: `file://${selectedFile.name}`,
+            totalPages: 1,
+            processedPages: 0,
+            percentage: 0,
+            status: 'starting',
+            logs: [`Starting upload of ${selectedFile.name}`],
+            uploadType: 'document',
+            fileName: selectedFile.name,
+            fileType: selectedFile.type
+          });
+          
+          console.log('✅ onStartCrawl called successfully for upload');
+          
+          showToast('Document upload started - tracking progress', 'success');
+          onClose(); // Close modal immediately
+        } else {
+          console.log('❌ No progressId in upload result');
+          console.log('❌ Upload result structure:', JSON.stringify(result, null, 2));
+          
+          // Fallback for non-streaming response
+          showToast((result as any).message || 'Document uploaded successfully', 'success');
+          onSuccess();
+        }
       }
     } catch (error) {
       console.error('Failed to add knowledge:', error);
@@ -1021,21 +1067,44 @@ const AddKnowledgeModal = ({
             )}
           </div>}
         {/* File Upload */}
-        {method === 'file' &&           <div className="mb-6">
-            <label htmlFor="file-upload" className="block text-gray-600 dark:text-zinc-400 text-sm mb-2">
+        {method === 'file' && (
+          <div className="mb-6">
+            <label className="block text-gray-600 dark:text-zinc-400 text-sm mb-2">
               Upload Document
             </label>
-            <input 
-              id="file-upload"
-              type="file"
-              accept=".pdf,.md,.doc,.docx,.txt"
-              onChange={e => setSelectedFile(e.target.files?.[0] || null)}
-              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100"
-            />
-            <p className="text-gray-500 dark:text-zinc-600 text-sm mt-1">
+            <div className="relative">
+              <input 
+                id="file-upload"
+                type="file"
+                accept=".pdf,.md,.doc,.docx,.txt"
+                onChange={e => setSelectedFile(e.target.files?.[0] || null)}
+                className="sr-only"
+              />
+              <label 
+                htmlFor="file-upload"
+                className="flex items-center justify-center gap-3 w-full p-6 rounded-md border-2 border-dashed cursor-pointer transition-all duration-300
+                  bg-blue-500/10 hover:bg-blue-500/20 
+                  border-blue-500/30 hover:border-blue-500/50
+                  text-blue-600 dark:text-blue-400
+                  hover:shadow-[0_0_15px_rgba(59,130,246,0.3)]
+                  backdrop-blur-sm"
+              >
+                <Upload className="w-6 h-6" />
+                <div className="text-center">
+                  <div className="font-medium">
+                    {selectedFile ? selectedFile.name : 'Choose File'}
+                  </div>
+                  <div className="text-sm opacity-75 mt-1">
+                    {selectedFile ? `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB` : 'Click to browse or drag and drop'}
+                  </div>
+                </div>
+              </label>
+            </div>
+            <p className="text-gray-500 dark:text-zinc-600 text-sm mt-2">
               Supports PDF, MD, DOC up to 10MB
             </p>
-          </div>}
+          </div>
+        )}
         {/* Update Frequency */}
         {method === 'url' && <div className="mb-6">
             <Select label="Update Frequency" value={updateFrequency} onChange={e => setUpdateFrequency(e.target.value)} options={[{

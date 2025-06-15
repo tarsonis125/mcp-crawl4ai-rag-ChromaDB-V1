@@ -6,9 +6,8 @@
 
 <p align="center">
   <a href="#-quick-start">Quick Start</a> •
-  <a href="#-whats-included">What's Included</a> •
-  <a href="#-accessing-documentation">Documentation</a> •
-  <a href="#-next-steps">Next Steps</a>
+  <a href="#-connecting-to-cursor-ide">Cursor Setup</a> •
+  <a href="#-documentation">Documentation</a>
 </p>
 
 ---
@@ -29,9 +28,10 @@ Archon is a **Model Context Protocol (MCP) server** that creates a centralized k
 - [Supabase](https://supabase.com/) account (free tier works)
 - [OpenAI API key](https://platform.openai.com/api-keys)
 
-### 1. Clone & Setup
+### Initial Setup
 
 ```bash
+# Clone the repository
 git clone https://github.com/coleam00/archon.git
 cd archon
 
@@ -39,9 +39,7 @@ cd archon
 cp .env.example .env
 ```
 
-### 2. Configure Environment
-
-Edit `.env` and add your credentials:
+Edit `.env` and add your Supabase credentials:
 
 ```bash
 # Required
@@ -49,72 +47,43 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_KEY=your-service-key-here
 ```
 
-### 3. Set Up Database
+## Step 1: Enable RAG Crawl and Document Upload
 
-1. Create a new [Supabase project](https://supabase.com/dashboard)
-2. In SQL Editor, run these scripts **in order**:
-   - `migration/initial_setup.sql` (creates vector database, credentials, and core tables)
-   - `migration/archon_tasks.sql` (creates project and task management tables)
+1. **Set Up Database**: In your [Supabase project](https://supabase.com/dashboard) SQL Editor, run:
+   ```sql
+   -- Copy and paste the contents of migration/initial_setup.sql
+   ```
 
-### 4. Start Archon
+2. **Start Archon**:
+   ```bash
+   docker-compose up --build -d
+   ```
 
-```bash
-docker-compose up --build -d
-```
+3. **Configure API Key**:
+   - Open http://localhost:3737
+   - Go to **Settings** → Add your OpenAI API key
+   - Test by uploading a document or crawling a website
 
-### 5. Access & Configure
+## Step 2: Enable Archon Projects and Tasks
 
-| Service | URL | Purpose |
-|---------|-----|---------|
-| **Web Interface** | http://localhost:3737 | Main dashboard and controls |
-| **Documentation** | http://localhost:3838 | Complete setup and usage guides |
-| **API Docs** | http://localhost:8080/docs | FastAPI documentation |
+1. **Add Project Management**: In Supabase SQL Editor, run:
+   ```sql
+   -- Copy and paste the contents of migration/archon_tasks.sql
+   ```
 
-1. Open the **Web Interface** (http://localhost:3737)
-2. Go to **Settings** and add your OpenAI API key
-3. Start the MCP server from the **MCP Dashboard**
-4. Get connection details for your AI client
+2. **Restart Python Server**:
+   ```bash
+   docker-compose restart archon-pyserver
+   ```
 
-## 📚 Accessing Documentation
-
-**Complete documentation is available at: http://localhost:3838**
-
-The documentation includes:
-
-- **[Getting Started Guide](http://localhost:3838/docs/getting-started)** - Detailed setup walkthrough
-- **[MCP Integration](http://localhost:3838/docs/mcp-overview)** - Connect Cursor, Windsurf, Claude Desktop
-- **[API Reference](http://localhost:3838/docs/api-reference)** - Complete REST API documentation
-- **[RAG Strategies](http://localhost:3838/docs/rag)** - Configure search and retrieval
-- **[Deployment Guide](http://localhost:3838/docs/deployment)** - Production setup
-
-## 🛠️ What's Included
-
-When you run `docker-compose up --build -d`, you get:
-
-### Core Services
-- **Frontend** (Port 3737): React dashboard for managing knowledge and tasks
-- **Backend API** (Port 8080): FastAPI server with RAG capabilities
-- **MCP Server** (Port 8051): Model Context Protocol server for AI clients
-- **Documentation** (Port 3838): Complete Docusaurus documentation site
-
-### Key Features  
-- **Smart Web Crawling**: Automatically detects sitemaps, text files, or webpages
-- **Document Processing**: Upload PDFs, Word docs, markdown, and text files
-- **AI Integration**: Connect any MCP-compatible client (Cursor, Windsurf, etc.)
-- **Real-time Updates**: WebSocket-based live progress tracking
-- **Task Management**: Organize projects and tasks with AI agent integration
-
-## ⚡ Quick Test
-
-Once everything is running:
-
-1. **Test Document Upload**: Go to http://localhost:3737 → Documents → Upload a PDF
-2. **Test Web Crawling**: Knowledge Base → "Crawl Website" → Enter a docs URL
-3. **Test AI Integration**: MCP Dashboard → Copy connection config for your AI client
+3. **Enable Projects Feature**:
+   - Go to **Settings** in the web interface
+   - Toggle **"Enable Projects Feature"** to ON
+   - Access projects at http://localhost:3737/projects
 
 ## 🔌 Connecting to Cursor IDE
 
-To connect Cursor to your Archon MCP server, add this configuration to your Cursor settings:
+Add this configuration to your Cursor settings:
 
 **File**: `~/.cursor/mcp.json`
 
@@ -137,7 +106,32 @@ To connect Cursor to your Archon MCP server, add this configuration to your Curs
 }
 ```
 
-This configuration allows Cursor to access your knowledge base and task management directly through the MCP protocol.
+## 📚 Documentation
+
+**Complete documentation is available at: http://localhost:3838**
+
+| Service | URL | Purpose |
+|---------|-----|---------|
+| **Web Interface** | http://localhost:3737 | Main dashboard and controls |
+| **Documentation** | http://localhost:3838 | Complete setup and usage guides |
+| **API Docs** | http://localhost:8080/docs | FastAPI documentation |
+
+## ⚡ Quick Test
+
+Once everything is running:
+
+1. **Test Document Upload**: Go to http://localhost:3737 → Knowledge Base → Upload a PDF
+2. **Test Web Crawling**: Knowledge Base → "Crawl Website" → Enter a docs URL
+3. **Test Projects**: Projects → Create a new project and add tasks
+4. **Test AI Integration**: MCP Dashboard → Copy connection config for your AI client
+
+## 🛠️ What's Included
+
+- **Smart Web Crawling**: Automatically detects sitemaps, text files, or webpages
+- **Document Processing**: Upload PDFs, Word docs, markdown, and text files
+- **AI Integration**: Connect any MCP-compatible client (Cursor, Windsurf, etc.)
+- **Task Management**: Organize projects and tasks with AI agent integration
+- **Real-time Updates**: WebSocket-based live progress tracking
 
 ## 🔧 Development
 
@@ -153,20 +147,6 @@ cd archon-ui-main && npm run dev
 # Documentation (with hot reload)
 cd docs && npm start
 ```
-
-## 🎯 Next Steps
-
-1. **📖 [Read the Full Documentation](http://localhost:3838)** - Complete setup and usage guides
-2. **🔌 [Connect Your AI Client](http://localhost:3838/docs/mcp-overview)** - Set up Cursor, Windsurf, or Claude Desktop
-3. **📚 [Build Your Knowledge Base](http://localhost:3838/docs/getting-started#building-your-knowledge-base)** - Start crawling and uploading content
-4. **🚀 [Deploy to Production](http://localhost:3838/docs/deployment)** - Scale for team use
-
-## 🤝 Contributing
-
-See our [development documentation](http://localhost:3838/docs/testing) for:
-- Development setup and testing
-- Architecture and code organization  
-- Contributing guidelines
 
 ## 📄 License
 
