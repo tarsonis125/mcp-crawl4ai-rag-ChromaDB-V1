@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Search, Grid, List, Plus, Upload, Link as LinkIcon, Share2, Brain, Filter, BoxIcon, Trash2, Table, RefreshCw, X } from 'lucide-react';
+import { Search, Grid, Plus, Upload, Link as LinkIcon, Share2, Brain, Filter, BoxIcon, Trash2, Table, RefreshCw, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MindMapView } from '../components/MindMapView';
 import { Card } from '../components/ui/Card';
@@ -18,7 +18,7 @@ import { CrawlProgressData, crawlProgressService } from '../services/crawlProgre
 import { KnowledgeTable } from '../components/knowledge-base/KnowledgeTable';
 
 export const KnowledgeBasePage = () => {
-  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'mind-map' | 'table'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'mind-map' | 'table'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [forceReanimate, setForceReanimate] = useState(0);
@@ -329,9 +329,6 @@ export const KnowledgeBasePage = () => {
             <button onClick={() => setViewMode('grid')} className={`p-2 ${viewMode === 'grid' ? 'bg-purple-100 dark:bg-purple-500/10 text-purple-600 dark:text-purple-500' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300'}`} title="Grid View">
               <Grid className="w-4 h-4" />
             </button>
-            <button onClick={() => setViewMode('list')} className={`p-2 ${viewMode === 'list' ? 'bg-green-100 dark:bg-green-500/10 text-green-600 dark:text-green-500' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300'}`} title="List View">
-              <List className="w-4 h-4" />
-            </button>
             <button onClick={() => setViewMode('table')} className={`p-2 ${viewMode === 'table' ? 'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-500' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300'}`} title="Table View">
               <Table className="w-4 h-4" />
             </button>
@@ -404,7 +401,7 @@ export const KnowledgeBasePage = () => {
 
 interface KnowledgeItemCardProps {
   item: KnowledgeItem;
-  viewMode: 'grid' | 'list' | 'table';
+  viewMode: 'grid' | 'table';
   onDelete: (sourceId: string) => void;
 }
 
@@ -431,7 +428,7 @@ const KnowledgeItemCard = ({
     setShowDeleteConfirm(false);
   };
 
-  // Get frequency display - based on update_frequency days
+  // Get frequency display - based on update_frequency from database
   const getFrequencyDisplay = () => {
     const frequency = item.metadata.update_frequency;
     if (!frequency || frequency === 0) {
@@ -448,47 +445,6 @@ const KnowledgeItemCard = ({
   };
 
   const frequencyDisplay = getFrequencyDisplay();
-
-  if (viewMode === 'list') {
-    return <Card accentColor={accentColor} className="flex items-center gap-4">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-2">
-            {/* Source type icon */}
-            {item.metadata.source_type === 'url' ? <LinkIcon className="w-4 h-4 text-blue-500" /> : <Upload className="w-4 h-4 text-pink-500" />}
-            {/* Knowledge type icon */}
-            <TypeIcon className={`w-4 h-4 ${typeIconColor}`} />
-            <h3 className="text-gray-800 dark:text-white font-medium">
-              {item.title}
-            </h3>
-          </div>
-          <p className="text-gray-600 dark:text-zinc-400 text-sm mb-2">
-            {item.metadata.description || 'No description available'}
-          </p>
-          <div className="flex flex-wrap gap-2 mb-2">
-            {item.metadata.tags?.map(tag => <Badge key={tag} color="purple" variant="outline">
-                {tag}
-              </Badge>) || null}
-          </div>
-          <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-zinc-500">
-            <span>Last updated: {new Date(item.updated_at).toLocaleDateString()}</span>
-            <div className={`flex items-center gap-1 ${frequencyDisplay.color}`}>
-              {frequencyDisplay.icon}
-              <span>{frequencyDisplay.text}</span>
-            </div>
-            <span>Chunks: {item.metadata.chunks_count || 0}</span>
-            <Badge color={statusColorMap[item.metadata.status || 'active'] as any}>
-              {(item.metadata.status || 'active').charAt(0).toUpperCase() + (item.metadata.status || 'active').slice(1)}
-            </Badge>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setShowDeleteConfirm(true)} className="p-2 text-gray-500 hover:text-red-500" title="Delete">
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </div>
-        {showDeleteConfirm && <DeleteConfirmModal onConfirm={handleDelete} onCancel={() => setShowDeleteConfirm(false)} />}
-      </Card>;
-  }
 
   return <Card accentColor={accentColor}>
       <div className="flex items-center gap-2 mb-3">

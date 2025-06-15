@@ -312,6 +312,7 @@ async def get_available_sources_direct() -> Dict[str, Any]:
                     "summary": source.get("summary"),
                     "metadata": source.get("metadata", {}),
                     "total_words": source.get("total_words", source.get("total_word_count", 0)),
+                    "update_frequency": source.get("update_frequency", 7),  # Include frequency from sources table
                     "created_at": source.get("created_at"),
                     "updated_at": source.get("updated_at", source.get("created_at"))
                 })
@@ -401,6 +402,7 @@ async def get_knowledge_items(
                         'last_scraped': source.get('updated_at'),
                         'file_name': source_metadata.get('file_name'),
                         'file_type': source_metadata.get('file_type'),
+                        'update_frequency': source.get('update_frequency', 7),  # Include frequency from sources table
                         **source_metadata
                     },
                     'created_at': source.get('created_at'),
@@ -679,7 +681,8 @@ async def upload_document(
                     "file_type": file.content_type,
                     "file_size": file_size
                 },
-                "total_words": len(content.decode('utf-8', errors='ignore').split())
+                "total_words": len(content.decode('utf-8', errors='ignore').split()),
+                "update_frequency": 0  # Files don't auto-update, set to never
             }
             
             sources_response = supabase_client.table("sources").insert(source_data).execute()
@@ -864,6 +867,7 @@ async def websocket_knowledge_items(websocket: WebSocket):
                     'last_scraped': source.get('updated_at'),
                     'file_name': source_metadata.get('file_name'),
                     'file_type': source_metadata.get('file_type'),
+                    'update_frequency': source.get('update_frequency', 7),  # Include frequency from sources table
                     **source_metadata
                 },
                 'created_at': source.get('created_at'),
