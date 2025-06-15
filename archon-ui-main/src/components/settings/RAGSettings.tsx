@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { Settings, Check, Save, Loader } from 'lucide-react';
 import { Card } from '../ui/Card';
-import { Select } from '../ui/Select';
+import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { useToast } from '../../contexts/ToastContext';
 import { credentialsService } from '../../services/credentialsService';
+
 interface RAGSettingsProps {
   ragSettings: {
     MODEL_CHOICE: string;
@@ -16,6 +17,7 @@ interface RAGSettingsProps {
   };
   setRagSettings: (settings: any) => void;
 }
+
 export const RAGSettings = ({
   ragSettings,
   setRagSettings
@@ -59,22 +61,16 @@ export const RAGSettings = ({
           </Button>
         </div>
         {/* Model Choice */}
-        <Select label="LLM Model" value={ragSettings.MODEL_CHOICE} onChange={e => setRagSettings({
-        ...ragSettings,
-        MODEL_CHOICE: e.target.value
-      })} options={[{
-        value: 'gpt-4o-mini',
-        label: 'GPT-4 Optimized Mini'
-      }, {
-        value: 'gpt-3.5-turbo',
-        label: 'GPT-3.5 Turbo'
-      }, {
-        value: 'gpt-4',
-        label: 'GPT-4'
-      }, {
-        value: 'gpt-4-turbo',
-        label: 'GPT-4 Turbo'
-      }]} accentColor="green" />
+        <Input 
+          label="LLM Model - LLM for summaries and contextual embeddings" 
+          value={ragSettings.MODEL_CHOICE} 
+          onChange={e => setRagSettings({
+            ...ragSettings,
+            MODEL_CHOICE: e.target.value
+          })} 
+          placeholder="e.g., gpt-4.1-nano"
+          accentColor="green" 
+        />
         {/* RAG Strategy Toggles */}
         <div className="space-y-4 mt-4">
           <div>
@@ -122,6 +118,7 @@ export const RAGSettings = ({
       </Card>
     </div>;
 };
+
 interface CustomCheckboxProps {
   id: string;
   checked: boolean;
@@ -129,6 +126,7 @@ interface CustomCheckboxProps {
   label: string;
   description: string;
 }
+
 const CustomCheckbox = ({
   id,
   checked,

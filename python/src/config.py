@@ -21,7 +21,6 @@ class EnvironmentConfig:
     host: str = "0.0.0.0"
     port: int = 8051
     transport: str = "sse"
-    model_choice: str = "gpt-4o-mini"
 
 
 @dataclass
@@ -82,7 +81,6 @@ def load_environment_config() -> EnvironmentConfig:
     host = os.getenv("HOST", "0.0.0.0")
     port_str = os.getenv("PORT", "8051")
     transport = os.getenv("TRANSPORT", "sse")
-    model_choice = os.getenv("MODEL_CHOICE", "gpt-4o-mini")
     
     # Validate and convert port
     try:
@@ -96,8 +94,7 @@ def load_environment_config() -> EnvironmentConfig:
         supabase_service_key=supabase_service_key,
         host=host,
         port=port,
-        transport=transport,
-        model_choice=model_choice
+        transport=transport
     )
 
 

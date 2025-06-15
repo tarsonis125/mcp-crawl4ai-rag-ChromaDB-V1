@@ -18,7 +18,7 @@ export const SettingsPage = () => {
     USE_HYBRID_SEARCH: false,
     USE_AGENTIC_RAG: false,
     USE_RERANKING: false,
-    MODEL_CHOICE: 'gpt-4o-mini'
+    MODEL_CHOICE: 'gpt-4.1-nano'
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

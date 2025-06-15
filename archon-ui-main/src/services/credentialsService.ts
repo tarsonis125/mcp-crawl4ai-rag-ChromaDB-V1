@@ -95,14 +95,14 @@ class CredentialsService {
       USE_HYBRID_SEARCH: false,
       USE_AGENTIC_RAG: false,
       USE_RERANKING: false,
-      MODEL_CHOICE: 'gpt-4o-mini'
+      MODEL_CHOICE: 'gpt-4.1-nano'
     };
 
     // Map credentials to settings
     [...ragCredentials, ...apiKeysCredentials].forEach(cred => {
       if (cred.key in settings) {
         if (cred.key === 'MODEL_CHOICE') {
-          settings[cred.key] = cred.value || 'gpt-4o-mini';
+          settings[cred.key] = cred.value || 'gpt-4.1-nano';
         } else if (cred.key === 'CONTEXTUAL_EMBEDDINGS_MAX_WORKERS') {
           settings[cred.key] = parseInt(cred.value || '3', 10);
         } else {
