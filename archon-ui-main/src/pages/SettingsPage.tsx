@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Loader } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useToast } from '../contexts/ToastContext';
+import { useSettings } from '../contexts/SettingsContext';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import { FeaturesSection } from '../components/settings/FeaturesSection';
 import { APIKeysSection } from '../components/settings/APIKeysSection';
@@ -20,10 +21,10 @@ export const SettingsPage = () => {
     MODEL_CHOICE: 'gpt-4o-mini'
   });
   const [loading, setLoading] = useState(true);
-
   const [error, setError] = useState<string | null>(null);
 
   const { showToast } = useToast();
+  const { projectsEnabled } = useSettings();
   
   // Use staggered entrance animation
   const { isVisible, containerVariants, itemVariants, titleVariants } = useStaggeredEntrance(
@@ -52,8 +53,6 @@ export const SettingsPage = () => {
       setLoading(false);
     }
   };
-
-
 
   if (loading) {
     return (
@@ -91,7 +90,7 @@ export const SettingsPage = () => {
             <RAGSettings ragSettings={ragSettings} setRagSettings={setRagSettings} />
           </motion.div>
           <motion.div variants={itemVariants}>
-            <IDEGlobalRules />
+            {projectsEnabled && <IDEGlobalRules />}
           </motion.div>
         </div>
 
