@@ -20,10 +20,32 @@ from pydantic import BaseModel, HttpUrl
 from pathlib import Path
 import traceback
 
-from ..utils import get_supabase_client
+from ..utils import get_supabase_client, add_documents_to_supabase
+from ..modules.rag_module import smart_chunk_markdown, extract_section_info, extract_source_summary
 
 # Import Logfire - use logfire directly like other working APIs
 from ..logfire_config import logfire
+
+# Document processing imports
+try:
+    import PyPDF2
+    PYPDF2_AVAILABLE = True
+except ImportError:
+    PYPDF2_AVAILABLE = False
+    
+try:
+    import pdfplumber
+    PDFPLUMBER_AVAILABLE = True
+except ImportError:
+    PDFPLUMBER_AVAILABLE = False
+    
+try:
+    from docx import Document as DocxDocument
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
+
+import io
 
 # Create router
 router = APIRouter(prefix="/api", tags=["knowledge"])
@@ -705,40 +727,110 @@ async def upload_document(
             file_size = len(content)
             span.set_attribute("file_size", file_size)
             
+            # Extract text from document using proper processing
+            try:
+                extracted_text = extract_text_from_document(content, file.filename, file.content_type)
+                logfire.info("Document text extracted successfully", 
+                           filename=file.filename, 
+                           extracted_length=len(extracted_text),
+                           content_type=file.content_type)
+            except Exception as e:
+                logfire.error("Document text extraction failed", 
+                             filename=file.filename, 
+                             content_type=file.content_type, 
+                             error=str(e))
+                raise HTTPException(status_code=400, detail={'error': f"Failed to process document: {str(e)}"})
+            
+            # Chunk the extracted text using the same strategy as web crawling
+            chunks = smart_chunk_markdown(extracted_text, chunk_size=5000)
+            logfire.info("Document chunked", filename=file.filename, chunk_count=len(chunks))
+            
             # Store in database
             supabase_client = get_supabase_client()
             
-            # Create source entry
+            # Create source entry first
             source_id = f"upload_{int(datetime.now().timestamp())}"
+            total_word_count = sum(len(chunk.split()) for chunk in chunks)
+            
+            # Generate summary using the same strategy as web crawling
+            source_summary = extract_source_summary(source_id, extracted_text[:5000])
+            
             source_data = {
                 "source_id": source_id,
                 "title": file.filename,
-                "summary": f"Uploaded document: {file.filename}",
+                "summary": source_summary,
                 "metadata": {
                     "knowledge_type": knowledge_type,
                     "tags": tag_list,
                     "source_type": "file",
                     "file_name": file.filename,
                     "file_type": file.content_type,
-                    "file_size": file_size
+                    "file_size": file_size,
+                    "chunk_count": len(chunks)
                 },
-                "total_words": len(content.decode('utf-8', errors='ignore').split()),
+                "total_word_count": total_word_count,
                 "update_frequency": 0  # Files don't auto-update, set to never
             }
             
             sources_response = supabase_client.table("sources").insert(source_data).execute()
+            logfire.info("Source created successfully", source_id=source_id)
             
-            # Create crawled page entry
-            content_data = {
-                "url": f"file://{file.filename}",
-                "title": file.filename,
-                "content": content.decode('utf-8', errors='ignore'),
-                "source_id": source_id,
-                "word_count": len(content.decode('utf-8', errors='ignore').split()),
-                "chunk_index": 0
-            }
+            # Process each chunk and create crawled_pages entries
+            documents = []
+            for i, chunk in enumerate(chunks):
+                section_info = extract_section_info(chunk)
+                
+                document_data = {
+                    "url": f"file://{file.filename}",
+                    "content": chunk,
+                    "source_id": source_id,
+                    "chunk_number": i,
+                    "metadata": {
+                        "title": file.filename,
+                        "knowledge_type": knowledge_type,
+                        "tags": tag_list,
+                        "headers": section_info["headers"],
+                        "char_count": section_info["char_count"],
+                        "word_count": section_info["word_count"],
+                        "file_name": file.filename,
+                        "file_type": file.content_type,
+                        "chunk_index": i,
+                        "source_type": "file"
+                    }
+                }
+                documents.append(document_data)
             
-            pages_response = supabase_client.table("crawled_pages").insert(content_data).execute()
+            # Batch insert all chunks using the same utility function as web crawling
+            try:
+                urls = [doc['url'] for doc in documents]
+                chunk_numbers = [doc['chunk_number'] for doc in documents]
+                contents = [doc['content'] for doc in documents]
+                metadatas = [doc['metadata'] for doc in documents]
+                url_to_full_document = {f"file://{file.filename}": extracted_text}
+                
+                # Use the same batch insert function as web crawling for consistency
+                add_documents_to_supabase(
+                    supabase_client, 
+                    urls, 
+                    chunk_numbers, 
+                    contents, 
+                    metadatas, 
+                    url_to_full_document,
+                    batch_size=20
+                )
+                
+                logfire.info("Document chunks inserted successfully", 
+                           source_id=source_id, 
+                           chunk_count=len(chunks),
+                           total_word_count=total_word_count)
+                
+            except Exception as supabase_error:
+                logfire.error("Failed to insert document chunks", 
+                             error=str(supabase_error), 
+                             error_type=type(supabase_error).__name__,
+                             source_id=source_id,
+                             chunk_count=len(chunks))
+                raise supabase_error
             
             logfire.info("Document uploaded successfully", source_id=source_id, filename=file.filename, file_size=file_size)
             span.set_attribute("source_id", source_id)
@@ -747,8 +839,27 @@ async def upload_document(
             return {"message": "Document uploaded successfully", "source_id": source_id}
             
         except Exception as e:
-            logfire.error("Failed to upload document", error=str(e), filename=file.filename)
+            logfire.error("Failed to upload document", error=str(e), filename=file.filename, error_type=type(e).__name__)
             span.set_attribute("error", str(e))
+            span.set_attribute("error_type", type(e).__name__)
+            
+            # Log more details about Supabase errors
+            if hasattr(e, 'details'):
+                logfire.error("Supabase error details", details=str(e.details))
+            if hasattr(e, 'message'):
+                logfire.error("Supabase error message", message=str(e.message))
+            
+            # Try to get more error info from the exception
+            logfire.error("Full exception details", exception_str=str(e), exception_repr=repr(e))
+            
+            # If it's a Supabase error, try to extract more info
+            try:
+                import json
+                if 'supabase' in str(e).lower() or 'postgrest' in str(e).lower():
+                    logfire.error("Potential Supabase/PostgREST error detected", error_content=str(e))
+            except:
+                pass
+                
             raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.post("/rag/query")
@@ -1049,3 +1160,144 @@ async def knowledge_health():
         span.set_attribute("status", "healthy")
         
         return result 
+
+def extract_text_from_document(file_content: bytes, filename: str, content_type: str) -> str:
+    """
+    Extract text from various document formats.
+    
+    Args:
+        file_content: Raw file bytes
+        filename: Name of the file
+        content_type: MIME type of the file
+        
+    Returns:
+        Extracted text content
+        
+    Raises:
+        ValueError: If the file format is not supported
+        Exception: If extraction fails
+    """
+    try:
+        # PDF files
+        if content_type == 'application/pdf' or filename.lower().endswith('.pdf'):
+            return extract_text_from_pdf(file_content)
+        
+        # Word documents
+        elif (content_type in ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'] 
+              or filename.lower().endswith(('.docx', '.doc'))):
+            return extract_text_from_docx(file_content)
+        
+        # Text files (markdown, txt, etc.)
+        elif (content_type.startswith('text/') 
+              or filename.lower().endswith(('.txt', '.md', '.markdown', '.rst'))):
+            return file_content.decode('utf-8', errors='ignore')
+        
+        else:
+            raise ValueError(f"Unsupported file format: {content_type} ({filename})")
+            
+    except Exception as e:
+        logfire.error("Document text extraction failed", 
+                     filename=filename, 
+                     content_type=content_type, 
+                     error=str(e))
+        raise Exception(f"Failed to extract text from {filename}: {str(e)}")
+
+def extract_text_from_pdf(file_content: bytes) -> str:
+    """
+    Extract text from PDF using both PyPDF2 and pdfplumber for best results.
+    
+    Args:
+        file_content: Raw PDF bytes
+        
+    Returns:
+        Extracted text content
+    """
+    if not PDFPLUMBER_AVAILABLE and not PYPDF2_AVAILABLE:
+        raise Exception("No PDF processing libraries available. Please install pdfplumber and PyPDF2.")
+    
+    text_content = []
+    
+    # First try with pdfplumber (better for complex layouts)
+    if PDFPLUMBER_AVAILABLE:
+        try:
+            with pdfplumber.open(io.BytesIO(file_content)) as pdf:
+                for page_num, page in enumerate(pdf.pages):
+                    try:
+                        page_text = page.extract_text()
+                        if page_text:
+                            text_content.append(f"--- Page {page_num + 1} ---\n{page_text}")
+                    except Exception as e:
+                        logfire.warning(f"pdfplumber failed on page {page_num + 1}: {e}")
+                        continue
+            
+            # If pdfplumber got good results, use them
+            if text_content and len('\n'.join(text_content).strip()) > 100:
+                return '\n\n'.join(text_content)
+            
+        except Exception as e:
+            logfire.warning(f"pdfplumber extraction failed: {e}, trying PyPDF2")
+    
+    # Fallback to PyPDF2
+    if PYPDF2_AVAILABLE:
+        try:
+            text_content = []
+            pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_content))
+            
+            for page_num, page in enumerate(pdf_reader.pages):
+                try:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text_content.append(f"--- Page {page_num + 1} ---\n{page_text}")
+                except Exception as e:
+                    logfire.warning(f"PyPDF2 failed on page {page_num + 1}: {e}")
+                    continue
+            
+            if text_content:
+                return '\n\n'.join(text_content)
+            else:
+                raise Exception("No text could be extracted from PDF")
+                
+        except Exception as e:
+            raise Exception(f"PyPDF2 failed to extract text: {str(e)}")
+    
+    # If we get here, no libraries worked
+    raise Exception("Failed to extract text from PDF - no working PDF libraries available")
+
+def extract_text_from_docx(file_content: bytes) -> str:
+    """
+    Extract text from Word documents (.docx).
+    
+    Args:
+        file_content: Raw DOCX bytes
+        
+    Returns:
+        Extracted text content
+    """
+    if not DOCX_AVAILABLE:
+        raise Exception("python-docx library not available. Please install python-docx.")
+    
+    try:
+        doc = DocxDocument(io.BytesIO(file_content))
+        text_content = []
+        
+        for paragraph in doc.paragraphs:
+            if paragraph.text.strip():
+                text_content.append(paragraph.text)
+        
+        # Also extract text from tables
+        for table in doc.tables:
+            for row in table.rows:
+                row_text = []
+                for cell in row.cells:
+                    if cell.text.strip():
+                        row_text.append(cell.text.strip())
+                if row_text:
+                    text_content.append(' | '.join(row_text))
+        
+        if not text_content:
+            raise Exception("No text content found in document")
+            
+        return '\n\n'.join(text_content)
+        
+    except Exception as e:
+        raise Exception(f"Failed to extract text from Word document: {str(e)}") 

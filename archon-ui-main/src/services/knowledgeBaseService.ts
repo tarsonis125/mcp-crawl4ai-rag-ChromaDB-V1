@@ -145,7 +145,14 @@ class KnowledgeBaseService {
   async uploadDocument(file: File, metadata: UploadMetadata = {}) {
     const formData = new FormData()
     formData.append('file', file)
-    formData.append('metadata', JSON.stringify(metadata))
+    
+    // Send fields as expected by backend API
+    if (metadata.knowledge_type) {
+      formData.append('knowledge_type', metadata.knowledge_type)
+    }
+    if (metadata.tags && metadata.tags.length > 0) {
+      formData.append('tags', JSON.stringify(metadata.tags))
+    }
     
     const response = await fetch(`${API_BASE_URL}/documents/upload`, {
       method: 'POST',
