@@ -148,13 +148,14 @@ const GroupedKnowledgeItemCard = ({
   ) : null;
 
   return (
-    <Card accentColor={accentColor} className="relative">
+    <Card accentColor={accentColor} className="relative h-full flex flex-col">
+      {/* Header section - fixed height */}
       <div className="flex items-center gap-2 mb-3">
         {/* Source type icon */}
         {firstItem.metadata.source_type === 'url' ? <LinkIcon className="w-4 h-4 text-blue-500" /> : <Upload className="w-4 h-4 text-pink-500" />}
         {/* Knowledge type icon */}
         <TypeIcon className={`w-4 h-4 ${typeIconColor}`} />
-        <h3 className="text-gray-800 dark:text-white font-medium flex-1">
+        <h3 className="text-gray-800 dark:text-white font-medium flex-1 line-clamp-1">
           {isGrouped ? groupedItem.domain : firstItem.title}
         </h3>
         <div className="flex items-center gap-1">
@@ -164,22 +165,21 @@ const GroupedKnowledgeItemCard = ({
         </div>
       </div>
       
-      <p className="text-gray-600 dark:text-zinc-400 text-sm mb-4 line-clamp-2">
+      {/* Description section - fixed height */}
+      <p className="text-gray-600 dark:text-zinc-400 text-sm mb-3 line-clamp-2 h-10">
         {isGrouped 
           ? `${groupedItem.items.length} sources from ${groupedItem.domain}` 
           : (firstItem.metadata.description || 'No description available')
         }
       </p>
       
-      <div className="flex flex-wrap gap-2 mb-4">
-        {groupedItem.metadata.tags?.map(tag => (
-          <Badge key={tag} color="purple" variant="outline">
-            {tag}
-          </Badge>
-        )) || null}
+      {/* Tags section - fixed height for 2 rows */}
+      <div className="mb-4 h-16 flex items-start">
+        <TagsDisplay tags={groupedItem.metadata.tags || []} />
       </div>
       
-      <div className="flex items-center justify-between text-xs text-gray-500 dark:text-zinc-500">
+      {/* Footer section - pushed to bottom */}
+      <div className="flex items-center justify-between text-xs text-gray-500 dark:text-zinc-500 mt-auto">
         <div className="flex items-center gap-3">
           <span>Updated: {new Date(groupedItem.updated_at).toLocaleDateString()}</span>
           <div className={`flex items-center gap-1 ${frequencyDisplay.color}`}>
@@ -713,13 +713,14 @@ const KnowledgeItemCard = ({
 
   const frequencyDisplay = getFrequencyDisplay();
 
-  return <Card accentColor={accentColor}>
+  return <Card accentColor={accentColor} className="h-full flex flex-col">
+      {/* Header section - fixed height */}
       <div className="flex items-center gap-2 mb-3">
         {/* Source type icon */}
         {item.metadata.source_type === 'url' ? <LinkIcon className="w-4 h-4 text-blue-500" /> : <Upload className="w-4 h-4 text-pink-500" />}
         {/* Knowledge type icon */}
         <TypeIcon className={`w-4 h-4 ${typeIconColor}`} />
-        <h3 className="text-gray-800 dark:text-white font-medium flex-1">
+        <h3 className="text-gray-800 dark:text-white font-medium flex-1 line-clamp-1">
           {item.title}
         </h3>
         <div className="flex items-center gap-1">
@@ -728,15 +729,19 @@ const KnowledgeItemCard = ({
           </button>
         </div>
       </div>
-      <p className="text-gray-600 dark:text-zinc-400 text-sm mb-4 line-clamp-2">
+      
+      {/* Description section - fixed height */}
+      <p className="text-gray-600 dark:text-zinc-400 text-sm mb-3 line-clamp-2 h-10">
         {item.metadata.description || 'No description available'}
       </p>
-      <div className="flex flex-wrap gap-2 mb-4">
-        {item.metadata.tags?.map(tag => <Badge key={tag} color="purple" variant="outline">
-            {tag}
-          </Badge>) || null}
+      
+      {/* Tags section - fixed height for 2 rows */}
+      <div className="mb-4 h-16 flex items-start">
+        <TagsDisplay tags={item.metadata.tags || []} />
       </div>
-      <div className="flex items-center justify-between text-xs text-gray-500 dark:text-zinc-500">
+      
+      {/* Footer section - pushed to bottom */}
+      <div className="flex items-center justify-between text-xs text-gray-500 dark:text-zinc-500 mt-auto">
         <div className="flex items-center gap-3">
           <span>Updated: {new Date(item.updated_at).toLocaleDateString()}</span>
           <div className={`flex items-center gap-1 ${frequencyDisplay.color}`}>
@@ -1065,4 +1070,53 @@ const AddKnowledgeModal = ({
         </div>
       </Card>
     </div>;
+};
+
+interface TagsDisplayProps {
+  tags: string[];
+}
+
+const TagsDisplay = ({ tags }: TagsDisplayProps) => {
+  const [showTooltip, setShowTooltip] = useState(false);
+  
+  if (!tags || tags.length === 0) return null;
+  
+  // Limit to first 4 tags to ensure we stay within 2 rows (approximate)
+  const visibleTags = tags.slice(0, 4);
+  const remainingTags = tags.slice(4);
+  const hasMoreTags = remainingTags.length > 0;
+
+  return (
+    <div className="w-full">
+      <div className="flex flex-wrap gap-2 h-full">
+        {visibleTags.map((tag, index) => (
+          <Badge key={index} color="purple" variant="outline" className="text-xs">
+            {tag}
+          </Badge>
+        ))}
+        {hasMoreTags && (
+          <div 
+            className="cursor-pointer relative"
+            onMouseEnter={() => setShowTooltip(true)}
+            onMouseLeave={() => setShowTooltip(false)}
+          >
+            <Badge color="purple" variant="outline" className="bg-purple-100/50 dark:bg-purple-900/30 border-dashed text-xs">
+              +{remainingTags.length} more...
+            </Badge>
+            {showTooltip && (
+              <div className="absolute top-full mt-2 left-1/2 transform -translate-x-1/2 bg-black dark:bg-zinc-800 text-white text-xs rounded-lg py-2 px-3 shadow-lg z-50 whitespace-nowrap max-w-xs">
+                <div className="font-semibold text-purple-300 mb-1">Additional Tags:</div>
+                {remainingTags.map((tag, index) => (
+                  <div key={index} className="text-gray-300">
+                    • {tag}
+                  </div>
+                ))}
+                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-b-black dark:border-b-zinc-800"></div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 };
