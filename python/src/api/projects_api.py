@@ -1276,18 +1276,69 @@ async def list_project_tasks(project_id: str, include_archived: bool = False, in
             span.set_attribute("error", str(e))
             raise HTTPException(status_code=500, detail={'error': str(e)})
 
-@router.get("/health")
+@router.get("/projects/health")
 async def projects_health():
-    """Health check for projects API."""
+    """Health check for projects API and database schema validation."""
     with logfire_logger.span("api_projects_health") as span:
-        span.set_attribute("endpoint", "/api/health")
+        span.set_attribute("endpoint", "/api/projects/health")
         span.set_attribute("method", "GET")
         
-        logfire_logger.info("Projects health check requested")
-        result = {"status": "healthy", "service": "projects"}
-        span.set_attribute("status", "healthy")
-        
-        return result
+        try:
+            logfire_logger.info("Projects health check requested")
+            supabase_client = get_supabase_client()
+            
+            # Check if projects table exists by trying a simple query
+            try:
+                response = supabase_client.table("projects").select("id").limit(1).execute()
+                projects_table_exists = True
+                logfire_logger.info("Projects table detected successfully")
+            except Exception as e:
+                projects_table_exists = False
+                logfire_logger.warning("Projects table not found", error=str(e))
+            
+            # Check if tasks table exists
+            try:
+                response = supabase_client.table("tasks").select("id").limit(1).execute()
+                tasks_table_exists = True
+                logfire_logger.info("Tasks table detected successfully")
+            except Exception as e:
+                tasks_table_exists = False
+                logfire_logger.warning("Tasks table not found", error=str(e))
+            
+            schema_valid = projects_table_exists and tasks_table_exists
+            
+            result = {
+                "status": "healthy" if schema_valid else "schema_missing",
+                "service": "projects",
+                "schema": {
+                    "projects_table": projects_table_exists,
+                    "tasks_table": tasks_table_exists,
+                    "valid": schema_valid
+                }
+            }
+            
+            span.set_attribute("status", result["status"])
+            span.set_attribute("schema_valid", schema_valid)
+            
+            logfire_logger.info("Projects health check completed", 
+                        status=result["status"], 
+                        schema_valid=schema_valid)
+            
+            return result
+            
+        except Exception as e:
+            logfire_logger.error("Projects health check failed", error=str(e))
+            span.set_attribute("error", str(e))
+            return {
+                "status": "error",
+                "service": "projects",
+                "error": str(e),
+                "schema": {
+                    "projects_table": False,
+                    "tasks_table": False,
+                    "valid": False
+                }
+            }
 
 @router.post("/tasks")
 async def create_task(request: CreateTaskRequest):
@@ -1589,18 +1640,7 @@ async def websocket_project_creation_progress(websocket: WebSocket, progress_id:
         except:
             pass
 
-@router.get("/health")
-async def projects_health():
-    """Health check for projects API."""
-    with logfire_logger.span("api_projects_health") as span:
-        span.set_attribute("endpoint", "/api/health")
-        span.set_attribute("method", "GET")
-        
-        logfire_logger.info("Projects health check requested")
-        result = {"status": "healthy", "service": "projects"}
-        span.set_attribute("status", "healthy")
-        
-        return result
+
 
 # Enhanced WebSocket endpoint with session-based change detection
 @router.websocket("/projects/{project_id}/tasks/ws")

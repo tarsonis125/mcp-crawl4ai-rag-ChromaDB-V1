@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Search, Grid, List, Plus, Upload, Link as LinkIcon, Share2, Brain, Filter, BoxIcon, Trash2, TestTube, Table } from 'lucide-react';
+import { Search, Grid, List, Plus, Upload, Link as LinkIcon, Share2, Brain, Filter, BoxIcon, Trash2, Table, RefreshCw, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MindMapView } from '../components/MindMapView';
 import { Card } from '../components/ui/Card';
@@ -360,10 +360,6 @@ export const KnowledgeBasePage = () => {
           <KnowledgeTable 
             items={filteredItems} 
             onDelete={handleDeleteItem} 
-            onTest={(item) => {
-              // Implement test functionality here, perhaps by opening the TestKnowledgeModal
-              console.log('Test item:', item);
-            }}
           />
         ) : (
           <>
@@ -418,7 +414,6 @@ const KnowledgeItemCard = ({
   onDelete
 }: KnowledgeItemCardProps) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showTestModal, setShowTestModal] = useState(false);
 
   const statusColorMap = {
     active: 'green',
@@ -435,6 +430,24 @@ const KnowledgeItemCard = ({
     onDelete(item.source_id);
     setShowDeleteConfirm(false);
   };
+
+  // Get frequency display - based on update_frequency days
+  const getFrequencyDisplay = () => {
+    const frequency = item.metadata.update_frequency;
+    if (!frequency || frequency === 0) {
+      return { icon: <X className="w-3 h-3" />, text: 'Never', color: 'text-gray-500 dark:text-zinc-500' };
+    } else if (frequency === 1) {
+      return { icon: <RefreshCw className="w-3 h-3" />, text: 'Daily', color: 'text-green-500' };
+    } else if (frequency === 7) {
+      return { icon: <RefreshCw className="w-3 h-3" />, text: 'Weekly', color: 'text-blue-500' };
+    } else if (frequency === 30) {
+      return { icon: <RefreshCw className="w-3 h-3" />, text: 'Monthly', color: 'text-purple-500' };
+    } else {
+      return { icon: <RefreshCw className="w-3 h-3" />, text: `Every ${frequency} days`, color: 'text-gray-500 dark:text-zinc-500' };
+    }
+  };
+
+  const frequencyDisplay = getFrequencyDisplay();
 
   if (viewMode === 'list') {
     return <Card accentColor={accentColor} className="flex items-center gap-4">
@@ -458,6 +471,10 @@ const KnowledgeItemCard = ({
           </div>
           <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-zinc-500">
             <span>Last updated: {new Date(item.updated_at).toLocaleDateString()}</span>
+            <div className={`flex items-center gap-1 ${frequencyDisplay.color}`}>
+              {frequencyDisplay.icon}
+              <span>{frequencyDisplay.text}</span>
+            </div>
             <span>Chunks: {item.metadata.chunks_count || 0}</span>
             <Badge color={statusColorMap[item.metadata.status || 'active'] as any}>
               {(item.metadata.status || 'active').charAt(0).toUpperCase() + (item.metadata.status || 'active').slice(1)}
@@ -465,15 +482,11 @@ const KnowledgeItemCard = ({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setShowTestModal(true)} className="p-2 text-gray-500 hover:text-blue-500" title="Test with Query">
-            <TestTube className="w-4 h-4" />
-          </button>
           <button onClick={() => setShowDeleteConfirm(true)} className="p-2 text-gray-500 hover:text-red-500" title="Delete">
             <Trash2 className="w-4 h-4" />
           </button>
         </div>
         {showDeleteConfirm && <DeleteConfirmModal onConfirm={handleDelete} onCancel={() => setShowDeleteConfirm(false)} />}
-        {showTestModal && <TestKnowledgeModal item={item} onClose={() => setShowTestModal(false)} />}
       </Card>;
   }
 
@@ -487,9 +500,6 @@ const KnowledgeItemCard = ({
           {item.title}
         </h3>
         <div className="flex items-center gap-1">
-          <button onClick={() => setShowTestModal(true)} className="p-1 text-gray-500 hover:text-blue-500" title="Test with Query">
-            <TestTube className="w-3 h-3" />
-          </button>
           <button onClick={() => setShowDeleteConfirm(true)} className="p-1 text-gray-500 hover:text-red-500" title="Delete">
             <Trash2 className="w-3 h-3" />
           </button>
@@ -504,13 +514,18 @@ const KnowledgeItemCard = ({
           </Badge>) || null}
       </div>
       <div className="flex items-center justify-between text-xs text-gray-500 dark:text-zinc-500">
-        <span>Updated: {new Date(item.updated_at).toLocaleDateString()}</span>
+        <div className="flex items-center gap-3">
+          <span>Updated: {new Date(item.updated_at).toLocaleDateString()}</span>
+          <div className={`flex items-center gap-1 ${frequencyDisplay.color}`}>
+            {frequencyDisplay.icon}
+            <span>{frequencyDisplay.text}</span>
+          </div>
+        </div>
         <Badge color={statusColorMap[item.metadata.status || 'active'] as any}>
           {(item.metadata.status || 'active').charAt(0).toUpperCase() + (item.metadata.status || 'active').slice(1)}
         </Badge>
       </div>
       {showDeleteConfirm && <DeleteConfirmModal onConfirm={handleDelete} onCancel={() => setShowDeleteConfirm(false)} />}
-      {showTestModal && <TestKnowledgeModal item={item} onClose={() => setShowTestModal(false)} />}
     </Card>;
 };
 
@@ -534,80 +549,6 @@ const DeleteConfirmModal = ({ onConfirm, onCancel }: DeleteConfirmModalProps) =>
         </Button>
         <Button onClick={onConfirm} variant="primary" accentColor="pink">
           Delete
-        </Button>
-      </div>
-    </Card>
-  </div>;
-};
-
-interface TestKnowledgeModalProps {
-  item: KnowledgeItem;
-  onClose: () => void;
-}
-
-const TestKnowledgeModal = ({ item, onClose }: TestKnowledgeModalProps) => {
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const { showToast } = useToast();
-
-  const handleSearch = async () => {
-    if (!query.trim()) return;
-    
-    try {
-      setLoading(true);
-      const response = await performRAGQuery(query, {
-        source: item.source_id
-      });
-      setResults(response.results || []);
-    } catch (error) {
-      console.error('Failed to test query:', error);
-      showToast('Failed to test query', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return <div className="fixed inset-0 bg-gray-500/50 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
-    <Card className="w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-      <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">
-        Test Knowledge Source
-      </h3>
-      <p className="text-gray-600 dark:text-zinc-400 mb-4">
-        Testing: {item.title}
-      </p>
-      
-      <div className="flex gap-2 mb-4">
-        <Input
-          type="text"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="Enter a test query..."
-          className="flex-1"
-          onKeyDown={e => e.key === 'Enter' && handleSearch()}
-        />
-        <Button onClick={handleSearch} disabled={loading || !query.trim()}>
-          {loading ? 'Searching...' : 'Search'}
-        </Button>
-      </div>
-      
-      {results.length > 0 && (
-        <div className="space-y-3 mb-4">
-          <h4 className="font-medium text-gray-800 dark:text-white">Results:</h4>
-          {results.map((result, index) => (
-            <div key={index} className="p-3 bg-gray-50 dark:bg-zinc-900 rounded-md">
-              <p className="text-sm text-gray-700 dark:text-zinc-300">{result.content}</p>
-              <div className="mt-2 text-xs text-gray-500 dark:text-zinc-500">
-                Score: {(result.score * 100).toFixed(1)}%
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-      
-      <div className="flex justify-end">
-        <Button onClick={onClose} variant="ghost">
-          Close
         </Button>
       </div>
     </Card>

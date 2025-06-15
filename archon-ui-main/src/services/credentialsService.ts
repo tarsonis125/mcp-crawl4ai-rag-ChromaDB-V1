@@ -38,11 +38,39 @@ class CredentialsService {
   }
 
   async getCredentialsByCategory(category: string): Promise<Credential[]> {
-    const response = await fetch(`${this.baseUrl}/api/credentials?category=${category}`);
+    const response = await fetch(`${this.baseUrl}/api/credentials/categories/${category}`);
     if (!response.ok) {
       throw new Error(`Failed to fetch credentials for category: ${category}`);
     }
-    return response.json();
+    const result = await response.json();
+    
+    // The API returns {credentials: {...}} where credentials is a dict
+    // Convert to array format expected by frontend
+    if (result.credentials && typeof result.credentials === 'object') {
+      return Object.entries(result.credentials).map(([key, value]: [string, any]) => {
+        if (typeof value === 'object' && value.is_encrypted) {
+          return {
+            key,
+            value: undefined,
+            encrypted_value: value.encrypted_value,
+            is_encrypted: true,
+            category,
+            description: value.description
+          };
+        } else {
+          return {
+            key,
+            value: value,
+            encrypted_value: undefined,
+            is_encrypted: false,
+            category,
+            description: ''
+          };
+        }
+      });
+    }
+    
+    return [];
   }
 
   async getCredential(key: string): Promise<{ key: string; value?: string; is_encrypted?: boolean }> {
@@ -59,7 +87,7 @@ class CredentialsService {
 
   async getRagSettings(): Promise<RagSettings> {
     const ragCredentials = await this.getCredentialsByCategory('rag_strategy');
-    const llmCredentials = await this.getCredentialsByCategory('llm_config');
+    const apiKeysCredentials = await this.getCredentialsByCategory('api_keys');
     
     const settings: RagSettings = {
       USE_CONTEXTUAL_EMBEDDINGS: false,
@@ -71,7 +99,7 @@ class CredentialsService {
     };
 
     // Map credentials to settings
-    [...ragCredentials, ...llmCredentials].forEach(cred => {
+    [...ragCredentials, ...apiKeysCredentials].forEach(cred => {
       if (cred.key in settings) {
         if (cred.key === 'MODEL_CHOICE') {
           settings[cred.key] = cred.value || 'gpt-4o-mini';
@@ -151,7 +179,7 @@ class CredentialsService {
         key: 'MODEL_CHOICE',
         value: settings.MODEL_CHOICE,
         is_encrypted: false,
-        category: 'llm_config',
+        category: 'rag_strategy',
       })
     );
     

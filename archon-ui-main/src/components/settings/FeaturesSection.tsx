@@ -20,6 +20,8 @@ export const FeaturesSection = () => {
   
   const [logfireEnabled, setLogfireEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [projectsSchemaValid, setProjectsSchemaValid] = useState(true);
+  const [projectsSchemaError, setProjectsSchemaError] = useState<string | null>(null);
 
   // Load settings on mount
   useEffect(() => {
@@ -30,10 +32,11 @@ export const FeaturesSection = () => {
     try {
       setLoading(true);
       
-      // Load both Logfire and Projects settings
-      const [logfireResponse, projectsResponse] = await Promise.all([
+      // Load both Logfire and Projects settings, plus check projects schema
+      const [logfireResponse, projectsResponse, projectsHealthResponse] = await Promise.all([
         credentialsService.getCredential('LOGFIRE_ENABLED').catch(() => ({ value: undefined })),
-        credentialsService.getCredential('PROJECTS_ENABLED').catch(() => ({ value: undefined }))
+        credentialsService.getCredential('PROJECTS_ENABLED').catch(() => ({ value: undefined })),
+        fetch(`${credentialsService['baseUrl']}/api/projects/health`).catch(() => null)
       ]);
       
       // Set Logfire setting
@@ -43,7 +46,38 @@ export const FeaturesSection = () => {
         setLogfireEnabled(false);
       }
       
-      // Set Projects setting
+      // Check projects schema health
+      console.log('🔍 Projects health response:', {
+        response: projectsHealthResponse,
+        ok: projectsHealthResponse?.ok,
+        status: projectsHealthResponse?.status,
+        url: `${credentialsService['baseUrl']}/api/projects/health`
+      });
+      
+      if (projectsHealthResponse && projectsHealthResponse.ok) {
+        const healthData = await projectsHealthResponse.json();
+        console.log('🔍 Projects health data:', healthData);
+        
+        const schemaValid = healthData.schema?.valid === true;
+        setProjectsSchemaValid(schemaValid);
+        
+        if (!schemaValid) {
+          setProjectsSchemaError(
+            'Projects table not detected. Please ensure you have installed the archon_tasks.sql structure to your database and restart the server.'
+          );
+        } else {
+          setProjectsSchemaError(null);
+        }
+      } else {
+        // If health check fails, assume schema is invalid
+        console.log('🔍 Projects health check failed');
+        setProjectsSchemaValid(false);
+        setProjectsSchemaError(
+          'Unable to verify projects schema. Please ensure the backend is running and database is accessible.'
+        );
+      }
+      
+      // Set Projects setting (but only if schema is valid)
       if (projectsResponse.value !== undefined) {
         setProjectsEnabled(projectsResponse.value === 'true');
       } else {
@@ -55,6 +89,8 @@ export const FeaturesSection = () => {
       // Default values on error
       setLogfireEnabled(false);
       setProjectsEnabled(true);
+      setProjectsSchemaValid(false);
+      setProjectsSchemaError('Failed to load settings');
     } finally {
       setLoading(false);
     }
@@ -162,6 +198,11 @@ export const FeaturesSection = () => {
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Enable Projects and Tasks functionality
             </p>
+            {!projectsSchemaValid && projectsSchemaError && (
+              <p className="text-xs text-red-500 dark:text-red-400 mt-1">
+                ⚠️ {projectsSchemaError}
+              </p>
+            )}
           </div>
           <div className="flex-shrink-0">
             <Toggle 
@@ -169,7 +210,7 @@ export const FeaturesSection = () => {
               onCheckedChange={handleProjectsToggle} 
               accentColor="blue" 
               icon={<FileText className="w-5 h-5" />}
-              disabled={loading}
+              disabled={loading || !projectsSchemaValid}
             />
           </div>
         </div>

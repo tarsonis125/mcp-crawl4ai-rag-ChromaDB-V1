@@ -25,7 +25,7 @@ INSERT INTO settings (key, value, is_encrypted, category, description) VALUES
 ('TRANSPORT', 'sse', false, 'server_config', 'The transport for the MCP server - either ''sse'' or ''stdio'' (defaults to sse if left empty)'),
 ('HOST', 'localhost', false, 'server_config', 'Host to bind to if using sse as the transport (leave empty if using stdio)'),
 ('PORT', '8051', false, 'server_config', 'Port to listen on if using sse as the transport (leave empty if using stdio)'),
-('MODEL_CHOICE', 'gpt-4o-mini', false, 'llm_config', 'The LLM you want to use for summaries and contextual embeddings. Generally this is a very cheap and fast LLM like gpt-4o-mini');
+('MODEL_CHOICE', 'gpt-4o-mini', false, 'rag_strategy', 'The LLM you want to use for summaries and contextual embeddings. Generally this is a very cheap and fast LLM like gpt-4o-mini');
 
 -- RAG Strategy Configuration (all default to false)
 INSERT INTO settings (key, value, is_encrypted, category, description) VALUES

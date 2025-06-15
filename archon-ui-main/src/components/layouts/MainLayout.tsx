@@ -75,12 +75,30 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
       let isBackendReady = false; // Track backend readiness locally to avoid dependency on state
       
       try {
-        const credentials = await credentialsService.getCredentialsByCategory('llm_config');
-        const openaiKey = credentials.find(cred => cred.key === 'OPENAI_API_KEY');
+        // Get all credentials to catch OPENAI_API_KEY regardless of category (it might be NULL)
+        const allCredentials = await credentialsService.getAllCredentials();
+        const openaiKey = allCredentials.find(cred => cred.key === 'OPENAI_API_KEY');
+        
+        console.log('🔍 Checking OpenAI API key:', {
+          found: !!openaiKey,
+          key: openaiKey?.key,
+          hasValue: !!openaiKey?.value,
+          hasEncryptedValue: !!openaiKey?.encrypted_value,
+          isEncrypted: openaiKey?.is_encrypted,
+          category: openaiKey?.category
+        });
         
         isBackendReady = true; // If we got here, backend is ready
         
-        if (!openaiKey || !openaiKey.value || openaiKey.value.trim() === '') {
+        // For encrypted credentials, check encrypted_value instead of value
+        const hasApiKey = openaiKey && (
+          (openaiKey.is_encrypted && openaiKey.encrypted_value) || 
+          (!openaiKey.is_encrypted && openaiKey.value && openaiKey.value.trim() !== '')
+        );
+        
+        console.log('🔍 API key validation result:', { hasApiKey });
+        
+        if (!hasApiKey) {
           showToast('OpenAI API Key missing! Click here to go to Settings and configure it.', 'warning', 8000);
           setHasShownApiKeyToast(true);
           

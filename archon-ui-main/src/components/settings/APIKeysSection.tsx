@@ -43,26 +43,31 @@ export const APIKeysSection = () => {
       
       // Load credentials from different categories for better OpenAI API key support
       const apiKeysCredentials = await credentialsService.getCredentialsByCategory('api_keys');
-      const llmConfigCredentials = await credentialsService.getCredentialsByCategory('llm_config');
       const customCategoryCredentials = await credentialsService.getCredentialsByCategory('custom');
+      
+      // Also get all credentials to catch any that might have NULL category (like OPENAI_API_KEY)
+      const allDbCredentials = await credentialsService.getAllCredentials();
+      const nullCategoryCredentials = allDbCredentials.filter(cred => 
+        !cred.category || cred.category === '' || cred.key === 'OPENAI_API_KEY'
+      );
       
       // Combine all credential sources
       const combinedCredentials = [
         ...apiKeysCredentials,
-        ...llmConfigCredentials,
-        ...customCategoryCredentials
+        ...customCategoryCredentials,
+        ...nullCategoryCredentials
       ];
       
       // Deduplicate credentials by key (in case same key exists in multiple categories)
       const credentialMap = new Map<string, Credential>();
       combinedCredentials.forEach(cred => {
-        // Prefer llm_config category for OPENAI_API_KEY, otherwise use first found
+        // Prefer api_keys category for OPENAI_API_KEY, otherwise use first found
         if (!credentialMap.has(cred.key) || 
-            (cred.key === 'OPENAI_API_KEY' && cred.category === 'llm_config')) {
+            (cred.key === 'OPENAI_API_KEY' && cred.category === 'api_keys')) {
           credentialMap.set(cred.key, cred);
         }
       });
-      
+
       // Convert to array and handle encrypted values
       const customCreds = Array.from(credentialMap.values()).map(cred => {
         let displayValue = cred.value || '';
@@ -159,7 +164,7 @@ export const APIKeysSection = () => {
         value: value,
         description: '',
         is_encrypted: shouldEncrypt,
-        category: key === 'OPENAI_API_KEY' ? 'llm_config' : 'api_keys'
+        category: 'api_keys'
       });
       
       // Update the original value and clear changes flag
