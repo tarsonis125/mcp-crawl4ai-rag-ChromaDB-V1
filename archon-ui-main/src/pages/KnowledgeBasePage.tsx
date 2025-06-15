@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Search, Grid, Plus, Upload, Link as LinkIcon, Share2, Brain, Filter, BoxIcon, Trash2, Table, RefreshCw, X } from 'lucide-react';
+import { Search, Grid, Plus, Upload, Link as LinkIcon, Share2, Brain, Filter, BoxIcon, Trash2, Table, RefreshCw, X, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MindMapView } from '../components/MindMapView';
 import { Card } from '../components/ui/Card';
@@ -9,13 +9,225 @@ import { Select } from '../components/ui/Select';
 import { Badge } from '../components/ui/Badge';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import { useToast } from '../contexts/ToastContext';
-import { knowledgeBaseService, KnowledgeItem } from '../services/knowledgeBaseService';
+import { knowledgeBaseService, KnowledgeItem, KnowledgeItemMetadata } from '../services/knowledgeBaseService';
 import { performRAGQuery } from '../services/api';
 import { KnowledgeItem as LegacyKnowledgeItem } from '../types/knowledge';
 import { knowledgeWebSocket } from '../services/websocketService';
 import { CrawlingProgressCard } from '../components/CrawlingProgressCard';
 import { CrawlProgressData, crawlProgressService } from '../services/crawlProgressService';
 import { KnowledgeTable } from '../components/knowledge-base/KnowledgeTable';
+
+const extractDomain = (url: string): string => {
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname;
+    
+    // Remove 'www.' prefix if present
+    const withoutWww = hostname.startsWith('www.') ? hostname.slice(4) : hostname;
+    
+    // For domains with subdomains, extract the main domain (last 2 parts)
+    const parts = withoutWww.split('.');
+    if (parts.length > 2) {
+      // Return the main domain (last 2 parts: domain.tld)
+      return parts.slice(-2).join('.');
+    }
+    
+    return withoutWww;
+  } catch {
+    return url; // Return original if URL parsing fails
+  }
+};
+
+interface GroupedKnowledgeItem {
+  id: string;
+  title: string;
+  domain: string;
+  items: KnowledgeItem[];
+  metadata: KnowledgeItemMetadata;
+  created_at: string;
+  updated_at: string;
+}
+
+const groupItemsByDomain = (items: KnowledgeItem[]): GroupedKnowledgeItem[] => {
+  const groups = new Map<string, KnowledgeItem[]>();
+  
+  // Group items by domain
+  items.forEach(item => {
+    // Only group URL-based items, not file uploads
+    if (item.metadata.source_type === 'url') {
+      const domain = extractDomain(item.url);
+      const existing = groups.get(domain) || [];
+      groups.set(domain, [...existing, item]);
+    } else {
+      // File uploads remain ungrouped
+      groups.set(`file_${item.id}`, [item]);
+    }
+  });
+  
+  // Convert groups to GroupedKnowledgeItem objects
+  return Array.from(groups.entries()).map(([domain, groupItems]) => {
+    const firstItem = groupItems[0];
+    const isFileGroup = domain.startsWith('file_');
+    
+    return {
+      id: isFileGroup ? firstItem.id : `group_${domain}`,
+      title: isFileGroup ? firstItem.title : `${domain} (${groupItems.length} sources)`,
+      domain: isFileGroup ? 'file' : domain,
+      items: groupItems,
+      metadata: {
+        ...firstItem.metadata,
+        // Merge tags from all items in the group
+        tags: [...new Set(groupItems.flatMap(item => item.metadata.tags || []))],
+      },
+      created_at: firstItem.created_at,
+      updated_at: Math.max(...groupItems.map(item => new Date(item.updated_at).getTime())).toString(),
+    };
+  });
+};
+
+interface GroupedKnowledgeItemCardProps {
+  groupedItem: GroupedKnowledgeItem;
+  onDelete: (sourceId: string) => void;
+}
+
+const GroupedKnowledgeItemCard = ({
+  groupedItem,
+  onDelete
+}: GroupedKnowledgeItemCardProps) => {
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showTooltip, setShowTooltip] = useState(false);
+
+  const isGrouped = groupedItem.items.length > 1;
+  const firstItem = groupedItem.items[0];
+  
+  // Determine card properties based on the primary item
+  const accentColor = firstItem.metadata.source_type === 'url' ? 'blue' : 'pink';
+  const TypeIcon = firstItem.metadata.knowledge_type === 'technical' ? BoxIcon : Brain;
+  const typeIconColor = firstItem.metadata.knowledge_type === 'technical' ? 'text-blue-500' : 'text-purple-500';
+  
+  const statusColorMap = {
+    active: 'green',
+    processing: 'blue',
+    error: 'pink'
+  };
+
+  const handleDelete = async () => {
+    // Call the main delete handler with the group ID
+    await onDelete(groupedItem.id);
+    setShowDeleteConfirm(false);
+  };
+
+  // Get frequency display for the primary item
+  const getFrequencyDisplay = () => {
+    const frequency = firstItem.metadata.update_frequency;
+    if (!frequency || frequency === 0) {
+      return { icon: <X className="w-3 h-3" />, text: 'Never', color: 'text-gray-500 dark:text-zinc-500' };
+    } else if (frequency === 1) {
+      return { icon: <RefreshCw className="w-3 h-3" />, text: 'Daily', color: 'text-green-500' };
+    } else if (frequency === 7) {
+      return { icon: <RefreshCw className="w-3 h-3" />, text: 'Weekly', color: 'text-blue-500' };
+    } else if (frequency === 30) {
+      return { icon: <RefreshCw className="w-3 h-3" />, text: 'Monthly', color: 'text-purple-500' };
+    } else {
+      return { icon: <RefreshCw className="w-3 h-3" />, text: `Every ${frequency} days`, color: 'text-gray-500 dark:text-zinc-500' };
+    }
+  };
+
+  const frequencyDisplay = getFrequencyDisplay();
+
+  // Generate tooltip content for grouped items
+  const tooltipContent = isGrouped ? (
+    <div className="space-y-1">
+      <div className="font-medium text-white">Grouped Sources:</div>
+      {groupedItem.items.map((item, index) => (
+        <div key={item.id} className="text-sm text-gray-200">
+          {index + 1}. {item.title}
+        </div>
+      ))}
+    </div>
+  ) : null;
+
+  return (
+    <Card accentColor={accentColor} className="relative">
+      <div className="flex items-center gap-2 mb-3">
+        {/* Source type icon */}
+        {firstItem.metadata.source_type === 'url' ? <LinkIcon className="w-4 h-4 text-blue-500" /> : <Upload className="w-4 h-4 text-pink-500" />}
+        {/* Knowledge type icon */}
+        <TypeIcon className={`w-4 h-4 ${typeIconColor}`} />
+        <h3 className="text-gray-800 dark:text-white font-medium flex-1">
+          {isGrouped ? groupedItem.domain : firstItem.title}
+        </h3>
+        <div className="flex items-center gap-1">
+          <button onClick={() => setShowDeleteConfirm(true)} className="p-1 text-gray-500 hover:text-red-500" title="Delete">
+            <Trash2 className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+      
+      <p className="text-gray-600 dark:text-zinc-400 text-sm mb-4 line-clamp-2">
+        {isGrouped 
+          ? `${groupedItem.items.length} sources from ${groupedItem.domain}` 
+          : (firstItem.metadata.description || 'No description available')
+        }
+      </p>
+      
+      <div className="flex flex-wrap gap-2 mb-4">
+        {groupedItem.metadata.tags?.map(tag => (
+          <Badge key={tag} color="purple" variant="outline">
+            {tag}
+          </Badge>
+        )) || null}
+      </div>
+      
+      <div className="flex items-center justify-between text-xs text-gray-500 dark:text-zinc-500">
+        <div className="flex items-center gap-3">
+          <span>Updated: {new Date(groupedItem.updated_at).toLocaleDateString()}</span>
+          <div className={`flex items-center gap-1 ${frequencyDisplay.color}`}>
+            {frequencyDisplay.icon}
+            <span>{frequencyDisplay.text}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Grouped sources chip - inline with status badge */}
+          {isGrouped && (
+            <div 
+              className="cursor-pointer relative"
+              onMouseEnter={() => setShowTooltip(true)}
+              onMouseLeave={() => setShowTooltip(false)}
+            >
+              <div className="flex items-center gap-1 px-2 py-1 bg-blue-500/20 border border-blue-500/40 rounded-full backdrop-blur-sm shadow-[0_0_15px_rgba(59,130,246,0.3)] hover:shadow-[0_0_20px_rgba(59,130,246,0.5)] transition-all duration-300">
+                <Globe className="w-3 h-3 text-blue-400" />
+                <span className="text-xs text-blue-400 font-medium">{groupedItem.items.length}</span>
+              </div>
+              
+              {/* Tooltip */}
+              {showTooltip && (
+                <div className="absolute bottom-full right-0 mb-2 p-2 bg-gray-900 dark:bg-black border border-gray-700 rounded-md shadow-lg min-w-[200px] z-10">
+                  {tooltipContent}
+                </div>
+              )}
+            </div>
+          )}
+          <Badge color={statusColorMap[firstItem.metadata.status || 'active'] as any}>
+            {(firstItem.metadata.status || 'active').charAt(0).toUpperCase() + (firstItem.metadata.status || 'active').slice(1)}
+          </Badge>
+        </div>
+      </div>
+
+      {showDeleteConfirm && (
+        <DeleteConfirmModal 
+          onConfirm={handleDelete} 
+          onCancel={() => setShowDeleteConfirm(false)} 
+          title={isGrouped ? "Delete Grouped Sources" : "Delete Knowledge Item"}
+          message={isGrouped 
+            ? `Are you sure you want to delete all ${groupedItem.items.length} sources from ${groupedItem.domain}? This action cannot be undone.`
+            : "Are you sure you want to delete this knowledge item? This action cannot be undone."
+          }
+        />
+      )}
+    </Card>
+  );
+};
 
 export const KnowledgeBasePage = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'mind-map' | 'table'>('grid');
@@ -164,6 +376,9 @@ export const KnowledgeBasePage = () => {
     typeFilter === 'all' ? true : item.metadata.knowledge_type === typeFilter
   );
 
+  // Group items by domain for grid view
+  const groupedItems = viewMode === 'grid' ? groupItemsByDomain(filteredItems) : [];
+
   // Use our custom staggered entrance hook for the page header
   const {
     isVisible: headerVisible,
@@ -185,8 +400,25 @@ export const KnowledgeBasePage = () => {
 
   const handleDeleteItem = async (sourceId: string) => {
     try {
-      const result = await knowledgeBaseService.deleteKnowledgeItem(sourceId);
-      showToast((result as any).message || 'Item deleted', 'success');
+      // Check if this is a grouped item ID
+      if (sourceId.startsWith('group_')) {
+        // Find the grouped item and delete all its constituent items
+        const domain = sourceId.replace('group_', '');
+        const groupedItems = groupItemsByDomain(filteredItems);
+        const group = groupedItems.find(g => g.domain === domain);
+        
+        if (group) {
+          // Delete all items in the group
+          for (const item of group.items) {
+            await knowledgeBaseService.deleteKnowledgeItem(item.source_id);
+          }
+          showToast(`Deleted ${group.items.length} sources from ${domain}`, 'success');
+        }
+      } else {
+        // Single item delete
+        const result = await knowledgeBaseService.deleteKnowledgeItem(sourceId);
+        showToast((result as any).message || 'Item deleted', 'success');
+      }
       loadKnowledgeItems(); // Reload items
     } catch (error) {
       console.error('Failed to delete item:', error);
@@ -385,11 +617,32 @@ export const KnowledgeBasePage = () => {
                 ))}
                 
                 {/* Regular Knowledge Items */}
-                {filteredItems.length > 0 ? filteredItems.map(item => <motion.div key={item.id} variants={contentItemVariants}>
+                {viewMode === 'grid' ? (
+                  // Grid view - use grouped items
+                  groupedItems.length > 0 ? groupedItems.map(groupedItem => (
+                    <motion.div key={groupedItem.id} variants={contentItemVariants}>
+                      <GroupedKnowledgeItemCard 
+                        groupedItem={groupedItem} 
+                        onDelete={handleDeleteItem} 
+                      />
+                    </motion.div>
+                  )) : (progressItems.length === 0 && (
+                    <motion.div variants={contentItemVariants} className="col-span-full py-10 text-center text-gray-500 dark:text-zinc-400">
+                      No knowledge items found for the selected filter.
+                    </motion.div>
+                  ))
+                ) : (
+                  // List view - use individual items
+                  filteredItems.length > 0 ? filteredItems.map(item => (
+                    <motion.div key={item.id} variants={contentItemVariants}>
                       <KnowledgeItemCard item={item} viewMode={viewMode} onDelete={handleDeleteItem} />
-                    </motion.div>) : (progressItems.length === 0 && <motion.div variants={contentItemVariants} className="col-span-full py-10 text-center text-gray-500 dark:text-zinc-400">
-                    No knowledge items found for the selected filter.
-                  </motion.div>)}
+                    </motion.div>
+                  )) : (progressItems.length === 0 && (
+                    <motion.div variants={contentItemVariants} className="col-span-full py-10 text-center text-gray-500 dark:text-zinc-400">
+                      No knowledge items found for the selected filter.
+                    </motion.div>
+                  ))
+                )}
               </motion.div>
             </AnimatePresence>
           </>
@@ -489,23 +742,30 @@ const KnowledgeItemCard = ({
           {(item.metadata.status || 'active').charAt(0).toUpperCase() + (item.metadata.status || 'active').slice(1)}
         </Badge>
       </div>
-      {showDeleteConfirm && <DeleteConfirmModal onConfirm={handleDelete} onCancel={() => setShowDeleteConfirm(false)} />}
+      {showDeleteConfirm && <DeleteConfirmModal 
+        onConfirm={handleDelete} 
+        onCancel={() => setShowDeleteConfirm(false)} 
+        title="Delete Knowledge Item"
+        message="Are you sure you want to delete this knowledge item? This action cannot be undone."
+      />}
     </Card>;
 };
 
 interface DeleteConfirmModalProps {
   onConfirm: () => void;
   onCancel: () => void;
+  title: string;
+  message: string;
 }
 
-const DeleteConfirmModal = ({ onConfirm, onCancel }: DeleteConfirmModalProps) => {
+const DeleteConfirmModal = ({ onConfirm, onCancel, title, message }: DeleteConfirmModalProps) => {
   return <div className="fixed inset-0 bg-gray-500/50 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
     <Card className="w-full max-w-md">
       <h3 className="text-lg font-semibold text-gray-800 dark:text-white mb-4">
-        Delete Knowledge Item
+        {title}
       </h3>
       <p className="text-gray-600 dark:text-zinc-400 mb-6">
-        Are you sure you want to delete this knowledge item? This action cannot be undone.
+        {message}
       </p>
       <div className="flex justify-end gap-4">
         <Button onClick={onCancel} variant="ghost">
