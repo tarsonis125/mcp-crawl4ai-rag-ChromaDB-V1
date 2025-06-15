@@ -45,6 +45,7 @@ export const MCPPage = () => {
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [selectedTransport, setSelectedTransport] = useState<'sse' | 'stdio'>('sse');
+  const [transportMode, setTransportMode] = useState<'sse' | 'stdio' | 'dual'>('dual');
   const logsEndRef = useRef<HTMLDivElement>(null);
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const statusPollInterval = useRef<NodeJS.Timeout | null>(null);
@@ -63,6 +64,7 @@ export const MCPPage = () => {
   useEffect(() => {
     loadStatus();
     loadConfiguration();
+    loadTransportMode();
 
     // Start polling for status updates every 5 seconds
     statusPollInterval.current = setInterval(loadStatus, 5000);
@@ -74,6 +76,18 @@ export const MCPPage = () => {
       mcpServerService.disconnectLogs();
     };
   }, []);
+
+  // Update selected transport based on transport mode
+  useEffect(() => {
+    if (transportMode === 'sse') {
+      setSelectedTransport('sse');
+    } else if (transportMode === 'stdio') {
+      setSelectedTransport('stdio');
+    } else if (transportMode === 'dual') {
+      // Default to SSE for dual mode
+      setSelectedTransport('sse');
+    }
+  }, [transportMode]);
 
   // Start WebSocket connection when server is running
   useEffect(() => {
@@ -139,7 +153,24 @@ export const MCPPage = () => {
     }
   };
 
-
+  /**
+   * Load the MCP transport mode from database
+   */
+  const loadTransportMode = async () => {
+    try {
+      const baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${baseUrl}/api/credentials/MCP_TRANSPORT`);
+      if (response.ok) {
+        const data = await response.json();
+        const mode = data.value || 'dual';
+        setTransportMode(mode as 'sse' | 'stdio' | 'dual');
+      }
+    } catch (error) {
+      console.error('Failed to load transport mode:', error);
+      // Default to dual mode
+      setTransportMode('dual');
+    }
+  };
 
   /**
    * Start the MCP server
@@ -210,6 +241,36 @@ export const MCPPage = () => {
       });
     } catch (error) {
       console.error('Failed to update transport:', error);
+    }
+  };
+
+  const updateTransportMode = async (mode: 'sse' | 'stdio' | 'dual') => {
+    try {
+      const baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${baseUrl}/api/credentials/MCP_TRANSPORT`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          value: mode,
+          category: 'server_config',
+          description: 'MCP server transport mode - sse, stdio, or dual'
+        })
+      });
+      
+      if (response.ok) {
+        setTransportMode(mode);
+        showToast(`Transport mode set to ${mode.toUpperCase()}`, 'success');
+        
+        // If server is running, suggest restart
+        if (serverStatus.status === 'running') {
+          showToast('Restart the MCP server for changes to take effect', 'info');
+        }
+      } else {
+        throw new Error('Failed to update transport mode');
+      }
+    } catch (error) {
+      console.error('Failed to update transport mode:', error);
+      showToast('Failed to update transport mode', 'error');
     }
   };
 
@@ -377,7 +438,23 @@ export const MCPPage = () => {
                   </div>
                   
                   {/* Control Buttons */}
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 items-center">
+                    {/* Transport Mode Dropdown */}
+                    <select
+                      value={transportMode}
+                      onChange={(e) => updateTransportMode(e.target.value as 'sse' | 'stdio' | 'dual')}
+                      disabled={serverStatus.status === 'running' || isStarting || isStopping}
+                      className="px-4 py-2.5 text-sm font-medium border border-gray-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm hover:shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:shadow-blue-500/25 focus:shadow-lg"
+                      style={{
+                        background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(147, 51, 234, 0.1) 100%)',
+                        boxShadow: '0 0 0 1px rgba(59, 130, 246, 0.2), 0 1px 3px rgba(0, 0, 0, 0.1)'
+                      }}
+                    >
+                      <option value="dual">Mode: DUAL</option>
+                      <option value="sse">Mode: SSE</option>
+                      <option value="stdio">Mode: STDIO</option>
+                    </select>
+
                     {serverStatus.status === 'stopped' ? (
                       <Button
                         onClick={handleStartServer}
@@ -428,6 +505,9 @@ export const MCPPage = () => {
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-sm font-medium text-gray-700 dark:text-zinc-300">
                         Transport Configuration
+                        <span className="ml-2 px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full">
+                          {transportMode.toUpperCase()}
+                        </span>
                       </h3>
                       <Button
                         variant="secondary"
@@ -440,31 +520,39 @@ export const MCPPage = () => {
                       </Button>
                     </div>
                     
-                    {/* Transport Selection */}
+                    {/* Transport Selection Tabs */}
                     <div className="mb-4">
-                      <div className="flex gap-4 mb-3">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="transport"
-                            value="sse"
-                            checked={selectedTransport === 'sse'}
-                            onChange={(e) => setSelectedTransport(e.target.value as 'sse')}
-                            className="text-blue-500"
-                          />
-                          <span className="text-sm text-gray-700 dark:text-zinc-300">SSE (Web)</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="transport"
-                            value="stdio"
-                            checked={selectedTransport === 'stdio'}
-                            onChange={(e) => setSelectedTransport(e.target.value as 'stdio')}
-                            className="text-blue-500"
-                          />
-                          <span className="text-sm text-gray-700 dark:text-zinc-300">Stdio (Cursor/Claude)</span>
-                        </label>
+                      <div className="flex border-b border-gray-200 dark:border-zinc-700 mb-3">
+                        <button
+                          onClick={() => setSelectedTransport('sse')}
+                          disabled={transportMode === 'stdio'}
+                          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                            selectedTransport === 'sse'
+                              ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                              : 'border-transparent text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300'
+                          } ${
+                            transportMode === 'stdio' 
+                              ? 'opacity-50 cursor-not-allowed' 
+                              : 'cursor-pointer'
+                          }`}
+                        >
+                          SSE (Web)
+                        </button>
+                        <button
+                          onClick={() => setSelectedTransport('stdio')}
+                          disabled={transportMode === 'sse'}
+                          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                            selectedTransport === 'stdio'
+                              ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                              : 'border-transparent text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300'
+                          } ${
+                            transportMode === 'sse' 
+                              ? 'opacity-50 cursor-not-allowed' 
+                              : 'cursor-pointer'
+                          }`}
+                        >
+                          Stdio (Cursor/Claude)
+                        </button>
                       </div>
                     </div>
 

@@ -333,7 +333,7 @@ async def initialize_credentials() -> None:
         "OPENAI_API_KEY",
         "HOST", 
         "PORT",
-        "TRANSPORT",
+        "MCP_TRANSPORT",  # Renamed from TRANSPORT
         "MODEL_CHOICE",
         "USE_CONTEXTUAL_EMBEDDINGS",
         "CONTEXTUAL_EMBEDDINGS_MAX_WORKERS",

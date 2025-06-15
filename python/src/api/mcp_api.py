@@ -68,16 +68,32 @@ class MCPServerManager:
                 }
             
             try:
+                # Reload credentials from database to get latest settings
+                from ..credential_service import credential_service
+                await credential_service.load_all_credentials()
+                
                 # Set up environment variables for the MCP server
-                # Use environment variables that were set during FastAPI startup from credential service
                 env = os.environ.copy()
+                
+                # Get latest transport mode from database
+                transport = await credential_service.get_credential('MCP_TRANSPORT', 'dual')
+                host = await credential_service.get_credential('HOST', '0.0.0.0')
+                port = await credential_service.get_credential('PORT', '8051')
+                model_choice = await credential_service.get_credential('MODEL_CHOICE', 'gpt-4o-mini')
+                openai_key = await credential_service.get_credential('OPENAI_API_KEY', '')
+                
+                # Update environment with latest values
+                env.update({
+                    'TRANSPORT': transport,  # For MCP server compatibility
+                    'MCP_TRANSPORT': transport,  # New setting name
+                    'HOST': str(host),
+                    'PORT': str(port),
+                    'MODEL_CHOICE': str(model_choice),
+                    'OPENAI_API_KEY': str(openai_key) if openai_key else env.get('OPENAI_API_KEY', '')
+                })
                 
                 # Verify and log key environment variables
                 openai_key_found = bool(env.get('OPENAI_API_KEY'))
-                transport = env.get('TRANSPORT', 'dual')
-                host = env.get('HOST', '0.0.0.0')
-                port = env.get('PORT', '8051')
-                model_choice = env.get('MODEL_CHOICE', 'gpt-4o-mini')
                 
                 # Ensure Supabase environment variables are available
                 env.update({
