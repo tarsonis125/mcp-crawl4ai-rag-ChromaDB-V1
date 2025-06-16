@@ -68,26 +68,22 @@ class MCPServerManager:
                 }
             
             try:
-                # Reload credentials from database to get latest settings
-                from ..credential_service import credential_service
-                await credential_service.load_all_credentials()
-                
                 # Set up environment variables for the MCP server
                 env = os.environ.copy()
                 
-                # Get latest transport mode from database
-                transport = await credential_service.get_credential('MCP_TRANSPORT', 'dual')
-                host = await credential_service.get_credential('HOST', '0.0.0.0')
-                port = await credential_service.get_credential('PORT', '8051')
+                # Fixed configuration for SSE-only mode
+                transport = 'sse'
+                host = '0.0.0.0'
+                port = '8051'
+                
+                # Get only essential credentials from database
+                from ..credential_service import credential_service
+                await credential_service.load_all_credentials()
                 model_choice = await credential_service.get_credential('MODEL_CHOICE', 'gpt-4o-mini')
                 openai_key = await credential_service.get_credential('OPENAI_API_KEY', '')
                 
-                # Update environment with latest values
+                # Update environment with values
                 env.update({
-                    'TRANSPORT': transport,  # For MCP server compatibility
-                    'MCP_TRANSPORT': transport,  # New setting name
-                    'HOST': str(host),
-                    'PORT': str(port),
                     'MODEL_CHOICE': str(model_choice),
                     'OPENAI_API_KEY': str(openai_key) if openai_key else env.get('OPENAI_API_KEY', '')
                 })
@@ -103,10 +99,10 @@ class MCPServerManager:
                 
                 # Debug logging
                 self._add_log('INFO', f'MCP server environment - OpenAI key: {"Found" if openai_key_found else "Not found"}')
-                self._add_log('INFO', f'Configuration: transport={transport}, host={host}, port={port}, model={model_choice}')
+                self._add_log('INFO', f'Configuration: SSE-only mode, host={host}, port={port}, model={model_choice}')
                 
-                mcp_logger.info("MCP server configuration from environment", 
-                              transport=transport, host=host, port=port, model=model_choice, 
+                mcp_logger.info("MCP server configuration", 
+                              mode="SSE-only", host=host, port=port, model=model_choice, 
                               openai_key_available=openai_key_found)
                 
                 # Start the MCP server process (using uv like the old working version)
@@ -486,42 +482,36 @@ async def get_mcp_config():
         
         try:
             api_logger.info("Getting MCP server configuration")
-            from ..credential_service import credential_service
             
-            # Get configuration from database or defaults
+            # Fixed configuration for SSE-only mode
+            config = {
+                'host': 'localhost',
+                'port': 8051,
+                'transport': 'sse',
+            }
+            
+            # Get only model choice from database
             try:
-                config = {
-                    'host': await credential_service.get_credential('HOST', 'localhost'),
-                    'port': int(await credential_service.get_credential('PORT', '8051')),
-                    'transport': await credential_service.get_credential('TRANSPORT', 'sse'),
-                    'model_choice': await credential_service.get_credential('MODEL_CHOICE', 'gpt-4o-mini'),
-                    'use_contextual_embeddings': (await credential_service.get_credential('USE_CONTEXTUAL_EMBEDDINGS', 'false')).lower() == 'true',
-                    'use_hybrid_search': (await credential_service.get_credential('USE_HYBRID_SEARCH', 'false')).lower() == 'true',
-                    'use_agentic_rag': (await credential_service.get_credential('USE_AGENTIC_RAG', 'false')).lower() == 'true',
-                    'use_reranking': (await credential_service.get_credential('USE_RERANKING', 'false')).lower() == 'true',
-                }
-                api_logger.info("MCP configuration retrieved from database")
-                span.set_attribute("source", "database")
+                from ..credential_service import credential_service
+                model_choice = await credential_service.get_credential('MODEL_CHOICE', 'gpt-4o-mini')
+                config['model_choice'] = model_choice
+                config['use_contextual_embeddings'] = (await credential_service.get_credential('USE_CONTEXTUAL_EMBEDDINGS', 'false')).lower() == 'true'
+                config['use_hybrid_search'] = (await credential_service.get_credential('USE_HYBRID_SEARCH', 'false')).lower() == 'true'
+                config['use_agentic_rag'] = (await credential_service.get_credential('USE_AGENTIC_RAG', 'false')).lower() == 'true'
+                config['use_reranking'] = (await credential_service.get_credential('USE_RERANKING', 'false')).lower() == 'true'
             except Exception:
-                # Fallback to environment variables
-                import os
-                config = {
-                    'host': os.getenv('HOST', 'localhost'),
-                    'port': int(os.getenv('PORT', '8051')),
-                    'transport': os.getenv('TRANSPORT', 'sse'),
-                    'model_choice': os.getenv('MODEL_CHOICE', 'gpt-4o-mini'),
-                    'use_contextual_embeddings': os.getenv('USE_CONTEXTUAL_EMBEDDINGS', 'false').lower() == 'true',
-                    'use_hybrid_search': os.getenv('USE_HYBRID_SEARCH', 'false').lower() == 'true',
-                    'use_agentic_rag': os.getenv('USE_AGENTIC_RAG', 'false').lower() == 'true',
-                    'use_reranking': os.getenv('USE_RERANKING', 'false').lower() == 'true',
-                }
-                api_logger.warning("MCP configuration retrieved from environment variables")
-                span.set_attribute("source", "environment")
+                # Fallback to default model
+                config['model_choice'] = 'gpt-4o-mini'
+                config['use_contextual_embeddings'] = False
+                config['use_hybrid_search'] = False
+                config['use_agentic_rag'] = False
+                config['use_reranking'] = False
             
+            api_logger.info("MCP configuration (SSE-only mode)")
             span.set_attribute("host", config['host'])
             span.set_attribute("port", config['port'])
-            span.set_attribute("transport", config['transport'])
-            span.set_attribute("model_choice", config['model_choice'])
+            span.set_attribute("transport", "sse")
+            span.set_attribute("model_choice", config.get('model_choice', 'gpt-4o-mini'))
             
             return config
         except Exception as e:

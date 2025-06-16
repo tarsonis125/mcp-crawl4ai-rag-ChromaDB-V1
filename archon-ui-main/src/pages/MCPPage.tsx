@@ -44,8 +44,7 @@ export const MCPPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
-  const [selectedTransport, setSelectedTransport] = useState<'sse' | 'stdio'>('sse');
-  const [transportMode, setTransportMode] = useState<'sse' | 'stdio' | 'dual'>('dual');
+  const [selectedIDE, setSelectedIDE] = useState<'windsurf' | 'cursor' | 'claudecode'>('windsurf');
   const logsEndRef = useRef<HTMLDivElement>(null);
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const statusPollInterval = useRef<NodeJS.Timeout | null>(null);
@@ -64,7 +63,6 @@ export const MCPPage = () => {
   useEffect(() => {
     loadStatus();
     loadConfiguration();
-    loadTransportMode();
 
     // Start polling for status updates every 5 seconds
     statusPollInterval.current = setInterval(loadStatus, 5000);
@@ -77,17 +75,6 @@ export const MCPPage = () => {
     };
   }, []);
 
-  // Update selected transport based on transport mode
-  useEffect(() => {
-    if (transportMode === 'sse') {
-      setSelectedTransport('sse');
-    } else if (transportMode === 'stdio') {
-      setSelectedTransport('stdio');
-    } else if (transportMode === 'dual') {
-      // Default to SSE for dual mode
-      setSelectedTransport('sse');
-    }
-  }, [transportMode]);
 
   // Start WebSocket connection when server is running
   useEffect(() => {
@@ -153,24 +140,6 @@ export const MCPPage = () => {
     }
   };
 
-  /**
-   * Load the MCP transport mode from database
-   */
-  const loadTransportMode = async () => {
-    try {
-      const baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
-      const response = await fetch(`${baseUrl}/api/credentials/MCP_TRANSPORT`);
-      if (response.ok) {
-        const data = await response.json();
-        const mode = data.value || 'dual';
-        setTransportMode(mode as 'sse' | 'stdio' | 'dual');
-      }
-    } catch (error) {
-      console.error('Failed to load transport mode:', error);
-      // Default to dual mode
-      setTransportMode('dual');
-    }
-  };
 
   /**
    * Start the MCP server
@@ -218,95 +187,59 @@ export const MCPPage = () => {
   const handleCopyConfig = () => {
     if (!config) return;
     
-    const configText = {
-      mcpServers: {
-        archon: {
-          transport: config.transport,
-          url: `http://${config.host}:${config.port}/${config.transport}`
-        }
-      }
-    };
-    
-    navigator.clipboard.writeText(JSON.stringify(configText, null, 2));
+    const configText = getConfigForIDE(selectedIDE);
+    navigator.clipboard.writeText(configText);
     showToast('Configuration copied to clipboard', 'success');
   };
 
-  const updateTransport = async (transport: 'sse' | 'stdio') => {
-    try {
-      const baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
-      await fetch(`${baseUrl}/api/credentials/TRANSPORT`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value: transport })
-      });
-    } catch (error) {
-      console.error('Failed to update transport:', error);
-    }
-  };
 
-  const updateTransportMode = async (mode: 'sse' | 'stdio' | 'dual') => {
-    try {
-      const baseUrl = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8080';
-      const response = await fetch(`${baseUrl}/api/credentials/MCP_TRANSPORT`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          value: mode,
-          category: 'server_config',
-          description: 'MCP server transport mode - sse, stdio, or dual'
-        })
-      });
-      
-      if (response.ok) {
-        setTransportMode(mode);
-        showToast(`Transport mode set to ${mode.toUpperCase()}`, 'success');
-        
-        // If server is running, suggest restart
-        if (serverStatus.status === 'running') {
-          showToast('Restart the MCP server for changes to take effect', 'info');
-        }
-      } else {
-        throw new Error('Failed to update transport mode');
-      }
-    } catch (error) {
-      console.error('Failed to update transport mode:', error);
-      showToast('Failed to update transport mode', 'error');
-    }
-  };
 
-  const getConfigDisplay = () => {
+  const getConfigForIDE = (ide: 'windsurf' | 'cursor' | 'claudecode') => {
     if (!config) return '';
     
-    if (selectedTransport === 'sse') {
-      // SSE configuration for web-based clients
-      const sseConfig = {
-        mcpServers: {
-          archon: {
-            transport: "sse",
-            url: `http://${config.host}:${config.port}/sse`
-          }
+    const sseConfig = {
+      mcpServers: {
+        archon: {
+          transport: "sse",
+          serverUrl: `http://${config.host}:${config.port}/sse`
         }
-      };
-      return JSON.stringify(sseConfig, null, 2);
-    } else {
-      // Stdio configuration for Cursor/Claude Desktop
-      const stdioConfig = {
-        mcpServers: {
-          archon: {
-            command: "docker",
-            args: [
-              "exec", 
-              "-i",
-              "-e", "TRANSPORT=stdio",
-              "-e", "HOST=localhost", 
-              "-e", "PORT=8051",
-              "archon-pyserver",
-              "uv", "run", "python", "src/mcp_server.py"
-            ]
-          }
-        }
-      };
-      return JSON.stringify(stdioConfig, null, 2);
+      }
+    };
+    return JSON.stringify(sseConfig, null, 2);
+  };
+
+  const getIDEInstructions = (ide: 'windsurf' | 'cursor' | 'claudecode') => {
+    switch (ide) {
+      case 'windsurf':
+        return {
+          title: 'Windsurf Configuration',
+          steps: [
+            '1. Open Windsurf settings',
+            '2. Navigate to MCP Servers configuration',
+            '3. Add the configuration shown below',
+            '4. Save and restart Windsurf'
+          ]
+        };
+      case 'cursor':
+        return {
+          title: 'Cursor Configuration',
+          steps: [
+            '1. Open Cursor settings (⌘+, on Mac, Ctrl+, on Windows/Linux)',
+            '2. Search for "MCP" in settings',
+            '3. Add the configuration to your MCP servers',
+            '4. Restart Cursor for changes to take effect'
+          ]
+        };
+      case 'claudecode':
+        return {
+          title: 'Claude Code Configuration',
+          steps: [
+            '1. Open Claude Code settings',
+            '2. Navigate to the MCP section',
+            '3. Add a new MCP server with the configuration below',
+            '4. The connection will be established automatically'
+          ]
+        };
     }
   };
 
@@ -439,22 +372,6 @@ export const MCPPage = () => {
                   
                   {/* Control Buttons */}
                   <div className="flex gap-2 items-center">
-                    {/* Transport Mode Dropdown */}
-                    <select
-                      value={transportMode}
-                      onChange={(e) => updateTransportMode(e.target.value as 'sse' | 'stdio' | 'dual')}
-                      disabled={serverStatus.status === 'running' || isStarting || isStopping}
-                      className="px-4 py-2.5 text-sm font-medium border border-gray-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm hover:shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:shadow-blue-500/25 focus:shadow-lg"
-                      style={{
-                        background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(147, 51, 234, 0.1) 100%)',
-                        boxShadow: '0 0 0 1px rgba(59, 130, 246, 0.2), 0 1px 3px rgba(0, 0, 0, 0.1)'
-                      }}
-                    >
-                      <option value="dual">Mode: DUAL</option>
-                      <option value="sse">Mode: SSE</option>
-                      <option value="stdio">Mode: STDIO</option>
-                    </select>
-
                     {serverStatus.status === 'stopped' ? (
                       <Button
                         onClick={handleStartServer}
@@ -504,9 +421,9 @@ export const MCPPage = () => {
                   <div className="border-t border-gray-200 dark:border-zinc-800 pt-4">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-sm font-medium text-gray-700 dark:text-zinc-300">
-                        Transport Configuration
+                        IDE Configuration
                         <span className="ml-2 px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full">
-                          {transportMode.toUpperCase()}
+                          SSE Mode
                         </span>
                       </h3>
                       <Button
@@ -520,50 +437,60 @@ export const MCPPage = () => {
                       </Button>
                     </div>
                     
-                    {/* Transport Selection Tabs */}
+                    {/* IDE Selection Tabs */}
                     <div className="mb-4">
                       <div className="flex border-b border-gray-200 dark:border-zinc-700 mb-3">
                         <button
-                          onClick={() => setSelectedTransport('sse')}
-                          disabled={transportMode === 'stdio'}
+                          onClick={() => setSelectedIDE('windsurf')}
                           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                            selectedTransport === 'sse'
+                            selectedIDE === 'windsurf'
                               ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                               : 'border-transparent text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300'
-                          } ${
-                            transportMode === 'stdio' 
-                              ? 'opacity-50 cursor-not-allowed' 
-                              : 'cursor-pointer'
-                          }`}
+                          } cursor-pointer`}
                         >
-                          SSE (Web)
+                          Windsurf
                         </button>
                         <button
-                          onClick={() => setSelectedTransport('stdio')}
-                          disabled={transportMode === 'sse'}
+                          onClick={() => setSelectedIDE('cursor')}
                           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                            selectedTransport === 'stdio'
+                            selectedIDE === 'cursor'
                               ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                               : 'border-transparent text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300'
-                          } ${
-                            transportMode === 'sse' 
-                              ? 'opacity-50 cursor-not-allowed' 
-                              : 'cursor-pointer'
-                          }`}
+                          } cursor-pointer`}
                         >
-                          Stdio (Cursor/Claude)
+                          Cursor
+                        </button>
+                        <button
+                          onClick={() => setSelectedIDE('claudecode')}
+                          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                            selectedIDE === 'claudecode'
+                              ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                              : 'border-transparent text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300'
+                          } cursor-pointer`}
+                        >
+                          Claude Code
                         </button>
                       </div>
                     </div>
 
+                    {/* IDE Instructions */}
+                    <div className="mb-4">
+                      <h4 className="text-sm font-medium text-gray-700 dark:text-zinc-300 mb-2">
+                        {getIDEInstructions(selectedIDE).title}
+                      </h4>
+                      <ul className="text-sm text-gray-600 dark:text-zinc-400 space-y-1">
+                        {getIDEInstructions(selectedIDE).steps.map((step, index) => (
+                          <li key={index}>{step}</li>
+                        ))}
+                      </ul>
+                    </div>
+
                     <div className="bg-gray-50 dark:bg-black/50 rounded-lg p-4 font-mono text-sm relative">
                       <pre className="text-gray-600 dark:text-zinc-400 whitespace-pre-wrap">
-                        {getConfigDisplay()}
+                        {getConfigForIDE(selectedIDE)}
                       </pre>
                       <p className="text-xs text-gray-500 dark:text-zinc-500 mt-3 font-sans">
-                        {selectedTransport === 'sse' 
-                          ? 'Add this to your web-based MCP client configuration'
-                          : 'Add this to your MCP client configuration (e.g., ~/.cursor/mcp.json)'}
+                        Copy this configuration and add it to your {selectedIDE === 'windsurf' ? 'Windsurf' : selectedIDE === 'cursor' ? 'Cursor' : 'Claude Code'} settings
                       </p>
                     </div>
                   </div>

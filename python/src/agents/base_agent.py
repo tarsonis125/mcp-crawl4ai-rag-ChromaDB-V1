@@ -177,9 +177,16 @@ class BaseAgent(ABC, Generic[DepsT, OutputT]):
     async def _run_agent(self, user_prompt: str, deps: DepsT) -> OutputT:
         """Internal method to run the agent."""
         try:
-            result = await self._agent.run(user_prompt, deps=deps)
+            # Add timeout to prevent hanging
+            result = await asyncio.wait_for(
+                self._agent.run(user_prompt, deps=deps),
+                timeout=120.0  # 2 minute timeout for agent operations
+            )
             self.logger.info(f"Agent {self.name} completed successfully")
             return result
+        except asyncio.TimeoutError:
+            self.logger.error(f"Agent {self.name} timed out after 120 seconds")
+            raise Exception(f"Agent {self.name} operation timed out - taking too long to respond")
         except Exception as e:
             self.logger.error(f"Agent {self.name} failed: {str(e)}")
             raise

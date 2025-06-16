@@ -48,8 +48,12 @@ class AgentChatService {
   private readonly reconnectDelay = 1000; // 1 second initial delay
   
   // Add server status tracking
-  private serverStatus: 'online' | 'offline' | 'unknown' = 'unknown';
+  private serverStatus: 'online' | 'offline' | 'unknown' | 'connecting' = 'unknown';
   private statusHandlers: Map<string, (status: 'online' | 'offline' | 'connecting') => void> = new Map();
+  
+  // Add session validation cache to prevent excessive validation requests
+  private sessionValidationCache: Map<string, { valid: boolean; timestamp: number }> = new Map();
+  private readonly sessionValidationTTL = 30000; // 30 seconds
 
   constructor() {
     this.baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080';
@@ -62,6 +66,34 @@ class AgentChatService {
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = new URL(this.baseUrl).host;
     return `${wsProtocol}//${host}/api/agent-chat/sessions/${sessionId}/ws`;
+  }
+
+  /**
+   * Check if session validation is cached and still valid
+   */
+  private isSessionValidationCached(sessionId: string): boolean {
+    const cached = this.sessionValidationCache.get(sessionId);
+    if (!cached) return false;
+    
+    const now = Date.now();
+    const isExpired = now - cached.timestamp > this.sessionValidationTTL;
+    
+    if (isExpired) {
+      this.sessionValidationCache.delete(sessionId);
+      return false;
+    }
+    
+    return cached.valid;
+  }
+
+  /**
+   * Cache session validation result
+   */
+  private cacheSessionValidation(sessionId: string, valid: boolean): void {
+    this.sessionValidationCache.set(sessionId, {
+      valid,
+      timestamp: Date.now()
+    });
   }
 
   /**
@@ -98,6 +130,9 @@ class AgentChatService {
     this.errorHandlers.delete(sessionId);
     this.closeHandlers.delete(sessionId);
     this.reconnectAttempts.delete(sessionId);
+    
+    // Clear session validation cache
+    this.sessionValidationCache.delete(sessionId);
   }
 
   /**
@@ -127,14 +162,24 @@ class AgentChatService {
   /**
    * Notify status change to all sessions
    */
-  private notifyStatusChange(status: 'online' | 'offline' | 'connecting'): void {
-    this.statusHandlers.forEach(handler => {
-      try {
+  private notifyStatusChange(status: 'online' | 'offline' | 'connecting', sessionId?: string): void {
+    this.serverStatus = status;
+    
+    if (sessionId) {
+      // Notify specific session
+      const handler = this.statusHandlers.get(sessionId);
+      if (handler) {
+        console.log(`📡 Notifying session ${sessionId} of status change: ${status}`);
         handler(status);
-      } catch (error) {
-        console.error('Error in status handler:', error);
       }
-    });
+    } else {
+      // Notify all sessions
+      console.log(`📡 Notifying all sessions of status change: ${status}`);
+      this.statusHandlers.forEach((handler, sid) => {
+        console.log(`📡 Notifying session ${sid} of status: ${status}`);
+        handler(status);
+      });
+    }
   }
 
   /**
@@ -145,47 +190,48 @@ class AgentChatService {
     
     if (attempts >= this.maxReconnectAttempts) {
       console.log(`Max reconnection attempts (${this.maxReconnectAttempts}) reached for session ${sessionId}`);
-      
-      // Check server status before giving up
-      const serverStatus = await this.checkServerStatus();
-      if (serverStatus === 'offline') {
-        console.log('Server appears to be offline, stopping automatic reconnection');
-        this.notifyStatusChange('offline');
-        this.cleanupConnection(sessionId);
-        return;
-      }
-      
-      console.error(`Server is online but session ${sessionId} cannot connect after ${this.maxReconnectAttempts} attempts`);
+      this.notifyStatusChange('offline', sessionId);
+      // Clean up completely after max attempts
       this.cleanupConnection(sessionId);
       return;
     }
-
-    // Check server status before attempting reconnection
-    this.notifyStatusChange('connecting');
-    const serverStatus = await this.checkServerStatus();
     
-    if (serverStatus === 'offline') {
-      console.log('Server is offline, stopping automatic reconnection');
-      this.notifyStatusChange('offline');
-      this.cleanupConnection(sessionId);
-      return;
+    // Clear any existing reconnection timeout first
+    const existingTimeout = this.reconnectTimeouts.get(sessionId);
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+      this.reconnectTimeouts.delete(sessionId);
     }
-
-    const delay = this.reconnectDelay * Math.pow(2, attempts);
-    console.log(`Server is online, attempting to reconnect in ${delay}ms (attempt ${attempts + 1}/${this.maxReconnectAttempts})`);
+    
+    // Exponential backoff: delay = baseDelay * (2^attempts) with max of 30 seconds
+    const delay = Math.min(this.reconnectDelay * Math.pow(2, attempts), 30000);
+    console.log(`⏰ Scheduling reconnection attempt ${attempts + 1}/${this.maxReconnectAttempts} for session ${sessionId} in ${delay}ms`);
+    
+    this.notifyStatusChange('connecting', sessionId);
     
     const timeoutId = setTimeout(() => {
       if (this.reconnectTimeouts.has(sessionId)) {
         this.reconnectTimeouts.delete(sessionId);
-        this.connectWebSocket(
-          sessionId,
-          this.messageHandlers.get(sessionId)!,
-          this.typingHandlers.get(sessionId)!,
-          this.streamHandlers.get(sessionId),
-          this.streamCompleteHandlers.get(sessionId),
-          this.errorHandlers.get(sessionId),
-          this.closeHandlers.get(sessionId)
-        );
+        
+        // Check if we still have handlers before attempting reconnection
+        const messageHandler = this.messageHandlers.get(sessionId);
+        const typingHandler = this.typingHandlers.get(sessionId);
+        
+        if (messageHandler && typingHandler) {
+          console.log(`🔄 Attempting reconnection ${attempts + 1}/${this.maxReconnectAttempts} for session ${sessionId}`);
+          this.connectWebSocket(
+            sessionId,
+            messageHandler,
+            typingHandler,
+            this.streamHandlers.get(sessionId),
+            this.streamCompleteHandlers.get(sessionId),
+            this.errorHandlers.get(sessionId),
+            this.closeHandlers.get(sessionId)
+          );
+        } else {
+          console.log(`No handlers found for session ${sessionId}, skipping reconnection`);
+          this.cleanupConnection(sessionId);
+        }
       }
     }, delay);
 
@@ -412,6 +458,8 @@ class AgentChatService {
       console.log(`🚀 WebSocket connected for session ${sessionId}`);
       // Reset reconnect attempts on successful connection
       this.reconnectAttempts.set(sessionId, 0);
+      // Notify UI that we're online
+      this.notifyStatusChange('online', sessionId);
     };
 
     ws.onmessage = (event) => {
@@ -429,23 +477,54 @@ class AgentChatService {
       console.error(`❌ WebSocket error for session ${sessionId}:`, error);
       console.error(`WebSocket state at error: ${ws.readyState} (0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED)`);
       
-      // Check if this might be a 403 Forbidden error by attempting to verify the session
+      // Immediately notify UI of connection issues
+      this.notifyStatusChange('offline', sessionId);
+      
+      // Check if session validation is already cached to prevent spam
       if (ws.readyState === WebSocket.CLOSED) {
         console.log(`🔍 WebSocket closed immediately, checking if session ${sessionId} is valid`);
+        
+        // Check cache first to prevent excessive validation requests
+        if (this.isSessionValidationCached(sessionId)) {
+          const cached = this.sessionValidationCache.get(sessionId);
+          if (!cached?.valid) {
+            console.log(`🚨 Session ${sessionId} known to be invalid from cache, triggering session recovery`);
+            this.handleSessionInvalidation(sessionId);
+            return;
+          } else {
+            console.log(`Session ${sessionId} is valid from cache, scheduling normal reconnect`);
+            this.notifyStatusChange('connecting', sessionId);
+            this.scheduleReconnect(sessionId);
+            return;
+          }
+        }
+        
         // Use setTimeout to avoid blocking the error handler
         setTimeout(async () => {
           try {
             const response = await fetch(`${this.baseUrl}/api/agent-chat/sessions/${sessionId}`);
-            if (response.status === 403 || response.status === 404) {
+            const isValid = response.status !== 403 && response.status !== 404;
+            
+            // Cache the validation result
+            this.cacheSessionValidation(sessionId, isValid);
+            
+            if (!isValid) {
               console.log(`🚨 Session ${sessionId} is invalid (${response.status}), triggering session recovery`);
               await this.handleSessionInvalidation(sessionId);
               return; // Don't call onError since we're handling it
+            } else {
+              console.log(`Session ${sessionId} is valid, scheduling normal reconnect`);
+              this.notifyStatusChange('connecting', sessionId);
+              this.scheduleReconnect(sessionId);
             }
           } catch (fetchError) {
             console.log(`Could not verify session ${sessionId}:`, fetchError);
+            // On fetch error, assume temporary network issue and schedule reconnect
+            this.notifyStatusChange('connecting', sessionId);
+            this.scheduleReconnect(sessionId);
           }
           
-          // If session verification fails or session is valid, call the original error handler
+          // Call the original error handler if provided
           if (onError) {
             onError(error);
           }
@@ -463,6 +542,11 @@ class AgentChatService {
       console.log(`Close event details: wasClean=${event.wasClean}, code=${event.code}, reason="${event.reason}"`);
       this.wsConnections.delete(sessionId);
       
+      // Notify UI of disconnection unless it's a normal close
+      if (event.code !== 1000) {
+        this.notifyStatusChange('offline', sessionId);
+      }
+      
       // Handle different close codes
       if (event.code === 4004) {
         // 4004 = Custom code from backend indicating "Session not found"
@@ -471,6 +555,7 @@ class AgentChatService {
       } else if (event.code === 1006) {
         // 1006 = abnormal closure, often indicates connection issues
         console.log(`Connection lost unexpectedly (code 1006) for session ${sessionId}`);
+        this.notifyStatusChange('connecting', sessionId);
         this.scheduleReconnect(sessionId);
       } else if (event.code === 1002 || event.code === 1003) {
         // 1002/1003 = protocol errors, likely session invalidation
@@ -479,6 +564,7 @@ class AgentChatService {
       } else if (event.code !== 1000) { 
         // 1000 is normal closure, anything else might need reconnection
         console.log(`Scheduling reconnect for abnormal closure (code ${event.code})`);
+        this.notifyStatusChange('connecting', sessionId);
         this.scheduleReconnect(sessionId);
       }
       
@@ -692,7 +778,7 @@ class AgentChatService {
   /**
    * Get current server status
    */
-  getServerStatus(): 'online' | 'offline' | 'unknown' {
+  getServerStatus(): 'online' | 'offline' | 'unknown' | 'connecting' {
     return this.serverStatus;
   }
 }

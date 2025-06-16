@@ -16,6 +16,7 @@ import secrets
 from datetime import datetime, timedelta
 import json
 import uuid
+import time
 
 from ..utils import get_supabase_client
 import logging
@@ -367,25 +368,41 @@ class DatabaseChangeDetector:
     def __init__(self):
         self.last_check_times: Dict[str, datetime] = {}
         self.polling_tasks: Dict[str, asyncio.Task] = {}
-        self.check_interval = 5  # seconds (increased for better performance)
+        self.check_interval = 15  # Increased from 5 to 15 seconds to reduce database load
         self.websocket_connections: Dict[str, List[Dict[str, Any]]] = {}
         self.content_hashes: Dict[str, str] = {}  # Track content changes
+        self.last_db_query_time = 0  # Add global rate limiting
+        self.min_query_interval = 2  # Minimum 2 seconds between any database queries
     
     def start_monitoring(self, project_id: str):
         """Start monitoring database changes for a project"""
         if project_id in self.polling_tasks:
             return  # Already monitoring
         
+        # TEMPORARILY DISABLE POLLING TO FIX WEBSOCKET SPAM
+        logger.info(f"Database change monitoring temporarily disabled for project {project_id}")
+        return
+        
         self.last_check_times[project_id] = datetime.now()
         
         async def monitor_loop():
             while project_id in self.websocket_connections and self.websocket_connections[project_id]:
                 try:
+                    # Add global rate limiting to prevent database spam
+                    current_time = time.time()
+                    time_since_last_query = current_time - self.last_db_query_time
+                    if time_since_last_query < self.min_query_interval:
+                        sleep_time = self.min_query_interval - time_since_last_query
+                        await asyncio.sleep(sleep_time)
+                    
                     await self._check_and_broadcast_changes(project_id)
+                    self.last_db_query_time = time.time()
+                    
                     await asyncio.sleep(self.check_interval)
                 except Exception as e:
                     logger.error(f"Error monitoring project {project_id}: {e}")
-                    await asyncio.sleep(self.check_interval)
+                    # On error, wait longer before retrying to prevent spam
+                    await asyncio.sleep(self.check_interval * 2)
         
         # Store the monitoring task
         self.polling_tasks[project_id] = asyncio.create_task(monitor_loop())
@@ -472,6 +489,9 @@ class DatabaseChangeDetector:
                         }
                     })
                     logger.info(f"Broadcast {len(actual_changes)} task changes for project {project_id}")
+            else:
+                # No changes found, just update the check time
+                self.last_check_times[project_id] = datetime.now()
         
         except Exception as e:
             logger.error(f"Error checking database changes for project {project_id}: {e}")
@@ -594,260 +614,117 @@ async def create_project(request: CreateProjectRequest):
             raise HTTPException(status_code=500, detail={'error': str(e)})
 
 async def _create_project_background(progress_id: str, request: CreateProjectRequest):
-    """Background task to actually create the project with progress updates."""
+    """Background task to create project with AI assistance."""
+    supabase = get_supabase_client()
+    
     try:
-        # Update progress: Starting
-        await project_creation_manager.update_progress(progress_id, {
-            'percentage': 10,
-            'step': 'initializing_agents',
-            'log': '🤖 Initializing DocumentAgent...'
-        })
-        
-        # Get Supabase client
-        supabase_client = get_supabase_client()
-        
-        # Update progress: DocumentAgent processing
+        # Create basic project structure first
         await project_creation_manager.update_progress(progress_id, {
             'percentage': 30,
-            'step': 'generating_docs',
-            'log': '📝 Generating comprehensive documentation...'
+            'step': 'database_setup',
+            'log': '🗄️ Setting up project database...'
         })
         
-        # Try to use DocumentAgent for enhanced documentation
-        generated_prd = {}
-        
-        try:
-            # Import DocumentAgent (lazy import to avoid startup issues)
-            from ..agents.document_agent import DocumentAgent
-            
-            await project_creation_manager.update_progress(progress_id, {
-                'percentage': 50,
-                'step': 'processing_requirements',
-                'log': '🧠 AI is analyzing project requirements...'
-            })
-            
-            # Initialize DocumentAgent
-            document_agent = DocumentAgent()
-            
-            await project_creation_manager.update_progress(progress_id, {
-                'percentage': 70,
-                'step': 'ai_generation',
-                'log': '✨ AI is creating project documentation...'
-            })
-            
-            # Generate comprehensive PRD using conversation
-            prd_request = f"Create a PRD document titled '{request.title} - Product Requirements Document' for a project called '{request.title}'"
-            if request.description:
-                prd_request += f" with the following description: {request.description}"
-            if request.github_repo:
-                prd_request += f" (GitHub repo: {request.github_repo})"
-            
-            # Create a temporary project ID for the agent (will be replaced with actual ID later)
-            temp_project_id = "temp-" + str(uuid.uuid4())
-            
-            # Run the document agent to create PRD
-            agent_result = await document_agent.run_conversation(
-                user_message=prd_request,
-                project_id=temp_project_id,
-                user_id="system"
-            )
-            
-            # Extract PRD content from agent result
-            if agent_result.success and hasattr(agent_result, 'content_preview'):
-                # For now, create a basic PRD structure since the agent creates documents differently
-                generated_prd = {
-                    "project_overview": {
-                        "description": request.description or f"A new project called {request.title}",
-                        "target_completion": "To be determined"
-                    },
-                    "goals": [
-                        "Define project objectives",
-                        "Establish technical requirements",
-                        "Plan implementation strategy"
-                    ],
-                    "scope": {
-                        "frontend": "Frontend technologies and user interface",
-                        "backend": "Backend services and data management"
-                    },
-                    "architecture": {
-                        "frontend": ["React", "TypeScript"],
-                        "backend": ["FastAPI", "Python"]
-                    },
-                    "tech_packages": {
-                        "frontend_dependencies": ["react ^18.0.0", "typescript ^5.0.0"],
-                        "backend_dependencies": ["fastapi ^0.100.0", "pydantic ^2.0.0"]
-                    },
-                    "ui_ux_requirements": {
-                        "color_palette": ["#3B82F6", "#1E40AF"],
-                        "typography": {"headings": "Inter", "body": "Inter"}
-                    },
-                    "coding_standards": ["Follow TypeScript strict mode", "Use Pydantic for validation"]
-                }
-            else:
-                generated_prd = {}
-            
-            await project_creation_manager.update_progress(progress_id, {
-                'percentage': 85,
-                'step': 'finalizing_docs',
-                'log': f'📋 Generated comprehensive PRD with {len(generated_prd.keys()) if generated_prd else 0} sections'
-            })
-            
-        except ImportError:
-            await project_creation_manager.update_progress(progress_id, {
-                'percentage': 60,
-                'step': 'fallback_mode',
-                'log': '⚠️ DocumentAgent not available, using basic project structure'
-            })
-        except Exception as e:
-            await project_creation_manager.update_progress(progress_id, {
-                'percentage': 60,
-                'step': 'ai_fallback',
-                'log': f'⚠️ AI generation failed ({str(e)}), using basic structure'
-            })
-        
-        # Create project data structure
+        # Create the basic project record in database first
         project_data = {
-            "title": request.title,
-            "docs": [],  # Will add PRD as a document in docs array after project creation
-            "features": [],
-            "data": [],
-            "pinned": request.pinned if request.pinned is not None else False, # Explicitly set pinned to False if not provided
-            "created_at": datetime.now().isoformat(),
-            "updated_at": datetime.now().isoformat()
+            'title': request.title,
+            'description': request.description or "",
+            'github_repo': request.github_repo,
+            'created_at': datetime.now().isoformat(),
+            'updated_at': datetime.now().isoformat(),
+            'docs': [],  # Empty docs array to start
+            'features': {},
+            'data': {}
         }
         
-        if request.github_repo:
-            project_data["github_repo"] = request.github_repo
+        # Create the project in database
+        response = supabase.table('projects').insert(project_data).execute()
+        if not response.data:
+            raise Exception("Failed to create project in database")
+        
+        project_id = response.data[0]['id']
         
         await project_creation_manager.update_progress(progress_id, {
-            'percentage': 95,
-            'step': 'saving_to_database',
-            'log': '💾 Saving project to database...'
+            'percentage': 50,
+            'step': 'processing_requirements',
+            'log': '🧠 AI is analyzing project requirements...'
         })
         
-        # Insert project into database
-        response = supabase_client.table("projects").insert(project_data).execute()
-        
-        if response.data:
-            project = response.data[0]
-            project_id = project["id"]
+        # Only initialize DocumentAgent if we have an OpenAI API key
+        try:
+            from ..utils import get_openai_api_key_sync
+            api_key = get_openai_api_key_sync()
             
-            # Create and add PRD document to docs array
-            try:
+            if api_key:
+                # Import DocumentAgent (lazy import to avoid startup issues)
+                from ..agents.document_agent import DocumentAgent
+                
                 await project_creation_manager.update_progress(progress_id, {
-                    'percentage': 96,
-                    'step': 'creating_prd_document',
-                    'log': '📄 Creating PRD document in project...' 
+                    'percentage': 70,
+                    'step': 'ai_generation',
+                    'log': '✨ AI is creating project documentation...'
                 })
                 
-                # Create PRD document structure
-                prd_content = generated_prd or request.prd or {}
-                prd_doc_title = f"{request.title} - Product Requirements Document"
+                # Initialize DocumentAgent
+                document_agent = DocumentAgent()
                 
-                # Create an appropriate format for the document
-                new_doc = {
-                    "id": str(uuid.uuid4()),
-                    "document_type": "prd",
-                    "title": prd_doc_title,
-                    "content": prd_content,
-                    "tags": ["prd", "requirements"],
-                    "status": "draft",
-                    "version": "1.0",
-                    "author": "System",
-                    "created_at": datetime.now().isoformat(),
-                    "updated_at": datetime.now().isoformat()
-                }
+                # Generate comprehensive PRD using conversation
+                prd_request = f"Create a PRD document titled '{request.title} - Product Requirements Document' for a project called '{request.title}'"
+                if request.description:
+                    prd_request += f" with the following description: {request.description}"
+                if request.github_repo:
+                    prd_request += f" (GitHub repo: {request.github_repo})"
                 
-                # Get current project data to update docs array
-                current_docs = project.get("docs", [])
-                updated_docs = current_docs + [new_doc]
+                # Run the document agent to create PRD with the real project ID
+                agent_result = await document_agent.run_conversation(
+                    user_message=prd_request,
+                    project_id=project_id,  # Use the real project ID
+                    user_id="system"
+                )
                 
-                # Update project with the new document in docs array
-                supabase_client.table("projects").update({
-                    "docs": updated_docs,
-                    "updated_at": datetime.now().isoformat()
-                }).eq("id", project_id).execute()
-                
-                # Update project data with the added document
-                project["docs"] = updated_docs
-                
-            except Exception as doc_error:
-                logger.warning(f"Error creating PRD document: {doc_error}")
+                if agent_result.success:
+                    await project_creation_manager.update_progress(progress_id, {
+                        'percentage': 85,
+                        'step': 'finalizing',
+                        'log': f'📝 Successfully created project documentation'
+                    })
+                else:
+                    await project_creation_manager.update_progress(progress_id, {
+                        'percentage': 85,
+                        'step': 'finalizing',
+                        'log': f'⚠️ Project created but AI documentation generation had issues: {agent_result.message}'
+                    })
+            else:
                 await project_creation_manager.update_progress(progress_id, {
-                    'percentage': 96,
-                    'step': 'prd_document_error',
-                    'log': f'⚠️ Failed to create PRD document: {str(doc_error)}'
-                })
-            
-            # Save technical and business sources to project_sources table
-            if request.technical_sources or request.business_sources:
-                await project_creation_manager.update_progress(progress_id, {
-                    'percentage': 97,
-                    'step': 'linking_sources',
-                    'log': '🔗 Linking knowledge sources...'
+                    'percentage': 85,
+                    'step': 'finalizing',
+                    'log': '⚠️ OpenAI API key not configured - skipping AI documentation generation'
                 })
                 
-                # Insert technical sources
-                if request.technical_sources:
-                    for source_id in request.technical_sources:
-                        try:
-                            supabase_client.table("project_sources").insert({
-                                "project_id": project_id,
-                                "source_id": source_id,
-                                "created_by": "system",
-                                "notes": "technical"
-                            }).execute()
-                        except Exception as e:
-                            logger.warning(f"Failed to link technical source {source_id}: {e}")
-                
-                # Insert business sources  
-                if request.business_sources:
-                    for source_id in request.business_sources:
-                        try:
-                            supabase_client.table("project_sources").insert({
-                                "project_id": project_id,
-                                "source_id": source_id,
-                                "created_by": "system", 
-                                "notes": "business"
-                            }).execute()
-                        except Exception as e:
-                            logger.warning(f"Failed to link business source {source_id}: {e}")
-            
-            # Get linked sources for response
-            technical_sources = []
-            business_sources = []
-            
-            try:
-                sources_response = supabase_client.table("project_sources").select("source_id, notes").eq("project_id", project_id).execute()
-                for source_link in sources_response.data:
-                    if source_link.get("notes") == "technical":
-                        technical_sources.append(source_link["source_id"])
-                    elif source_link.get("notes") == "business":
-                        business_sources.append(source_link["source_id"])
-            except Exception as e:
-                logger.warning(f"Failed to retrieve linked sources: {e}")
-            
-            # Complete the creation process
-            await project_creation_manager.complete_creation(progress_id, {
-                'project': {
-                    "id": project["id"],
-                    "title": project["title"],
-                    "github_repo": project.get("github_repo"),
-                    "created_at": project["created_at"],
-                    "updated_at": project["updated_at"],
-                    "prd": project.get("prd", {}),
-                    "docs": project.get("docs", []),
-                    "features": project.get("features", []),
-                    "data": project.get("data", []),
-                    "technical_sources": technical_sources,
-                    "business_sources": business_sources
-                }
+        except Exception as ai_error:
+            logger.warning(f"AI generation failed, continuing with basic project: {ai_error}")
+            await project_creation_manager.update_progress(progress_id, {
+                'percentage': 85,
+                'step': 'finalizing',
+                'log': f'⚠️ AI generation failed - created basic project structure'
             })
-        else:
-            await project_creation_manager.error_creation(progress_id, "Failed to save project to database")
-            
+        
+        # Final success
+        await project_creation_manager.update_progress(progress_id, {
+            'percentage': 100,
+            'step': 'completed',
+            'log': f'🎉 Project "{request.title}" created successfully!',
+            'project_id': project_id
+        })
+        
     except Exception as e:
-        await project_creation_manager.error_creation(progress_id, str(e))
+        logger.error(f"Project creation failed: {str(e)}")
+        await project_creation_manager.update_progress(progress_id, {
+            'percentage': 0,
+            'step': 'failed',
+            'log': f'❌ Project creation failed: {str(e)}'
+        })
+        raise
 
 @router.get("/projects/health")
 async def projects_health():
@@ -1341,8 +1218,6 @@ async def list_project_tasks(project_id: str, include_archived: bool = False, in
             span.set_attribute("error", str(e))
             raise HTTPException(status_code=500, detail={'error': str(e)})
 
-
-
 @router.post("/tasks")
 async def create_task(request: CreateTaskRequest):
     """Create a new task with automatic reordering and real-time WebSocket broadcasting."""
@@ -1643,8 +1518,6 @@ async def websocket_project_creation_progress(websocket: WebSocket, progress_id:
         except:
             pass
 
-
-
 # Enhanced WebSocket endpoint with session-based change detection
 @router.websocket("/projects/{project_id}/tasks/ws")
 async def task_updates_websocket(websocket: WebSocket, project_id: str, session_id: str = Query(None)):
@@ -1827,136 +1700,3 @@ async def mcp_update_task_status_with_websockets(task_id: str, status: str):
             span.set_attribute("success", False)
             span.set_attribute("error", str(e))
             raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/projects/{project_id}/tasks/force-update-check")
-async def force_task_update_check(project_id: str):
-    """
-    Manually trigger a check for task updates and broadcast via WebSocket.
-    Useful for testing the MCP-WebSocket bridge system.
-    """
-    with logfire_logger.span("force_task_update_check") as span:
-        span.set_attribute("project_id", project_id)
-        
-        try:
-            logfire_logger.info("Manual task update check triggered", project_id=project_id)
-            
-            # Force a check for changes
-            await db_change_detector._check_and_broadcast_changes(project_id)
-            
-            span.set_attribute("success", True)
-            return {
-                "success": True,
-                "message": f"Forced update check completed for project {project_id}",
-                "timestamp": datetime.now().isoformat()
-            }
-            
-        except Exception as e:
-            logfire_logger.error("Failed to force update check", project_id=project_id, error=str(e))
-            span.set_attribute("success", False)
-            span.set_attribute("error", str(e))
-            raise HTTPException(status_code=500, detail=f"Failed to check for updates: {str(e)}")
-
-# Import versioning module
-try:
-    from ..modules.versioning_module import (
-        get_document_version_history_direct,
-        restore_document_version_direct,
-        get_version_content_direct,
-        create_document_version_direct
-    )
-    VERSIONING_AVAILABLE = True
-    logger.info("✓ Versioning module imported successfully")
-except ImportError as e:
-    logger.warning(f"⚠ Versioning module not available: {e}")
-    VERSIONING_AVAILABLE = False
-
-# ==================== VERSIONING ENDPOINTS ====================
-
-@router.get("/projects/{project_id}/documents/versions")
-async def get_document_version_history(project_id: str, field_name: str = Query("docs")):
-    """Get version history for project document JSONB fields"""
-    if not VERSIONING_AVAILABLE:
-        raise HTTPException(status_code=501, detail="Versioning module not available")
-    
-    try:
-        with logfire_logger.span("api_get_document_version_history") as span:
-            span.set_attribute("project_id", project_id)
-            span.set_attribute("field_name", field_name)
-            
-            # Use direct function that doesn't require MCP context
-            result = await get_document_version_history_direct(project_id, field_name)
-            
-            # Parse JSON result from MCP function
-            result_data = json.loads(result)
-            
-            if result_data.get("success"):
-                return result_data
-            else:
-                raise HTTPException(status_code=400, detail=result_data.get("error", "Unknown error"))
-                
-    except Exception as e:
-        logger.error(f"Failed to get document version history: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/projects/{project_id}/documents/versions/{version_number}")
-async def get_version_content(project_id: str, version_number: int, field_name: str = Query("docs")):
-    """Get content of a specific version for preview"""
-    if not VERSIONING_AVAILABLE:
-        raise HTTPException(status_code=501, detail="Versioning module not available")
-    
-    try:
-        with logfire_logger.span("api_get_version_content") as span:
-            span.set_attribute("project_id", project_id)
-            span.set_attribute("field_name", field_name)
-            span.set_attribute("version_number", version_number)
-            
-            # Use direct function (removed task_id parameter since we only support project versioning)
-            result = await get_version_content_direct(
-                project_id=project_id, 
-                field_name=field_name, 
-                version_number=version_number
-            )
-            
-            # Parse JSON result
-            result_data = json.loads(result)
-            
-            if result_data.get("success"):
-                return result_data
-            else:
-                raise HTTPException(status_code=400, detail=result_data.get("error", "Unknown error"))
-                
-    except Exception as e:
-        logger.error(f"Failed to get version content: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/projects/{project_id}/documents/versions/{version_number}/restore")
-async def restore_document_version(project_id: str, version_number: int, field_name: str = Query("docs")):
-    """Restore a project document JSONB field to a specific version"""
-    if not VERSIONING_AVAILABLE:
-        raise HTTPException(status_code=501, detail="Versioning module not available")
-    
-    try:
-        with logfire_logger.span("api_restore_document_version") as span:
-            span.set_attribute("project_id", project_id)
-            span.set_attribute("field_name", field_name)
-            span.set_attribute("version_number", version_number)
-            
-            # Use direct function
-            result = await restore_document_version_direct(
-                project_id=project_id,
-                field_name=field_name,
-                version_number=version_number,
-                restored_by="api_user"
-            )
-            
-            # Parse JSON result
-            result_data = json.loads(result)
-            
-            if result_data.get("success"):
-                return result_data
-            else:
-                raise HTTPException(status_code=400, detail=result_data.get("error", "Unknown error"))
-                
-    except Exception as e:
-        logger.error(f"Failed to restore document version: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
