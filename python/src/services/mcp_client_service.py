@@ -17,6 +17,8 @@ import logging
 import subprocess
 import signal
 import os
+import httpx
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any, Union, AsyncGenerator
@@ -24,15 +26,20 @@ from dataclasses import dataclass, asdict
 from enum import Enum
 
 from mcp import ClientSession
-from mcp.client.sse import sse_client
 from mcp.types import (
     Tool, 
     CallToolRequest,
     CallToolResult,
     ListToolsRequest,
     InitializeRequest,
-    InitializedNotification
+    InitializedNotification,
+    JSONRPCMessage,
+    JSONRPCRequest,
+    JSONRPCResponse,
+    JSONRPCError
 )
+import anyio
+from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -190,110 +197,42 @@ class MCPClientService:
             try:
                 logger.info(f"Connecting to {config.name} via {config.transport_type}")
                 
-                # For SSE, we need to handle it specially
+                # For SSE, we implement the connection directly here
                 if config.transport_type == TransportType.SSE:
-                    # SSE connections need special handling - we can't use the context manager
-                    # across different tasks. Instead, we'll create a persistent connection
                     url = config.connection_config.get('url')
                     if not url:
                         raise ValueError("SSE transport requires 'url' in connection_config")
                     
-                    # For now, let's use a mock connection approach
-                    # The real MCP SSE client has issues with task groups
-                    try:
-                        mcp_logger.info("Using mock SSE connection approach")
-                        
-                        # Test if the SSE endpoint is reachable
-                        import aiohttp
-                        async with aiohttp.ClientSession() as http_session:
-                            async with http_session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as response:
-                                if response.status == 200:
-                                    mcp_logger.info("SSE endpoint is reachable", url=url)
-                                else:
-                                    raise ValueError(f"SSE endpoint returned status {response.status}")
-                        
-                        # Mark as connected (mock connection)
-                        client_info.status = ClientStatus.CONNECTED
-                        client_info.last_seen = datetime.now(timezone.utc)
-                        
-                        # Create a mock session
-                        self.sessions[client_id] = {"type": "mock_sse", "url": url}
-                        
-                        # For demonstration, add some mock tools based on what Archon server provides
-                        if "archon" in config.name.lower() or "8051" in url:
-                            # These are the actual tools from Archon MCP server
-                            mock_tools = [
-                                type('Tool', (), {
-                                    'name': 'health_check',
-                                    'description': 'Perform a lightweight health check',
-                                    'inputSchema': {}
-                                }),
-                                type('Tool', (), {
-                                    'name': 'crawl_single_page',
-                                    'description': 'Crawl a single web page and store its content',
-                                    'inputSchema': {'url': 'string'}
-                                }),
-                                type('Tool', (), {
-                                    'name': 'smart_crawl_url',
-                                    'description': 'Intelligently crawl a URL based on its type',
-                                    'inputSchema': {'url': 'string'}
-                                }),
-                                type('Tool', (), {
-                                    'name': 'perform_rag_query',
-                                    'description': 'Perform a RAG query on stored content',
-                                    'inputSchema': {'query': 'string'}
-                                }),
-                                type('Tool', (), {
-                                    'name': 'search_code_examples',
-                                    'description': 'Search for code examples',
-                                    'inputSchema': {'query': 'string'}
-                                }),
-                            ]
-                            client_info.tools = mock_tools
-                            mcp_logger.info(f"Added {len(mock_tools)} mock tools for Archon server")
-                        else:
-                            client_info.tools = []
-                        
-                        mcp_logger.info("Mock SSE connection established", client_id=client_id)
-                        return True
-                        
-                    except Exception as e:
-                        mcp_logger.error("Failed to establish mock SSE connection", 
-                                       client_id=client_id,
-                                       error=str(e),
-                                       exc_info=True)
-                        client_info.status = ClientStatus.ERROR
-                        client_info.last_error = str(e)
-                        raise
+                    # Create the SSE session using our simplified implementation
+                    session = await self._create_sse_session_direct(config)
+                    mcp_logger.info("SSE session created successfully", client_id=client_id)
+                    
+                    # Initialize the MCP session
+                    mcp_logger.debug("Sending initialize request to MCP server")
+                    init_result = await session.initialize()
+                    mcp_logger.info("Session initialized successfully", 
+                                   client_id=client_id,
+                                   server_name=getattr(init_result.serverInfo, 'name', 'unknown'),
+                                   server_version=getattr(init_result.serverInfo, 'version', 'unknown'),
+                                   protocol_version=init_result.protocolVersion,
+                                   capabilities=init_result.capabilities)
+                    
+                    # Store session
+                    self.sessions[client_id] = session
+                    client_info.status = ClientStatus.CONNECTED
+                    client_info.last_seen = datetime.now(timezone.utc)
+                    
+                    # Discover tools
+                    await self._discover_tools(client_id)
+                    
+                    logger.info(f"Successfully connected to {config.name}")
+                    mcp_logger.info("Client connection completed successfully", 
+                                   client_id=client_id,
+                                   client_name=config.name,
+                                   tools_count=len(client_info.tools))
+                    return True
                 else:
-                    # For other transports (if we add them later)
-                    session = await self._create_session(config)
-                    mcp_logger.info("Session created successfully", client_id=client_id)
-                
-                # Initialize the MCP session
-                mcp_logger.debug("Sending initialize request to MCP server")
-                init_result = await session.initialize()
-                mcp_logger.info("Session initialized successfully", 
-                               client_id=client_id,
-                               server_name=getattr(init_result.serverInfo, 'name', 'unknown'),
-                               server_version=getattr(init_result.serverInfo, 'version', 'unknown'),
-                               protocol_version=init_result.protocolVersion,
-                               capabilities=init_result.capabilities)
-                
-                # Store session
-                self.sessions[client_id] = session
-                client_info.status = ClientStatus.CONNECTED
-                client_info.last_seen = datetime.now(timezone.utc)
-                
-                # Discover tools
-                await self._discover_tools(client_id)
-                
-                logger.info(f"Successfully connected to {config.name}")
-                mcp_logger.info("Client connection completed successfully", 
-                               client_id=client_id,
-                               client_name=config.name,
-                               tools_count=len(client_info.tools))
-                return True
+                    raise ValueError(f"Unsupported transport type: {config.transport_type}. Only SSE is supported.")
                 
             except Exception as e:
                 mcp_logger.error("Client connection failed", 
@@ -344,8 +283,15 @@ class MCPClientService:
         # Close session
         if client_id in self.sessions:
             try:
-                # MCP sessions don't have explicit close, transport handles it
-                pass  
+                session = self.sessions[client_id]
+                # Clean up SSE context if it exists
+                if hasattr(session, '_transport_client_id'):
+                    transport_id = session._transport_client_id
+                    if transport_id in self._sse_contexts:
+                        context = self._sse_contexts[transport_id]
+                        if 'http_client' in context:
+                            await context['http_client'].aclose()
+                        del self._sse_contexts[transport_id]
             except Exception as e:
                 logger.warning(f"Error closing session for {client_id}: {e}")
             finally:
@@ -368,82 +314,150 @@ class MCPClientService:
                 del self.processes[client_id]
                 
     # ========================================
-    # TRANSPORT IMPLEMENTATIONS
+    # SSE TRANSPORT IMPLEMENTATION
     # ========================================
     
-    async def _create_session(self, config: MCPClientConfig) -> ClientSession:
-        """Create an MCP session based on transport type"""
-        transport_type = config.transport_type
-        connection_config = config.connection_config
-        
-        mcp_logger.info("Creating MCP session", 
-                       transport_type=transport_type,
-                       config=connection_config)
-        
-        if transport_type == TransportType.SSE:
-            return await self._create_sse_session(config)
-        else:
-            mcp_logger.error("Unsupported transport type", transport_type=transport_type)
-            raise ValueError(f"Unsupported transport type: {transport_type}. Only SSE is supported for MCP clients.")
-        
-            
-    async def _create_sse_session(self, config: MCPClientConfig) -> ClientSession:
-        """Create SSE transport session"""
-        connection_config = config.connection_config
-        
-        url = connection_config.get('url')
+    async def _create_sse_session_direct(self, config: MCPClientConfig) -> ClientSession:
+        """Create SSE transport session with proper MCP protocol implementation"""
+        url = config.connection_config.get('url')
         if not url:
             raise ValueError("SSE transport requires 'url' in connection_config")
             
         mcp_logger.info(f"Creating SSE session for endpoint: {url}")
         
+        # Store the HTTP client and session info
+        client_id = str(uuid.uuid4())
+        session_info = {
+            'url': url,
+            'session_id': None,
+            'http_client': httpx.AsyncClient(timeout=httpx.Timeout(30.0)),
+            'connected': False
+        }
+        
+        # Create memory streams for the session
+        read_stream_writer, read_stream = anyio.create_memory_object_stream(0)
+        write_stream, write_stream_reader = anyio.create_memory_object_stream(0)
+        
+        # Store session info
+        self._sse_contexts[client_id] = {
+            'session_info': session_info,
+            'read_stream_writer': read_stream_writer,
+            'write_stream_reader': write_stream_reader,
+            'http_client': session_info['http_client']
+        }
+        
+        # Start the SSE message handler task
+        task = asyncio.create_task(self._handle_sse_messages(client_id, url))
+        self._sse_tasks[client_id] = task
+        
+        # Create and return the session
+        session = ClientSession(read_stream, write_stream)
+        
+        # Store client_id in session for cleanup
+        session._transport_client_id = client_id
+        
+        return session
+    
+    async def _handle_sse_messages(self, client_id: str, url: str):
+        """Handle SSE message flow for MCP protocol"""
+        context = self._sse_contexts.get(client_id)
+        if not context:
+            return
+            
+        session_info = context['session_info']
+        read_stream_writer = context['read_stream_writer']
+        write_stream_reader = context['write_stream_reader']
+        http_client = context['http_client']
+        
         try:
-            # Import SSE transport directly
-            from mcp.client.sse import SSEServerTransport
-            from mcp.shared.context import EventContext
-            
-            mcp_logger.debug("Creating SSE transport")
-            
-            # Create SSE transport with the URL
-            transport = SSEServerTransport(url)
-            
-            # Create event context
-            context = EventContext()
-            
-            # Start the transport
-            read_stream, write_stream = await transport.start(context)
-            
-            # Create session with the streams
-            session = ClientSession(read_stream, write_stream)
-            
-            mcp_logger.info(f"Successfully created SSE session for {url}")
-            return session
-            
-        except ImportError:
-            # Fallback to using sse_client if direct import fails
-            mcp_logger.warning("Direct SSE transport import failed, trying sse_client")
-            try:
-                # The sse_client is a function that creates the streams
-                sse_client_fn = sse_client(url)
-                
-                # Check if it's an async context manager
-                if hasattr(sse_client_fn, '__aenter__'):
-                    # It's an async context manager, we need to handle it differently
-                    raise ValueError("SSE client returns a context manager - cannot use directly in session creation")
-                else:
-                    # Try to await it directly
-                    read_stream, write_stream = await sse_client_fn
-                    session = ClientSession(read_stream, write_stream)
-                    mcp_logger.info(f"Successfully created SSE session using sse_client for {url}")
-                    return session
-                    
-            except Exception as e:
-                mcp_logger.error(f"Failed to create SSE session: {e}", exc_info=True)
-                raise ValueError(f"Failed to create SSE session for {url}: {str(e)}")
-                
+            # Process outgoing messages
+            async with write_stream_reader:
+                async for message in write_stream_reader:
+                    try:
+                        # Convert message to dict for JSON serialization
+                        if hasattr(message, 'model_dump'):
+                            message_dict = message.model_dump(by_alias=True, exclude_none=True)
+                        else:
+                            message_dict = message
+                        
+                        # Handle initialize request specially
+                        if message_dict.get('method') == 'initialize':
+                            # POST initialize request
+                            response = await http_client.post(
+                                url,
+                                json=message_dict,
+                                headers={'Content-Type': 'application/json'}
+                            )
+                            response.raise_for_status()
+                            
+                            # Parse response
+                            response_data = response.json()
+                            
+                            # Extract session ID from headers if present
+                            session_id = response.headers.get('Mcp-Session-Id')
+                            if session_id:
+                                session_info['session_id'] = session_id
+                                mcp_logger.info(f"Got session ID: {session_id}")
+                            
+                            # Send response back through the stream
+                            response_msg = JSONRPCResponse.model_validate(response_data)
+                            await read_stream_writer.send(response_msg)
+                            
+                        elif message_dict.get('method') == 'initialized':
+                            # Send initialized notification
+                            headers = {'Content-Type': 'application/json'}
+                            if session_info['session_id']:
+                                headers['Mcp-Session-Id'] = session_info['session_id']
+                            
+                            response = await http_client.post(
+                                url,
+                                json=message_dict,
+                                headers=headers
+                            )
+                            # Notification responses are typically 202 Accepted
+                            if response.status_code not in (200, 202):
+                                mcp_logger.warning(f"Initialized notification got status {response.status_code}")
+                            
+                            session_info['connected'] = True
+                            
+                        else:
+                            # Regular request
+                            headers = {'Content-Type': 'application/json'}
+                            if session_info['session_id']:
+                                headers['Mcp-Session-Id'] = session_info['session_id']
+                            
+                            response = await http_client.post(
+                                url,
+                                json=message_dict,
+                                headers=headers
+                            )
+                            response.raise_for_status()
+                            
+                            # Parse and send response
+                            response_data = response.json()
+                            response_msg = JSONRPCResponse.model_validate(response_data)
+                            await read_stream_writer.send(response_msg)
+                            
+                    except Exception as e:
+                        mcp_logger.error(f"Error processing message: {e}", exc_info=True)
+                        # Send error response
+                        if 'id' in message_dict:
+                            error_response = JSONRPCResponse(
+                                jsonrpc="2.0",
+                                id=message_dict['id'],
+                                error=JSONRPCError(
+                                    code=-32603,
+                                    message=str(e)
+                                )
+                            )
+                            await read_stream_writer.send(error_response)
+                            
         except Exception as e:
-            mcp_logger.error(f"Failed to create SSE session: {e}", exc_info=True)
-            raise ValueError(f"Failed to create SSE session for {url}: {str(e)}")
+            mcp_logger.error(f"SSE message handler error: {e}", exc_info=True)
+        finally:
+            # Cleanup
+            await read_stream_writer.aclose()
+            await http_client.aclose()
         
     # ========================================
     # TOOL DISCOVERY & EXECUTION
@@ -477,19 +491,19 @@ class MCPClientService:
                             has_tools=hasattr(result, 'tools'),
                             tools_count=len(result.tools) if hasattr(result, 'tools') else 0)
                 
-                client_info.tools = result.tools
+                client_info.tools = result.tools if result.tools else []
                 client_info.last_seen = datetime.now(timezone.utc)
                 
                 mcp_logger.info("Tools discovered successfully", 
                            client_id=client_id,
                            client_name=client_info.config.name,
-                           tools_count=len(result.tools),
-                           tool_names=[tool.name for tool in result.tools] if result.tools else [])
+                           tools_count=len(client_info.tools),
+                           tool_names=[tool.name for tool in client_info.tools])
                 
-                logger.info(f"Discovered {len(result.tools)} tools from {client_info.config.name}")
+                logger.info(f"Discovered {len(client_info.tools)} tools from {client_info.config.name}")
                 
                 # Log individual tools for debugging
-                for tool in result.tools:
+                for tool in client_info.tools:
                     mcp_logger.debug("Tool details",
                                    name=tool.name,
                                    description=getattr(tool, 'description', 'No description'),
@@ -532,13 +546,13 @@ class MCPClientService:
             raise RuntimeError(f"Client not connected: {client_id}")
             
         try:
-            # Execute the tool call
-            request = CallToolRequest(
-                name=tool_name,
-                arguments=arguments
-            )
+            mcp_logger.info(f"Calling tool {tool_name}", 
+                          client_id=client_id,
+                          tool_name=tool_name,
+                          arguments=arguments)
             
-            result = await session.call_tool(request)
+            # Execute the tool call
+            result = await session.call_tool(tool_name, arguments)
             client_info.last_seen = datetime.now(timezone.utc)
             
             logger.info(f"Successfully called tool {tool_name} on {client_info.config.name}")
