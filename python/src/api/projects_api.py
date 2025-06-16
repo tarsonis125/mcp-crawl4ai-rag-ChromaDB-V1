@@ -41,6 +41,7 @@ class CreateProjectRequest(BaseModel):
     data: Optional[List[Any]] = None
     technical_sources: Optional[List[str]] = None  # List of knowledge source IDs
     business_sources: Optional[List[str]] = None   # List of knowledge source IDs
+    pinned: Optional[bool] = None  # Whether this project should be pinned to top
 
 class UpdateProjectRequest(BaseModel):
     title: Optional[str] = None
