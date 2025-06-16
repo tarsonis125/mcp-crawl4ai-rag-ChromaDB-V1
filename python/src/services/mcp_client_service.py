@@ -88,6 +88,7 @@ class MCPClientService:
     - Supports stdio, SSE, docker exec, NPX transports
     - Maintains persistent connections
     - Provides tool discovery and execution
+    - Handles automatic reconnection on failures
     """
     
     def __init__(self):
@@ -98,6 +99,8 @@ class MCPClientService:
         self._sse_tasks: Dict[str, asyncio.Task] = {}  # Store SSE connection tasks
         self._shutdown_event = asyncio.Event()
         self._running = False
+        self._reconnect_tasks: Dict[str, asyncio.Task] = {}  # Track reconnection tasks
+        self._reconnect_delays: Dict[str, float] = {}  # Track backoff delays
         
     async def start(self):
         """Start the MCP client service"""
@@ -118,6 +121,11 @@ class MCPClientService:
         mcp_logger.info("Stopping Universal MCP Client Service")
         self._running = False
         self._shutdown_event.set()
+        
+        # Cancel all reconnection tasks
+        for task in self._reconnect_tasks.values():
+            task.cancel()
+        self._reconnect_tasks.clear()
         
         # Disconnect all clients
         for client_id in list(self.clients.keys()):
@@ -256,12 +264,70 @@ class MCPClientService:
             
         logger.info(f"Disconnecting from {client_info.config.name}")
         
+        # Cancel any pending reconnection
+        if client_id in self._reconnect_tasks:
+            self._reconnect_tasks[client_id].cancel()
+            del self._reconnect_tasks[client_id]
+        
         await self._cleanup_client_connection(client_id)
         
         client_info.status = ClientStatus.DISCONNECTED
         client_info.tools = []
         
         return True
+        
+    async def _reconnect_client(self, client_id: str):
+        """Handle automatic reconnection with exponential backoff"""
+        client_info = self.clients.get(client_id)
+        if not client_info or not client_info.config.auto_connect:
+            return
+            
+        # Check if already reconnecting
+        if client_id in self._reconnect_tasks and not self._reconnect_tasks[client_id].done():
+            return
+            
+        async def reconnect_with_backoff():
+            max_delay = 60  # Maximum delay of 1 minute
+            base_delay = 1  # Start with 1 second
+            
+            # Get current delay or start with base
+            current_delay = self._reconnect_delays.get(client_id, base_delay)
+            
+            while self._running and client_info.config.auto_connect:
+                try:
+                    logger.info(f"Attempting to reconnect {client_info.config.name} after {current_delay}s delay")
+                    
+                    # Wait with exponential backoff
+                    await asyncio.sleep(current_delay)
+                    
+                    # Disconnect first to clean up
+                    await self._cleanup_client_connection(client_id)
+                    
+                    # Try to reconnect
+                    await self.connect_client(client_id)
+                    
+                    # Success - reset delay
+                    self._reconnect_delays[client_id] = base_delay
+                    logger.info(f"Successfully reconnected to {client_info.config.name}")
+                    break
+                    
+                except Exception as e:
+                    logger.error(f"Reconnection failed for {client_info.config.name}: {e}")
+                    
+                    # Increase delay with exponential backoff
+                    current_delay = min(current_delay * 2, max_delay)
+                    self._reconnect_delays[client_id] = current_delay
+                    
+                    # Check if we should continue
+                    if not self._running or not client_info.config.auto_connect:
+                        break
+                        
+            # Clean up
+            if client_id in self._reconnect_tasks:
+                del self._reconnect_tasks[client_id]
+                
+        # Start reconnection task
+        self._reconnect_tasks[client_id] = asyncio.create_task(reconnect_with_backoff())
         
     async def _cleanup_client_connection(self, client_id: str):
         """Clean up all resources for a client connection"""
@@ -431,6 +497,28 @@ class MCPClientService:
                                 json=message_dict,
                                 headers=headers
                             )
+                            
+                            # Handle 404 - session expired, need to reconnect
+                            if response.status_code == 404:
+                                mcp_logger.warning(f"Session expired (404), triggering reconnection for {client_id}")
+                                # Mark session as invalid
+                                session_info['session_id'] = None
+                                session_info['connected'] = False
+                                # Send error response to trigger reconnection
+                                if 'id' in message_dict:
+                                    error_response = JSONRPCResponse(
+                                        jsonrpc="2.0",
+                                        id=message_dict['id'],
+                                        error=JSONRPCError(
+                                            code=-32000,
+                                            message="Session expired - reconnection required"
+                                        )
+                                    )
+                                    await read_stream_writer.send(error_response)
+                                # Trigger reconnection
+                                asyncio.create_task(self._reconnect_client(client_id))
+                                return
+                            
                             response.raise_for_status()
                             
                             # Parse and send response
@@ -621,12 +709,7 @@ class MCPClientService:
                     
                     # Attempt reconnection if auto_connect is enabled
                     if client_info.config.auto_connect:
-                        logger.info(f"Attempting to reconnect {client_info.config.name}")
-                        try:
-                            await self.disconnect_client(client_id)
-                            await self.connect_client(client_id)
-                        except Exception as reconnect_error:
-                            logger.error(f"Reconnection failed for {client_info.config.name}: {reconnect_error}")
+                        await self._reconnect_client(client_id)
 
 # Global service instance
 _mcp_client_service: Optional[MCPClientService] = None

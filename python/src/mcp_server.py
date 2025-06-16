@@ -53,6 +53,9 @@ logger = logging.getLogger(__name__)
 # Import Logfire configuration
 from src.logfire_config import setup_logfire, mcp_logger
 
+# Import session management (after path setup)
+from src.services.mcp_session_manager import get_session_manager
+
 try:
     from src.utils import get_supabase_client
 except ImportError as e:
@@ -155,6 +158,10 @@ async def archon_lifespan(server: FastMCP) -> AsyncIterator[ArchonContext]:
     reranking_model = None
     
     try:
+        # Initialize session manager (no longer needs async start)
+        logger.info("🔐 Initializing session manager...")
+        session_manager = get_session_manager()
+        logger.info("✓ Session manager initialized")
         # Initialize essential services
         logger.info("🗄️ Initializing Supabase client...")
         supabase_client = get_supabase_client()
@@ -225,6 +232,9 @@ async def archon_lifespan(server: FastMCP) -> AsyncIterator[ArchonContext]:
                 logger.info("✓ Crawler cleaned up")
         except Exception as e:
             logger.error(f"✗ Error cleaning up crawler: {e}")
+        
+        # Session manager cleanup is now handled by SimplifiedSessionManager
+        logger.info("✓ Session manager cleanup complete")
         
         logger.info("✅ Archon MCP server lifespan ended")
 
@@ -309,8 +319,54 @@ async def health_check(ctx: Context) -> str:
             "timestamp": datetime.now().isoformat()
         })
 
-# FastMCP automatically handles MCP protocol initialization (initialize/initialized)
-# No need for explicit handlers - the library does this for us
+# Session management endpoint
+@mcp.tool()
+async def session_info(ctx: Context) -> str:
+    """
+    Get information about the current session and all active sessions.
+    
+    This tool helps debug session management and connection issues.
+    
+    Returns:
+        JSON string with session information
+    """
+    import json
+    
+    try:
+        session_manager = get_session_manager()
+        
+        # Build session info
+        session_info_data = {
+            'active_sessions': session_manager.get_active_session_count(),
+            'session_timeout': session_manager.timeout
+        }
+        
+        # Add server uptime
+        context = getattr(ctx.request_context, 'lifespan_context', None)
+        if context and hasattr(context, 'startup_time'):
+            session_info_data['server_uptime_seconds'] = time.time() - context.startup_time
+        
+        return json.dumps({
+            "success": True,
+            "session_management": session_info_data,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Session info failed: {e}")
+        return json.dumps({
+            "success": False,
+            "error": f"Failed to get session info: {str(e)}",
+            "timestamp": datetime.now().isoformat()
+        })
+
+# Session Management Integration
+# Note: FastMCP handles the MCP protocol internally, including initialization.
+# For session management, we rely on the MCP specification where:
+# 1. Server returns Mcp-Session-Id header in InitializeResponse
+# 2. Client includes this header in subsequent requests
+# 3. Server returns 404 when session expires
+# This is handled by FastMCP's internal SSE implementation.
 
 # Import and register all modules
 def register_modules():

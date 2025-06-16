@@ -92,12 +92,17 @@ Archon's MCP Client uses **Streamable HTTP (SSE)** transport as specified in the
   "transport": "sse",
   "config": {
     "url": "https://example.com/mcp/sse"
-  }
+  },
+  "auto_connect": true,
+  "health_check_interval": 30
 }
 ```
 
 **Key Features:**
 - Simple URL-based configuration
+- Automatic reconnection with exponential backoff
+- Session management with `Mcp-Session-Id` headers
+- Health check monitoring for connection stability
 - HTTP/HTTPS support for secure connections
 - Real-time streaming of server messages
 - Compatible with cloud-hosted and local servers
@@ -353,6 +358,57 @@ curl -N -H "Accept: text/event-stream" \
      -H "Authorization: Bearer your-token" \
      https://your-server.com/sse
 ```
+
+#### Automatic Reconnection
+
+<Admonition type="info" icon="🔄" title="Built-in Reconnection">
+
+Archon's MCP client automatically handles reconnection following the MCP specification:
+
+</Admonition>
+
+**How Reconnection Works:**
+
+1. **Session Expiration Detection**: Client detects HTTP 404 responses from the server
+2. **Exponential Backoff**: Retry delays increase from 1s → 2s → 4s → ... up to 60s
+3. **Automatic Re-initialization**: Client sends a new InitializeRequest without session ID
+4. **Seamless Recovery**: Tools and connections are restored automatically
+
+**Reconnection Configuration:**
+
+```javascript title="Client Configuration"
+{
+  "name": "Archon",
+  "transport": "sse",
+  "config": {
+    "url": "http://localhost:8051/sse"
+  },
+  "auto_connect": true,              // Enable automatic reconnection
+  "health_check_interval": 30        // Check every 30 seconds
+}
+```
+
+**Monitoring Reconnection:**
+
+```bash
+# View reconnection attempts in logs
+docker logs archon-pyserver | grep "reconnect"
+
+# Check current reconnection status
+docker exec archon-pyserver python -c "
+from src.services.mcp_client_service import get_mcp_client_service
+service = get_mcp_client_service()
+for client_id, info in service.clients.items():
+    print(f'{info.config.name}: {info.status}')
+"
+```
+
+**Manual Reconnection:**
+
+If automatic reconnection fails, you can trigger manual reconnection:
+
+1. Click the "Reconnect" button on the client card
+2. Or use the API: `POST /api/mcp-client/{client_id}/connect`
 
 #### Tool Execution Failures
 

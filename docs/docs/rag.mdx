@@ -77,6 +77,135 @@ sequenceDiagram
     MCP-->>Client: RAG Response with Sources
 ```
 
+## 🔍 Using perform_rag_query
+
+### Basic Search
+
+The `perform_rag_query` tool is the primary interface for semantic search across your knowledge base:
+
+```javascript title="Basic RAG Query"
+// Simple search across all sources
+await mcp.callTool('perform_rag_query', {
+  query: "authentication best practices",
+  match_count: 5  // Optional, defaults to 5
+});
+```
+
+### Filtered Search by Source
+
+Filter results to specific domains or sources:
+
+```javascript title="Source-Filtered Search"
+// Search only within a specific domain
+await mcp.callTool('perform_rag_query', {
+  query: "MCP session management",
+  source: "modelcontextprotocol.io",  // Filter by domain
+  match_count: 10
+});
+
+// Get available sources first
+const sources = await mcp.callTool('get_available_sources', {});
+// Returns: ["ai.pydantic.dev", "modelcontextprotocol.io", ...]
+```
+
+### Advanced Usage Examples
+
+<Tabs>
+<TabItem value="technical" label="Technical Documentation" default>
+
+```javascript
+// Search for technical implementation details
+await mcp.callTool('perform_rag_query', {
+  query: "SSE transport implementation MCP protocol",
+  source: "modelcontextprotocol.io",
+  match_count: 5
+});
+
+// Response includes:
+// - Matched content chunks
+// - Source URLs
+// - Similarity scores
+// - Metadata (headers, context)
+```
+
+</TabItem>
+<TabItem value="code" label="Code Examples">
+
+```javascript
+// Search for code examples
+await mcp.callTool('search_code_examples', {
+  query: "React hooks useState useEffect",
+  source_id: "react.dev",  // Optional source filter
+  match_count: 10
+});
+
+// Returns:
+// - Code snippets with syntax highlighting
+// - AI-generated summaries
+// - Full context (before/after code)
+// - Source file information
+```
+
+</TabItem>
+<TabItem value="multi-source" label="Multi-Source Search">
+
+```javascript
+// Search across all indexed sources
+const results = await mcp.callTool('perform_rag_query', {
+  query: "best practices for API design REST GraphQL",
+  // No source filter - searches everything
+  match_count: 15
+});
+
+// Group results by source
+const groupedResults = results.reduce((acc, result) => {
+  const source = result.metadata.source;
+  if (!acc[source]) acc[source] = [];
+  acc[source].push(result);
+  return acc;
+}, {});
+```
+
+</TabItem>
+</Tabs>
+
+### Understanding RAG Results
+
+<Admonition type="info" icon="📊" title="RAG Result Structure">
+
+Each RAG query returns structured results with:
+
+- **content**: The matched text chunk
+- **metadata**: Source URL, headers, crawl date
+- **similarity_score**: Semantic similarity (0-1)
+- **source_id**: Domain or source identifier
+
+</Admonition>
+
+```json title="Example RAG Response"
+{
+  "success": true,
+  "results": [
+    {
+      "id": 7123,
+      "content": "MCP session management enables clients to reconnect...",
+      "metadata": {
+        "source": "modelcontextprotocol.io",
+        "source_url": "https://modelcontextprotocol.io/docs/session",
+        "headers": "### Session Management; ### Reconnection",
+        "crawl_type": "smart_crawl"
+      },
+      "similarity_score": 0.89,
+      "rerank_score": 1.24  // If reranking enabled
+    }
+  ],
+  "query": "MCP session management",
+  "source": "modelcontextprotocol.io",
+  "match_count": 5,
+  "total_found": 5
+}
+```
+
 ## ✅ Current RAG System Status
 
 <Tabs>

@@ -109,11 +109,12 @@ Archon provides 30 MCP tools organized into logical categories:
 | `get_version_content` | Get specific version | View or compare past versions |
 | `restore_document_version` | Restore to version | Rollback to previous state |
 
-### System Health Tools (1 tool)
+### System Health Tools (2 tools)
 
 | Tool | Description | Use Case |
 |------|-------------|----------|
 | `health_check` | Comprehensive system diagnostics | Monitor server health and performance |
+| `session_info` | Session management information | Debug connections and view active sessions |
 
 ## Setup {#setup}
 
@@ -323,6 +324,116 @@ Create a new project called "My AI App" with a basic description
 
 </TabItem>
 </Tabs>
+
+## 🔄 Session Management & Reconnection {#session-management}
+
+### Overview
+
+Archon's MCP server includes simplified session management that enables clients to automatically reconnect after server restarts or connection failures. This implementation follows the MCP specification for session handling.
+
+<Admonition type="tip" icon="🔄" title="Automatic Reconnection">
+
+MCP clients like Claude Desktop, Cursor, and Windsurf will automatically reconnect to Archon if the server restarts. No manual intervention required!
+
+</Admonition>
+
+### How It Works
+
+1. **Session Creation**: FastMCP handles session creation and returns a unique session ID in the `Mcp-Session-Id` header
+2. **Session Tracking**: Our simplified session manager tracks active sessions with minimal overhead
+3. **Session Validation**: Requests are validated against active sessions (1-hour timeout by default)
+4. **Automatic Reconnection**: When a session expires, FastMCP returns HTTP 404, triggering client reconnection
+5. **Clean Architecture**: Session management is integrated with FastMCP's SSE transport
+
+### Session Lifecycle
+
+```mermaid
+sequenceDiagram
+    participant Client as MCP Client
+    participant FastMCP as FastMCP Server
+    participant SM as Session Manager
+    
+    Client->>FastMCP: Initialize Request
+    FastMCP->>SM: Create Session
+    SM-->>FastMCP: Session ID: abc-123
+    FastMCP-->>Client: Initialize Response<br/>Mcp-Session-Id: abc-123
+    
+    Note over Client,FastMCP: Normal Operation
+    
+    Client->>FastMCP: Tool Request<br/>Mcp-Session-Id: abc-123
+    FastMCP->>SM: Validate Session
+    SM-->>FastMCP: Valid ✓
+    FastMCP-->>Client: Tool Response
+    
+    Note over FastMCP: Server Restarts
+    
+    Client->>FastMCP: Tool Request<br/>Mcp-Session-Id: abc-123
+    FastMCP->>SM: Validate Session
+    SM-->>FastMCP: Invalid
+    FastMCP-->>Client: 404 Session Expired
+    
+    Client->>FastMCP: New Initialize Request
+    FastMCP->>SM: Create New Session
+    SM-->>FastMCP: Session ID: xyz-789
+    FastMCP-->>Client: Initialize Response<br/>Mcp-Session-Id: xyz-789
+```
+
+### Monitoring Sessions
+
+Use the `session_info` tool to monitor active sessions:
+
+```json
+// Ask your AI: "Show me the current MCP sessions"
+// Response:
+{
+  "active_sessions": 2,
+  "total_events": 156,
+  "sessions": [
+    {
+      "session_id": "abc-123-def",
+      "created_at": "2024-01-20T10:30:00Z",
+      "last_seen": "2024-01-20T10:35:23Z",
+      "active_streams": 1,
+      "pending_events": 0
+    }
+  ],
+  "server_uptime_seconds": 3600
+}
+```
+
+### Configuration
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `session_timeout` | 3600s (1 hour) | Time before inactive sessions expire |
+
+The simplified session manager automatically handles cleanup when sessions are accessed, eliminating the need for background cleanup tasks.
+
+### Implementation Details
+
+The session management is integrated with FastMCP's SSE transport:
+
+1. **Minimal Overhead**: Sessions are tracked with just ID and last-seen timestamp
+2. **No Background Tasks**: Cleanup happens on-demand during session validation
+3. **MCP Compliant**: Follows the official MCP specification for session handling
+4. **FastMCP Integration**: Works seamlessly with FastMCP's internal protocol handling
+
+### Troubleshooting Session Issues
+
+**Session Expired Errors:**
+- Normal after server restart or 1-hour timeout
+- Client will automatically reconnect
+- Check `session_info` tool for active sessions
+
+**Multiple Session Warnings:**
+- Each client connection gets its own session
+- Old sessions are cleaned up automatically
+- Use `session_info` to monitor active sessions
+
+**Reconnection Loops:**
+- Check server logs for initialization errors
+- Verify credentials are properly loaded
+- Ensure database connection is stable
 
 ## ⚙️ Environment Setup {#environment-setup}
 
