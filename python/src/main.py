@@ -160,6 +160,40 @@ async def lifespan(app: FastAPI):
         # Make crawling context available to modules
         app.state.crawling_context = crawling_context
         
+        # Start MCP client service and auto-connect clients
+        try:
+            from .services.mcp_client_service import start_mcp_client_service, get_mcp_client_service
+            from .api.mcp_client_api import client_manager
+            
+            # Start the MCP client service
+            await start_mcp_client_service()
+            api_logger.info("✅ MCP client service started")
+            
+            # Schedule auto-connect in the background after a delay
+            async def auto_connect_clients():
+                # Wait a bit for MCP server to be fully ready
+                await asyncio.sleep(5)
+                
+                # Get all clients with auto_connect enabled
+                clients = await client_manager.get_all_clients()
+                auto_connect_clients = [c for c in clients if c.auto_connect]
+                
+                if auto_connect_clients:
+                    api_logger.info(f"🔌 Auto-connecting {len(auto_connect_clients)} MCP clients...")
+                    for client in auto_connect_clients:
+                        try:
+                            api_logger.info(f"  Connecting to {client.name}...")
+                            await client_manager.connect_client(client.id)
+                            api_logger.info(f"  ✅ Connected to {client.name}")
+                        except Exception as e:
+                            api_logger.error(f"  ❌ Failed to connect to {client.name}: {str(e)}")
+            
+            # Start auto-connect in background
+            asyncio.create_task(auto_connect_clients())
+            
+        except Exception as e:
+            api_logger.warning(f"Could not start MCP client service: {str(e)}")
+        
         api_logger.info("🎉 Archon backend started successfully!")
         
     except Exception as e:
@@ -172,6 +206,14 @@ async def lifespan(app: FastAPI):
     api_logger.info("🛑 Shutting down Archon backend...")
     
     try:
+        # Stop MCP client service
+        try:
+            from .services.mcp_client_service import stop_mcp_client_service
+            await stop_mcp_client_service()
+            api_logger.info("✅ MCP client service stopped")
+        except Exception as e:
+            api_logger.warning("Could not stop MCP client service", error=str(e))
+        
         # Cleanup crawling context
         try:
             await crawling_context.cleanup()

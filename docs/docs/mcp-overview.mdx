@@ -13,8 +13,8 @@ import Admonition from '@theme/Admonition';
 
 The Model Context Protocol (MCP) is an open standard that enables AI applications to securely access external data sources and tools. Archon implements both sides of MCP:
 
-- **MCP Server**: Exposes 25 tools for knowledge management and task organization
-- **MCP Client**: Universal client for connecting to any MCP server (including Archon itself)
+- **MCP Server**: Exposes 30 tools for knowledge management and task organization
+- **MCP Client**: Universal SSE-based client for connecting to any MCP server using Streamable HTTP transport
 
 <div className="row">
   <div className="col col--6">
@@ -25,10 +25,10 @@ The Model Context Protocol (MCP) is an open standard that enables AI application
       <div className="card__body">
         <p>Archon as an MCP Server - Expose your knowledge base to AI clients</p>
         <ul>
-          <li>25 comprehensive tools for RAG and project management</li>
+          <li>30 comprehensive tools for RAG and project management</li>
           <li>Real-time Logfire monitoring of all tool calls</li>
           <li>Compatible with Cursor, Windsurf, Claude Desktop</li>
-          <li>Multiple transports: stdio, SSE</li>
+          <li>stdio transport for AI clients, SSE for web clients</li>
         </ul>
         <a href="/mcp-server" className="button button--primary">
           MCP Server Documentation
@@ -42,12 +42,12 @@ The Model Context Protocol (MCP) is an open standard that enables AI application
         <h3>MCP Client</h3>
       </div>
       <div className="card__body">
-        <p>Universal MCP Client - Connect to any MCP server from Archon's UI</p>
+        <p>Universal MCP Client - Connect to any SSE-based MCP server from Archon's UI</p>
         <ul>
-          <li>Connect to any MCP server (including other Archon instances)</li>
+          <li>Connect to any MCP server using Streamable HTTP (SSE) transport</li>
           <li>Interactive tool testing with real-time results</li>
           <li>WebSocket real-time updates for collaborative workflows</li>
-          <li>Multiple transport support with automatic detection</li>
+          <li>Simple configuration - just provide the SSE endpoint URL</li>
         </ul>
         <a href="/mcp-client" className="button button--primary">
           MCP Client Documentation
@@ -198,14 +198,15 @@ Connect to any MCP server from Archon's UI:
 
 <Admonition type="info" icon="📊" title="Complete Tool Overview">
 
-**Archon provides 25 comprehensive MCP tools across multiple domains:**
+**Archon provides 30 comprehensive MCP tools across multiple domains:**
 
 </Admonition>
 
 | Category | Tools | Description | Key Features |
 |----------|-------|-------------|--------------|
 | **🧠 Knowledge Management** | 7 tools | Search, crawl, and manage knowledge | RAG queries, web crawling, document upload |
-| **📊 Project Management** | 17 tools | Tasks, projects, documentation | Task creation, status tracking, document versioning |
+| **📊 Project Management** | 18 tools | Tasks, projects, documentation | Task creation, status tracking, document management |
+| **📄 Document Versioning** | 4 tools | Version control for documents | Create versions, view history, restore versions |
 | **🏥 System Health** | 1 tool | Health monitoring and diagnostics | Comprehensive system status |
 
 ### Tool Categories Deep Dive

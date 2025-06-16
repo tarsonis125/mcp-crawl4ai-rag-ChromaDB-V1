@@ -6,8 +6,10 @@ import { z } from 'zod';
 
 export interface MCPClientConfig {
   name: string;
-  transport_type: 'sse' | 'stdio' | 'docker' | 'npx';
-  connection_config: Record<string, any>;
+  transport_type: 'sse';  // Only SSE (Streamable HTTP) is supported for MCP clients
+  connection_config: {
+    url: string;  // The SSE endpoint URL (e.g., http://localhost:8051/sse)
+  };
   auto_connect?: boolean;
   health_check_interval?: number;
   is_default?: boolean;
@@ -16,8 +18,10 @@ export interface MCPClientConfig {
 export interface MCPClient {
   id: string;
   name: string;
-  transport_type: 'sse' | 'stdio' | 'docker' | 'npx';
-  connection_config: Record<string, any>;
+  transport_type: 'sse';  // Only SSE (Streamable HTTP) is supported
+  connection_config: {
+    url: string;
+  };
   status: 'connected' | 'disconnected' | 'connecting' | 'error';
   auto_connect: boolean;
   health_check_interval: number;
@@ -395,16 +399,14 @@ class MCPClientService {
   // ========================================
 
   /**
-   * Create Archon MCP client using docker exec transport (like Cursor config)
+   * Create Archon MCP client using SSE transport
    */
   async createArchonClient(): Promise<MCPClient> {
     const archonConfig: MCPClientConfig = {
       name: 'Archon',
-      transport_type: 'docker',
+      transport_type: 'sse',
       connection_config: {
-        container: 'archon-pyserver',
-        command: ['python', '/app/src/main.py'],
-        working_dir: '/app'
+        url: 'http://localhost:8051/sse'
       },
       auto_connect: true,
       health_check_interval: 30,

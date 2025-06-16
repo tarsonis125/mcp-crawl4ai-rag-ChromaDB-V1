@@ -140,7 +140,7 @@ async def perform_health_checks(context: ArchonContext):
 @asynccontextmanager
 async def archon_lifespan(server: FastMCP) -> AsyncIterator[ArchonContext]:
     """
-    Manages the shared resources lifecycle - yields immediately for fast startup.
+    Manages the shared resources lifecycle with proper initialization.
     Following official MCP patterns from the Python SDK documentation.
     """
     logger.info("🚀 Starting Archon MCP server lifespan...")
@@ -149,29 +149,65 @@ async def archon_lifespan(server: FastMCP) -> AsyncIterator[ArchonContext]:
     openai_key_available = bool(os.getenv("OPENAI_API_KEY"))
     logger.info(f"🔑 OpenAI API key status: {'AVAILABLE' if openai_key_available else 'NOT FOUND'}")
     
-    # Initialize minimal resources needed for basic operation
+    # Initialize resources needed for full operation
     crawler = None
     supabase_client = None
     reranking_model = None
     
     try:
-        # Initialize essential services (fast operations only)
+        # Initialize essential services
         logger.info("🗄️ Initializing Supabase client...")
         supabase_client = get_supabase_client()
         logger.info("✓ Supabase client initialized")
         
-        # Create context and yield immediately  
+        # Initialize AsyncWebCrawler if available
+        logger.info("🕷️ Initializing web crawler...")
+        try:
+            browser_config = BrowserConfig(
+                headless=True,
+                verbose=False
+            )
+            crawler = AsyncWebCrawler(config=browser_config)
+            await crawler.__aenter__()
+            logger.info("✓ Web crawler initialized")
+        except Exception as e:
+            logger.warning(f"⚠ Failed to initialize web crawler: {e}")
+            crawler = None
+        
+        # Initialize reranking model if enabled
+        use_reranking = os.getenv("USE_RERANKING", "false").lower() == "true"
+        if use_reranking:
+            logger.info("🧠 Initializing reranking model...")
+            try:
+                reranking_model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+                logger.info("✓ Reranking model initialized")
+            except Exception as e:
+                logger.warning(f"⚠ Failed to initialize reranking model: {e}")
+                reranking_model = None
+        else:
+            logger.info("⚠ Reranking disabled - skipping model initialization")
+        
+        # Create context  
         context = ArchonContext(
             crawler=crawler,
             supabase_client=supabase_client,
             reranking_model=reranking_model
         )
         
-        # Set ready status
-        context.health_status["status"] = "ready"
-        context.health_status["database_ready"] = True
+        # Set ready status based on actual initialization
+        context.health_status["database_ready"] = supabase_client is not None
+        context.health_status["crawler_ready"] = crawler is not None
+        context.health_status["reranking_ready"] = reranking_model is not None
         context.health_status["openai_key_available"] = openai_key_available
         context.health_status["last_health_check"] = datetime.now().isoformat()
+        
+        # Overall status: healthy if database is ready, degraded if crawler missing, unhealthy if database missing
+        if not context.health_status["database_ready"]:
+            context.health_status["status"] = "unhealthy"
+        elif not context.health_status["crawler_ready"]:
+            context.health_status["status"] = "degraded"
+        else:
+            context.health_status["status"] = "healthy"
         
         logger.info("✓ Archon context ready - server can accept requests")
         yield context
@@ -304,15 +340,12 @@ def register_modules():
             modules_registered += 1
             logger.info("✓ Project module registered")
         except ImportError as e:
-            if transport != "stdio":
-                logger.warning(f"⚠ Project module not available: {e}")
+            logger.warning(f"⚠ Project module not available: {e}")
         except Exception as e:
-            if transport != "stdio":
-                logger.error(f"✗ Error registering Project module: {e}")
-                logger.error(traceback.format_exc())
+            logger.error(f"✗ Error registering Project module: {e}")
+            logger.error(traceback.format_exc())
     else:
-        if transport != "stdio":
-            logger.info("⚠ Project module skipped - Projects are disabled")
+        logger.info("⚠ Project module skipped - Projects are disabled")
     
     # Import and register Versioning module (for document versioning only - task versioning removed)
     try:

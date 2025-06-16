@@ -11,7 +11,7 @@ import Admonition from '@theme/Admonition';
 
 ## 🎯 Overview
 
-The Universal MCP Client enables connection and interaction with any MCP (Model Context Protocol) server through Archon's web interface. This tool supports testing MCP server connections, managing multiple servers, and validating tool functionality across different transport types.
+The Universal MCP Client enables connection and interaction with any MCP (Model Context Protocol) server that supports Streamable HTTP (SSE) transport through Archon's web interface. This tool provides a simple, unified way to connect to MCP servers, test tools, and manage multiple server connections.
 
 ## ✨ Key Features
 
@@ -23,10 +23,10 @@ The Universal MCP Client enables connection and interaction with any MCP (Model 
       </div>
       <div className="card__body">
         <ul>
-          <li>Multiple transports: stdio, SSE (Streamable HTTP)</li>
+          <li>SSE (Streamable HTTP) transport - following MCP spec 2025-03-26</li>
           <li>Real-time connection status monitoring</li>
           <li>Automatic tool discovery from connected servers</li>
-          <li>Connection pooling and session management</li>
+          <li>Simple URL-based configuration</li>
         </ul>
       </div>
     </div>
@@ -66,12 +66,12 @@ The MCP Client tab is part of Archon's main interface. If you don't see it, make
 
 Archon comes with several pre-configured clients for immediate testing:
 
-| Client | Execution Method | Description | Status |
-|--------|------|-------------|---------|
-| **🏰 Archon** | Docker (stdio transport) | Your local Archon instance | ✅ Real connection |
-| **🔍 Brave Search** | NPX (stdio transport) | Web search capabilities | 🧪 Demo (for UI testing) |
-| **📁 Filesystem** | stdio transport | Local file operations | 🧪 Demo (for UI testing) |
-| **🐙 GitHub** | SSE transport | Repository management | 🧪 Demo (for UI testing) |
+| Client | Transport | Description | Status |
+|--------|-----------|-------------|---------|
+| **🏰 Archon** | SSE (http://localhost:8051/sse) | Your local Archon instance | ✅ Real connection |
+| **🔍 Brave Search** | SSE | Web search capabilities | 🧪 Demo (for UI testing) |
+| **📁 Filesystem** | SSE | Local file operations | 🧪 Demo (for UI testing) |
+| **🐙 GitHub** | SSE | Repository management | 🧪 Demo (for UI testing) |
 
 ### 3. Test Your First Tool
 
@@ -82,68 +82,26 @@ Archon comes with several pre-configured clients for immediate testing:
 
 ## 🔧 Configuration
 
-### Transport Types
+### Transport Configuration
 
-The MCP protocol defines two standard transport mechanisms:
-
-<Tabs>
-<TabItem value="stdio" label="📡 stdio" default>
-
-**Standard Input/Output transport** - Communication through stdin/stdout streams.
-
-```json title="stdio Configuration Example"
-{
-  "name": "Local Python MCP",
-  "transport": "stdio", 
-  "config": {
-    "command": "python",
-    "args": ["/path/to/mcp-server.py"],
-    "workingDir": "/path/to/server",
-    "environment": {
-      "PYTHONPATH": "/path/to/server"
-    }
-  }
-}
-```
-
-**Common execution methods using stdio:**
-- **Direct command**: `python server.py`
-- **Docker exec**: `docker exec container python server.py` 
-- **NPX package**: `npx @modelcontextprotocol/server-brave-search`
-
-**Use Cases:**
-- Local development servers
-- Python/Node.js MCP implementations  
-- Containerized servers (via docker exec)
-- npm-published MCP packages
-
-</TabItem>
-<TabItem value="sse" label="🌐 SSE (Streamable HTTP)">
-
-**Server-Sent Events transport** - HTTP-based communication for remote servers.
+Archon's MCP Client uses **Streamable HTTP (SSE)** transport as specified in the MCP protocol version 2025-03-26. This provides a simple, standard way to connect to any MCP server.
 
 ```json title="SSE Configuration Example"
 {
-  "name": "Remote MCP Server",
+  "name": "My MCP Server",
   "transport": "sse",
   "config": {
-    "url": "https://example.com/mcp/sse",
-    "headers": {
-      "Authorization": "Bearer your-token-here",
-      "Content-Type": "application/json"
-    }
+    "url": "https://example.com/mcp/sse"
   }
 }
 ```
 
-**Use Cases:**
-- Remote MCP servers over HTTP/HTTPS
-- Cloud-hosted services
-- Multi-client server deployments
-- Authenticated endpoints
-
-</TabItem>
-</Tabs>
+**Key Features:**
+- Simple URL-based configuration
+- HTTP/HTTPS support for secure connections
+- Real-time streaming of server messages
+- Compatible with cloud-hosted and local servers
+- No complex process management needed
 
 ### Adding a New Client
 
@@ -167,11 +125,10 @@ const demoClients = [
     id: 'my-server',
     name: 'My Custom Server',
     description: 'My custom MCP server description',
-    transport: 'stdio' as const,
+    transport: 'sse' as const,
     status: 'disconnected' as const,
     config: {
-      command: 'python',
-      args: ['/path/to/my-server.py']
+      url: 'https://my-server.com/sse'
     }
   }
 ];
@@ -379,36 +336,7 @@ print('Active connections:', service.list_connections())
 
 **Solutions:**
 
-<Tabs>
-<TabItem value="docker-issues" label="🐳 Docker Transport" default>
-
-```bash
-# Check if target container exists
-docker ps | grep your-container-name
-
-# Test docker exec access
-docker exec -i your-container-name echo "test"
-
-# Verify MCP server in container
-docker exec your-container-name python /path/to/mcp-server.py --test
-```
-
-</TabItem>
-<TabItem value="stdio-issues" label="📡 stdio Transport">
-
-```bash
-# Test command execution
-python /path/to/mcp-server.py --test
-
-# Check file permissions
-ls -la /path/to/mcp-server.py
-
-# Verify Python path
-which python
-```
-
-</TabItem>
-<TabItem value="sse-issues" label="🌐 SSE Transport">
+**SSE Connection Troubleshooting:**
 
 ```bash
 # Test SSE endpoint
@@ -418,10 +346,13 @@ curl -N -H "Accept: text/event-stream" https://your-server.com/sse
 ping your-server.com
 
 # Verify SSL certificates for HTTPS endpoints
-```
+openssl s_client -connect your-server.com:443
 
-</TabItem>
-</Tabs>
+# Test with specific headers if authentication required
+curl -N -H "Accept: text/event-stream" \
+     -H "Authorization: Bearer your-token" \
+     https://your-server.com/sse
+```
 
 #### Tool Execution Failures
 
@@ -453,10 +384,9 @@ from src.services.mcp_client_service import MCPClientService
 # Create client configuration
 config = {
     "name": "Custom Server",
-    "transport": "stdio",
+    "transport": "sse",
     "config": {
-        "command": "python",
-        "args": ["/path/to/custom-server.py"]
+        "url": "https://my-custom-server.com/sse"
     }
 }
 
@@ -562,20 +492,20 @@ console.log('RAG Results:', result);
 **Setup Brave Search MCP:**
 
 ```bash
-# Install via NPX
-npx @modelcontextprotocol/server-brave-search
+# Run Brave Search MCP server with SSE transport
+npx @modelcontextprotocol/server-brave-search --transport sse --port 8052
 
 # Configuration
 {
   "name": "Brave Search",
-  "transport": "npx",
+  "transport": "sse",
   "config": {
-    "package": "@modelcontextprotocol/server-brave-search",
-    "environment": {
-      "BRAVE_API_KEY": "your-api-key"
-    }
+    "url": "http://localhost:8052/sse"
   }
 }
+
+# Note: Set BRAVE_API_KEY environment variable before running the server
+export BRAVE_API_KEY="your-api-key"
 ```
 
 **Available Tools:**
@@ -588,20 +518,20 @@ npx @modelcontextprotocol/server-brave-search
 **Setup GitHub MCP:**
 
 ```bash
-# Install GitHub MCP
-npm install @modelcontextprotocol/server-github
+# Run GitHub MCP server with SSE transport
+npx @modelcontextprotocol/server-github --transport sse --port 8053
 
 # Configuration  
 {
   "name": "GitHub",
-  "transport": "npx",
+  "transport": "sse",
   "config": {
-    "package": "@modelcontextprotocol/server-github",
-    "environment": {
-      "GITHUB_PERSONAL_ACCESS_TOKEN": "your-token"
-    }
+    "url": "http://localhost:8053/sse"
   }
 }
+
+# Note: Set GITHUB_PERSONAL_ACCESS_TOKEN environment variable before running
+export GITHUB_PERSONAL_ACCESS_TOKEN="your-token"
 ```
 
 **Available Tools:**
@@ -616,16 +546,15 @@ npm install @modelcontextprotocol/server-github
 **Setup Filesystem MCP:**
 
 ```bash
-# Install Filesystem MCP
-npm install @modelcontextprotocol/server-filesystem
+# Run Filesystem MCP server with SSE transport
+npx @modelcontextprotocol/server-filesystem --transport sse --port 8054 /allowed/path
 
 # Configuration
 {
   "name": "Filesystem", 
-  "transport": "npx",
+  "transport": "sse",
   "config": {
-    "package": "@modelcontextprotocol/server-filesystem",
-    "args": ["/allowed/path"]
+    "url": "http://localhost:8054/sse"
   }
 }
 ```
@@ -675,14 +604,13 @@ async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
         return [TextContent(type="text", text=f"Hello, {person_name}!")]
 
 async def main():
-    async with Server.run(
-        transport="stdio",
-        initialization_options=InitializationOptions(
-            server_name="custom-server",
-            server_version="1.0.0"
-        )
-    ) as server:
-        await server.wait_for_shutdown()
+    # Run as SSE server on port 8055
+    from mcp.server.sse import run_sse
+    await run_sse(
+        app,
+        host="0.0.0.0",
+        port=8055
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -692,10 +620,9 @@ if __name__ == "__main__":
 ```json
 {
   "name": "Custom Hello Server",
-  "transport": "stdio", 
+  "transport": "sse", 
   "config": {
-    "command": "python",
-    "args": ["custom_mcp_server.py"]
+    "url": "http://localhost:8055/sse"
   }
 }
 ```

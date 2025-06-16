@@ -1,23 +1,29 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Server, Activity, Clock, ChevronRight, Hammer, Settings, Trash2 } from 'lucide-react';
+import { Server, Activity, Clock, ChevronRight, Hammer, Settings, Trash2, Plug, PlugZap } from 'lucide-react';
 import { Client } from './MCPClients';
+import { mcpClientService } from '../../services/mcpClientService';
+import { useToast } from '../../contexts/ToastContext';
 
 interface ClientCardProps {
   client: Client;
   onSelect: () => void;
   onEdit?: (client: Client) => void;
   onDelete?: (client: Client) => void;
+  onConnectionChange?: () => void;
 }
 
 export const ClientCard = ({
   client,
   onSelect,
   onEdit,
-  onDelete
+  onDelete,
+  onConnectionChange
 }: ClientCardProps) => {
   const [isFlipped, setIsFlipped] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   const particlesRef = useRef<HTMLDivElement>(null);
+  const { showToast } = useToast();
 
   // Special styling for Archon client
   const isArchonClient = client.name.includes('Archon') || client.name.includes('archon');
@@ -204,6 +210,30 @@ export const ClientCard = ({
     onEdit?.(client);
   };
 
+  // Handle connect/disconnect
+  const handleConnect = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsConnecting(true);
+    
+    try {
+      if (client.status === 'offline') {
+        await mcpClientService.connectClient(client.id);
+        showToast(`Connected to ${client.name}`, 'success');
+      } else {
+        await mcpClientService.disconnectClient(client.id);
+        showToast(`Disconnected from ${client.name}`, 'success');
+      }
+      
+      // The parent component should handle refreshing the client list
+      // No need to reload the entire page
+      onConnectionChange?.();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Connection operation failed', 'error');
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
   // Special background for Archon client
   const archonBackground = isArchonClient ? 'bg-gradient-to-b from-white/80 via-blue-50/30 to-white/60 dark:from-white/10 dark:via-blue-900/10 dark:to-black/30' : 'bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30';
 
@@ -235,11 +265,29 @@ export const ClientCard = ({
             </div>
           )}
 
-          {/* Edit button - top right corner */}
+          {/* Connect/Disconnect button */}
+          <button 
+            onClick={handleConnect}
+            disabled={isConnecting}
+            className={`absolute top-3 right-3 p-1.5 rounded-full ${
+              client.status === 'offline' 
+                ? 'bg-green-200/50 dark:bg-green-900/50 hover:bg-green-300/50 dark:hover:bg-green-800/50' 
+                : 'bg-orange-200/50 dark:bg-orange-900/50 hover:bg-orange-300/50 dark:hover:bg-orange-800/50'
+            } transition-colors transform hover:scale-110 transition-transform duration-200 z-20 ${isConnecting ? 'animate-pulse' : ''}`} 
+            title={client.status === 'offline' ? 'Connect client' : 'Disconnect client'}
+          >
+            {client.status === 'offline' ? (
+              <Plug className="w-4 h-4 text-green-600 dark:text-green-400" />
+            ) : (
+              <PlugZap className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+            )}
+          </button>
+
+          {/* Edit button - moved to be second from right */}
           {onEdit && (
             <button 
               onClick={handleEdit} 
-              className={`absolute top-3 right-3 p-1.5 rounded-full ${isArchonClient ? 'bg-blue-200/50 dark:bg-blue-900/50 hover:bg-blue-300/50 dark:hover:bg-blue-800/50' : 'bg-gray-200/50 dark:bg-gray-800/50 hover:bg-gray-300/50 dark:hover:bg-gray-700/50'} transition-colors transform hover:scale-110 transition-transform duration-200 z-20`} 
+              className={`absolute top-3 right-12 p-1.5 rounded-full ${isArchonClient ? 'bg-blue-200/50 dark:bg-blue-900/50 hover:bg-blue-300/50 dark:hover:bg-blue-800/50' : 'bg-gray-200/50 dark:bg-gray-800/50 hover:bg-gray-300/50 dark:hover:bg-gray-700/50'} transition-colors transform hover:scale-110 transition-transform duration-200 z-20`} 
               title="Edit client configuration"
             >
               <Settings className={`w-4 h-4 ${isArchonClient ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'}`} />
@@ -253,7 +301,7 @@ export const ClientCard = ({
                 e.stopPropagation();
                 onDelete(client);
               }} 
-              className="absolute top-3 right-12 p-1.5 rounded-full bg-red-200/50 dark:bg-red-900/50 hover:bg-red-300/50 dark:hover:bg-red-800/50 transition-colors transform hover:scale-110 transition-transform duration-200 z-20"
+              className="absolute top-3 right-[84px] p-1.5 rounded-full bg-red-200/50 dark:bg-red-900/50 hover:bg-red-300/50 dark:hover:bg-red-800/50 transition-colors transform hover:scale-110 transition-transform duration-200 z-20"
               title="Delete client"
             >
               <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
@@ -352,11 +400,29 @@ export const ClientCard = ({
             </div>
           )}
 
+          {/* Connect/Disconnect button - also on back side */}
+          <button 
+            onClick={handleConnect}
+            disabled={isConnecting}
+            className={`absolute top-3 right-3 p-1.5 rounded-full ${
+              client.status === 'offline' 
+                ? 'bg-green-200/50 dark:bg-green-900/50 hover:bg-green-300/50 dark:hover:bg-green-800/50' 
+                : 'bg-orange-200/50 dark:bg-orange-900/50 hover:bg-orange-300/50 dark:hover:bg-orange-800/50'
+            } transition-colors transform hover:scale-110 transition-transform duration-200 z-20 ${isConnecting ? 'animate-pulse' : ''}`} 
+            title={client.status === 'offline' ? 'Connect client' : 'Disconnect client'}
+          >
+            {client.status === 'offline' ? (
+              <Plug className="w-4 h-4 text-green-600 dark:text-green-400" />
+            ) : (
+              <PlugZap className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+            )}
+          </button>
+
           {/* Edit button - also on back side */}
           {onEdit && (
             <button 
               onClick={handleEdit} 
-              className={`absolute top-3 right-3 p-1.5 rounded-full ${isArchonClient ? 'bg-blue-200/50 dark:bg-blue-900/50 hover:bg-blue-300/50 dark:hover:bg-blue-800/50' : 'bg-gray-200/50 dark:bg-gray-800/50 hover:bg-gray-300/50 dark:hover:bg-gray-700/50'} transition-colors transform hover:scale-110 transition-transform duration-200 z-20`} 
+              className={`absolute top-3 right-12 p-1.5 rounded-full ${isArchonClient ? 'bg-blue-200/50 dark:bg-blue-900/50 hover:bg-blue-300/50 dark:hover:bg-blue-800/50' : 'bg-gray-200/50 dark:bg-gray-800/50 hover:bg-gray-300/50 dark:hover:bg-gray-700/50'} transition-colors transform hover:scale-110 transition-transform duration-200 z-20`} 
               title="Edit client configuration"
             >
               <Settings className={`w-4 h-4 ${isArchonClient ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'}`} />
@@ -370,7 +436,7 @@ export const ClientCard = ({
                 e.stopPropagation();
                 onDelete(client);
               }} 
-              className="absolute top-3 right-12 p-1.5 rounded-full bg-red-200/50 dark:bg-red-900/50 hover:bg-red-300/50 dark:hover:bg-red-800/50 transition-colors transform hover:scale-110 transition-transform duration-200 z-20"
+              className="absolute top-3 right-[84px] p-1.5 rounded-full bg-red-200/50 dark:bg-red-900/50 hover:bg-red-300/50 dark:hover:bg-red-800/50 transition-colors transform hover:scale-110 transition-transform duration-200 z-20"
               title="Delete client"
             >
               <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />

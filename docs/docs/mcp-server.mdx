@@ -76,7 +76,7 @@ graph TB
 
 ## Available Tools
 
-Archon provides 25 MCP tools organized into logical categories:
+Archon provides 30 MCP tools organized into logical categories:
 
 ### Knowledge Management Tools (7 tools)
 
@@ -90,16 +90,24 @@ Archon provides 25 MCP tools organized into logical categories:
 | `get_available_sources` | List all indexed sources | See what knowledge is available |
 | `delete_source_tool` | Remove indexed sources | Clean up old or irrelevant content |
 
-### Project Management Tools (17 tools)
+### Project Management Tools (18 tools)
 
 | Category | Tools | Description |
 |----------|-------|-------------|
 | **Projects** | `create_project`, `list_projects`, `get_project`, `delete_project` | Full project lifecycle management |
 | **Tasks** | `create_task`, `list_tasks_by_project`, `get_task`, `update_task`, `update_task_status`, `delete_task` | Comprehensive task management |
 | **Subtasks** | `get_task_subtasks`, `get_tasks_by_status` | Hierarchical task organization |
-| **Documents** | `add_project_document`, `list_project_documents`, `get_project_document`, `update_project_document`, `delete_project_document` | Document management with versioning |
-| **Versioning** | `create_document_version`, `get_document_version_history`, `get_version_content`, `restore_document_version` | Complete version control |
+| **Documents** | `add_project_document`, `list_project_documents`, `get_project_document`, `update_project_document`, `delete_project_document` | Document management |
 | **Features** | `get_project_features` | Feature tracking and organization |
+
+### Document Versioning Tools (4 tools)
+
+| Tool | Description | Use Case |
+|------|-------------|----------|
+| `create_document_version` | Create version snapshot | Save document state before changes |
+| `get_document_version_history` | View version history | Track document evolution |
+| `get_version_content` | Get specific version | View or compare past versions |
+| `restore_document_version` | Restore to version | Rollback to previous state |
 
 ### System Health Tools (1 tool)
 
@@ -288,7 +296,7 @@ Check the health of the Archon system
   "status": "healthy",
   "server": "running",
   "database": "connected", 
-  "tools_available": 25,
+  "tools_available": 30,
   "version": "2.0.0"
 }
 ```
@@ -472,7 +480,7 @@ curl http://localhost:8051/health
   "status": "healthy",
   "server": "running",
   "database": "connected",
-  "tools_available": 25,
+  "tools_available": 30,
   "version": "2.0.0",
   "uptime": "0:05:23",
   "memory_usage": "45.2 MB"

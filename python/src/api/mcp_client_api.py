@@ -28,10 +28,7 @@ from ..logfire_config import mcp_logger, api_logger
 router = APIRouter(prefix="/api/mcp/clients", tags=["mcp-clients"])
 
 class TransportType(str, Enum):
-    SSE = "sse"
-    STDIO = "stdio"
-    DOCKER = "docker"
-    NPX = "npx"
+    SSE = "sse"  # Streamable HTTP (SSE) - the only supported transport for MCP clients
 
 class ClientStatus(str, Enum):
     CONNECTED = "connected"
@@ -51,21 +48,14 @@ class MCPClientConfig(BaseModel):
     def validate_connection_config(cls, v, values):
         transport = values.get('transport_type')
         if transport == TransportType.SSE:
-            required_fields = ['host', 'port']
+            # For SSE transport, we need the URL endpoint
+            required_fields = ['url']
             if not all(field in v for field in required_fields):
                 raise ValueError(f"SSE transport requires: {required_fields}")
-        elif transport == TransportType.STDIO:
-            required_fields = ['command']
-            if not all(field in v for field in required_fields):
-                raise ValueError(f"stdio transport requires: {required_fields}")
-        elif transport == TransportType.DOCKER:
-            required_fields = ['command']
-            if not all(field in v for field in required_fields):
-                raise ValueError(f"Docker transport requires: {required_fields}")
-        elif transport == TransportType.NPX:
-            required_fields = ['package']
-            if not all(field in v for field in required_fields):
-                raise ValueError(f"NPX transport requires: {required_fields}")
+            # Validate URL format
+            url = v.get('url', '')
+            if not url.startswith(('http://', 'https://')):
+                raise ValueError("SSE URL must start with http:// or https://")
         return v
 
 class MCPClient(BaseModel):
@@ -82,13 +72,6 @@ class MCPClient(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-class MCPTool(BaseModel):
-    id: str
-    client_id: str
-    tool_name: str
-    tool_description: Optional[str]
-    tool_schema: Dict[str, Any]
-    discovered_at: datetime
 
 class ToolCallRequest(BaseModel):
     client_id: str
@@ -234,10 +217,7 @@ class MCPClientManager:
                 
                 # Convert API transport type to service transport type
                 service_transport_map = {
-                    "sse": ServiceTransportType.SSE,
-                    "stdio": ServiceTransportType.STDIO,
-                    "docker": ServiceTransportType.DOCKER,
-                    "npx": ServiceTransportType.NPX
+                    "sse": ServiceTransportType.SSE
                 }
                 
                 # Convert API config to service config
@@ -328,10 +308,9 @@ class MCPClientManager:
 
     async def _connect_sse_client(self, client_id: str, config: Dict[str, Any]):
         """Connect to an SSE-based MCP client."""
-        host = config['host']
-        port = config['port']
-        endpoint = config.get('endpoint', '/sse')
-        url = f"http://{host}:{port}{endpoint}"
+        url = config.get('url')
+        if not url:
+            raise ValueError("SSE transport requires 'url' in connection config")
         
         # Test connection
         async with aiohttp.ClientSession() as session:
@@ -340,63 +319,6 @@ class MCPClientManager:
                     raise ValueError(f"SSE endpoint returned status {response.status}")
         
         return {"type": "sse", "url": url, "session": None}
-
-    async def _connect_stdio_client(self, client_id: str, config: Dict[str, Any]):
-        """Connect to a stdio-based MCP client."""
-        command = config['command']
-        args = config.get('args', [])
-        env = config.get('env', {})
-        
-        full_command = [command] + args
-        process_env = os.environ.copy()
-        process_env.update(env)
-        
-        process = subprocess.Popen(
-            full_command,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env=process_env
-        )
-        
-        self.client_processes[client_id] = process
-        return {"type": "stdio", "process": process}
-
-    async def _connect_docker_client(self, client_id: str, config: Dict[str, Any]):
-        """Connect to a Docker-based MCP client."""
-        container_name = config['container_name']
-        command = config['command']
-        args = config.get('args', [])
-        
-        # Test if container exists and is running
-        result = subprocess.run(['docker', 'ps', '--filter', f'name={container_name}', '--format', '{{.Names}}'], 
-                               capture_output=True, text=True)
-        
-        if container_name not in result.stdout:
-            raise ValueError(f"Docker container '{container_name}' not found or not running")
-        
-        return {"type": "docker", "container": container_name, "command": command, "args": args}
-
-    async def _connect_npx_client(self, client_id: str, config: Dict[str, Any]):
-        """Connect to an NPX-based MCP client."""
-        package = config['package']
-        version = config.get('version', 'latest')
-        args = config.get('args', [])
-        
-        package_spec = f"{package}@{version}" if version != 'latest' else package
-        full_command = ['npx', package_spec] + args
-        
-        process = subprocess.Popen(
-            full_command,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        
-        self.client_processes[client_id] = process
-        return {"type": "npx", "process": process, "package": package}
 
     async def _health_monitor(self, client_id: str, interval: int):
         """Background task to monitor client health."""
@@ -433,26 +355,13 @@ class MCPClientManager:
     async def _perform_health_check(self, client_id: str) -> bool:
         """Perform a health check on a specific client."""
         try:
-            client = self.active_clients.get(client_id)
-            if not client:
-                return False
+            # Use the real MCP client service for health checks
+            from ..services.mcp_client_service import get_mcp_client_service
+            service = get_mcp_client_service()
             
-            if client['type'] == 'sse':
-                # Test SSE endpoint
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(client['url'], timeout=aiohttp.ClientTimeout(total=5)) as response:
-                        return response.status == 200
-            
-            elif client['type'] in ['stdio', 'npx']:
-                # Check if process is still running
-                process = client['process']
-                return process.poll() is None
-            
-            elif client['type'] == 'docker':
-                # Check if container is still running
-                result = subprocess.run(['docker', 'ps', '--filter', f'name={client["container"]}', '--format', '{{.Names}}'], 
-                                       capture_output=True, text=True)
-                return client['container'] in result.stdout
+            # Check if client exists in service
+            if client_id in service.clients:
+                return await service.is_client_connected(client_id)
             
             return False
             
@@ -460,7 +369,7 @@ class MCPClientManager:
             return False
 
     async def _discover_tools(self, client_id: str):
-        """Discover available tools from a client and cache them."""
+        """Discover available tools from a client."""
         try:
             # Get the real MCP client service
             from ..services.mcp_client_service import get_mcp_client_service
@@ -470,23 +379,7 @@ class MCPClientManager:
             tools = await service.get_client_tools(client_id)
             
             if tools:
-                # Store tools in database for caching
-                supabase = get_supabase_client()
-                
-                # Clear existing tools for this client
-                supabase.table("mcp_client_tools").delete().eq("client_id", client_id).execute()
-                
-                # Insert discovered tools
-                for tool in tools:
-                    tool_data = {
-                        "client_id": client_id,
-                        "tool_name": tool.name,
-                        "tool_description": tool.description,
-                        "tool_schema": tool.inputSchema if hasattr(tool, 'inputSchema') else {}
-                    }
-                    supabase.table("mcp_client_tools").insert(tool_data).execute()
-                
-                mcp_logger.info("Tools discovered and cached", 
+                mcp_logger.info("Tools discovered", 
                                client_id=client_id, 
                                tools_count=len(tools),
                                tool_names=[tool.name for tool in tools])
@@ -649,16 +542,27 @@ async def get_client_tools(client_id: str):
         span.set_attribute("client_id", client_id)
         
         try:
-            supabase = get_supabase_client()
-            response = supabase.table("mcp_client_tools").select("*").eq("client_id", client_id).execute()
+            # Get tools directly from the MCP client service
+            from ..services.mcp_client_service import get_mcp_client_service
+            service = get_mcp_client_service()
             
-            tools = []
-            for data in response.data:
-                tool = MCPTool(**data)
-                tools.append(tool)
+            # Get the raw tools from the client
+            tools = await service.get_client_tools(client_id)
             
-            span.set_attribute("tool_count", len(tools))
-            return {"client_id": client_id, "tools": tools, "count": len(tools)}
+            # Convert to our API format
+            tool_list = []
+            for tool in tools:
+                tool_data = {
+                    "id": f"{client_id}-{tool.name}",
+                    "client_id": client_id,
+                    "tool_name": tool.name,
+                    "tool_description": tool.description if hasattr(tool, 'description') else None,
+                    "tool_schema": tool.inputSchema if hasattr(tool, 'inputSchema') else {}
+                }
+                tool_list.append(tool_data)
+            
+            span.set_attribute("tool_count", len(tool_list))
+            return {"client_id": client_id, "tools": tool_list, "count": len(tool_list)}
         except Exception as e:
             api_logger.error("Failed to get MCP client tools", client_id=client_id, error=str(e))
             span.set_attribute("error", str(e))
@@ -703,13 +607,8 @@ async def test_client_config(config: MCPClientConfig):
             
             if config.transport_type == TransportType.SSE:
                 await client_manager._connect_sse_client(temp_id, config.connection_config)
-            elif config.transport_type == TransportType.STDIO:
-                client = await client_manager._connect_stdio_client(temp_id, config.connection_config)
-                # Clean up test process
-                if temp_id in client_manager.client_processes:
-                    client_manager.client_processes[temp_id].terminate()
-                    del client_manager.client_processes[temp_id]
-            # Add other transport types as needed
+            else:
+                raise ValueError(f"Unsupported transport type: {config.transport_type}")
             
             span.set_attribute("test_success", True)
             return {"success": True, "message": "Configuration test successful"}

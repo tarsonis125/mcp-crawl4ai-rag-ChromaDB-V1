@@ -148,11 +148,9 @@ export const MCPClients = memo(() => {
       'error': 'error'
     };
 
-    // Extract connection info
+    // Extract connection info (SSE-only)
     const config = dbClient.connection_config;
-    const ip = config.host && config.port ? `${config.host}:${config.port}` : 
-               config.command ? config.command : 
-               config.package ? config.package : 'N/A';
+    const ip = config.url || 'N/A';
 
     return {
       id: dbClient.id,
@@ -264,6 +262,26 @@ export const MCPClients = memo(() => {
     setShowDeleteConfirm(true);
   };
 
+  // Refresh clients list (for after connection state changes)
+  const refreshClients = async () => {
+    try {
+      const dbClients = await mcpClientService.getClients();
+      const convertedClients = await Promise.all(
+        dbClients.map(async (dbClient) => {
+          const client = convertDbClientToClient(dbClient);
+          if (client.status === 'online') {
+            await loadTools(client);
+          }
+          return client;
+        })
+      );
+      setClients(convertedClients);
+    } catch (error) {
+      console.error('Failed to refresh clients:', error);
+      setError(error instanceof Error ? error.message : 'Failed to refresh clients');
+    }
+  };
+
   // Confirm deletion and execute
   const confirmDeleteClient = async () => {
     if (!clientToDelete) return;
@@ -342,6 +360,7 @@ export const MCPClients = memo(() => {
               onSelect={() => handleSelectClient(client)}
               onEdit={() => handleEditClient(client)} 
               onDelete={() => handleDeleteClient(client)}
+              onConnectionChange={refreshClients}
             />
           ))}
         </div>
@@ -409,14 +428,7 @@ interface AddClientModalProps {
 const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, onSubmit }) => {
   const [formData, setFormData] = useState({
     name: '',
-    transport_type: 'sse' as 'sse' | 'stdio',
-    host: '',
-    port: '',
-    command: '',
-    package: '',
-    container_name: '',
-    args: '',
-    env: '',
+    url: '',
     auto_connect: true
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -434,60 +446,34 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, onSubm
     setError(null);
 
     try {
-      // Build connection config based on transport type
-      let connection_config: Record<string, any> = {};
-      
-      switch (formData.transport_type) {
-        case 'sse':
-          if (!formData.host || !formData.port) {
-            setError('Host and port are required for SSE transport');
-            setIsSubmitting(false);
-            return;
-          }
-          connection_config = {
-            host: formData.host,
-            port: parseInt(formData.port),
-            endpoint: '/sse'
-          };
-          break;
+      // Validate URL
+      if (!formData.url.trim()) {
+        setError('MCP server URL is required');
+        setIsSubmitting(false);
+        return;
+      }
 
-        case 'stdio':
-          if (!formData.command) {
-            setError('Command is required');
-            setIsSubmitting(false);
-            return;
-          }
-          // Parse args from string to array (split by spaces, handling quoted strings)
-          const argsArray = formData.args ? 
-            formData.args.split(/\s+/).filter(arg => arg.length > 0) : [];
-          
-          // Parse environment variables if provided
-          let envVars = {};
-          if (formData.env && formData.env.trim()) {
-            try {
-              envVars = JSON.parse(formData.env);
-            } catch (e) {
-              setError('Environment variables must be valid JSON');
-              setIsSubmitting(false);
-              return;
-            }
-          }
-          
-          connection_config = {
-            command: formData.command,
-            args: argsArray,
-            ...(Object.keys(envVars).length > 0 ? { env: envVars } : {})
-          };
-          break;
-        default:
-          setError('Unsupported transport type');
+      // Ensure URL is valid
+      try {
+        const url = new URL(formData.url);
+        if (!url.protocol.startsWith('http')) {
+          setError('URL must start with http:// or https://');
           setIsSubmitting(false);
           return;
+        }
+      } catch (e) {
+        setError('Invalid URL format');
+        setIsSubmitting(false);
+        return;
       }
+
+      const connection_config = {
+        url: formData.url.trim()
+      };
 
       const clientConfig: MCPClientConfig = {
         name: formData.name.trim(),
-        transport_type: formData.transport_type,
+        transport_type: 'sse',
         connection_config,
         auto_connect: formData.auto_connect
       };
@@ -497,14 +483,7 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, onSubm
       // Reset form on success
       setFormData({
         name: '',
-        transport_type: 'sse',
-        host: '',
-        port: '',
-        command: '',
-        package: '',
-        container_name: '',
-        args: '',
-        env: '',
+        url: '',
         auto_connect: true
       });
       setError(null);
@@ -542,100 +521,27 @@ const AddClientModal: React.FC<AddClientModalProps> = ({ isOpen, onClose, onSubm
             />
           </div>
 
-          {/* Transport Type */}
+          {/* MCP Server URL */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Transport Type *
+              MCP Server URL *
             </label>
-            <select 
-              value={formData.transport_type}
-              onChange={(e) => setFormData(prev => ({ ...prev, transport_type: e.target.value as any }))}
-              className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
-            >
-              <option value="sse">SSE (Server-Sent Events)</option>
-              <option value="stdio">stdio (Process)</option>
-            </select>
+            <input 
+              type="text" 
+              value={formData.url}
+              onChange={(e) => setFormData(prev => ({ ...prev, url: e.target.value }))}
+              className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
+              placeholder="http://host.docker.internal:8051/sse" 
+              required
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              The SSE endpoint URL of the MCP server
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              <strong>Docker Note:</strong> Use <code>host.docker.internal</code> instead of <code>localhost</code> 
+              to access services running on your host machine
+            </p>
           </div>
-
-          {/* Transport-specific fields */}
-          {formData.transport_type === 'sse' && (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Host *
-                </label>
-                <input 
-                  type="text" 
-                  value={formData.host}
-                  onChange={(e) => setFormData(prev => ({ ...prev, host: e.target.value }))}
-                  className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
-                  placeholder="localhost" 
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Port *
-                </label>
-                <input 
-                  type="number" 
-                  value={formData.port}
-                  onChange={(e) => setFormData(prev => ({ ...prev, port: e.target.value }))}
-                  className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
-                  placeholder="8051" 
-                />
-              </div>
-            </>
-          )}
-
-          {formData.transport_type === 'stdio' && (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Command *
-                </label>
-                <input 
-                  type="text" 
-                  value={formData.command}
-                  onChange={(e) => setFormData(prev => ({ ...prev, command: e.target.value }))}
-                  className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
-                  placeholder="python" 
-                />
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Executable command (e.g., python, node, ./server)
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Arguments
-                </label>
-                <input 
-                  type="text" 
-                  value={formData.args}
-                  onChange={(e) => setFormData(prev => ({ ...prev, args: e.target.value }))}
-                  className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
-                  placeholder="src/mcp_server.py --port 8051 or docker exec -i -e TRANSPORT=stdio archon-pyserver uv run python src/mcp_server.py" 
-                />
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Space-separated arguments. Include script path and options, or container name and full command path for docker.
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Environment Variables (JSON)
-                </label>
-                <textarea 
-                  value={formData.env}
-                  onChange={(e) => setFormData(prev => ({ ...prev, env: e.target.value }))}
-                  className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
-                  placeholder='{"TRANSPORT": "stdio", "API_KEY": "your-key"}'
-                  rows={3}
-                />
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Optional JSON object with environment variables
-                </p>
-              </div>
-            </>
-          )}
 
           {/* Auto Connect */}
           <div className="flex items-center">
@@ -689,13 +595,7 @@ interface EditClientDrawerProps {
 const EditClientDrawer: React.FC<EditClientDrawerProps> = ({ client, isOpen, onClose, onUpdate }) => {
   const [editFormData, setEditFormData] = useState({
     name: client.name,
-    transport_type: 'stdio' as 'sse' | 'stdio' | 'docker' | 'npx',
-    host: '',
-    port: '',
-    command: '',
-    package: '',
-    args: '',
-    env: '',
+    url: '',
     auto_connect: true
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -723,13 +623,7 @@ const EditClientDrawer: React.FC<EditClientDrawerProps> = ({ client, isOpen, onC
       
       setEditFormData({
         name: dbClient.name,
-        transport_type: dbClient.transport_type as any,
-        host: config.host || '',
-        port: config.port?.toString() || '',
-        command: config.command || '',
-        package: config.package || '',
-        args: config.args ? config.args.join(' ') : '',
-        env: config.env ? JSON.stringify(config.env, null, 2) : '',
+        url: config.url || '',
         auto_connect: dbClient.auto_connect
       });
     } catch (error) {
@@ -744,65 +638,35 @@ const EditClientDrawer: React.FC<EditClientDrawerProps> = ({ client, isOpen, onC
     setError(null);
 
     try {
-      // Build connection config based on transport type (same logic as AddClientModal)
-      let connection_config: Record<string, any> = {};
-      
-      switch (editFormData.transport_type) {
-        case 'sse':
-          if (!editFormData.host || !editFormData.port) {
-            setError('Host and port are required for SSE transport');
-            setIsSubmitting(false);
-            return;
-          }
-          connection_config = {
-            host: editFormData.host,
-            port: parseInt(editFormData.port),
-            endpoint: '/sse'
-          };
-          break;
-        case 'docker':
-        case 'stdio':
-          if (!editFormData.command) {
-            setError('Command is required');
-            setIsSubmitting(false);
-            return;
-          }
-          const argsArray = editFormData.args ? 
-            editFormData.args.split(/\s+/).filter(arg => arg.length > 0) : [];
-          
-          let envVars = {};
-          if (editFormData.env && editFormData.env.trim()) {
-            try {
-              envVars = JSON.parse(editFormData.env);
-            } catch (e) {
-              setError('Environment variables must be valid JSON');
-              setIsSubmitting(false);
-              return;
-            }
-          }
-          
-          connection_config = {
-            command: editFormData.command,
-            args: argsArray,
-            ...(Object.keys(envVars).length > 0 ? { env: envVars } : {})
-          };
-          break;
-        case 'npx':
-          if (!editFormData.package) {
-            setError('Package name is required for NPX transport');
-            setIsSubmitting(false);
-            return;
-          }
-          connection_config = {
-            package: editFormData.package
-          };
-          break;
+      // Validate URL
+      if (!editFormData.url.trim()) {
+        setError('MCP server URL is required');
+        setIsSubmitting(false);
+        return;
       }
+
+      // Ensure URL is valid
+      try {
+        const url = new URL(editFormData.url);
+        if (!url.protocol.startsWith('http')) {
+          setError('URL must start with http:// or https://');
+          setIsSubmitting(false);
+          return;
+        }
+      } catch (e) {
+        setError('Invalid URL format');
+        setIsSubmitting(false);
+        return;
+      }
+
+      const connection_config = {
+        url: editFormData.url.trim()
+      };
 
       // Update client via API
       const updatedClient = await mcpClientService.updateClient(client.id, {
         name: editFormData.name,
-        transport_type: editFormData.transport_type,
+        transport_type: 'sse',
         connection_config,
         auto_connect: editFormData.auto_connect
       });
@@ -811,9 +675,7 @@ const EditClientDrawer: React.FC<EditClientDrawerProps> = ({ client, isOpen, onC
       const convertedClient = {
         ...client,
         name: updatedClient.name,
-        ip: connection_config.host && connection_config.port ? 
-          `${connection_config.host}:${connection_config.port}` : 
-          connection_config.command || 'N/A'
+        ip: editFormData.url
       };
       
       onUpdate(convertedClient);
@@ -891,81 +753,27 @@ const EditClientDrawer: React.FC<EditClientDrawerProps> = ({ client, isOpen, onC
             />
           </div>
 
-          {/* Transport Type */}
+          {/* MCP Server URL */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Transport Type *
+              MCP Server URL *
             </label>
-            <select 
-              value={editFormData.transport_type}
-              onChange={(e) => setEditFormData(prev => ({ ...prev, transport_type: e.target.value as any }))}
-              className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
-            >
-              <option value="sse">SSE (Server-Sent Events)</option>
-              <option value="stdio">stdio (Process)</option>
-            </select>
+            <input 
+              type="text" 
+              value={editFormData.url}
+              onChange={(e) => setEditFormData(prev => ({ ...prev, url: e.target.value }))}
+              className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
+              placeholder="http://host.docker.internal:8051/sse" 
+              required
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              The SSE endpoint URL of the MCP server
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              <strong>Docker Note:</strong> Use <code>host.docker.internal</code> instead of <code>localhost</code> 
+              to access services running on your host machine
+            </p>
           </div>
-
-          {/* Transport-specific fields - same as AddClientModal */}
-          {editFormData.transport_type === 'sse' && (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Host *</label>
-                <input 
-                  type="text" 
-                  value={editFormData.host}
-                  onChange={(e) => setEditFormData(prev => ({ ...prev, host: e.target.value }))}
-                  className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
-                  placeholder="localhost" 
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Port *</label>
-                <input 
-                  type="number" 
-                  value={editFormData.port}
-                  onChange={(e) => setEditFormData(prev => ({ ...prev, port: e.target.value }))}
-                  className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
-                  placeholder="8051" 
-                />
-              </div>
-            </>
-          )}
-
-          {editFormData.transport_type === 'stdio' && (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Command *</label>
-                <input 
-                  type="text" 
-                  value={editFormData.command}
-                  onChange={(e) => setEditFormData(prev => ({ ...prev, command: e.target.value }))}
-                  className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
-                  placeholder="python" 
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Arguments</label>
-                <input 
-                  type="text" 
-                  value={editFormData.args}
-                  onChange={(e) => setEditFormData(prev => ({ ...prev, args: e.target.value }))}
-                  className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
-                  placeholder="src/mcp_server.py --port 8051 or docker exec -i -e TRANSPORT=stdio archon-pyserver uv run python src/mcp_server.py" 
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Environment Variables (JSON)</label>
-                <textarea 
-                  value={editFormData.env}
-                  onChange={(e) => setEditFormData(prev => ({ ...prev, env: e.target.value }))}
-                  className="w-full px-3 py-2 bg-white/50 dark:bg-black/50 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500" 
-                  placeholder='{"TRANSPORT": "stdio"}'
-                  rows={3}
-                />
-              </div>
-            </>
-          )}
 
           {/* Auto Connect */}
           <div className="flex items-center">
