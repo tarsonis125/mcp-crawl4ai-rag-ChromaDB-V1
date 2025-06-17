@@ -79,7 +79,7 @@ export const RAGSettings = ({
         </div>
         
         {/* Second row: Contextual Embeddings, Max Workers, and description */}
-        <div className="grid grid-cols-8 gap-4 mb-4">
+        <div className="grid grid-cols-8 gap-4 mb-4 p-4 rounded-lg border border-green-500/20 shadow-[0_2px_8px_rgba(34,197,94,0.1)]">
           <div className="col-span-4">
             <CustomCheckbox 
               id="contextualEmbeddings" 
