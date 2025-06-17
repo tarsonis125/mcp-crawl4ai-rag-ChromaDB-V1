@@ -26,6 +26,7 @@ class DocumentDependencies(ArchonDependencies):
     """Dependencies for document operations."""
     project_id: str = ""  # Required but needs default value due to parent class having defaults
     current_document_id: Optional[str] = None
+    progress_callback: Optional[Any] = None  # Callback for progress updates
 
 class DocumentOperation(BaseModel):
     """Structured output for document operations."""
@@ -208,6 +209,13 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
         ) -> str:
             """Create a new document with structured content based on the description."""
             try:
+                # Send progress update if callback available
+                if ctx.deps.progress_callback:
+                    await ctx.deps.progress_callback({
+                        'step': 'ai_generation',
+                        'log': f'📝 Creating {document_type}: {title}'
+                    })
+                
                 # Determine content structure based on document type
                 if document_type == "prd":
                     # Structure according to document_builder prompt
@@ -278,9 +286,26 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
                 
                 if success:
                     doc_id = result_data.get('document', {}).get('id', 'unknown')
+                    
+                    # Send success progress update if callback available
+                    if ctx.deps.progress_callback:
+                        await ctx.deps.progress_callback({
+                            'step': 'ai_generation',
+                            'log': f'✅ Successfully created {document_type}: {title}'
+                        })
+                    
                     return f"Successfully created document '{title}' of type '{document_type}'. Document ID: {doc_id}"
                 else:
-                    return f"Failed to create document: {result_data.get('error', 'Unknown error')}"
+                    error_msg = result_data.get('error', 'Unknown error')
+                    
+                    # Send error progress update if callback available
+                    if ctx.deps.progress_callback:
+                        await ctx.deps.progress_callback({
+                            'step': 'ai_generation',
+                            'log': f'❌ Failed to create document: {error_msg}'
+                        })
+                    
+                    return f"Failed to create document: {error_msg}"
                 
             except Exception as e:
                 logger.error(f"Error creating document: {e}")
@@ -703,7 +728,8 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
             logger.warning(f"Could not load prompt from service: {e}")
             return "Document Management Assistant for conversational document operations."
     
-    async def run_conversation(self, user_message: str, project_id: str, user_id: str = None, current_document_id: str = None) -> DocumentOperation:
+    async def run_conversation(self, user_message: str, project_id: str, user_id: str = None, 
+                              current_document_id: str = None, progress_callback: Any = None) -> DocumentOperation:
         """
         Run the agent for conversational document management.
         
@@ -712,6 +738,7 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
             project_id: ID of the project to work with
             user_id: ID of the user making the request
             current_document_id: ID of currently focused document (if any)
+            progress_callback: Optional callback for progress updates
             
         Returns:
             Structured DocumentOperation result
@@ -719,7 +746,8 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
         deps = DocumentDependencies(
             project_id=project_id,
             user_id=user_id,
-            current_document_id=current_document_id
+            current_document_id=current_document_id,
+            progress_callback=progress_callback
         )
         
         try:

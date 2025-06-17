@@ -277,33 +277,47 @@ class DocumentStorageService:
             
             await report_progress_internal(current_progress, f'Processing batch {current_batch}/{total_batches} ({len(batch_contents)} chunks)...')
             
-            # Apply contextual embedding if enabled (sequential processing to avoid progress conflicts)
+            # Apply contextual embedding if enabled (with proper concurrent processing)
             if use_contextual_embeddings:
                 current_progress += progress_per_batch * 0.1  # 10% of batch progress
-                await report_progress_internal(current_progress, f'Batch {current_batch}/{total_batches}: Applying contextual embeddings...')
+                await report_progress_internal(current_progress, f'Batch {current_batch}/{total_batches}: Processing contextual embeddings (parallel)...')
                 
-                # Process sequentially to maintain accurate progress reporting
-                contextual_contents = []
+                # Process with concurrent workers to handle rate limits properly
+                max_workers = int(os.getenv("CONTEXTUAL_EMBEDDINGS_MAX_WORKERS", "3"))
+                
+                # Prepare args for concurrent processing
+                process_args = []
                 for j, content in enumerate(batch_contents):
                     url = batch_urls[j]
                     full_document = url_to_full_document.get(url, "")
+                    process_args.append((url, content, full_document))
+                
+                # Process concurrently with ThreadPoolExecutor
+                import concurrent.futures
+                contextual_contents = [None] * len(batch_contents)  # Pre-allocate to maintain order
+                
+                with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    # Submit all tasks
+                    future_to_index = {executor.submit(process_chunk_with_context, args): idx 
+                                     for idx, args in enumerate(process_args)}
                     
-                    try:
-                        result, success = process_chunk_with_context((url, content, full_document))
-                        contextual_contents.append(result)
-                        if success:
-                            batch_metadatas[j]["contextual_embedding"] = True
-                    except Exception as e:
-                        print(f"Error processing chunk {j}: {e}")
-                        contextual_contents.append(content)
-                    
-                    # Report progress for every few chunks
-                    if j % 5 == 0 or j == len(batch_contents) - 1:  # Update every 5 chunks
-                        chunk_progress = (j + 1) / len(batch_contents) * (progress_per_batch * 0.4)
-                        await report_progress_internal(current_progress + chunk_progress, 
-                                                     f'Batch {current_batch}/{total_batches}: Contextual embeddings {j+1}/{len(batch_contents)}')
+                    completed = 0
+                    # Process as they complete
+                    for future in concurrent.futures.as_completed(future_to_index):
+                        idx = future_to_index[future]
+                        try:
+                            result, success = future.result()
+                            contextual_contents[idx] = result
+                            if success:
+                                batch_metadatas[idx]["contextual_embedding"] = True
+                        except Exception as e:
+                            print(f"Error processing chunk {idx}: {e}")
+                            contextual_contents[idx] = batch_contents[idx]
+                        
+                        completed += 1
                 
                 current_progress += progress_per_batch * 0.4  # 40% of batch progress for contextual embeddings
+                await report_progress_internal(current_progress, f'Batch {current_batch}/{total_batches}: Contextual embeddings complete')
             else:
                 contextual_contents = batch_contents
                 current_progress += progress_per_batch * 0.5  # Skip contextual processing, move to embeddings

@@ -44,7 +44,7 @@ class RateLimitHandler:
         self.last_request_time = 0
         self.min_request_interval = 0.1  # Minimum 100ms between requests
     
-    async def execute_with_rate_limit(self, func, *args, **kwargs):
+    async def execute_with_rate_limit(self, func, *args, progress_callback=None, **kwargs):
         """Execute a function with rate limiting protection."""
         retries = 0
         
@@ -79,6 +79,11 @@ class RateLimitHandler:
                     retries += 1
                     if retries > self.max_retries:
                         print(f"💥 DEBUG: Max retries exceeded for rate limit: {full_error}")
+                        if progress_callback:
+                            await progress_callback({
+                                'step': 'ai_generation',
+                                'log': f'❌ Rate limit exceeded after {self.max_retries} retries'
+                            })
                         raise Exception(f"Rate limit exceeded after {self.max_retries} retries: {full_error}")
                     
                     # Extract wait time from error message if available
@@ -88,11 +93,24 @@ class RateLimitHandler:
                         wait_time = self.base_delay * (2 ** (retries - 1))
                     
                     print(f"⏳ Rate limit hit. Type: {type(e).__name__}, Waiting {wait_time:.2f}s before retry {retries}/{self.max_retries}")
+                    
+                    # Send progress update if callback provided
+                    if progress_callback:
+                        await progress_callback({
+                            'step': 'ai_generation',
+                            'log': f'⏱️ Rate limit hit. Waiting {wait_time:.0f}s before retry {retries}/{self.max_retries}'
+                        })
+                    
                     await asyncio.sleep(wait_time)
                     continue
                 else:
                     # Non-rate-limit error, re-raise immediately
                     print(f"❌ DEBUG: Non-rate-limit error, re-raising: {full_error}")
+                    if progress_callback:
+                        await progress_callback({
+                            'step': 'ai_generation', 
+                            'log': f'❌ Error: {str(e)}'
+                        })
                     raise
         
         raise Exception(f"Failed after {self.max_retries} retries")
@@ -168,8 +186,10 @@ class BaseAgent(ABC, Generic[DepsT, OutputT]):
             The agent's structured output
         """
         if self.rate_limiter:
+            # Extract progress callback from deps if available
+            progress_callback = getattr(deps, 'progress_callback', None)
             return await self.rate_limiter.execute_with_rate_limit(
-                self._run_agent, user_prompt, deps
+                self._run_agent, user_prompt, deps, progress_callback=progress_callback
             )
         else:
             return await self._run_agent(user_prompt, deps)
@@ -183,7 +203,8 @@ class BaseAgent(ABC, Generic[DepsT, OutputT]):
                 timeout=120.0  # 2 minute timeout for agent operations
             )
             self.logger.info(f"Agent {self.name} completed successfully")
-            return result
+            # PydanticAI returns a RunResult with data attribute
+            return result.data
         except asyncio.TimeoutError:
             self.logger.error(f"Agent {self.name} timed out after 120 seconds")
             raise Exception(f"Agent {self.name} operation timed out - taking too long to respond")

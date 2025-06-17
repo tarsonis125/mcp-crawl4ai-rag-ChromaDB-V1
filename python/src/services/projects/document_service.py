@@ -69,8 +69,7 @@ class DocumentService:
                         "document_type": new_doc["document_type"],
                         "title": new_doc["title"],
                         "status": new_doc["status"],
-                        "version": new_doc["version"],
-                        "created_at": new_doc["created_at"]
+                        "version": new_doc["version"]
                     }
                 }
             else:

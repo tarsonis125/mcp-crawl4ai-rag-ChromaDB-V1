@@ -676,11 +676,16 @@ async def _create_project_background(progress_id: str, request: CreateProjectReq
                 if request.github_repo:
                     prd_request += f" (GitHub repo: {request.github_repo})"
                 
+                # Create a progress callback for the document agent
+                async def agent_progress_callback(update_data):
+                    await project_creation_manager.update_progress(progress_id, update_data)
+                
                 # Run the document agent to create PRD with the real project ID
                 agent_result = await document_agent.run_conversation(
                     user_message=prd_request,
                     project_id=project_id,  # Use the real project ID
-                    user_id="system"
+                    user_id="system",
+                    progress_callback=agent_progress_callback
                 )
                 
                 if agent_result.success:
