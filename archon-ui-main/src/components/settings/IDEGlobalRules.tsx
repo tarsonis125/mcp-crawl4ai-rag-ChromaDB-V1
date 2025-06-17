@@ -34,7 +34,7 @@ export const IDEGlobalRules = () => {
     <div>
       <div className="flex items-center mb-4">
         <FileCode className="mr-2 text-blue-500 filter drop-shadow-[0_0_8px_rgba(59,130,246,0.8)]" size={20} />
-        <h2 className="text-xl font-semibold text-white">
+        <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
           IDE Global Rules
         </h2>
       </div>

@@ -72,7 +72,7 @@ export const SettingsPage = () => {
       {/* Header */}
       <motion.div className="flex justify-between items-center mb-8" variants={itemVariants}>
         <motion.h1
-          className="text-3xl font-bold text-white flex items-center gap-3"
+          className="text-3xl font-bold text-gray-800 dark:text-white flex items-center gap-3"
           variants={titleVariants}
         >
           <Settings className="w-7 h-7 text-blue-500 filter drop-shadow-[0_0_8px_rgba(59,130,246,0.8)]" />

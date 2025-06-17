@@ -27,7 +27,7 @@ export const RAGSettings = ({
   return <div>
       <div className="flex items-center mb-4">
         <Settings className="mr-2 text-green-500 filter drop-shadow-[0_0_8px_rgba(34,197,94,0.8)]" size={20} />
-        <h2 className="text-xl font-semibold text-white">
+        <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
           RAG Settings
         </h2>
       </div>

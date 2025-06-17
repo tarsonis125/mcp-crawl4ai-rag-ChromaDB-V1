@@ -333,7 +333,7 @@ export const MCPPage = () => {
       variants={containerVariants}
     >
       <motion.h1
-        className="text-3xl font-bold text-white mb-8 flex items-center gap-3"
+        className="text-3xl font-bold text-gray-800 dark:text-white mb-8 flex items-center gap-3"
         variants={titleVariants}
       >
         <svg fill="currentColor" fillRule="evenodd" height="28" width="28" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" className="text-pink-500 filter drop-shadow-[0_0_8px_rgba(236,72,153,0.8)]">

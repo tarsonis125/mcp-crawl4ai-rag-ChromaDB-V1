@@ -210,7 +210,7 @@ export const APIKeysSection = () => {
     <div>
       <div className="flex items-center mb-4">
         <Key className="mr-2 text-pink-500 filter drop-shadow-[0_0_8px_rgba(236,72,153,0.8)]" size={20} />
-        <h2 className="text-xl font-semibold text-white">
+        <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
           API Keys
         </h2>
       </div>

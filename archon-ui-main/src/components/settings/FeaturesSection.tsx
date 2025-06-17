@@ -169,7 +169,7 @@ export const FeaturesSection = () => {
     <div>
       <div className="flex items-center mb-4">
         <Palette className="mr-2 text-purple-500 filter drop-shadow-[0_0_8px_rgba(168,85,247,0.8)]" size={20} />
-        <h2 className="text-xl font-semibold text-white">
+        <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
           Features & Theme
         </h2>
       </div>

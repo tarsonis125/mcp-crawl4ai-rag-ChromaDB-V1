@@ -558,7 +558,7 @@ export function ProjectPage({
     >
       {/* Page Header with New Project Button */}
       <motion.div className="flex items-center justify-between mb-8" variants={itemVariants}>
-        <motion.h1 className="text-3xl font-bold text-white flex items-center gap-3" variants={titleVariants}>
+        <motion.h1 className="text-3xl font-bold text-gray-800 dark:text-white flex items-center gap-3" variants={titleVariants}>
           <img src="/logo-neon.svg" alt="Projects" className="w-7 h-7 filter drop-shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
           Projects
         </motion.h1>
@@ -706,42 +706,54 @@ export function ProjectPage({
                       {/* Neon pill boxes for task counts */}
                       {/* Todo pill */}
                       <div className="relative flex-1">
-                        <div className={`absolute inset-0 bg-pink-600 rounded-full blur-md ${selectedProject?.id === project.id ? 'opacity-30 dark:opacity-75' : 'opacity-20 dark:opacity-40'}`}></div>
-                        <div className={`relative flex items-center h-12 bg-white/70 dark:bg-zinc-900/90 backdrop-blur-sm rounded-full border border-pink-300 dark:border-pink-500/50 shadow-sm ${selectedProject?.id === project.id ? 'dark:shadow-[0_0_10px_rgba(236,72,153,0.5)] hover:shadow-md dark:hover:shadow-[0_0_15px_rgba(236,72,153,0.7)]' : 'dark:shadow-[0_0_5px_rgba(236,72,153,0.3)] hover:shadow-md dark:hover:shadow-[0_0_8px_rgba(236,72,153,0.4)]'} transition-all duration-300`}>
+                        <div className={`absolute inset-0 bg-pink-600 rounded-full blur-md ${selectedProject?.id === project.id ? 'opacity-30 dark:opacity-75' : 'opacity-0'}`}></div>
+                        <div className={`relative flex items-center h-12 backdrop-blur-sm rounded-full border shadow-sm transition-all duration-300 ${
+                          selectedProject?.id === project.id 
+                            ? 'bg-white/70 dark:bg-zinc-900/90 border-pink-300 dark:border-pink-500/50 dark:shadow-[0_0_10px_rgba(236,72,153,0.5)] hover:shadow-md dark:hover:shadow-[0_0_15px_rgba(236,72,153,0.7)]' 
+                            : 'bg-white/30 dark:bg-zinc-900/30 border-gray-300/50 dark:border-gray-700/50'
+                        }`}>
                           <div className="flex flex-col items-center justify-center px-2 min-w-[40px]">
-                            <ListTodo className="w-4 h-4 text-pink-600 dark:text-pink-400" />
-                            <span className="text-[8px] text-pink-600 dark:text-pink-400 font-medium">ToDo</span>
+                            <ListTodo className={`w-4 h-4 ${selectedProject?.id === project.id ? 'text-pink-600 dark:text-pink-400' : 'text-gray-500 dark:text-gray-500'}`} />
+                            <span className={`text-[8px] font-medium ${selectedProject?.id === project.id ? 'text-pink-600 dark:text-pink-400' : 'text-gray-500 dark:text-gray-500'}`}>ToDo</span>
                           </div>
-                          <div className="flex-1 flex items-center justify-center border-l border-pink-300 dark:border-pink-500/30">
-                            <span className="text-lg font-bold text-pink-600 dark:text-pink-400">{projectTaskCounts[project.id]?.todo || 0}</span>
+                          <div className={`flex-1 flex items-center justify-center border-l ${selectedProject?.id === project.id ? 'border-pink-300 dark:border-pink-500/30' : 'border-gray-300/50 dark:border-gray-700/50'}`}>
+                            <span className={`text-lg font-bold ${selectedProject?.id === project.id ? 'text-pink-600 dark:text-pink-400' : 'text-gray-600 dark:text-gray-400'}`}>{projectTaskCounts[project.id]?.todo || 0}</span>
                           </div>
                         </div>
                       </div>
                       
                       {/* Doing pill */}
                       <div className="relative flex-1">
-                        <div className={`absolute inset-0 bg-blue-600 rounded-full blur-md ${selectedProject?.id === project.id ? 'opacity-30 dark:opacity-75' : 'opacity-20 dark:opacity-40'}`}></div>
-                        <div className={`relative flex items-center h-12 bg-white/70 dark:bg-zinc-900/90 backdrop-blur-sm rounded-full border border-blue-300 dark:border-blue-500/50 shadow-sm ${selectedProject?.id === project.id ? 'dark:shadow-[0_0_10px_rgba(59,130,246,0.5)] hover:shadow-md dark:hover:shadow-[0_0_15px_rgba(59,130,246,0.7)]' : 'dark:shadow-[0_0_5px_rgba(59,130,246,0.3)] hover:shadow-md dark:hover:shadow-[0_0_8px_rgba(59,130,246,0.4)]'} transition-all duration-300`}>
+                        <div className={`absolute inset-0 bg-blue-600 rounded-full blur-md ${selectedProject?.id === project.id ? 'opacity-30 dark:opacity-75' : 'opacity-0'}`}></div>
+                        <div className={`relative flex items-center h-12 backdrop-blur-sm rounded-full border shadow-sm transition-all duration-300 ${
+                          selectedProject?.id === project.id 
+                            ? 'bg-white/70 dark:bg-zinc-900/90 border-blue-300 dark:border-blue-500/50 dark:shadow-[0_0_10px_rgba(59,130,246,0.5)] hover:shadow-md dark:hover:shadow-[0_0_15px_rgba(59,130,246,0.7)]' 
+                            : 'bg-white/30 dark:bg-zinc-900/30 border-gray-300/50 dark:border-gray-700/50'
+                        }`}>
                           <div className="flex flex-col items-center justify-center px-2 min-w-[40px]">
-                            <Activity className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                            <span className="text-[8px] text-blue-600 dark:text-blue-400 font-medium">Doing</span>
+                            <Activity className={`w-4 h-4 ${selectedProject?.id === project.id ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-500'}`} />
+                            <span className={`text-[8px] font-medium ${selectedProject?.id === project.id ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-500'}`}>Doing</span>
                           </div>
-                          <div className="flex-1 flex items-center justify-center border-l border-blue-300 dark:border-blue-500/30">
-                            <span className="text-lg font-bold text-blue-600 dark:text-blue-400">{projectTaskCounts[project.id]?.doing || 0}</span>
+                          <div className={`flex-1 flex items-center justify-center border-l ${selectedProject?.id === project.id ? 'border-blue-300 dark:border-blue-500/30' : 'border-gray-300/50 dark:border-gray-700/50'}`}>
+                            <span className={`text-lg font-bold ${selectedProject?.id === project.id ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'}`}>{projectTaskCounts[project.id]?.doing || 0}</span>
                           </div>
                         </div>
                       </div>
                       
                       {/* Done pill */}
                       <div className="relative flex-1">
-                        <div className={`absolute inset-0 bg-green-600 rounded-full blur-md ${selectedProject?.id === project.id ? 'opacity-30 dark:opacity-75' : 'opacity-20 dark:opacity-40'}`}></div>
-                        <div className={`relative flex items-center h-12 bg-white/70 dark:bg-zinc-900/90 backdrop-blur-sm rounded-full border border-green-300 dark:border-green-500/50 shadow-sm ${selectedProject?.id === project.id ? 'dark:shadow-[0_0_10px_rgba(34,197,94,0.5)] hover:shadow-md dark:hover:shadow-[0_0_15px_rgba(34,197,94,0.7)]' : 'dark:shadow-[0_0_5px_rgba(34,197,94,0.3)] hover:shadow-md dark:hover:shadow-[0_0_8px_rgba(34,197,94,0.4)]'} transition-all duration-300`}>
+                        <div className={`absolute inset-0 bg-green-600 rounded-full blur-md ${selectedProject?.id === project.id ? 'opacity-30 dark:opacity-75' : 'opacity-0'}`}></div>
+                        <div className={`relative flex items-center h-12 backdrop-blur-sm rounded-full border shadow-sm transition-all duration-300 ${
+                          selectedProject?.id === project.id 
+                            ? 'bg-white/70 dark:bg-zinc-900/90 border-green-300 dark:border-green-500/50 dark:shadow-[0_0_10px_rgba(34,197,94,0.5)] hover:shadow-md dark:hover:shadow-[0_0_15px_rgba(34,197,94,0.7)]' 
+                            : 'bg-white/30 dark:bg-zinc-900/30 border-gray-300/50 dark:border-gray-700/50'
+                        }`}>
                           <div className="flex flex-col items-center justify-center px-2 min-w-[40px]">
-                            <CheckCircle2 className="w-4 h-4 text-green-600 dark:text-green-400" />
-                            <span className="text-[8px] text-green-600 dark:text-green-400 font-medium">Done</span>
+                            <CheckCircle2 className={`w-4 h-4 ${selectedProject?.id === project.id ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-500'}`} />
+                            <span className={`text-[8px] font-medium ${selectedProject?.id === project.id ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-500'}`}>Done</span>
                           </div>
-                          <div className="flex-1 flex items-center justify-center border-l border-green-300 dark:border-green-500/30">
-                            <span className="text-lg font-bold text-green-600 dark:text-green-400">{projectTaskCounts[project.id]?.done || 0}</span>
+                          <div className={`flex-1 flex items-center justify-center border-l ${selectedProject?.id === project.id ? 'border-green-300 dark:border-green-500/30' : 'border-gray-300/50 dark:border-gray-700/50'}`}>
+                            <span className={`text-lg font-bold ${selectedProject?.id === project.id ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-400'}`}>{projectTaskCounts[project.id]?.done || 0}</span>
                           </div>
                         </div>
                       </div>

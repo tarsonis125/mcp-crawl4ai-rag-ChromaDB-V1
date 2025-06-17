@@ -1,6 +1,6 @@
 import React, { useRef, useState, useCallback } from 'react';
 import { useDrag, useDrop } from 'react-dnd';
-import { List } from 'lucide-react';
+import { Network } from 'lucide-react';
 import { Toggle } from '../ui/Toggle';
 import { useToast } from '../../contexts/ToastContext';
 import { DeleteConfirmModal } from '../../pages/ProjectPage';
@@ -195,22 +195,13 @@ export const TaskBoardView = ({
     <div className="flex flex-col h-full min-h-[70vh]">
       {/* Show Subtasks Toggle */}
       {showSubtasksToggle && onShowSubtasksChange && (
-        <div className="mb-4 flex justify-start">
-          <div className="flex items-center gap-3">
-            <div className="flex-shrink-0">
-              <Toggle 
-                checked={showSubtasks} 
-                onCheckedChange={onShowSubtasksChange} 
-                accentColor="blue" 
-                icon={<List className="w-5 h-5" />} 
-              />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-gray-500 dark:text-gray-400 leading-tight">
-                Show<br />Subtasks
-              </p>
-            </div>
-          </div>
+        <div className="mb-4 flex justify-end">
+          <Toggle 
+            checked={showSubtasks} 
+            onCheckedChange={onShowSubtasksChange} 
+            accentColor="blue" 
+            icon={<Network className="w-5 h-5" />} 
+          />
         </div>
       )}
 
