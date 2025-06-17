@@ -196,9 +196,7 @@ export const MCPPage = () => {
     if (!config) return '';
     
     const sseConfig = {
-      archon: {
-        url: `http://${config.host}:${config.port}/sse`
-      }
+      url: `http://${config.host}:${config.port}/sse`
     };
     
     const configString = JSON.stringify(sseConfig);
