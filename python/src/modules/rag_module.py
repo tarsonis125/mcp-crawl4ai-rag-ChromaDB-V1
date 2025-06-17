@@ -268,15 +268,16 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
             # Report that we're starting the storage
             await report_progress('document_storage', 10, f'Storing {len(all_documents)} chunks in {total_batches} batches...')
             
-            # Call the storage function
-            add_documents_to_supabase(
+            # Call the storage function with progress callback
+            await add_documents_to_supabase(
                 client=storage_service.supabase_client,
                 urls=urls,
                 chunk_numbers=chunk_numbers,
                 contents=contents,
                 metadatas=metadatas,
                 url_to_full_document=url_to_full_document,
-                batch_size=batch_size
+                batch_size=batch_size,
+                progress_callback=progress_callback
             )
             
             await report_progress('document_storage', 100, f'Successfully stored {len(all_documents)} document chunks')
@@ -429,14 +430,15 @@ def register_rag_tools(mcp: FastMCP):
             
             # Use the original working function from utils.py with proper parallel processing
             from src.utils import add_documents_to_supabase
-            add_documents_to_supabase(
+            await add_documents_to_supabase(
                 client=storage_service.supabase_client,
                 urls=urls,
                 chunk_numbers=chunk_numbers,
                 contents=contents,
                 metadatas=metadatas,
                 url_to_full_document=url_to_full_document,
-                batch_size=15
+                batch_size=15,
+                progress_callback=None  # No progress callback for single page crawl
             )
             chunks_stored = len(documents)
             
@@ -626,7 +628,7 @@ def register_rag_tools(mcp: FastMCP):
             supabase_client = ctx.request_context.lifespan_context.supabase_client
             storage_service = DocumentStorageService(supabase_client)
             
-            success, result = storage_service.upload_document(
+            success, result = await storage_service.upload_document(
                 file_content, filename, knowledge_type, tags, chunk_size
             )
             

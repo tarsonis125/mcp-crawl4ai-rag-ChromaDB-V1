@@ -127,37 +127,21 @@ class RagAgent(BaseAgent[RagDependencies, RagQueryResult]):
                 if source_filter is None:
                     source_filter = ctx.deps.source_filter
                 
-                # Create MCP context for RAG module
-                from ..modules.rag_module import perform_rag_query
+                # Use the SearchService directly
+                from ..services.rag.search_service import SearchService
                 from ..utils import get_supabase_client
                 
                 supabase_client = get_supabase_client()
+                search_service = SearchService(supabase_client)
                 
-                # Create proper MCP context structure
-                lifespan_context = type('LifespanContext', (), {
-                    'supabase_client': supabase_client,
-                    'reranking_model': None  # Will use default from search service
-                })()
-                
-                request_context = type('RequestContext', (), {
-                    'lifespan_context': lifespan_context
-                })()
-                
-                mcp_ctx = type('Context', (), {
-                    'request_context': request_context
-                })()
-                
-                # Perform the RAG query
-                result_json = await perform_rag_query(
-                    ctx=mcp_ctx,
+                # Perform the RAG query using the service
+                success, result = search_service.perform_rag_query(
                     query=query,
                     source=source_filter,
                     match_count=ctx.deps.match_count
                 )
                 
-                result = json.loads(result_json)
-                
-                if not result.get('success'):
+                if not success:
                     return f"Search failed: {result.get('error', 'Unknown error')}"
                 
                 results = result.get('results', [])
@@ -167,9 +151,10 @@ class RagAgent(BaseAgent[RagDependencies, RagQueryResult]):
                 # Format results for display
                 formatted_results = []
                 for i, res in enumerate(results, 1):
-                    similarity = res.get('similarity', 0)
-                    source = res.get('metadata', {}).get('source', 'Unknown')
-                    url = res.get('url', '')
+                    similarity = res.get('similarity_score', res.get('similarity', 0))
+                    metadata = res.get('metadata', {})
+                    source = metadata.get('source', 'Unknown')
+                    url = metadata.get('url', res.get('url', ''))
                     content = res.get('content', '')
                     
                     # Truncate content if too long
@@ -193,28 +178,15 @@ class RagAgent(BaseAgent[RagDependencies, RagQueryResult]):
         async def list_available_sources(ctx: RunContext[RagDependencies]) -> str:
             """List all available sources that can be searched."""
             try:
-                from ..modules.rag_module import get_available_sources
+                from ..services.rag.source_management_service import SourceManagementService
                 from ..utils import get_supabase_client
                 
                 supabase_client = get_supabase_client()
+                source_service = SourceManagementService(supabase_client)
                 
-                # Create proper MCP context
-                lifespan_context = type('LifespanContext', (), {
-                    'supabase_client': supabase_client
-                })()
+                success, result = source_service.get_available_sources()
                 
-                request_context = type('RequestContext', (), {
-                    'lifespan_context': lifespan_context
-                })()
-                
-                mcp_ctx = type('Context', (), {
-                    'request_context': request_context
-                })()
-                
-                result_json = await get_available_sources(mcp_ctx)
-                result = json.loads(result_json)
-                
-                if not result.get('success'):
+                if not success:
                     return f"Failed to get sources: {result.get('error', 'Unknown error')}"
                 
                 sources = result.get('sources', [])
@@ -225,11 +197,14 @@ class RagAgent(BaseAgent[RagDependencies, RagQueryResult]):
                 for source in sources:
                     source_id = source.get('source_id', 'Unknown')
                     title = source.get('title', 'Untitled')
-                    word_count = source.get('total_word_count', 0)
+                    description = source.get('description', '')
                     created = source.get('created_at', '')
                     
+                    # Format the description if available
+                    desc_text = f" - {description}" if description else ""
+                    
                     source_list.append(
-                        f"- **{source_id}**: {title} ({word_count:,} words, added {created[:10]})"
+                        f"- **{source_id}**: {title}{desc_text} (added {created[:10]})"
                     )
                 
                 return f"Available sources ({len(sources)} total):\n" + "\n".join(source_list)

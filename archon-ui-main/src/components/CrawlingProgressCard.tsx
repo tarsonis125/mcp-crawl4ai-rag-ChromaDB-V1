@@ -192,11 +192,11 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
 
       // Set specific messages based on current status
       if (step.status === 'active') {
-        // Use the log message from backend if available
+        // Always use the log message from backend if available
         if (progressData.log) {
           step.message = progressData.log;
-        } else {
-          // Fallback to default messages
+        } else if (!progressData.log) {
+          // Only use fallback messages if no log provided
           if (isUpload) {
             switch (step.id) {
               case 'reading':

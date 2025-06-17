@@ -505,6 +505,83 @@ def get_supabase_client():
   **Database health is continuously monitored** via Logfire with connection pool metrics, query performance, and automatic error alerting.
 </Admonition>
 
+### 🔄 Database Reset & Management
+
+<Tabs>
+<TabItem value="reset" label="🗑️ Reset Database">
+
+**Complete database reset** - Use when you need to start completely fresh:
+
+```sql
+-- Run migration/RESET_DB.sql in Supabase SQL Editor
+-- ⚠️ WARNING: This deletes ALL data, tables, functions, and policies!
+
+-- The script includes:
+-- 1. Drops all RLS policies 
+-- 2. Drops all triggers
+-- 3. Drops all custom functions
+-- 4. Drops all tables with CASCADE
+-- 5. Drops custom types/enums
+-- 6. Cleans up indexes
+-- 7. Verification summary
+```
+
+**After reset, rebuild with migrations:**
+```sql
+-- Step 1: Core setup
+-- Run migration/1_initial_setup.sql
+
+-- Step 2: Projects (optional)  
+-- Run migration/2_archon_projects.sql
+
+-- Step 3: MCP clients (optional)
+-- Run migration/3_mcp_client_management.sql
+```
+
+</TabItem>
+<TabItem value="backup" label="💾 Backup Data">
+
+**Before resetting, backup important data:**
+
+```sql
+-- Export settings
+COPY (SELECT * FROM settings) TO STDOUT WITH CSV HEADER;
+
+-- Export projects 
+COPY (SELECT * FROM projects) TO STDOUT WITH CSV HEADER;
+
+-- Export knowledge sources
+COPY (SELECT * FROM sources) TO STDOUT WITH CSV HEADER;
+
+-- Export crawled content (large!)
+COPY (SELECT * FROM crawled_pages LIMIT 1000) TO STDOUT WITH CSV HEADER;
+```
+
+</TabItem>
+<TabItem value="selective" label="🎯 Selective Cleanup">
+
+**Remove specific data without full reset:**
+
+```sql
+-- Clear all crawled content
+DELETE FROM crawled_pages;
+DELETE FROM code_examples;
+DELETE FROM sources;
+
+-- Clear all projects
+DELETE FROM tasks;
+DELETE FROM projects;
+
+-- Reset specific settings
+DELETE FROM settings WHERE category = 'temp';
+
+-- Reset MCP clients
+DELETE FROM mcp_clients WHERE name != 'Archon (Default)';
+```
+
+</TabItem>
+</Tabs>
+
 ## 🚀 Server Configuration
 
 ### FastAPI Backend Settings

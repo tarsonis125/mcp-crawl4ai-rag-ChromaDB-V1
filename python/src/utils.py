@@ -14,6 +14,7 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime
+import threading
 
 # Import Logfire
 from .logfire_config import search_logger
@@ -232,14 +233,15 @@ def process_chunk_with_context(args):
     url, content, full_document = args
     return generate_contextual_embedding(full_document, content)
 
-def add_documents_to_supabase(
+async def add_documents_to_supabase(
     client: Client, 
     urls: List[str], 
     chunk_numbers: List[int],
     contents: List[str], 
     metadatas: List[Dict[str, Any]],
     url_to_full_document: Dict[str, str],
-    batch_size: int = 15
+    batch_size: int = 15,
+    progress_callback: Optional[Any] = None
 ) -> None:
     """
     Add documents to the Supabase crawled_pages table in batches.
@@ -253,6 +255,7 @@ def add_documents_to_supabase(
         metadatas: List of document metadata
         url_to_full_document: Dictionary mapping URLs to their full document content
         batch_size: Size of each batch for insertion
+        progress_callback: Optional async callback function for progress reporting
     """
     # Get unique URLs to delete existing records
     unique_urls = list(set(urls))
@@ -283,9 +286,22 @@ def add_documents_to_supabase(
     
     # Process in batches to avoid memory issues
     total_batches = (len(contents) + batch_size - 1) // batch_size
+    
+    # Helper function to report progress
+    async def report_progress(message: str, percentage: int):
+        if progress_callback and asyncio.iscoroutinefunction(progress_callback):
+            await progress_callback('document_storage', percentage, message)
+        # Always print for debugging
+        print(f"Progress: {message} ({percentage}%)")
+    
     for batch_num, i in enumerate(range(0, len(contents), batch_size), 1):
         batch_end = min(i + batch_size, len(contents))
-        print(f"\nProcessing batch {batch_num}/{total_batches} (items {i+1}-{batch_end} of {len(contents)})")
+        batch_progress_msg = f"Batch {batch_num}/{total_batches}: Processing items {i+1}-{batch_end} of {len(contents)}"
+        print(f"\n{batch_progress_msg}")
+        
+        # Report progress for this batch
+        batch_percentage = int((batch_num - 1) / total_batches * 100)
+        await report_progress(batch_progress_msg, batch_percentage)
         
         # Get batch slices
         batch_urls = urls[i:batch_end]
@@ -295,6 +311,10 @@ def add_documents_to_supabase(
         
         # Apply contextual embedding to each chunk if MODEL_CHOICE is set
         if use_contextual_embeddings:
+            # Report that we're creating contextual embeddings
+            embedding_msg = f"Batch {batch_num}/{total_batches}: Creating contextual embeddings..."
+            await report_progress(embedding_msg, batch_percentage + 5)
+            
             # Prepare arguments for parallel processing
             process_args = []
             for j, content in enumerate(batch_contents):
@@ -337,6 +357,8 @@ def add_documents_to_supabase(
             contextual_contents = batch_contents
         
         # Create embeddings for the entire batch at once
+        embeddings_msg = f"Batch {batch_num}/{total_batches}: Creating embeddings..."
+        await report_progress(embeddings_msg, batch_percentage + 10)
         # TODO: Pass cached API key to this function when called from context
         batch_embeddings = create_embeddings_batch(contextual_contents)
         
@@ -365,12 +387,19 @@ def add_documents_to_supabase(
             batch_data.append(data)
         
         # Insert batch into Supabase with retry logic
+        storing_msg = f"Batch {batch_num}/{total_batches}: Storing in database..."
+        await report_progress(storing_msg, batch_percentage + 15)
+        
         max_retries = 3
         retry_delay = 1.0  # Start with 1 second delay
         
         for retry in range(max_retries):
             try:
                 client.table("crawled_pages").insert(batch_data).execute()
+                # Success - report completion of this batch
+                completion_percentage = int(batch_num / total_batches * 100)
+                complete_msg = f"Batch {batch_num}/{total_batches}: Completed storing {len(batch_data)} chunks"
+                await report_progress(complete_msg, completion_percentage)
                 # Success - break out of retry loop
                 break
             except Exception as e:

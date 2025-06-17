@@ -1015,6 +1015,33 @@ print('Database reset and credentials loaded')
 "
 ```
 
+**Alternative: Complete Database Reset with SQL**
+
+If you need to reset just the database schema without affecting Docker:
+
+1. **Run reset script** in Supabase SQL Editor:
+   ```sql
+   -- Copy and paste contents of migration/RESET_DB.sql
+   -- ⚠️ WARNING: This deletes ALL tables, data, functions, and policies!
+   ```
+
+2. **Rebuild database** by running migrations in order:
+   ```sql
+   -- Step 1: Run migration/1_initial_setup.sql
+   -- Step 2: Run migration/2_archon_projects.sql (if using Projects)
+   -- Step 3: Run migration/3_mcp_client_management.sql (if using MCP clients)
+   ```
+
+3. **Restart services** to reload credentials:
+   ```bash
+   docker-compose restart
+   ```
+
+4. **Reconfigure**:
+   - Add OpenAI API key in Settings
+   - Re-upload documents or re-crawl websites
+   - Enable Projects feature if needed
+
 </TabItem>
 </Tabs>
 

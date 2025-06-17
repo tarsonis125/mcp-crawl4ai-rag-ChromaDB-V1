@@ -485,3 +485,158 @@ Ensure proper security measures for production deployments:
 - **Caching**: Implement Redis for frequently accessed data
 - **CDN**: Use CDN for static frontend assets
 - **Database Indexing**: Optimize vector search performance in Supabase 
+
+## 🗃️ Database Management
+
+### Database Setup
+
+Archon requires a PostgreSQL database with vector extensions. Follow these steps:
+
+#### Initial Setup
+
+<Tabs>
+<TabItem value="supabase" label="☁️ Supabase (Recommended)" default>
+
+1. **Create Project**: Go to [supabase.com](https://supabase.com) and create a new project
+2. **Get Credentials**: Copy your Project URL and Service Role key from Settings → API
+3. **Run Migrations**: Execute migration files in order in the SQL Editor:
+   - `migration/1_initial_setup.sql` - Core tables and vector setup
+   - `migration/2_archon_projects.sql` - Project management (optional)
+   - `migration/3_mcp_client_management.sql` - MCP client registry (optional)
+
+</TabItem>
+<TabItem value="selfhosted" label="🏠 Self-Hosted PostgreSQL">
+
+```yaml title="docker-compose.yml"
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: archon
+      POSTGRES_USER: archon
+      POSTGRES_PASSWORD: your-secure-password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migration:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+
+volumes:
+  postgres_data:
+```
+
+</TabItem>
+</Tabs>
+
+### 🔄 Database Reset & Recovery
+
+#### Complete Reset
+
+**⚠️ This will delete ALL data, tables, functions, and policies!**
+
+<Tabs>
+<TabItem value="sql-reset" label="🗑️ SQL Reset (Recommended)" default>
+
+Use the comprehensive reset script for a clean database reset:
+
+```sql
+-- Run migration/RESET_DB.sql in your database
+-- This safely removes all Archon objects with proper dependency handling
+
+-- The script includes:
+-- ✅ Drops all RLS policies
+-- ✅ Drops all triggers  
+-- ✅ Drops all custom functions
+-- ✅ Drops all tables with CASCADE
+-- ✅ Drops custom types/enums
+-- ✅ Cleans up indexes
+-- ✅ Verification summary
+```
+
+**After reset, rebuild with migrations:**
+```sql
+-- Step 1: Core setup
+-- Run migration/1_initial_setup.sql
+
+-- Step 2: Projects (optional)
+-- Run migration/2_archon_projects.sql
+
+-- Step 3: MCP clients (optional)  
+-- Run migration/3_mcp_client_management.sql
+```
+
+</TabItem>
+<TabItem value="docker-reset" label="🐳 Docker Reset">
+
+Complete environment reset including Docker volumes:
+
+```bash
+# Stop all services
+docker-compose down -v
+
+# Remove containers and volumes
+docker system prune -f
+docker volume prune -f
+
+# Rebuild from scratch
+docker-compose build --no-cache
+docker-compose up -d
+
+# Wait for startup
+sleep 30
+
+# Verify database
+docker exec archon-pyserver python -c "
+from src.services.credential_service import credential_service
+import asyncio
+asyncio.run(credential_service.load_all_credentials())
+print('✅ Database reset completed')
+"
+```
+
+</TabItem>
+<TabItem value="selective" label="🎯 Selective Cleanup">
+
+Remove specific data without full reset:
+
+```sql
+-- Clear knowledge base
+DELETE FROM crawled_pages;
+DELETE FROM code_examples;  
+DELETE FROM sources;
+
+-- Clear projects
+DELETE FROM tasks;
+DELETE FROM projects;
+
+-- Reset settings (keep core config)
+DELETE FROM settings WHERE category = 'temp';
+
+-- Reset MCP clients (keep default)
+DELETE FROM mcp_clients WHERE name != 'Archon (Default)';
+```
+
+</TabItem>
+</Tabs>
+
+#### Backup Before Reset
+
+**Export important data** before resetting:
+
+```sql
+-- Export settings
+COPY (SELECT * FROM settings) TO STDOUT WITH CSV HEADER;
+
+-- Export projects
+COPY (SELECT * FROM projects) TO STDOUT WITH CSV HEADER;
+
+-- Export sources
+COPY (SELECT * FROM sources) TO STDOUT WITH CSV HEADER;
+
+-- Export recent content (limit for size)
+COPY (
+  SELECT * FROM crawled_pages 
+  WHERE created_at >= NOW() - INTERVAL '30 days'
+  LIMIT 1000
+) TO STDOUT WITH CSV HEADER;
+``` 

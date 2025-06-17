@@ -895,15 +895,16 @@ async def _perform_upload_with_progress(progress_id: str, file_content: bytes, f
             # Instead of calling add_documents_to_supabase silently, we'll call it with progress
             from src.utils import add_documents_to_supabase
             
-            # Call add_documents_to_supabase (this will handle embeddings and storage)
-            add_documents_to_supabase(
+            # Call add_documents_to_supabase with progress callback
+            await add_documents_to_supabase(
                 supabase_client, 
                 urls, 
                 chunk_numbers, 
                 contents, 
                 metadatas, 
                 url_to_full_document,
-                batch_size=20
+                batch_size=20,
+                progress_callback=progress_callback
             )
             
             # Report progress after storage completes

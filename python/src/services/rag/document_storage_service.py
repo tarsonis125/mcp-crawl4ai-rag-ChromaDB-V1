@@ -138,7 +138,7 @@ class DocumentStorageService:
             logger.warning(f"Error processing code example: {e}")
             return f"Code example (processing failed: {str(e)})"
 
-    def upload_document(self, file_content: str, filename: str, 
+    async def upload_document(self, file_content: str, filename: str, 
                        knowledge_type: str = "technical", tags: List[str] = None, 
                        chunk_size: int = 5000) -> Tuple[bool, Dict[str, Any]]:
         """
@@ -199,13 +199,15 @@ class DocumentStorageService:
             update_source_info(self.supabase_client, source_id, source_summary, total_word_count)
             
             # Add documentation chunks to Supabase using the WORKING function
-            add_documents_to_supabase(
+            await add_documents_to_supabase(
                 client=self.supabase_client,
                 urls=urls,
                 chunk_numbers=chunk_numbers,
                 contents=contents,
                 metadatas=metadatas,
-                url_to_full_document=url_to_full_document
+                url_to_full_document=url_to_full_document,
+                batch_size=15,
+                progress_callback=None  # No progress callback for upload_document
             )
             
             return True, {
@@ -219,7 +221,7 @@ class DocumentStorageService:
             logger.error(f"Error uploading document: {e}")
             return False, {"error": f"Error uploading document: {str(e)}"}
 
-    def store_documents_with_progress(self, urls: List[str], chunk_numbers: List[int],
+    async def store_documents_with_progress(self, urls: List[str], chunk_numbers: List[int],
                                     contents: List[str], metadatas: List[Dict[str, Any]],
                                     url_to_full_document: Dict[str, str],
                                     progress_callback=None, batch_size: int = 20) -> None:
@@ -227,14 +229,15 @@ class DocumentStorageService:
         Store documents using the WORKING function from utils.py - no broken async bullshit.
         """
         # Just call the working function that has proper parallel processing
-        add_documents_to_supabase(
+        await add_documents_to_supabase(
             client=self.supabase_client,
             urls=urls,
             chunk_numbers=chunk_numbers,
             contents=contents,
             metadatas=metadatas,
             url_to_full_document=url_to_full_document,
-            batch_size=batch_size
+            batch_size=batch_size,
+            progress_callback=progress_callback
         )
 
     def store_code_examples(self, code_examples: List[Dict[str, Any]]) -> Tuple[bool, Dict[str, Any]]:
