@@ -954,7 +954,7 @@ async def update_project(project_id: str, request: UpdateProjectRequest):
             # Create version snapshots for JSONB fields before updating
             # Check if versioning is available by trying to import the service
             try:
-                from ..services.versioning_service import VersioningService
+                from ..services.projects.versioning_service import VersioningService
                 VERSIONING_AVAILABLE = True
             except ImportError:
                 VERSIONING_AVAILABLE = False

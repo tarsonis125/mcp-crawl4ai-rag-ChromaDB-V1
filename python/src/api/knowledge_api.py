@@ -21,7 +21,8 @@ from pathlib import Path
 import traceback
 
 from ..utils import get_supabase_client, add_documents_to_supabase
-from ..modules.rag_module import smart_chunk_markdown, extract_section_info, extract_source_summary
+from ..utils_rag.rag_utils import smart_chunk_markdown, extract_section_info
+from ..utils import extract_source_summary
 
 # Import Logfire - use logfire directly like other working APIs
 from ..logfire_config import logfire
@@ -527,7 +528,7 @@ async def delete_knowledge_item(source_id: str):
             
             # Call the actual function from rag_module
             print(f"DEBUG: Importing delete_source function...")
-            from src.modules.rag_module import delete_source
+            from src.modules.rag_module import delete_source_standalone as delete_source
             print(f"DEBUG: Successfully imported delete_source")
             
             print(f"DEBUG: Calling delete_source function...")

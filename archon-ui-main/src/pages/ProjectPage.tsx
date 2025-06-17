@@ -15,7 +15,8 @@ import { projectService } from '../services/projectService';
 import type { Project, CreateProjectRequest } from '../types/project';
 import type { Task } from '../components/project-tasks/TaskTableView';
 import { ProjectCreationProgressCard } from '../components/ProjectCreationProgressCard';
-import { projectCreationProgressService, ProjectCreationProgressData } from '../services/projectCreationProgressService';
+import { projectCreationProgressService } from '../services/projectCreationProgressService';
+import type { ProjectCreationProgressData } from '../services/projectCreationProgressService';
 
 interface ProjectPageProps {
   className?: string;
@@ -61,9 +62,13 @@ export function ProjectPage({
   });
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   
-  // Project creation progress state
-  const [projectCreationProgress, setProjectCreationProgress] = useState<ProjectCreationProgressData | null>(null);
-  const [showCreationProgress, setShowCreationProgress] = useState(false);
+  // Handler for retrying project creation
+  const handleRetryProjectCreation = (progressId: string) => {
+    // Remove the failed project
+    setProjects((prev) => prev.filter(p => p.id !== `temp_${progressId}`));
+    // Re-open the modal for retry
+    setIsNewProjectModalOpen(true);
+  };
 
   // State for delete confirmation modal
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -327,44 +332,69 @@ export function ProjectPage({
       const response = await projectService.createProjectWithStreaming(projectData);
       
       if (response.progress_id) {
-        // Transition modal to show streaming console
-        setShowCreationProgress(true);
-        
-        // Start tracking progress
-        const initialProgressData: ProjectCreationProgressData = {
-          progressId: response.progress_id,
-          status: 'starting',
-          percentage: 0,
-          logs: ['🚀 Starting project creation...'],
-          project: { title: newProjectForm.title }
+        // Create a temporary project with progress tracking
+        const tempId = `temp-${response.progress_id}`;
+        const tempProject: Project = {
+          id: tempId,
+          title: newProjectForm.title,
+          description: newProjectForm.description || '',
+          github_repo: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          docs: [],
+          features: [],
+          data: [],
+          pinned: false,
+          color: newProjectForm.color,
+          icon: 'Briefcase',
+          creationProgress: {
+            progressId: response.progress_id,
+            status: 'starting',
+            percentage: 0,
+            logs: ['🚀 Starting project creation...'],
+            project: { title: newProjectForm.title }
+          }
         };
         
-        setProjectCreationProgress(initialProgressData);
+        // Add temporary project to the list
+        setProjects((prev) => [tempProject, ...prev]);
+        
+        // Close modal immediately
+        setIsNewProjectModalOpen(false);
+        setNewProjectForm({ title: '', description: '', color: 'blue' });
+        setIsCreatingProject(false);
         
         // Set up WebSocket connection for real-time progress
         projectCreationProgressService.streamProgress(
           response.progress_id,
           (data: ProjectCreationProgressData) => {
             console.log('📨 Project creation progress:', data);
-            setProjectCreationProgress(data);
+            
+            // Update the temporary project's progress
+            setProjects((prev) => prev.map(p => 
+              p.id === tempId 
+                ? { ...p, creationProgress: data }
+                : p
+            ));
             
             // Handle completion
             if (data.status === 'completed' && data.project) {
-              // Add to local state
-              setProjects((prev) => [...prev, data.project]);
+              // Replace temporary project with real one
+              setProjects((prev) => prev.map(p => 
+                p.id === tempId ? data.project : p
+              ));
               
               // Select the new project
               setSelectedProject(data.project);
               setShowProjectDetails(true);
-              
-              // Reset and close modal after a brief delay
+            }
+            
+            // Handle error state
+            if (data.status === 'error') {
+              // Remove failed project after delay
               setTimeout(() => {
-                setNewProjectForm({ title: '', description: '', color: 'blue' });
-                setIsNewProjectModalOpen(false);
-                setShowCreationProgress(false);
-                setProjectCreationProgress(null);
-                setIsCreatingProject(false);
-              }, 2000);
+                setProjects((prev) => prev.filter(p => p.id !== tempId));
+              }, 5000);
             }
           },
           { autoReconnect: true, reconnectDelay: 5000 }
@@ -390,11 +420,6 @@ export function ProjectPage({
         error instanceof Error ? error.message : 'Failed to create project. Please try again.',
         'error'
       );
-      // If we're in the progress view, allow closing the modal
-      if (showCreationProgress) {
-        setShowCreationProgress(false);
-        setProjectCreationProgress(null);
-      }
     }
   };
 
@@ -485,6 +510,26 @@ export function ProjectPage({
           <div className="overflow-x-auto pb-4 hide-scrollbar">
             <div className="flex gap-4 min-w-max">
               {projects.map(project => (
+                project.creationProgress ? (
+                  // Show progress card for projects being created
+                  <motion.div 
+                    key={project.id} 
+                    variants={itemVariants}
+                    className="w-72"
+                  >
+                    <ProjectCreationProgressCard
+                      progressData={project.creationProgress}
+                      onComplete={() => {
+                        console.log('Project creation completed');
+                      }}
+                      onError={(error) => {
+                        console.error('Project creation failed:', error);
+                        showToast(`Failed to create project: ${error}`, 'error');
+                      }}
+                      onRetry={() => handleRetryProjectCreation(project.creationProgress!.progressId)}
+                    />
+                  </motion.div>
+                ) : (
                 <motion.div 
                   key={project.id} 
                   variants={itemVariants} 
@@ -556,6 +601,7 @@ export function ProjectPage({
                     </div>
                   </div>
                 </motion.div>
+                )
               ))}
             </div>
           </div>
@@ -652,7 +698,7 @@ export function ProjectPage({
       {/* New Project Modal */}
       {isNewProjectModalOpen && (
         <div className="fixed inset-0 bg-black/50 dark:bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm">
-          <div className={`relative p-6 rounded-md backdrop-blur-md ${showCreationProgress ? 'w-full max-w-2xl' : 'w-full max-w-md'}
+          <div className="relative p-6 rounded-md backdrop-blur-md w-full max-w-md
               bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30
               border border-gray-200 dark:border-zinc-800/50
               shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)]
@@ -661,12 +707,9 @@ export function ProjectPage({
               before:shadow-[0_0_10px_2px_rgba(168,85,247,0.4)] dark:before:shadow-[0_0_20px_5px_rgba(168,85,247,0.7)]
               after:content-[''] after:absolute after:top-0 after:left-0 after:right-0 after:h-16
               after:bg-gradient-to-b after:from-purple-100 after:to-white dark:after:from-purple-500/20 dark:after:to-purple-500/5
-              after:rounded-t-md after:pointer-events-none
-              transition-all duration-300`}>
+              after:rounded-t-md after:pointer-events-none">
             <div className="relative z-10">
-              {!showCreationProgress ? (
-                // Project Creation Form
-                <>
+              {/* Project Creation Form */}
                   <div className="flex justify-between items-center mb-6">
                     <h3 className="text-xl font-bold bg-gradient-to-r from-purple-400 to-fuchsia-500 text-transparent bg-clip-text">
                       Create New Project
@@ -731,58 +774,6 @@ export function ProjectPage({
                       )}
                     </Button>
                   </div>
-                </>
-              ) : (
-                // Project Creation Progress Console
-                <>
-                  <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-xl font-bold bg-gradient-to-r from-purple-400 to-fuchsia-500 text-transparent bg-clip-text">
-                      Creating Project with AI
-                    </h3>
-                    <button 
-                      onClick={() => {
-                        // Only allow closing if creation is complete or failed
-                        if (projectCreationProgress?.status === 'completed' || projectCreationProgress?.status === 'error') {
-                          setIsNewProjectModalOpen(false);
-                          setShowCreationProgress(false);
-                          setProjectCreationProgress(null);
-                          projectCreationProgressService.disconnect();
-                        }
-                      }}
-                      className={`text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors ${
-                        projectCreationProgress?.status !== 'completed' && projectCreationProgress?.status !== 'error' 
-                          ? 'opacity-50 cursor-not-allowed' 
-                          : ''
-                      }`}
-                      disabled={projectCreationProgress?.status !== 'completed' && projectCreationProgress?.status !== 'error'}
-                    >
-                      <X className="w-5 h-5" />
-                    </button>
-                  </div>
-
-                  {/* Progress Card */}
-                  {projectCreationProgress && (
-                    <ProjectCreationProgressCard
-                      progressData={projectCreationProgress}
-                      onComplete={(data) => {
-                        console.log('Project creation completed:', data);
-                        // The completion handling is already done in the handleCreateProject function
-                      }}
-                      onError={(error) => {
-                        console.error('Project creation failed:', error);
-                        setIsCreatingProject(false);
-                      }}
-                      onRetry={() => {
-                        // Reset and try again
-                        setShowCreationProgress(false);
-                        setProjectCreationProgress(null);
-                        setIsCreatingProject(false);
-                        projectCreationProgressService.disconnect();
-                      }}
-                    />
-                  )}
-                </>
-              )}
             </div>
           </div>
         </div>

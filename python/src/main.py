@@ -160,6 +160,14 @@ async def lifespan(app: FastAPI):
         # Make crawling context available to modules
         app.state.crawling_context = crawling_context
         
+        # Initialize prompt service
+        try:
+            from .services.prompt_service import prompt_service
+            await prompt_service.load_prompts()
+            api_logger.info("✅ Prompt service initialized")
+        except Exception as e:
+            api_logger.warning(f"Could not initialize prompt service: {e}")
+        
         # Start MCP client service and auto-connect clients
         try:
             from .services.mcp_client_service import start_mcp_client_service, get_mcp_client_service

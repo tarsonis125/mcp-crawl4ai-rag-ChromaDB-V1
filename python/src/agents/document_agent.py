@@ -8,6 +8,7 @@ with our existing MCP project management tools.
 
 import logging
 import json
+import uuid
 from typing import Optional, Dict, Any, List, Union
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -209,31 +210,29 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
             try:
                 # Determine content structure based on document type
                 if document_type == "prd":
+                    # Structure according to document_builder prompt
                     content = {
-                        "project_overview": {
-                            "description": content_description,
-                            "target_completion": "To be determined"
+                        "Background_and_Context": content_description,
+                        "Problem_Statement": "TBD - To be defined based on requirements",
+                        "Goals_and_Success_Metrics": ["TBD - Define specific measurable goals"],
+                        "Non_Goals": ["TBD - Define what is out of scope"],
+                        "Assumptions": ["TBD - List key assumptions"],
+                        "Stakeholders": ["Product Manager", "Development Team", "End Users"],
+                        "User_Personas": ["TBD - Define target user personas"],
+                        "Functional_Requirements": ["TBD - List functional requirements"],
+                        "Technical_Requirements": {
+                            "tech_stack": ["React", "TypeScript", "FastAPI", "Python"],
+                            "apis": ["TBD - Define API requirements"],
+                            "data": ["TBD - Define data requirements"]
                         },
-                        "goals": [
-                            "Define specific goals based on user requirements"
-                        ],
-                        "scope": {
-                            "frontend": "Frontend technologies and requirements",
-                            "backend": "Backend technologies and requirements"
+                        "UX_UI_and_Style_Guidelines": {
+                            "design_system": "TBD",
+                            "accessibility": "WCAG 2.1 Level AA"
                         },
-                        "architecture": {
-                            "frontend": ["React", "TypeScript"],
-                            "backend": ["FastAPI", "Python"]
-                        },
-                        "tech_packages": {
-                            "frontend_dependencies": ["react ^18.0.0", "typescript ^5.0.0"],
-                            "backend_dependencies": ["fastapi ^0.100.0", "pydantic ^2.0.0"]
-                        },
-                        "ui_ux_requirements": {
-                            "color_palette": ["#primary", "#secondary"],
-                            "typography": {"headings": "Inter", "body": "Inter"}
-                        },
-                        "coding_standards": ["Follow TypeScript strict mode", "Use Pydantic for validation"]
+                        "Architecture_Overview": "TBD - Define system architecture",
+                        "Milestones_and_Timeline": ["TBD - Define project milestones"],
+                        "Risks_and_Mitigations": ["TBD - Identify risks and mitigation strategies"],
+                        "Open_Questions": ["TBD - List open questions requiring clarification"]
                     }
                 elif document_type == "technical_spec":
                     content = {
@@ -264,26 +263,11 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
                         "notes": "Document created through conversational interface"
                     }
                 
-                # Create document via MCP tools  
-                from ..modules.project_module import add_project_document
-                from ..utils import get_supabase_client
+                # Create document via DocumentService
+                from ..services.projects.document_service import DocumentService
                 
-                # Create proper MCP context structure
-                supabase_client = get_supabase_client()
-                lifespan_context = type('LifespanContext', (), {
-                    'supabase_client': supabase_client
-                })()
-                
-                request_context = type('RequestContext', (), {
-                    'lifespan_context': lifespan_context
-                })()
-                
-                mcp_ctx = type('Context', (), {
-                    'request_context': request_context
-                })()
-                
-                result = await add_project_document(
-                    ctx=mcp_ctx,
+                doc_service = DocumentService()
+                success, result_data = doc_service.add_document(
                     project_id=ctx.deps.project_id,
                     document_type=document_type,
                     title=title,
@@ -292,9 +276,9 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
                     author=ctx.deps.user_id or "DocumentAgent"
                 )
                 
-                result_data = json.loads(result)
-                if result_data.get("success"):
-                    return f"Successfully created document '{title}' of type '{document_type}'. Document ID: {result_data.get('document', {}).get('id', 'unknown')}"
+                if success:
+                    doc_id = result_data.get('document', {}).get('id', 'unknown')
+                    return f"Successfully created document '{title}' of type '{document_type}'. Document ID: {doc_id}"
                 else:
                     return f"Failed to create document: {result_data.get('error', 'Unknown error')}"
                 
@@ -470,39 +454,40 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
                     }
                 }
                 
-                # Save as feature_plan document
-                from ..modules.project_module import add_project_document
-                from ..utils import get_supabase_client
+                # Save to features array instead of docs
+                supabase = get_supabase_client()
                 
-                # Create proper MCP context structure
-                supabase_client = get_supabase_client()
-                lifespan_context = type('LifespanContext', (), {
-                    'supabase_client': supabase_client
-                })()
+                # Get current project features
+                project_response = supabase.table("projects").select("features").eq("id", ctx.deps.project_id).execute()
+                if not project_response.data:
+                    return "Project not found"
                 
-                request_context = type('RequestContext', (), {
-                    'lifespan_context': lifespan_context
-                })()
+                current_features = project_response.data[0].get("features", [])
                 
-                mcp_ctx = type('Context', (), {
-                    'request_context': request_context
-                })()
+                # Create new feature entry
+                new_feature = {
+                    "id": str(uuid.uuid4()),
+                    "feature_type": "feature_plan",
+                    "name": feature_name,
+                    "title": f"{feature_name} - Feature Plan",
+                    "content": content,
+                    "created_by": ctx.deps.user_id or "DocumentAgent"
+                }
                 
-                result = await add_project_document(
-                    ctx=mcp_ctx,
-                    project_id=ctx.deps.project_id,
-                    document_type="feature_plan",
-                    title=f"{feature_name} - Feature Plan",
-                    content=content,
-                    tags=["feature", "react-flow", "planning"],
-                    author=ctx.deps.user_id or "DocumentAgent"
-                )
+                # Add to features array
+                updated_features = current_features + [new_feature]
                 
-                result_data = json.loads(result)
-                if result_data.get("success"):
+                # Update project
+                update_response = supabase.table("projects").update({
+                    "features": updated_features
+                }).eq("id", ctx.deps.project_id).execute()
+                
+                success = bool(update_response.data)
+                
+                if success:
                     return f"Successfully created React Flow feature plan for '{feature_name}'. The plan includes a visual flow with 5 nodes and user story breakdown. You can now view and edit this in the project documents."
                 else:
-                    return f"Failed to create feature plan: {result_data.get('error', 'Unknown error')}"
+                    return f"Failed to create feature plan"
                 
             except Exception as e:
                 logger.error(f"Error creating feature plan: {e}")
@@ -604,39 +589,40 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
                     }
                 }
                 
-                # Save as ERD document
-                from ..modules.project_module import add_project_document
-                from ..utils import get_supabase_client
+                # Save to data array instead of docs
+                supabase = get_supabase_client()
                 
-                # Create proper MCP context structure
-                supabase_client = get_supabase_client()
-                lifespan_context = type('LifespanContext', (), {
-                    'supabase_client': supabase_client
-                })()
+                # Get current project data
+                project_response = supabase.table("projects").select("data").eq("id", ctx.deps.project_id).execute()
+                if not project_response.data:
+                    return "Project not found"
                 
-                request_context = type('RequestContext', (), {
-                    'lifespan_context': lifespan_context
-                })()
+                current_data = project_response.data[0].get("data", [])
                 
-                mcp_ctx = type('Context', (), {
-                    'request_context': request_context
-                })()
+                # Create new data entry
+                new_data_model = {
+                    "id": str(uuid.uuid4()),
+                    "data_type": "erd",
+                    "name": system_name,
+                    "title": f"{system_name} - Entity Relationship Diagram",
+                    "content": content,
+                    "created_by": ctx.deps.user_id or "DocumentAgent"
+                }
                 
-                result = await add_project_document(
-                    ctx=mcp_ctx,
-                    project_id=ctx.deps.project_id,
-                    document_type="erd",
-                    title=f"{system_name} - Entity Relationship Diagram",
-                    content=content,
-                    tags=["erd", "database", "schema"],
-                    author=ctx.deps.user_id or "DocumentAgent"
-                )
+                # Add to data array
+                updated_data = current_data + [new_data_model]
                 
-                result_data = json.loads(result)
-                if result_data.get("success"):
+                # Update project
+                update_response = supabase.table("projects").update({
+                    "data": updated_data
+                }).eq("id", ctx.deps.project_id).execute()
+                
+                success = bool(update_response.data)
+                
+                if success:
                     return f"Successfully created ERD for '{system_name}' with {len(entities)} entities. Generated SQL schema and relationship mappings. The ERD includes detailed entity definitions and can be imported into database design tools."
                 else:
-                    return f"Failed to create ERD: {result_data.get('error', 'Unknown error')}"
+                    return f"Failed to create ERD"
                 
             except Exception as e:
                 logger.error(f"Error creating ERD: {e}")
@@ -681,26 +667,11 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
                     }
                 }
                 
-                # Save approval request
-                from ..modules.project_module import add_project_document
-                from ..utils import get_supabase_client
+                # Save approval request using DocumentService
+                from ..services.projects.document_service import DocumentService
                 
-                # Create proper MCP context structure
-                supabase_client = get_supabase_client()
-                lifespan_context = type('LifespanContext', (), {
-                    'supabase_client': supabase_client
-                })()
-                
-                request_context = type('RequestContext', (), {
-                    'lifespan_context': lifespan_context
-                })()
-                
-                mcp_ctx = type('Context', (), {
-                    'request_context': request_context
-                })()
-                
-                result = await add_project_document(
-                    ctx=mcp_ctx,
+                doc_service = DocumentService()
+                success, result_data = doc_service.add_document(
                     project_id=ctx.deps.project_id,
                     document_type="approval_request",
                     title=f"Approval Request: {document_title}",
@@ -709,8 +680,7 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
                     author=ctx.deps.user_id or "DocumentAgent"
                 )
                 
-                result_data = json.loads(result)
-                if result_data.get("success"):
+                if success:
                     return f"Approval request created for changes to '{document_title}'. Status: Pending approval from Product Manager and Technical Lead. Deadline: 3 days. Change summary: {change_summary}"
                 else:
                     return f"Failed to create approval request: {result_data.get('error', 'Unknown error')}"
@@ -723,7 +693,15 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
     
     def get_system_prompt(self) -> str:
         """Get the base system prompt for this agent."""
-        return "Document Management Assistant for conversational document operations."
+        try:
+            from ..services.prompt_service import prompt_service
+            # For now, use document_builder as default
+            # In future, could make this configurable based on operation type
+            return prompt_service.get_prompt('document_builder', 
+                                            default="Document Management Assistant for conversational document operations.")
+        except Exception as e:
+            logger.warning(f"Could not load prompt from service: {e}")
+            return "Document Management Assistant for conversational document operations."
     
     async def run_conversation(self, user_message: str, project_id: str, user_id: str = None, current_document_id: str = None) -> DocumentOperation:
         """

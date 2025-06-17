@@ -20,10 +20,10 @@ import logging
 from datetime import datetime
 
 # Import service classes
-from ..services.project_service import ProjectService
-from ..services.task_service import TaskService
-from ..services.document_service import DocumentService
-from ..services.versioning_service import VersioningService
+from ..services.projects.project_service import ProjectService
+from ..services.projects.task_service import TaskService
+from ..services.projects.document_service import DocumentService
+from ..services.projects.versioning_service import VersioningService
 
 # Import Logfire
 from ..logfire_config import mcp_logger

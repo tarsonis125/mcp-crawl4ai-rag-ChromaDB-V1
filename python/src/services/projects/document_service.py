@@ -47,9 +47,7 @@ class DocumentService:
                 "content": content or {},
                 "tags": tags or [],
                 "status": "draft",
-                "version": "1.0",
-                "created_at": datetime.now().isoformat(),
-                "updated_at": datetime.now().isoformat()
+                "version": "1.0"
             }
             
             if author:
@@ -60,8 +58,7 @@ class DocumentService:
             
             # Update project
             response = self.supabase_client.table("projects").update({
-                "docs": updated_docs,
-                "updated_at": datetime.now().isoformat()
+                "docs": updated_docs
             }).eq("id", project_id).execute()
             
             if response.data:

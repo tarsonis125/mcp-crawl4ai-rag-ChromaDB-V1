@@ -37,6 +37,18 @@ export interface Project {
   progress?: number;
   updated?: string; // Human-readable format
   pinned: boolean; // Database column - indicates if project is pinned for priority
+  
+  // Creation progress tracking for inline display
+  creationProgress?: {
+    progressId: string;
+    status: 'starting' | 'initializing_agents' | 'generating_docs' | 'processing_requirements' | 'ai_generation' | 'finalizing_docs' | 'saving_to_database' | 'completed' | 'error';
+    percentage: number;
+    logs: string[];
+    error?: string;
+    step?: string;
+    eta?: string;
+    duration?: string;
+  };
 }
 
 // Base Task interface (matches database schema)
