@@ -8,7 +8,8 @@ import { Input } from '../ui/Input';
 import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
 import { Select } from '../ui/Select';
-import { CrawlProgressData, crawlProgressService } from '../../services/crawlProgressService';
+import { CrawlProgressData, crawlProgressServiceV2 as crawlProgressService } from '../../services/crawlProgressServiceV2';
+import { WebSocketState } from '../../services/EnhancedWebSocketService';
 import { BlockNoteEditor } from './BlockNoteEditor';
 import { VersionHistoryModal } from './VersionHistoryModal';
 
@@ -331,6 +332,12 @@ export const DocsTab = ({
     loadKnowledgeItems();
     loadProjectDocuments();
     loadProjectData(); // Load saved sources
+    
+    // Cleanup function to disconnect crawl progress service
+    return () => {
+      console.log('🧹 DocsTab: Disconnecting crawl progress service');
+      crawlProgressService.disconnect();
+    };
   }, [project?.id]);
 
   // Clear selected document when project changes
@@ -435,7 +442,7 @@ export const DocsTab = ({
     );
   };
 
-  const handleStartCrawl = (progressId: string, initialData: Partial<CrawlProgressData>) => {
+  const handleStartCrawl = async (progressId: string, initialData: Partial<CrawlProgressData>) => {
     console.log(`Starting crawl tracking for: ${progressId}`);
     
     const newProgressItem: CrawlProgressData = {
@@ -462,10 +469,25 @@ export const DocsTab = ({
       }
     };
     
-    crawlProgressService.streamProgress(progressId, progressCallback, {
-      autoReconnect: true,
-      reconnectDelay: 5000
-    });
+    try {
+      // Use the enhanced streamProgress method for better connection handling
+      await crawlProgressService.streamProgressEnhanced(progressId, {
+        onMessage: progressCallback,
+        onError: (error) => {
+          console.error(`❌ WebSocket error for ${progressId}:`, error);
+          handleProgressError(`Connection error: ${error.message}`);
+        }
+      }, {
+        autoReconnect: true,
+        reconnectDelay: 5000,
+        connectionTimeout: 10000
+      });
+      
+      console.log(`✅ WebSocket connected successfully for ${progressId}`);
+    } catch (error) {
+      console.error(`❌ Failed to establish WebSocket connection:`, error);
+      handleProgressError('Failed to connect to progress updates');
+    }
   };
 
   const openAddSourceModal = (type: 'technical' | 'business') => {

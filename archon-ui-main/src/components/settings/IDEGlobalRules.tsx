@@ -91,7 +91,7 @@ export const IDEGlobalRules = () => {
           </div>
         </div>
 
-        <div className="p-4 border border-blue-200 dark:border-blue-800/30 bg-blue-50/50 dark:bg-blue-900/10 rounded-md">
+        <div className="p-4 border border-blue-200 dark:border-blue-800/30 bg-gradient-to-br from-blue-500/30 to-blue-600/20 backdrop-blur-sm rounded-md">
           <pre className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap font-mono">
             {globalRules}
           </pre>

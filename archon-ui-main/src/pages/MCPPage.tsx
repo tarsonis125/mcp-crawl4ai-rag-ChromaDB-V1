@@ -382,13 +382,13 @@ export const MCPPage = () => {
           <motion.div className="grid grid-cols-1 lg:grid-cols-2 gap-6" variants={itemVariants}>
             
             {/* Left Column: Archon MCP Server */}
-            <div>
+            <div className="flex flex-col">
               <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4 flex items-center">
                 <Server className="mr-2 text-blue-500" size={20} />
                 Archon MCP Server
               </h2>
               
-              <Card accentColor="blue" className="space-y-6">
+              <Card accentColor="blue" className="space-y-6 flex-1">
                 {/* Status Display */}
                 <div className="flex items-center justify-between">
                   <div 
@@ -563,13 +563,13 @@ export const MCPPage = () => {
             </div>
 
             {/* Right Column: Server Logs */}
-            <div>
+            <div className="flex flex-col">
               <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4 flex items-center">
                 <Clock className="mr-2 text-purple-500" size={20} />
                 Server Logs
               </h2>
               
-              <Card accentColor="purple">
+              <Card accentColor="purple" className="h-full flex flex-col">
                 <div className="flex items-center justify-between mb-4">
                   <p className="text-sm text-gray-600 dark:text-zinc-400">
                     {logs.length > 0 
@@ -590,7 +590,7 @@ export const MCPPage = () => {
                 <div 
                   id="mcp-logs-container"
                   ref={logsContainerRef}
-                  className="bg-gray-50 dark:bg-black border border-gray-200 dark:border-zinc-900 rounded-md p-4 h-80 overflow-y-auto font-mono text-sm"
+                  className="bg-gray-50 dark:bg-black border border-gray-200 dark:border-zinc-900 rounded-md p-4 flex-1 overflow-y-auto font-mono text-sm max-h-[600px]"
                 >
                   {logs.length === 0 ? (
                     <p className="text-gray-500 dark:text-zinc-500 text-center py-8">

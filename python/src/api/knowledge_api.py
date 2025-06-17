@@ -140,6 +140,7 @@ class CrawlProgressManager:
     def __init__(self):
         self.active_crawls: Dict[str, Dict[str, Any]] = {}
         self.progress_websockets: Dict[str, List[WebSocket]] = {}
+        self.connection_ready_events: Dict[str, asyncio.Event] = {}
     
     def start_crawl(self, progress_id: str, initial_data: Dict[str, Any]) -> None:
         """Start tracking a new crawl operation."""
@@ -156,6 +157,9 @@ class CrawlProgressManager:
             'logs': initial_data.get('logs', ['Starting crawl...']),
             **initial_data
         }
+        
+        # Create event for this progress ID
+        self.connection_ready_events[progress_id] = asyncio.Event()
         
     async def update_progress(self, progress_id: str, update_data: Dict[str, Any]) -> None:
         """Update crawling progress and notify connected clients."""
@@ -194,6 +198,8 @@ class CrawlProgressManager:
         await asyncio.sleep(300)
         if progress_id in self.active_crawls:
             del self.active_crawls[progress_id]
+        if progress_id in self.connection_ready_events:
+            del self.connection_ready_events[progress_id]
     
     async def error_crawl(self, progress_id: str, error_message: str) -> None:
         """Mark crawl as failed and notify clients."""
@@ -222,6 +228,11 @@ class CrawlProgressManager:
             
             self.progress_websockets[progress_id].append(websocket)
             print(f"DEBUG: WebSocket added to progress_websockets for {progress_id}. Total websockets: {len(self.progress_websockets[progress_id])}")
+            
+            # Signal that connection is ready
+            if progress_id in self.connection_ready_events:
+                self.connection_ready_events[progress_id].set()
+                print(f"DEBUG: Connection ready event set for {progress_id}")
             
             # Send current progress immediately if available
             if progress_id in self.active_crawls:
@@ -274,6 +285,21 @@ class CrawlProgressManager:
                     del self.progress_websockets[progress_id]
             except ValueError:
                 pass
+    
+    async def wait_for_websocket_connection(self, progress_id: str, timeout: float = 5.0) -> bool:
+        """Wait for WebSocket connection to be established."""
+        if progress_id not in self.connection_ready_events:
+            print(f"WARNING: No connection event found for {progress_id}")
+            return False
+        
+        try:
+            print(f"DEBUG: Waiting for WebSocket connection for {progress_id} (timeout: {timeout}s)")
+            await asyncio.wait_for(self.connection_ready_events[progress_id].wait(), timeout=timeout)
+            print(f"DEBUG: WebSocket connection established for {progress_id}")
+            return True
+        except asyncio.TimeoutError:
+            print(f"WARNING: WebSocket connection timeout for {progress_id} after {timeout}s")
+            return False
     
     async def _broadcast_progress(self, progress_id: str) -> None:
         """Broadcast progress update to all connected clients."""
@@ -615,12 +641,15 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         print(f"🚀 CRAWL: Starting crawl function with progress_id: {progress_id}")
         print(f"🚀 CRAWL: URL: {request.url}")
         
-        # CRITICAL FIX: Wait for WebSocket to connect before starting work
-        # This prevents the "No WebSockets found" issue where progress updates
-        # are sent before the frontend WebSocket has time to connect
+        # Wait for WebSocket connection to be established
         print(f"🚀 CRAWL: Waiting for WebSocket connection for progress_id: {progress_id}")
-        await asyncio.sleep(0.5)  # Reduced delay - Give WebSocket time to connect
-        print(f"🚀 CRAWL: Starting crawl work for progress_id: {progress_id}")
+        connection_established = await progress_manager.wait_for_websocket_connection(progress_id, timeout=10.0)
+        
+        if not connection_established:
+            print(f"⚠️ CRAWL: WebSocket connection not established in time for {progress_id}")
+            # Continue anyway - progress will be stored and sent when connection is made
+        else:
+            print(f"✅ CRAWL: WebSocket connection verified for progress_id: {progress_id}")
         
         # Create a progress callback that will be called by the crawling function
         async def progress_callback(status: str, percentage: int, message: str, **kwargs):
@@ -779,12 +808,15 @@ async def _perform_upload_with_progress(progress_id: str, file_content: bytes, f
         content_type = file_metadata['content_type']
         file_size = file_metadata['size']
         
-        # CRITICAL FIX: Wait for WebSocket to connect before starting work
-        # This prevents the "No WebSockets found" issue where progress updates
-        # are sent before the frontend WebSocket has time to connect
+        # Wait for WebSocket connection to be established
         print(f"🚀 UPLOAD: Waiting for WebSocket connection for progress_id: {progress_id}")
-        await asyncio.sleep(2.0)  # Give WebSocket time to connect
-        print(f"🚀 UPLOAD: Starting upload work for progress_id: {progress_id}")
+        connection_established = await progress_manager.wait_for_websocket_connection(progress_id, timeout=10.0)
+        
+        if not connection_established:
+            print(f"⚠️ UPLOAD: WebSocket connection not established in time for {progress_id}")
+            # Continue anyway - progress will be stored and sent when connection is made
+        else:
+            print(f"✅ UPLOAD: WebSocket connection verified for progress_id: {progress_id}")
         
         # Create a progress callback function exactly like web crawl
         async def progress_callback(status: str, percentage: int, message: str, **kwargs):

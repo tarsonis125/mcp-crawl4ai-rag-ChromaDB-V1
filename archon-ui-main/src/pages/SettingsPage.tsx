@@ -9,6 +9,7 @@ import { APIKeysSection } from '../components/settings/APIKeysSection';
 import { RAGSettings } from '../components/settings/RAGSettings';
 import { TestStatus } from '../components/settings/TestStatus';
 import { IDEGlobalRules } from '../components/settings/IDEGlobalRules';
+import { ButtonPlayground } from '../components/settings/ButtonPlayground';
 import { credentialsService, RagSettings } from '../services/credentialsService';
 
 export const SettingsPage = () => {
@@ -105,6 +106,11 @@ export const SettingsPage = () => {
           </motion.div>
         </div>
       </div>
+
+      {/* Button Playground - Full width at bottom */}
+      <motion.div variants={itemVariants} className="mt-12">
+        <ButtonPlayground />
+      </motion.div>
 
       {/* Error Display */}
       {error && (

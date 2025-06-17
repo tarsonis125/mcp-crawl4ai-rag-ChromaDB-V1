@@ -11,7 +11,8 @@ import { useToast } from '../contexts/ToastContext';
 import { knowledgeBaseService, KnowledgeItem, KnowledgeItemMetadata } from '../services/knowledgeBaseService';
 import { knowledgeWebSocket } from '../services/websocketService';
 import { CrawlingProgressCard } from '../components/CrawlingProgressCard';
-import { CrawlProgressData, crawlProgressService } from '../services/crawlProgressService';
+import { CrawlProgressData, crawlProgressServiceV2 as crawlProgressService } from '../services/crawlProgressServiceV2';
+import { WebSocketState } from '../services/EnhancedWebSocketService';
 import { KnowledgeTable } from '../components/knowledge-base/KnowledgeTable';
 
 const extractDomain = (url: string): string => {
@@ -228,9 +229,23 @@ const GroupedKnowledgeItemCard = ({
           )}
 
           {/* Page count - orange neon container like Active button */}
-          <div className="flex items-center gap-1 px-2 py-1 bg-orange-500/20 border border-orange-500/40 rounded-full backdrop-blur-sm shadow-[0_0_15px_rgba(251,146,60,0.3)] transition-all duration-300">
-            <FileText className="w-3 h-3 text-orange-400" />
-            <span className="text-xs text-orange-400 font-medium">{Math.ceil(totalWordCount / 250).toLocaleString()}</span>
+          <div className="relative group">
+            <div className="flex items-center gap-1 px-2 py-1 bg-orange-500/20 border border-orange-500/40 rounded-full backdrop-blur-sm shadow-[0_0_15px_rgba(251,146,60,0.3)] transition-all duration-300 cursor-help">
+              <FileText className="w-3 h-3 text-orange-400" />
+              <span className="text-xs text-orange-400 font-medium">{Math.ceil(totalWordCount / 250).toLocaleString()}</span>
+            </div>
+            
+            {/* Tooltip */}
+            <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 z-50">
+              <div className="bg-black dark:bg-zinc-800 text-white text-xs px-3 py-2 rounded-lg shadow-lg whitespace-nowrap">
+                <div className="font-medium mb-1">{totalWordCount.toLocaleString()} words</div>
+                <div className="text-gray-300 space-y-0.5">
+                  <div>= {Math.ceil(totalWordCount / 250).toLocaleString()} pages</div>
+                  <div>= {(totalWordCount / 80000).toFixed(1)} average novels</div>
+                </div>
+                <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-black dark:border-t-zinc-800"></div>
+              </div>
+            </div>
           </div>
           
           <Badge color={statusColorMap[firstItem.metadata.status || 'active'] as any}>
@@ -362,6 +377,10 @@ export const KnowledgeBasePage = () => {
       }
       cleanup();
       knowledgeWebSocket.disconnect();
+      
+      // Clean up any active crawl progress connections
+      console.log('🧹 Disconnecting crawl progress service');
+      crawlProgressService.disconnect();
     };
   }, []); // Only run once on mount
 
@@ -519,7 +538,7 @@ export const KnowledgeBasePage = () => {
     }
   };
 
-  const handleStartCrawl = (progressId: string, initialData: Partial<CrawlProgressData>) => {
+  const handleStartCrawl = async (progressId: string, initialData: Partial<CrawlProgressData>) => {
     console.log(`🚨 handleStartCrawl called with progressId: ${progressId}`);
     console.log(`🚨 Initial data:`, initialData);
     
@@ -534,8 +553,7 @@ export const KnowledgeBasePage = () => {
     console.log(`🚨 Adding progress item to state`);
     setProgressItems(prev => [...prev, newProgressItem]);
     
-    // Set up callbacks BEFORE connecting to ensure we don't miss any messages
-    // Single unified callback that handles all progress states
+    // Set up callbacks for enhanced progress tracking
     const progressCallback = (data: CrawlProgressData) => {
       console.log(`📨 Progress callback called for ${progressId}:`, data);
       
@@ -552,18 +570,43 @@ export const KnowledgeBasePage = () => {
       }
     };
     
+    const stateChangeCallback = (state: WebSocketState) => {
+      console.log(`🔌 WebSocket state changed for ${progressId}: ${state}`);
+      
+      // Update UI based on connection state if needed
+      if (state === WebSocketState.FAILED) {
+        handleProgressError('Connection failed - please check your network', progressId);
+      }
+    };
+    
+    const errorCallback = (error: Error) => {
+      console.error(`❌ WebSocket error for ${progressId}:`, error);
+      handleProgressError(`Connection error: ${error.message}`, progressId);
+    };
+    
     console.log(`🚀 Starting progress stream for ${progressId}`);
-    console.log(`🚀 About to call crawlProgressService.streamProgress`);
     
     try {
-      // Use the new streamProgress method (matches MCP pattern)
-      const ws = crawlProgressService.streamProgress(progressId, progressCallback, {
+      // Use the enhanced streamProgress method with all callbacks
+      await crawlProgressService.streamProgressEnhanced(progressId, {
+        onMessage: progressCallback,
+        onStateChange: stateChangeCallback,
+        onError: errorCallback
+      }, {
         autoReconnect: true,
-        reconnectDelay: 5000
+        reconnectDelay: 5000,
+        connectionTimeout: 10000
       });
-      console.log(`🚀 streamProgress called, WebSocket:`, ws);
+      
+      console.log(`✅ WebSocket connected successfully for ${progressId}`);
+      
+      // Wait for connection to be fully established
+      await crawlProgressService.waitForConnection(5000);
+      
+      console.log(`✅ Connection verified for ${progressId}`);
     } catch (error) {
-      console.error(`❌ Error calling streamProgress:`, error);
+      console.error(`❌ Failed to establish WebSocket connection:`, error);
+      handleProgressError('Failed to connect to progress updates', progressId);
     }
   };
 
