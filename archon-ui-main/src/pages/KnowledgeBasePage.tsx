@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Search, Grid, Plus, Upload, Link as LinkIcon, Share2, Brain, Filter, BoxIcon, Trash2, List, RefreshCw, X, Globe } from 'lucide-react';
+import { Search, Grid, Plus, Upload, Link as LinkIcon, Share2, Brain, Filter, BoxIcon, Trash2, List, RefreshCw, X, Globe, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MindMapView } from '../components/MindMapView';
 import { Card } from '../components/ui/Card';
@@ -190,16 +190,19 @@ const GroupedKnowledgeItemCard = ({
       </div>
       
       {/* Footer section - pushed to bottom */}
-      <div className="flex items-center justify-between text-xs text-gray-500 dark:text-zinc-500 mt-auto">
-        <div className="flex items-center gap-3">
-          <span>Updated: {new Date(groupedItem.updated_at).toLocaleDateString()}</span>
-          <div className={`flex items-center gap-1 ${frequencyDisplay.color}`}>
+      <div className="flex items-end justify-between mt-auto">
+        {/* Left side - frequency and updated stacked */}
+        <div className="flex flex-col">
+          <div className={`flex items-center gap-1 ${frequencyDisplay.color} mb-1`}>
             {frequencyDisplay.icon}
-            <span>{frequencyDisplay.text}</span>
+            <span className="text-sm font-medium">{frequencyDisplay.text}</span>
           </div>
+          <span className="text-xs text-gray-500 dark:text-zinc-500">Updated: {new Date(groupedItem.updated_at).toLocaleDateString()}</span>
         </div>
+        
+        {/* Right side - sources and status inline */}
         <div className="flex items-center gap-2">
-          {/* Grouped sources chip - inline with status badge */}
+          {/* Grouped sources chip - inline with status */}
           {isGrouped && (
             <div 
               className="cursor-pointer relative"
@@ -225,14 +228,16 @@ const GroupedKnowledgeItemCard = ({
               )}
             </div>
           )}
-          <div className="flex flex-col items-end gap-1">
-            <Badge color="orange" variant="outline">
-              {formattedWordCount} words
-            </Badge>
-            <Badge color={statusColorMap[firstItem.metadata.status || 'active'] as any}>
-              {(firstItem.metadata.status || 'active').charAt(0).toUpperCase() + (firstItem.metadata.status || 'active').slice(1)}
-            </Badge>
+
+          {/* Page count - orange neon container like Active button */}
+          <div className="flex items-center gap-1 px-2 py-1 bg-orange-500/20 border border-orange-500/40 rounded-full backdrop-blur-sm shadow-[0_0_15px_rgba(251,146,60,0.3)] transition-all duration-300">
+            <FileText className="w-3 h-3 text-orange-400" />
+            <span className="text-xs text-orange-400 font-medium">{Math.ceil(totalWordCount / 250).toLocaleString()}</span>
           </div>
+          
+          <Badge color={statusColorMap[firstItem.metadata.status || 'active'] as any}>
+            {(firstItem.metadata.status || 'active').charAt(0).toUpperCase() + (firstItem.metadata.status || 'active').slice(1)}
+          </Badge>
         </div>
       </div>
 
