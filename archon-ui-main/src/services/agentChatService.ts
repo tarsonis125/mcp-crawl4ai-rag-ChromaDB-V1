@@ -3,7 +3,7 @@
  * Handles communication with AI agents via REST API and WebSocket streaming
  */
 
-interface ChatMessage {
+export interface ChatMessage {
   id: string;
   content: string;
   sender: 'user' | 'agent';

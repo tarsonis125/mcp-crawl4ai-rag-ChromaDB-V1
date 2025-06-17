@@ -517,6 +517,95 @@ class DatabaseChangeDetector:
 # Global database change detector
 db_change_detector = DatabaseChangeDetector()
 
+# Connection Manager for Project List WebSocket
+class ProjectListConnectionManager:
+    """Manages WebSocket connections for real-time project list updates."""
+    
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+    
+    async def connect(self, websocket: WebSocket):
+        """Connect a new WebSocket for project list updates."""
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        logfire_logger.info("Project list WebSocket connected", total_connections=len(self.active_connections))
+    
+    def disconnect(self, websocket: WebSocket):
+        """Disconnect a WebSocket from project list updates."""
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+            logfire_logger.info("Project list WebSocket disconnected", total_connections=len(self.active_connections))
+    
+    async def send_project_list(self, websocket: WebSocket):
+        """Send current project list to a specific WebSocket connection."""
+        try:
+            # Get current projects using the same logic as list_projects endpoint
+            supabase_client = get_supabase_client()
+            response = supabase_client.table("projects").select("*").order("created_at", desc=True).execute()
+            
+            projects = []
+            for project in response.data:
+                # Get linked sources for this project
+                technical_sources = []
+                business_sources = []
+                
+                try:
+                    sources_response = supabase_client.table("project_sources").select("source_id, notes").eq("project_id", project["id"]).execute()
+                    for source_link in sources_response.data:
+                        if source_link.get("notes") == "technical":
+                            technical_sources.append(source_link["source_id"])
+                        elif source_link.get("notes") == "business":
+                            business_sources.append(source_link["source_id"])
+                except Exception as e:
+                    logger.warning(f"Failed to retrieve linked sources for project {project['id']}: {e}")
+                
+                projects.append({
+                    "id": project["id"],
+                    "title": project["title"],
+                    "github_repo": project.get("github_repo"),
+                    "created_at": project["created_at"],
+                    "updated_at": project["updated_at"],
+                    "prd": project.get("prd", {}),
+                    "docs": project.get("docs", []),
+                    "features": project.get("features", []),
+                    "data": project.get("data", []),
+                    "technical_sources": technical_sources,
+                    "business_sources": business_sources,
+                    "pinned": project.get("pinned", False)
+                })
+            
+            # Send projects update message matching knowledge base pattern
+            await websocket.send_json({
+                "type": "projects_update",
+                "data": {
+                    "projects": projects,
+                    "total": len(projects)
+                }
+            })
+            
+        except Exception as e:
+            logfire_logger.error("Failed to send project list via WebSocket", error=str(e))
+    
+    async def broadcast_project_update(self):
+        """Broadcast project list update to all connected clients."""
+        if not self.active_connections:
+            return
+        
+        disconnected = []
+        for connection in self.active_connections:
+            try:
+                await self.send_project_list(connection)
+            except Exception as e:
+                logfire_logger.warning("Failed to send project update to WebSocket", error=str(e))
+                disconnected.append(connection)
+        
+        # Remove disconnected clients
+        for conn in disconnected:
+            self.disconnect(conn)
+
+# Global project list connection manager
+project_list_manager = ProjectListConnectionManager()
+
 @router.get("/projects")
 async def list_projects():
     """List all projects."""
@@ -733,7 +822,9 @@ async def _create_project_background(progress_id: str, request: CreateProjectReq
                 'data': final_project.get('data', []),
                 'pinned': final_project.get('pinned', False),  # Include pinned field
                 'color': request.color or 'blue',
-                'icon': request.icon or 'Briefcase'
+                'icon': request.icon or 'Briefcase',
+                'technical_sources': [],  # Empty initially
+                'business_sources': []     # Empty initially
             }
             
             await project_creation_manager.update_progress(progress_id, {
@@ -751,6 +842,9 @@ async def _create_project_background(progress_id: str, request: CreateProjectReq
                 'log': f'🎉 Project "{request.title}" created successfully!',
                 'project_id': project_id
             })
+        
+        # Broadcast project list update to WebSocket clients
+        await project_list_manager.broadcast_project_update()
         
     except Exception as e:
         logger.error(f"Project creation failed: {str(e)}")
@@ -1130,6 +1224,9 @@ async def update_project(project_id: str, request: UpdateProjectRequest):
             if hasattr(updated_at, 'isoformat'):
                 updated_at = updated_at.isoformat()
             
+            # Broadcast project list update to WebSocket clients
+            await project_list_manager.broadcast_project_update()
+            
             return {
                 "id": project["id"],
                 "title": project["title"],
@@ -1169,6 +1266,9 @@ async def delete_project(project_id: str):
             
             # Delete project (tasks will be cascade deleted due to foreign key)
             response = supabase_client.table("projects").delete().eq("id", project_id).execute()
+            
+            # Broadcast project list update to WebSocket clients
+            await project_list_manager.broadcast_project_update()
             
             logfire_logger.info("Project deleted successfully", project_id=project_id)
             span.set_attribute("success", True)
@@ -1627,6 +1727,26 @@ async def task_updates_websocket(websocket: WebSocket, project_id: str, session_
     finally:
         task_update_manager.disconnect_from_session(websocket, project_id, session_id)
         db_change_detector.remove_websocket_connection(project_id, websocket, session_id)
+
+@router.websocket("/projects/stream")
+async def websocket_projects_stream(websocket: WebSocket):
+    """WebSocket endpoint for real-time project list updates."""
+    await project_list_manager.connect(websocket)
+    try:
+        # Send initial project list immediately
+        await project_list_manager.send_project_list(websocket)
+        
+        # Keep connection alive and listen for updates
+        while True:
+            await asyncio.sleep(5)  # Check for updates every 5 seconds
+            # Send heartbeat
+            await websocket.send_json({"type": "heartbeat"})
+            
+    except WebSocketDisconnect:
+        project_list_manager.disconnect(websocket)
+    except Exception as e:
+        logfire_logger.error("Projects stream WebSocket error", error=str(e))
+        project_list_manager.disconnect(websocket)
 
 # MCP CONTEXT MANAGER FOR TASK UPDATES WITH WEBSOCKET BROADCASTING
 # Following the same pattern as RAG module

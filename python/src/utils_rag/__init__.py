@@ -21,7 +21,9 @@ from .rag_utils import (
     clean_text,
     extract_code_language,
     estimate_reading_time,
-    create_content_summary
+    create_content_summary,
+    extract_code_blocks,
+    generate_code_example_summary
 )
 
 __all__ = [
@@ -40,5 +42,7 @@ __all__ = [
     "clean_text",
     "extract_code_language",
     "estimate_reading_time",
-    "create_content_summary"
+    "create_content_summary",
+    "extract_code_blocks",
+    "generate_code_example_summary"
 ]

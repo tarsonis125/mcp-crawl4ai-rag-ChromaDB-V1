@@ -1,3 +1,5 @@
+import type { Project } from '../types/project';
+
 export interface ProjectCreationProgressData {
   progressId: string;
   status: 'starting' | 'initializing_agents' | 'generating_docs' | 'processing_requirements' | 'ai_generation' | 'finalizing_docs' | 'saving_to_database' | 'completed' | 'error';
@@ -7,7 +9,7 @@ export interface ProjectCreationProgressData {
   eta?: string;
   error?: string;
   logs: string[];
-  project?: any; // The created project when completed
+  project?: Project; // The created project when completed
   duration?: string;
 }
 

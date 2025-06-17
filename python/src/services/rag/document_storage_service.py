@@ -14,13 +14,18 @@ from urllib.parse import urlparse
 from src.utils import (
     get_supabase_client,
     add_documents_to_supabase,
-    extract_code_blocks,
-    generate_code_example_summary,
     add_code_examples_to_supabase,
     update_source_info,
     extract_source_summary,
     process_chunk_with_context,
     create_embeddings_batch
+)
+
+from src.utils_rag import (
+    smart_chunk_markdown,
+    extract_section_info,
+    extract_code_blocks,
+    generate_code_example_summary
 )
 
 logger = logging.getLogger(__name__)

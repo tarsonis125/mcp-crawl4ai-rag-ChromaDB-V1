@@ -17,6 +17,7 @@ import type { Task } from '../components/project-tasks/TaskTableView';
 import { ProjectCreationProgressCard } from '../components/ProjectCreationProgressCard';
 import { projectCreationProgressService } from '../services/projectCreationProgressService';
 import type { ProjectCreationProgressData } from '../services/projectCreationProgressService';
+import { projectListWebSocket } from '../services/websocketService';
 
 interface ProjectPageProps {
   className?: string;
@@ -65,7 +66,7 @@ export function ProjectPage({
   // Handler for retrying project creation
   const handleRetryProjectCreation = (progressId: string) => {
     // Remove the failed project
-    setProjects((prev) => prev.filter(p => p.id !== `temp_${progressId}`));
+    setProjects((prev) => prev.filter(p => p.id !== `temp-${progressId}`));
     // Re-open the modal for retry
     setIsNewProjectModalOpen(true);
   };
@@ -76,50 +77,121 @@ export function ProjectPage({
 
   const { showToast } = useToast();
 
-  // Load projects on component mount
+  // Load projects with WebSocket support
   useEffect(() => {
-    const loadInitialData = async () => {
-      try {
-        console.log(`[INITIAL LOAD] Starting loadInitialData...`);
-        // Load the projects with their database pinned state
-        const projectsData = await projectService.listProjects();
-        console.log(`[INITIAL LOAD] Projects loaded from API:`, projectsData.map(p => ({id: p.id, title: p.title, pinned: p.pinned})));
-        
-        // Sort projects - pinned first, then alphabetically
-        const sortedProjects = [...projectsData].sort((a, b) => {
-          if (a.pinned && !b.pinned) return -1;
-          if (!a.pinned && b.pinned) return 1;
-          return a.title.localeCompare(b.title);
+    let isComponentMounted = true;
+    let wsConnected = false;
+    let fallbackExecuted = false;
+    let loadTimeoutRef: NodeJS.Timeout | null = null;
+
+    console.log('🚀 ProjectPage: Initializing project loading strategy');
+
+    // Function to sort and update projects
+    const updateProjectsState = (projectsData: Project[]) => {
+      if (!isComponentMounted) return;
+      
+      console.log(`[PROJECT UPDATE] Received projects:`, projectsData.map(p => ({id: p.id, title: p.title, pinned: p.pinned})));
+      
+      // Sort projects - pinned first, then alphabetically
+      const sortedProjects = [...projectsData].sort((a, b) => {
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
+        return a.title.localeCompare(b.title);
+      });
+      console.log(`[PROJECT UPDATE] Projects after sorting:`, sortedProjects.map(p => ({id: p.id, title: p.title, pinned: p.pinned})));
+      
+      setProjects(prev => {
+        // Keep temp projects and merge with real projects
+        const tempProjects = prev.filter(p => p.id.startsWith('temp-'));
+        return [...tempProjects, ...sortedProjects];
+      });
+      
+      // Handle project selection
+      const pinnedProject = sortedProjects.find(project => project.pinned);
+      console.log(`[PROJECT UPDATE] Pinned project:`, pinnedProject ? {id: pinnedProject.id, title: pinnedProject.title, pinned: pinnedProject.pinned} : 'None');
+      
+      if (sortedProjects.length > 0) {
+        setSelectedProject(prev => {
+          // If no project selected, select pinned or first project
+          if (!prev) {
+            const projectToSelect = pinnedProject || sortedProjects[0];
+            console.log(`[PROJECT UPDATE] Selecting project:`, {id: projectToSelect.id, title: projectToSelect.title, pinned: projectToSelect.pinned});
+            setShowProjectDetails(true);
+            return projectToSelect;
+          }
+          
+          // If pinned project exists and it's different from current selection, switch to it
+          if (pinnedProject && prev.id !== pinnedProject.id) {
+            console.log(`[PROJECT UPDATE] Switching to pinned project:`, {id: pinnedProject.id, title: pinnedProject.title, pinned: pinnedProject.pinned});
+            setShowProjectDetails(true);
+            return pinnedProject;
+          }
+          
+          return prev;
         });
-        console.log(`[INITIAL LOAD] Projects after sorting:`, sortedProjects.map(p => ({id: p.id, title: p.title, pinned: p.pinned})));
+      }
+      
+      setIsLoadingProjects(false);
+    };
+
+    // Try WebSocket connection first
+    const connectWebSocket = () => {
+      console.log('📡 Attempting WebSocket connection for real-time project updates');
+      projectListWebSocket.connect('/api/projects/stream');
+      
+      const handleProjectUpdate = (data: any) => {
+        if (!isComponentMounted) return;
         
-        setProjects(sortedProjects);
-        
-        // Find pinned project if any
-        const pinnedProject = sortedProjects.find(project => project.pinned);
-        console.log(`[INITIAL LOAD] Pinned project:`, pinnedProject ? {id: pinnedProject.id, title: pinnedProject.title, pinned: pinnedProject.pinned} : 'None');
-        
-        // Always select the pinned project if one exists, otherwise default to first project
-        if (sortedProjects.length > 0) {
-          // Select either the pinned project or the first project if no pinned project
-          const projectToSelect = pinnedProject || sortedProjects[0];
-          console.log(`[INITIAL LOAD] Selecting project:`, {id: projectToSelect.id, title: projectToSelect.title, pinned: projectToSelect.pinned});
-          setSelectedProject(projectToSelect);
-          setShowProjectDetails(true);
-        } else {
-          console.log(`[INITIAL LOAD] No projects to select`);
+        if (data.type === 'projects_update') {
+          console.log('✅ WebSocket: Received projects update');
+          updateProjectsState(data.data.projects);
+          wsConnected = true;
         }
-        
+      };
+      
+      projectListWebSocket.addEventListener('projects_update', handleProjectUpdate);
+      
+      // Set fallback timeout - only execute if WebSocket hasn't connected and component is still mounted
+      loadTimeoutRef = setTimeout(() => {
+        if (isComponentMounted && !wsConnected && !fallbackExecuted) {
+          console.log('⏰ WebSocket fallback: Loading via REST API after timeout');
+          fallbackExecuted = true;
+          loadProjectsViaRest();
+        }
+      }, 2000);
+      
+      return () => {
+        projectListWebSocket.removeEventListener('projects_update', handleProjectUpdate);
+      };
+    };
+
+    // Fallback REST API loading
+    const loadProjectsViaRest = async () => {
+      if (!isComponentMounted) return;
+      
+      try {
+        console.log('🔄 Loading projects via REST API');
+        const projectsData = await projectService.listProjects();
+        updateProjectsState(projectsData);
       } catch (error) {
         console.error('Failed to load projects:', error);
         setProjectsError(error instanceof Error ? error.message : 'Failed to load projects');
-      } finally {
         setIsLoadingProjects(false);
       }
     };
+
+    const cleanup = connectWebSocket();
     
-    loadInitialData();
-  }, []);
+    return () => {
+      console.log('🧹 ProjectPage: Cleaning up project loading');
+      isComponentMounted = false;
+      if (loadTimeoutRef) {
+        clearTimeout(loadTimeoutRef);
+      }
+      cleanup();
+      projectListWebSocket.disconnect();
+    };
+  }, []); // Only run once on mount
 
   // Load tasks when project is selected
   useEffect(() => {
@@ -338,7 +410,7 @@ export function ProjectPage({
           id: tempId,
           title: newProjectForm.title,
           description: newProjectForm.description || '',
-          github_repo: null,
+          github_repo: undefined,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           docs: [],
@@ -352,7 +424,7 @@ export function ProjectPage({
             status: 'starting',
             percentage: 0,
             logs: ['🚀 Starting project creation...'],
-            project: { title: newProjectForm.title }
+            project: undefined
           }
         };
         
@@ -370,24 +442,12 @@ export function ProjectPage({
           (data: ProjectCreationProgressData) => {
             console.log('📨 Project creation progress:', data);
             
-            // Update the temporary project's progress
+            // Always update the temporary project's progress - this will trigger the card's useEffect
             setProjects((prev) => prev.map(p => 
               p.id === tempId 
                 ? { ...p, creationProgress: data }
                 : p
             ));
-            
-            // Handle completion
-            if (data.status === 'completed' && data.project) {
-              // Replace temporary project with real one
-              setProjects((prev) => prev.map(p => 
-                p.id === tempId ? data.project : p
-              ));
-              
-              // Select the new project
-              setSelectedProject(data.project);
-              setShowProjectDetails(true);
-            }
             
             // Handle error state
             if (data.status === 'error') {
@@ -519,8 +579,25 @@ export function ProjectPage({
                   >
                     <ProjectCreationProgressCard
                       progressData={project.creationProgress}
-                      onComplete={() => {
-                        console.log('Project creation completed');
+                      onComplete={(completedData) => {
+                        console.log('Project creation completed - card onComplete triggered', completedData);
+                        
+                        if (completedData.project && completedData.status === 'completed') {
+                          // Show success toast
+                          showToast(`Project "${completedData.project.title}" created successfully!`, 'success');
+                          
+                          // Show completion briefly, then refresh to show the actual project
+                          setTimeout(() => {
+                            // Disconnect WebSocket
+                            projectCreationProgressService.disconnect();
+                            
+                            // Remove temp project and reload to show the real project
+                            setProjects((prev) => prev.filter(p => p.id !== project.id));
+                            
+                            // Reload projects to show the newly created project
+                            loadProjects();
+                          }, 1000); // Reduced from 2000ms to 1000ms for faster refresh
+                        }
                       }}
                       onError={(error) => {
                         console.error('Project creation failed:', error);

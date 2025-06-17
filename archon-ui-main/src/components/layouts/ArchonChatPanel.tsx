@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Send, User, WifiOff, RefreshCw } from 'lucide-react';
+import { Send, User, WifiOff, RefreshCw, BookOpen, Search } from 'lucide-react';
 import { ArchonLoadingSpinner, EdgeLitEffect } from '../animations/Animations';
 import { agentChatService, ChatMessage } from '../../services/agentChatService';
 
@@ -33,6 +33,10 @@ export const ArchonChatPanel: React.FC<ArchonChatPanelProps> = props => {
   const [connectionStatus, setConnectionStatus] = useState<'online' | 'offline' | 'connecting'>('connecting');
   const [isReconnecting, setIsReconnecting] = useState(false);
   
+  // Add agent type state
+  const [agentType, setAgentType] = useState<'docs' | 'rag'>('docs');
+  const [isChangingAgent, setIsChangingAgent] = useState(false);
+  
   // Refs for DOM elements
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const dragHandleRef = useRef<HTMLDivElement>(null);
@@ -40,8 +44,7 @@ export const ArchonChatPanel: React.FC<ArchonChatPanelProps> = props => {
   /**
    * Initialize chat session and WebSocket connection
    */
-  useEffect(() => {
-    const initializeChat = async () => {
+  const initializeChat = React.useCallback(async () => {
       try {
         // Check if WebSocket is enabled
         const enableWebSocket = import.meta.env.VITE_ENABLE_WEBSOCKET !== 'false';
@@ -60,7 +63,7 @@ export const ArchonChatPanel: React.FC<ArchonChatPanelProps> = props => {
         
         // Create a new chat session
         try {
-          const { session_id } = await agentChatService.createSession();
+          const { session_id } = await agentChatService.createSession(undefined, agentType);
           setSessionId(session_id);
           
           // Subscribe to connection status changes
@@ -113,6 +116,7 @@ export const ArchonChatPanel: React.FC<ArchonChatPanelProps> = props => {
           setIsInitialized(true);
           setConnectionStatus('online');
           setConnectionError(null);
+          setIsChangingAgent(false); // Clear changing flag
         } catch (error) {
           console.error('Failed to initialize chat session:', error);
           setConnectionError('Failed to initialize chat. Server may be offline.');
@@ -123,10 +127,13 @@ export const ArchonChatPanel: React.FC<ArchonChatPanelProps> = props => {
         console.error('Failed to initialize chat:', error);
         setConnectionError('Failed to connect to agent. Server may be offline.');
         setConnectionStatus('offline');
+        setIsChangingAgent(false); // Clear changing flag on error too
       }
-    };
-
-    if (!isInitialized) {
+    }, [agentType]);
+  
+  // Initialize on mount and when explicitly requested
+  useEffect(() => {
+    if (!isInitialized && !isChangingAgent) {
       initializeChat();
     }
 
@@ -137,7 +144,45 @@ export const ArchonChatPanel: React.FC<ArchonChatPanelProps> = props => {
         agentChatService.offStatusChange(sessionId);
       }
     };
-  }, [isInitialized, sessionId]);
+  }, [isInitialized, isChangingAgent, initializeChat, sessionId]);
+  
+  /**
+   * Handle agent type change
+   */
+  const handleAgentTypeChange = async (newAgentType: 'docs' | 'rag') => {
+    if (newAgentType === agentType || isChangingAgent) return;
+    
+    setIsChangingAgent(true);
+    
+    try {
+      // Disconnect current session
+      if (sessionId) {
+        agentChatService.disconnectWebSocket(sessionId);
+        agentChatService.offStatusChange(sessionId);
+      }
+      
+      // Clear messages and session
+      setMessages([]);
+      setSessionId(null);
+      
+      // Update agent type first
+      setAgentType(newAgentType);
+      
+      // Mark as not initialized
+      setIsInitialized(false);
+      
+      // Directly call initialize after a short delay
+      setTimeout(() => {
+        initializeChat();
+      }, 100);
+      
+    } catch (error) {
+      console.error('Failed to change agent type:', error);
+      setConnectionError('Failed to change agent type. Please try again.');
+      setIsChangingAgent(false);
+    }
+  };
+  
   /**
    * Handle resizing of the chat panel via drag
    */
@@ -197,8 +242,14 @@ export const ArchonChatPanel: React.FC<ArchonChatPanelProps> = props => {
     if (!inputValue.trim() || !sessionId) return;
 
     try {
+      // Add context for RAG agent if needed
+      const context = agentType === 'rag' ? {
+        match_count: 5,
+        // Can add source_filter here if needed in the future
+      } : undefined;
+      
       // Send message to agent via service
-      await agentChatService.sendMessage(sessionId, inputValue.trim());
+      await agentChatService.sendMessage(sessionId, inputValue.trim(), context);
       setInputValue('');
       setConnectionError(null);
     } catch (error) {
@@ -255,14 +306,44 @@ export const ArchonChatPanel: React.FC<ArchonChatPanelProps> = props => {
         <div className="absolute top-0 left-0 right-0 h-16 bg-gradient-to-b from-blue-100 to-white dark:from-blue-500/20 dark:to-blue-500/5 rounded-t-md pointer-events-none"></div>
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-zinc-800/80">
-          <div className="flex items-center">
-            {/* Archon Logo - No animation in header */}
-            <div className="relative w-8 h-8 mr-3 flex items-center justify-center">
-              <img src="/logo-neon.svg" alt="Archon" className="w-6 h-6 z-10 relative" />
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center">
+              {/* Archon Logo - No animation in header */}
+              <div className="relative w-8 h-8 mr-3 flex items-center justify-center">
+                <img src="/logo-neon.svg" alt="Archon" className="w-6 h-6 z-10 relative" />
+              </div>
+              <h2 className="text-gray-800 dark:text-white font-medium z-10 relative">
+                {agentType === 'rag' ? 'RAG Search Assistant' : 'Documentation Assistant'}
+              </h2>
             </div>
-            <h2 className="text-gray-800 dark:text-white font-medium z-10 relative">
-              Documentation Assistant
-            </h2>
+            
+            {/* Agent type selector */}
+            <div className="flex items-center gap-1 ml-11">
+              <button
+                onClick={() => handleAgentTypeChange('docs')}
+                disabled={isChangingAgent}
+                className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${
+                  agentType === 'docs' 
+                    ? 'bg-blue-500 text-white' 
+                    : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                } ${isChangingAgent ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <BookOpen className="w-3 h-3" />
+                Docs
+              </button>
+              <button
+                onClick={() => handleAgentTypeChange('rag')}
+                disabled={isChangingAgent}
+                className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${
+                  agentType === 'rag' 
+                    ? 'bg-purple-500 text-white' 
+                    : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                } ${isChangingAgent ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <Search className="w-3 h-3" />
+                RAG
+              </button>
+            </div>
           </div>
           
           {/* Connection status and controls */}
@@ -313,6 +394,17 @@ export const ArchonChatPanel: React.FC<ArchonChatPanelProps> = props => {
         </div>
         {/* Messages area */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/50 dark:bg-transparent">
+          {/* Show loading state when changing agents */}
+          {isChangingAgent && (
+            <div className="flex items-center justify-center py-8">
+              <div className="text-center">
+                <ArchonLoadingSpinner size="md" />
+                <p className="text-gray-600 dark:text-gray-400 mt-4">
+                  Switching to {agentType === 'rag' ? 'RAG Search' : 'Documentation'} Assistant...
+                </p>
+              </div>
+            </div>
+          )}
           {messages.map(message => (
             <div key={message.id} className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`
@@ -333,9 +425,32 @@ export const ArchonChatPanel: React.FC<ArchonChatPanelProps> = props => {
                     {formatTime(message.timestamp)}
                   </span>
                 </div>
-                <p className="text-gray-800 dark:text-white text-sm whitespace-pre-wrap">
-                  {message.content}
-                </p>
+                <div className="text-gray-800 dark:text-white text-sm whitespace-pre-wrap">
+                  {/* For RAG responses, handle markdown-style formatting */}
+                  {message.agent_type === 'rag' && message.sender === 'agent' ? (
+                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                      {message.content.split('\n').map((line, idx) => {
+                        // Handle bold text
+                        const boldRegex = /\*\*(.*?)\*\*/g;
+                        const parts = line.split(boldRegex);
+                        
+                        return (
+                          <div key={idx}>
+                            {parts.map((part, partIdx) => 
+                              partIdx % 2 === 1 ? (
+                                <strong key={partIdx}>{part}</strong>
+                              ) : (
+                                <span key={partIdx}>{part}</span>
+                              )
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    message.content
+                  )}
+                </div>
               </div>
             </div>
           ))}

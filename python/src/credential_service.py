@@ -276,14 +276,39 @@ class CredentialService:
             
             credentials = []
             for item in result.data:
-                cred = CredentialItem(
-                    key=item["key"],
-                    value=item["value"] if not item["is_encrypted"] else None,
-                    encrypted_value="***" if item["is_encrypted"] and item["encrypted_value"] else None,
-                    is_encrypted=item["is_encrypted"],
-                    category=item["category"],
-                    description=item["description"]
-                )
+                # For encrypted values, decrypt them for UI display
+                if item["is_encrypted"] and item["encrypted_value"]:
+                    try:
+                        decrypted_value = self._decrypt_value(item["encrypted_value"])
+                        cred = CredentialItem(
+                            key=item["key"],
+                            value=decrypted_value,
+                            encrypted_value=None,  # Don't expose encrypted value
+                            is_encrypted=item["is_encrypted"],
+                            category=item["category"],
+                            description=item["description"]
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to decrypt credential {item['key']}: {e}")
+                        # If decryption fails, show placeholder
+                        cred = CredentialItem(
+                            key=item["key"],
+                            value="[DECRYPTION ERROR]",
+                            encrypted_value=None,
+                            is_encrypted=item["is_encrypted"],
+                            category=item["category"],
+                            description=item["description"]
+                        )
+                else:
+                    # Plain text values
+                    cred = CredentialItem(
+                        key=item["key"],
+                        value=item["value"],
+                        encrypted_value=None,
+                        is_encrypted=item["is_encrypted"],
+                        category=item["category"],
+                        description=item["description"]
+                    )
                 credentials.append(cred)
             
             return credentials

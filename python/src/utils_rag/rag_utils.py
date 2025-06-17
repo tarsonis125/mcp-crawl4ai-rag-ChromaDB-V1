@@ -277,3 +277,174 @@ def create_content_summary(content: str, max_length: int = 200) -> str:
     except Exception as e:
         logger.warning(f"Error creating content summary: {e}")
         return truncate_content(content, max_length)
+
+
+def extract_code_blocks(markdown_content: str, min_length: int = 100) -> List[Dict[str, Any]]:
+    """
+    Extract code blocks from markdown content along with context.
+    Simple version that doesn't require OpenAI API.
+    
+    Args:
+        markdown_content: The markdown content to extract code blocks from
+        min_length: Minimum length of code blocks to extract (default: 100 characters)
+        
+    Returns:
+        List of dictionaries containing code blocks and their context
+    """
+    code_blocks = []
+    
+    try:
+        # Skip if content starts with triple backticks (edge case for files wrapped in backticks)
+        content = markdown_content.strip()
+        start_offset = 0
+        if content.startswith('```'):
+            # Skip the first triple backticks
+            start_offset = 3
+            logger.debug("Skipping initial triple backticks")
+        
+        # Find all occurrences of triple backticks
+        backtick_positions = []
+        pos = start_offset
+        while True:
+            pos = markdown_content.find('```', pos)
+            if pos == -1:
+                break
+            backtick_positions.append(pos)
+            pos += 3
+        
+        # Process pairs of backticks
+        i = 0
+        while i < len(backtick_positions) - 1:
+            start_pos = backtick_positions[i]
+            end_pos = backtick_positions[i + 1]
+            
+            # Extract the content between backticks
+            code_section = markdown_content[start_pos+3:end_pos]
+            
+            # Skip if too short
+            if len(code_section.strip()) < min_length:
+                i += 2  # Skip both opening and closing backticks
+                continue
+            
+            # Extract language from first line if present
+            lines = code_section.split('\n')
+            first_line = lines[0].strip() if lines else ""
+            
+            # If first line looks like a language identifier, remove it
+            if first_line and not any(char in first_line for char in [' ', '{', '(', '=']):
+                language = first_line
+                code_content = '\n'.join(lines[1:])
+            else:
+                language = "unknown"
+                code_content = code_section
+            
+            # Clean up the code content
+            code_content = code_content.strip()
+            
+            # Skip if the cleaned code is too short
+            if len(code_content) < min_length:
+                i += 2
+                continue
+            
+            # Extract context before and after the code block
+            context_before = markdown_content[max(0, start_pos-500):start_pos].strip()
+            context_after = markdown_content[end_pos+3:end_pos+503].strip()
+            
+            code_blocks.append({
+                'code': code_content,
+                'language': language,
+                'context_before': context_before,
+                'context_after': context_after,
+                'start_pos': start_pos,
+                'end_pos': end_pos
+            })
+            
+            i += 2  # Skip both opening and closing backticks
+        
+        logger.debug(f"Extracted {len(code_blocks)} code blocks from markdown")
+        return code_blocks
+        
+    except Exception as e:
+        logger.error(f"Error extracting code blocks: {e}")
+        logger.error(traceback.format_exc())
+        return []
+
+
+def generate_code_example_summary(code: str, context_before: str, context_after: str) -> str:
+    """
+    Generate a simple summary for a code example using its surrounding context.
+    Simple version that doesn't require OpenAI API.
+    
+    Args:
+        code: The code example
+        context_before: Context before the code
+        context_after: Context after the code
+        
+    Returns:
+        A summary of what the code example demonstrates
+    """
+    try:
+        # Extract language from code if it starts with ```
+        language = "code"
+        if code.strip().startswith('```'):
+            first_line = code.strip().split('\n')[0]
+            if len(first_line) > 3:
+                language = first_line[3:].strip()
+        
+        # Look for function/class definitions to understand what the code does
+        code_lines = code.split('\n')
+        key_elements = []
+        
+        for line in code_lines:
+            line = line.strip()
+            # Look for function definitions
+            if line.startswith('def ') or line.startswith('function ') or 'function(' in line:
+                key_elements.append("function definition")
+            # Look for class definitions
+            elif line.startswith('class ') or line.startswith('interface '):
+                key_elements.append("class/interface definition")
+            # Look for imports
+            elif line.startswith('import ') or line.startswith('from ') or line.startswith('#include'):
+                key_elements.append("import statement")
+            # Look for variable assignments
+            elif '=' in line and not line.startswith('//') and not line.startswith('#'):
+                key_elements.append("variable assignment")
+        
+        # Look for context clues in surrounding text
+        context_clues = []
+        combined_context = (context_before + " " + context_after).lower()
+        
+        if any(word in combined_context for word in ['example', 'demo', 'sample']):
+            context_clues.append("example")
+        if any(word in combined_context for word in ['test', 'testing', 'unit test']):
+            context_clues.append("test")
+        if any(word in combined_context for word in ['api', 'endpoint', 'request']):
+            context_clues.append("API usage")
+        if any(word in combined_context for word in ['config', 'configuration', 'setup']):
+            context_clues.append("configuration")
+        
+        # Build summary
+        summary_parts = []
+        
+        if language and language != "unknown":
+            summary_parts.append(f"{language.title()} code")
+        else:
+            summary_parts.append("Code")
+        
+        if key_elements:
+            unique_elements = list(set(key_elements))
+            if len(unique_elements) == 1:
+                summary_parts.append(f"showing {unique_elements[0]}")
+            else:
+                summary_parts.append(f"with {', '.join(unique_elements)}")
+        
+        if context_clues:
+            summary_parts.append(f"demonstrating {', '.join(set(context_clues))}")
+        else:
+            summary_parts.append("for demonstration purposes")
+        
+        return " ".join(summary_parts) + "."
+        
+    except Exception as e:
+        logger.warning(f"Error generating code summary: {e}")
+        return "Code example for demonstration purposes."

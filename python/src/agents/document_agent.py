@@ -216,60 +216,15 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
                         'log': f'📝 Creating {document_type}: {title}'
                     })
                 
-                # Determine content structure based on document type
-                if document_type == "prd":
-                    # Structure according to document_builder prompt
-                    content = {
-                        "Background_and_Context": content_description,
-                        "Problem_Statement": "TBD - To be defined based on requirements",
-                        "Goals_and_Success_Metrics": ["TBD - Define specific measurable goals"],
-                        "Non_Goals": ["TBD - Define what is out of scope"],
-                        "Assumptions": ["TBD - List key assumptions"],
-                        "Stakeholders": ["Product Manager", "Development Team", "End Users"],
-                        "User_Personas": ["TBD - Define target user personas"],
-                        "Functional_Requirements": ["TBD - List functional requirements"],
-                        "Technical_Requirements": {
-                            "tech_stack": ["React", "TypeScript", "FastAPI", "Python"],
-                            "apis": ["TBD - Define API requirements"],
-                            "data": ["TBD - Define data requirements"]
-                        },
-                        "UX_UI_and_Style_Guidelines": {
-                            "design_system": "TBD",
-                            "accessibility": "WCAG 2.1 Level AA"
-                        },
-                        "Architecture_Overview": "TBD - Define system architecture",
-                        "Milestones_and_Timeline": ["TBD - Define project milestones"],
-                        "Risks_and_Mitigations": ["TBD - Identify risks and mitigation strategies"],
-                        "Open_Questions": ["TBD - List open questions requiring clarification"]
-                    }
-                elif document_type == "technical_spec":
-                    content = {
-                        "overview": content_description,
-                        "technical_requirements": [],
-                        "architecture_diagram": "To be created",
-                        "api_endpoints": [],
-                        "database_schema": {},
-                        "security_considerations": [],
-                        "performance_requirements": {},
-                        "testing_strategy": "Unit and integration tests required"
-                    }
-                elif document_type == "meeting_notes":
-                    content = {
-                        "meeting_date": datetime.now().isoformat()[:10],
-                        "attendees": [],
-                        "agenda": content_description,
-                        "discussion_points": [],
-                        "decisions_made": [],
-                        "action_items": [],
-                        "next_meeting": "To be scheduled"
-                    }
-                else:
-                    # Generic document structure
-                    content = {
-                        "description": content_description,
-                        "sections": [],
-                        "notes": "Document created through conversational interface"
-                    }
+                # Generate blocks for the document
+                blocks = self._convert_to_blocks(title, document_type, content_description)
+                
+                # Create the document content in the expected format
+                content = {
+                    "id": str(uuid.uuid4()),
+                    "title": title,
+                    "blocks": blocks
+                }
                 
                 # Create document via DocumentService
                 from ..services.projects.document_service import DocumentService
@@ -715,6 +670,100 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
                 return f"Error creating approval request: {str(e)}"
         
         return agent
+    
+    def _generate_block_id(self) -> str:
+        """Generate a unique block ID."""
+        return str(uuid.uuid4())
+    
+    def _create_block(self, block_type: str, content: str, properties: Dict = None) -> Dict[str, Any]:
+        """Create a block in the document format."""
+        return {
+            "id": self._generate_block_id(),
+            "type": block_type,
+            "content": content,
+            "properties": properties or {"text": content}
+        }
+    
+    def _convert_to_blocks(self, title: str, document_type: str, content_description: str) -> List[Dict[str, Any]]:
+        """Convert content to block-based format for PRD documents."""
+        blocks = []
+        
+        # Title block
+        blocks.append(self._create_block("heading_1", title))
+        
+        if document_type == "prd":
+            # Project Overview section
+            blocks.append(self._create_block("heading_2", "Project Overview"))
+            blocks.append(self._create_block("paragraph", content_description))
+            
+            # Goals section
+            blocks.append(self._create_block("heading_2", "Goals"))
+            blocks.append(self._create_block("bulleted_list", "Define clear project objectives and success metrics"))
+            blocks.append(self._create_block("bulleted_list", "Establish technical requirements and constraints"))
+            blocks.append(self._create_block("bulleted_list", "Identify key stakeholders and their needs"))
+            
+            # Scope section
+            blocks.append(self._create_block("heading_2", "Scope"))
+            blocks.append(self._create_block("paragraph", "**In Scope:** Core features and functionality to be delivered"))
+            blocks.append(self._create_block("paragraph", "**Out of Scope:** Features and functionality explicitly excluded from this phase"))
+            
+            # Technical Requirements section
+            blocks.append(self._create_block("heading_2", "Technical Requirements"))
+            blocks.append(self._create_block("heading_3", "Technology Stack"))
+            blocks.append(self._create_block("bulleted_list", "Frontend: React, TypeScript, Tailwind CSS"))
+            blocks.append(self._create_block("bulleted_list", "Backend: FastAPI, Python"))
+            blocks.append(self._create_block("bulleted_list", "Database: Supabase (PostgreSQL)"))
+            blocks.append(self._create_block("bulleted_list", "Infrastructure: Docker, Cloud deployment"))
+            
+            # Architecture section
+            blocks.append(self._create_block("heading_2", "Architecture"))
+            blocks.append(self._create_block("paragraph", "High-level system architecture and component interactions"))
+            
+            # User Stories section
+            blocks.append(self._create_block("heading_2", "User Stories"))
+            blocks.append(self._create_block("paragraph", "Key user stories and acceptance criteria"))
+            
+            # Timeline section
+            blocks.append(self._create_block("heading_2", "Timeline & Milestones"))
+            blocks.append(self._create_block("paragraph", "Project phases and delivery timeline"))
+            
+            # Risks section
+            blocks.append(self._create_block("heading_2", "Risks & Mitigations"))
+            blocks.append(self._create_block("paragraph", "Identified risks and mitigation strategies"))
+            
+        elif document_type == "technical_spec":
+            blocks.append(self._create_block("heading_2", "Overview"))
+            blocks.append(self._create_block("paragraph", content_description))
+            
+            blocks.append(self._create_block("heading_2", "Technical Architecture"))
+            blocks.append(self._create_block("paragraph", "System architecture and design decisions"))
+            
+            blocks.append(self._create_block("heading_2", "API Design"))
+            blocks.append(self._create_block("paragraph", "API endpoints and data models"))
+            
+            blocks.append(self._create_block("heading_2", "Database Schema"))
+            blocks.append(self._create_block("paragraph", "Database design and relationships"))
+            
+        elif document_type == "meeting_notes":
+            blocks.append(self._create_block("heading_2", "Meeting Details"))
+            blocks.append(self._create_block("paragraph", f"Date: {datetime.now().strftime('%Y-%m-%d')}"))
+            blocks.append(self._create_block("paragraph", f"Topic: {content_description}"))
+            
+            blocks.append(self._create_block("heading_2", "Attendees"))
+            blocks.append(self._create_block("paragraph", "List of meeting participants"))
+            
+            blocks.append(self._create_block("heading_2", "Discussion Points"))
+            blocks.append(self._create_block("paragraph", "Key topics discussed"))
+            
+            blocks.append(self._create_block("heading_2", "Action Items"))
+            blocks.append(self._create_block("paragraph", "Tasks and next steps"))
+            
+        else:
+            # Generic document
+            blocks.append(self._create_block("heading_2", "Overview"))
+            blocks.append(self._create_block("paragraph", content_description))
+            
+        return blocks
     
     def get_system_prompt(self) -> str:
         """Get the base system prompt for this agent."""

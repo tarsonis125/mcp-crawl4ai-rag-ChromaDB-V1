@@ -46,8 +46,10 @@ export interface Project {
     logs: string[];
     error?: string;
     step?: string;
+    currentStep?: string;
     eta?: string;
     duration?: string;
+    project?: Project; // The created project when completed
   };
 }
 

@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from ..agents.document_agent import DocumentAgent
+from ..agents.rag_agent import RagAgent
 from ..utils import get_supabase_client
 
 # Import logfire for comprehensive API logging  
@@ -82,6 +83,10 @@ class ChatRequest(BaseModel):
     project_id: Optional[str] = None
     context: Optional[Dict[str, Any]] = None
 
+class CreateSessionRequest(BaseModel):
+    project_id: Optional[str] = None
+    agent_type: str = "docs"
+
 class ChatSession(BaseModel):
     session_id: str
     project_id: Optional[str]
@@ -97,6 +102,7 @@ class ChatSessionManager:
         self.sessions: Dict[str, ChatSession] = {}
         self.websockets: Dict[str, List[WebSocket]] = {}
         self._document_agent = None
+        self._rag_agent = None
         
         # Add request queuing to prevent rate limit overload
         self._processing_lock = asyncio.Lock()
@@ -128,6 +134,25 @@ class ChatSessionManager:
             print("DEBUG: DocumentAgent created successfully")
         return self._document_agent
     
+    @property
+    def rag_agent(self):
+        """Lazy initialization of RAG agent to avoid OpenAI key requirement at startup."""
+        if self._rag_agent is None:
+            print("DEBUG: Initializing RagAgent...")
+            # Verify OpenAI API key is in environment (should be loaded at startup)
+            import os
+            
+            api_key = os.getenv('OPENAI_API_KEY')
+            if api_key:
+                print(f"DEBUG: API key found in environment: {api_key[:8]}...{api_key[-4:] if len(api_key) > 8 else '***'}")
+            else:
+                print("DEBUG: WARNING - No OPENAI_API_KEY found in environment!")
+            
+            print("DEBUG: Creating RagAgent instance...")
+            self._rag_agent = RagAgent()
+            print("DEBUG: RagAgent created successfully")
+        return self._rag_agent
+    
     async def create_session(
         self, 
         project_id: Optional[str] = None,
@@ -135,11 +160,17 @@ class ChatSessionManager:
     ) -> str:
         """Create a new chat session."""
         session_id = str(uuid.uuid4())
+        print(f"DEBUG: Creating new session {session_id} with agent_type: {agent_type}")
         
-        # Create welcome message
+        # Create welcome message based on agent type
+        if agent_type == "rag":
+            welcome_content = "Hello! I'm your RAG Search Assistant. I can help you search through documentation, find code examples, and answer questions based on crawled content. What would you like to know?"
+        else:  # Default to docs
+            welcome_content = "Hello! I'm your Documentation Assistant. I can help you create, review, and enhance project documents. What would you like to work on?"
+        
         welcome_message = ChatMessage(
             id=str(uuid.uuid4()),
-            content="Hello! I'm your Documentation Assistant. I can help you create, review, and enhance project documents. What would you like to work on?",
+            content=welcome_content,
             sender="agent",
             timestamp=datetime.now(),
             agent_type=agent_type
@@ -346,6 +377,9 @@ class ChatSessionManager:
         
         try:
             # Process with agent
+            print(f"DEBUG: Session agent type is: {session.agent_type}")
+            print(f"DEBUG: Processing message: {message_content}")
+            
             if session.agent_type == "docs":
                 print(f"DEBUG: Calling docs agent for message: {message_content}")
                 response_content = await self._process_with_document_agent(
@@ -354,8 +388,16 @@ class ChatSessionManager:
                     context
                 )
                 print(f"DEBUG: Docs agent responded with: {response_content[:100]}...")
+            elif session.agent_type == "rag":
+                print(f"DEBUG: Calling RAG agent for message: {message_content}")
+                response_content = await self._process_with_rag_agent(
+                    message_content, 
+                    session, 
+                    context
+                )
+                print(f"DEBUG: RAG agent responded with: {response_content[:100]}...")
             else:
-                response_content = "I'm not sure how to help with that. I'm currently specialized in documentation tasks."
+                response_content = "I'm not sure how to help with that. Please select a valid agent type."
             
             # Create agent response message
             agent_message = ChatMessage(
@@ -476,6 +518,77 @@ class ChatSessionManager:
                 return "I'm currently experiencing high demand. Please try again in a moment."
             else:
                 return f"I encountered an error processing your request: {str(e)}. Let me know how else I can help with your documentation needs."
+    
+    async def _process_with_rag_agent(
+        self,
+        message: str,
+        session: ChatSession,
+        context: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Process message with the RagAgent."""
+        print(f"DEBUG: _process_with_rag_agent called with message: {message}")
+        
+        # Check cache first
+        cache_key = self._get_cache_key(message, session.session_id)
+        cached_response = self._get_cached_response(cache_key)
+        if cached_response:
+            return cached_response
+        
+        try:
+            # Use the new RagAgent with conversational interface
+            print(f"DEBUG: Using RagAgent for message: {message}")
+            
+            # Extract source filter from context if provided
+            source_filter = None
+            match_count = 5
+            if context:
+                source_filter = context.get('source_filter')
+                match_count = context.get('match_count', 5)
+            
+            # Use the new RagAgent API
+            result = await self.rag_agent.run_conversation(
+                user_message=message,
+                project_id=session.project_id,
+                source_filter=source_filter,
+                match_count=match_count,
+                user_id=session.session_id  # Use session_id as user identifier
+            )
+            
+            # Format the response based on the structured output
+            if result.success:
+                response = result.answer
+                
+                # Add citations if available
+                if result.citations:
+                    response += "\n\n**Sources:**"
+                    for citation in result.citations[:3]:  # Limit to 3 citations
+                        source = citation.get('source', 'Unknown')
+                        relevance = citation.get('relevance', 0)
+                        response += f"\n- {source} (Relevance: {relevance:.0%})"
+                
+                # Add search info
+                if result.results_found > 0:
+                    response += f"\n\n*Found {result.results_found} relevant results from {len(result.sources)} source(s)*"
+            else:
+                response = result.message
+            
+            print(f"DEBUG: RagAgent response: {response[:100]}...")
+            
+            # Cache the successful response
+            self._cache_response(cache_key, response)
+            return response
+                           
+        except Exception as e:
+            print(f"Error in RAG agent processing: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Check if it's a rate limit error and provide appropriate message
+            error_str = str(e).lower()
+            if "rate limit" in error_str or "429" in error_str or "request_limit" in error_str:
+                return "I'm currently experiencing high demand. Please try again in a moment."
+            else:
+                return f"I encountered an error searching the documentation: {str(e)}. Please try rephrasing your query or check that documentation has been crawled."
 
 # Global session manager
 chat_manager = ChatSessionManager()
@@ -484,23 +597,21 @@ chat_manager = ChatSessionManager()
 router = APIRouter(prefix="/api/agent-chat", tags=["agent-chat"])
 
 @router.post("/sessions")
-async def create_chat_session(
-    project_id: Optional[str] = None,
-    agent_type: str = "docs"
-):
+async def create_chat_session(request: CreateSessionRequest):
     """Create a new chat session with an agent."""
     with logfire.span("api_create_chat_session") as span:
         span.set_attribute("endpoint", "/api/agent-chat/sessions")
         span.set_attribute("method", "POST")
-        span.set_attribute("agent_type", agent_type)
-        if project_id:
-            span.set_attribute("project_id", project_id)
+        span.set_attribute("agent_type", request.agent_type)
+        if request.project_id:
+            span.set_attribute("project_id", request.project_id)
         
         try:
-            logfire.info("Creating new chat session", agent_type=agent_type, project_id=project_id)
-            session_id = await chat_manager.create_session(project_id, agent_type)
+            print(f"DEBUG: API received request - project_id: {request.project_id}, agent_type: {request.agent_type}")
+            logfire.info("Creating new chat session", agent_type=request.agent_type, project_id=request.project_id)
+            session_id = await chat_manager.create_session(request.project_id, request.agent_type)
             
-            logfire.info("Chat session created successfully", session_id=session_id, agent_type=agent_type)
+            logfire.info("Chat session created successfully", session_id=session_id, agent_type=request.agent_type)
             span.set_attribute("session_id", session_id)
             
             return {
@@ -683,13 +794,13 @@ async def debug_token_usage():
             logfire.info("Getting debug token usage info")
             
             debug_info = {
-                "agent_type": "simplified_pydantic_ai",
+                "agent_types": ["docs", "rag"],
                 "model": "openai:gpt-4o-mini",
                 "features": [
-                    "Single agent instance",
-                    "No complex inheritance",
-                    "Direct PydanticAI usage",
-                    "Built-in rate limit handling"
+                    "Document Agent: Create, update, and manage project documents",
+                    "RAG Agent: Search crawled documentation and code examples",
+                    "Built-in rate limit handling",
+                    "Response caching for efficiency"
                 ]
             }
             

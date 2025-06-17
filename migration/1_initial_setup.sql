@@ -27,13 +27,13 @@ INSERT INTO settings (key, value, is_encrypted, category, description) VALUES
 ('PORT', '8051', false, 'server_config', 'Port to listen on if using sse as the transport (leave empty if using stdio)'),
 ('MODEL_CHOICE', 'gpt-4.1-nano', false, 'rag_strategy', 'The LLM you want to use for summaries and contextual embeddings. Generally this is a very cheap and fast LLM like gpt-4.1-nano');
 
--- RAG Strategy Configuration (all default to false)
+-- RAG Strategy Configuration (all default to true
 INSERT INTO settings (key, value, is_encrypted, category, description) VALUES
-('USE_CONTEXTUAL_EMBEDDINGS', 'false', false, 'rag_strategy', 'Enhances embeddings with contextual information for better retrieval'),
+('USE_CONTEXTUAL_EMBEDDINGS', 'true', true, 'rag_strategy', 'Enhances embeddings with contextual information for better retrieval'),
 ('CONTEXTUAL_EMBEDDINGS_MAX_WORKERS', '3', false, 'rag_strategy', 'Maximum number of parallel workers for contextual embedding generation (reduces API rate limit pressure)'),
-('USE_HYBRID_SEARCH', 'false', false, 'rag_strategy', 'Combines vector similarity search with keyword search for better results'),
-('USE_AGENTIC_RAG', 'false', false, 'rag_strategy', 'Enables code example extraction, storage, and specialized code search functionality'),
-('USE_RERANKING', 'false', false, 'rag_strategy', 'Applies cross-encoder reranking to improve search result relevance');
+('USE_HYBRID_SEARCH', 'true', true, 'rag_strategy', 'Combines vector similarity search with keyword search for better results'),
+('USE_AGENTIC_RAG', 'true', true, 'rag_strategy', 'Enables code example extraction, storage, and specialized code search functionality'),
+('USE_RERANKING', 'true', true, 'rag_strategy', 'Applies cross-encoder reranking to improve search result relevance');
 
 -- Monitoring Configuration
 INSERT INTO settings (key, value, is_encrypted, category, description) VALUES

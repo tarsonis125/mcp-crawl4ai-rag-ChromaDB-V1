@@ -29,11 +29,14 @@ from ..services.rag.source_management_service import SourceManagementService
 # Import utils
 from src.utils import (
     get_supabase_client,
-    extract_code_blocks,
-    generate_code_example_summary,
-    add_code_examples_to_supabase,
     update_source_info,
     extract_source_summary
+)
+
+# Import rag_utils for code processing
+from src.utils_rag import (
+    extract_code_blocks,
+    generate_code_example_summary
 )
 
 # Import Logfire
