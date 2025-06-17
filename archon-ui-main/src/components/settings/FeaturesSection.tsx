@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Moon, Sun, FileText, Layout, Bot, Settings, Palette, Flame } from 'lucide-react';
 import { Toggle } from '../ui/Toggle';
+import { Card } from '../ui/Card';
 import { useTheme } from '../../contexts/ThemeContext';
 import { credentialsService } from '../../services/credentialsService';
 import { useToast } from '../../contexts/ToastContext';
@@ -165,7 +166,7 @@ export const FeaturesSection = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div>
       <div className="flex items-center mb-4">
         <Palette className="mr-2 text-purple-500 filter drop-shadow-[0_0_8px_rgba(168,85,247,0.8)]" size={20} />
         <h2 className="text-xl font-semibold text-white">
@@ -173,9 +174,9 @@ export const FeaturesSection = () => {
         </h2>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+      <div className="grid grid-cols-2 gap-4">
         {/* Theme Toggle */}
-        <div className="flex items-center gap-4 p-4 rounded-lg bg-gradient-to-r from-purple-500/5 to-purple-500/0">
+        <div className="flex items-center gap-4 p-4 rounded-xl bg-gradient-to-br from-purple-500/10 to-purple-600/5 backdrop-blur-sm border border-purple-500/20 shadow-lg">
           <div className="flex-1 min-w-0">
             <p className="font-medium text-gray-800 dark:text-white">
               Dark Mode
@@ -190,7 +191,7 @@ export const FeaturesSection = () => {
         </div>
 
         {/* Projects Toggle */}
-        <div className="flex items-center gap-4 p-4 rounded-lg bg-gradient-to-r from-blue-500/5 to-blue-500/0">
+        <div className="flex items-center gap-4 p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-blue-600/5 backdrop-blur-sm border border-blue-500/20 shadow-lg">
           <div className="flex-1 min-w-0">
             <p className="font-medium text-gray-800 dark:text-white">
               Projects
@@ -217,7 +218,7 @@ export const FeaturesSection = () => {
 
         {/* COMMENTED OUT FOR FUTURE RELEASE - AG-UI Library Toggle */}
         {/*
-        <div className="flex items-center gap-4 p-4 rounded-lg bg-gradient-to-r from-pink-500/5 to-pink-500/0">
+        <div className="flex items-center gap-4 p-4 rounded-xl bg-gradient-to-br from-pink-500/10 to-pink-600/5 backdrop-blur-sm border border-pink-500/20 shadow-lg">
           <div className="flex-1 min-w-0">
             <p className="font-medium text-gray-800 dark:text-white">
               AG-UI Library
@@ -234,7 +235,7 @@ export const FeaturesSection = () => {
 
         {/* COMMENTED OUT FOR FUTURE RELEASE - Agents Toggle */}
         {/*
-        <div className="flex items-center gap-4 p-4 rounded-lg bg-gradient-to-r from-green-500/5 to-green-500/0">
+        <div className="flex items-center gap-4 p-4 rounded-xl bg-gradient-to-br from-green-500/10 to-green-600/5 backdrop-blur-sm border border-green-500/20 shadow-lg">
           <div className="flex-1 min-w-0">
             <p className="font-medium text-gray-800 dark:text-white">
               Agents
@@ -250,7 +251,7 @@ export const FeaturesSection = () => {
         */}
 
         {/* Pydantic Logfire Toggle */}
-        <div className="flex items-center gap-4 p-4 rounded-lg bg-gradient-to-r from-orange-500/5 to-orange-500/0">
+        <div className="flex items-center gap-4 p-4 rounded-xl bg-gradient-to-br from-orange-500/10 to-orange-600/5 backdrop-blur-sm border border-orange-500/20 shadow-lg">
           <div className="flex-1 min-w-0">
             <p className="font-medium text-gray-800 dark:text-white">
               Pydantic Logfire

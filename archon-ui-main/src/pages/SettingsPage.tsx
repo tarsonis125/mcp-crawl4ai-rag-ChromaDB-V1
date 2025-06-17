@@ -83,7 +83,7 @@ export const SettingsPage = () => {
       {/* Main content with two-column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left Column */}
-        <div className="space-y-6">
+        <div className="space-y-12">
           <motion.div variants={itemVariants}>
             <FeaturesSection />
           </motion.div>
@@ -96,12 +96,12 @@ export const SettingsPage = () => {
         </div>
 
         {/* Right Column */}
-        <div className="space-y-6">
-          <motion.div variants={itemVariants}>
-            <RAGSettings ragSettings={ragSettings} setRagSettings={setRagSettings} />
-          </motion.div>
+        <div className="space-y-12">
           <motion.div variants={itemVariants}>
             <APIKeysSection />
+          </motion.div>
+          <motion.div variants={itemVariants}>
+            <RAGSettings ragSettings={ragSettings} setRagSettings={setRagSettings} />
           </motion.div>
         </div>
       </div>

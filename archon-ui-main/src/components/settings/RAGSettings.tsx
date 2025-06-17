@@ -31,7 +31,7 @@ export const RAGSettings = ({
           RAG Settings
         </h2>
       </div>
-      <Card accentColor="green" className="overflow-hidden">
+      <Card accentColor="green" className="overflow-hidden p-8">
         {/* Description */}
         <p className="text-sm text-gray-600 dark:text-zinc-400 mb-6">
           Configure Retrieval-Augmented Generation (RAG) strategies for optimal
@@ -39,8 +39,8 @@ export const RAGSettings = ({
         </p>
         
         {/* First row: LLM Model (3/4) and Save Settings (1/4) */}
-        <div className="grid grid-cols-4 gap-4 mb-6">
-          <div className="col-span-3">
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className="col-span-2">
             <Input 
               label="LLM Model - LLM for summaries and contextual embeddings" 
               value={ragSettings.MODEL_CHOICE} 
@@ -92,31 +92,75 @@ export const RAGSettings = ({
               description="Enhances embeddings with contextual information for better retrieval" 
             />
           </div>
-          <div className="col-span-2">
+                      <div className="col-span-1">
+              {ragSettings.USE_CONTEXTUAL_EMBEDDINGS && (
+                <div className="flex flex-col items-center">
+                  <div className="relative ml-2 mr-6">
+                    <input
+                      type="number"
+                      min="1"
+                      max="20"
+                      value={ragSettings.CONTEXTUAL_EMBEDDINGS_MAX_WORKERS}
+                      onChange={e => setRagSettings({
+                        ...ragSettings,
+                        CONTEXTUAL_EMBEDDINGS_MAX_WORKERS: parseInt(e.target.value, 10) || 3
+                      })}
+                      className="w-14 h-10 pl-1 pr-7 text-center font-medium rounded-md 
+                        bg-gradient-to-b from-gray-100 to-gray-200 dark:from-gray-900 dark:to-black 
+                        border border-green-500/30 
+                        text-gray-900 dark:text-white
+                        focus:border-green-500 focus:shadow-[0_0_15px_rgba(34,197,94,0.4)]
+                        transition-all duration-200
+                        [appearance:textfield] 
+                        [&::-webkit-outer-spin-button]:appearance-none 
+                        [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                    <div className="absolute right-1 top-1 bottom-1 flex flex-col">
+                      <button
+                        type="button"
+                        onClick={() => setRagSettings({
+                          ...ragSettings,
+                          CONTEXTUAL_EMBEDDINGS_MAX_WORKERS: Math.min(ragSettings.CONTEXTUAL_EMBEDDINGS_MAX_WORKERS + 1, 20)
+                        })}
+                        className="flex-1 px-1 rounded-t-sm 
+                          bg-gradient-to-b from-green-500/20 to-green-600/10
+                          hover:from-green-500/30 hover:to-green-600/20
+                          border border-green-500/30 border-b-0
+                          transition-all duration-200 group"
+                      >
+                        <svg className="w-2.5 h-2.5 text-green-500 group-hover:filter group-hover:drop-shadow-[0_0_4px_rgba(34,197,94,0.8)]" 
+                          viewBox="0 0 10 6" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M1 5L5 1L9 5" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRagSettings({
+                          ...ragSettings,
+                          CONTEXTUAL_EMBEDDINGS_MAX_WORKERS: Math.max(ragSettings.CONTEXTUAL_EMBEDDINGS_MAX_WORKERS - 1, 1)
+                        })}
+                        className="flex-1 px-1 rounded-b-sm 
+                          bg-gradient-to-b from-green-500/20 to-green-600/10
+                          hover:from-green-500/30 hover:to-green-600/20
+                          border border-green-500/30 border-t-0
+                          transition-all duration-200 group"
+                      >
+                        <svg className="w-2.5 h-2.5 text-green-500 group-hover:filter group-hover:drop-shadow-[0_0_4px_rgba(34,197,94,0.8)]" 
+                          viewBox="0 0 10 6" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M1 1L5 5L9 1" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <label className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Max
+                  </label>
+                </div>
+              )}
+            </div>
+          <div className="col-span-3">
             {ragSettings.USE_CONTEXTUAL_EMBEDDINGS && (
-              <>
-                <label className="block text-sm font-medium text-gray-700 dark:text-zinc-300 mb-2">
-                  Max Workers
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="20"
-                  value={ragSettings.CONTEXTUAL_EMBEDDINGS_MAX_WORKERS}
-                  onChange={e => setRagSettings({
-                    ...ragSettings,
-                    CONTEXTUAL_EMBEDDINGS_MAX_WORKERS: parseInt(e.target.value, 10) || 3
-                  })}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-md 
-                    bg-white dark:bg-gray-800 text-gray-900 dark:text-white
-                    focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                />
-              </>
-            )}
-          </div>
-          <div className="col-span-2">
-            {ragSettings.USE_CONTEXTUAL_EMBEDDINGS && (
-              <p className="text-xs text-gray-600 dark:text-zinc-400 mt-8">
+              <p className="text-xs text-green-900 dark:text-blue-600 mt-2">
                 Controls parallel processing to reduce API rate limits (1-20)
               </p>
             )}
