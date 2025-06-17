@@ -8,7 +8,7 @@ import { FeaturesTab } from '../components/project-tasks/FeaturesTab';
 import { DataTab } from '../components/project-tasks/DataTab';
 import { TasksTab } from '../components/project-tasks/TasksTab';
 import { Button } from '../components/ui/Button';
-import { ChevronRight, ShoppingCart, Code, Briefcase, Layers, Plus, X, AlertCircle, Loader2, Heart, BarChart3, Trash2, Pin } from 'lucide-react';
+import { ChevronRight, ShoppingCart, Code, Briefcase, Layers, Plus, X, AlertCircle, Loader2, Heart, BarChart3, Trash2, Pin, ListTodo, Activity, CheckCircle2 } from 'lucide-react';
 
 // Import our service layer and types
 import { projectService } from '../services/projectService';
@@ -45,6 +45,7 @@ export function ProjectPage({
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [projectTaskCounts, setProjectTaskCounts] = useState<Record<string, { todo: number; doing: number; done: number }>>({});
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
   const [projectsError, setProjectsError] = useState<string | null>(null);
@@ -105,6 +106,10 @@ export function ProjectPage({
         const tempProjects = prev.filter(p => p.id.startsWith('temp-'));
         return [...tempProjects, ...sortedProjects];
       });
+      
+      // Load task counts for all real projects
+      const projectIds = sortedProjects.map(p => p.id);
+      loadTaskCountsForAllProjects(projectIds);
       
       // Handle project selection
       const pinnedProject = sortedProjects.find(project => project.pinned);
@@ -219,6 +224,10 @@ export function ProjectPage({
       
       setProjects(sortedProjects);
       
+      // Load task counts for all projects
+      const projectIds = sortedProjects.map(p => p.id);
+      loadTaskCountsForAllProjects(projectIds);
+      
       // Find pinned project if any
       const pinnedProject = sortedProjects.find(project => project.pinned);
       console.log(`[LOAD PROJECTS] Pinned project:`, pinnedProject ? {id: pinnedProject.id, title: pinnedProject.title, pinned: pinnedProject.pinned} : 'None');
@@ -274,6 +283,31 @@ export function ProjectPage({
       setTasksError(error instanceof Error ? error.message : 'Failed to load tasks');
     } finally {
       setIsLoadingTasks(false);
+    }
+  };
+
+  // Load task counts for all projects
+  const loadTaskCountsForAllProjects = async (projectIds: string[]) => {
+    try {
+      const counts: Record<string, { todo: number; doing: number; done: number }> = {};
+      
+      for (const projectId of projectIds) {
+        try {
+          const tasksData = await projectService.getTasksByProject(projectId);
+          const todos = tasksData.filter(t => t.uiStatus === 'backlog').length;
+          const doing = tasksData.filter(t => t.uiStatus === 'in-progress' || t.uiStatus === 'review').length;
+          const done = tasksData.filter(t => t.uiStatus === 'complete').length;
+          
+          counts[projectId] = { todo: todos, doing, done };
+        } catch (error) {
+          console.error(`Failed to load tasks for project ${projectId}:`, error);
+          counts[projectId] = { todo: 0, doing: 0, done: 0 };
+        }
+      }
+      
+      setProjectTaskCounts(counts);
+    } catch (error) {
+      console.error('Failed to load task counts:', error);
     }
   };
 
@@ -612,26 +646,33 @@ export function ProjectPage({
                   variants={itemVariants} 
                   onClick={() => handleProjectSelect(project)} 
                   className={`
-                    relative p-4 rounded-md backdrop-blur-md w-72 cursor-pointer
-                    bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30
-                    border border-gray-200 dark:border-zinc-800/50
-                    shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)]
+                    relative p-4 rounded-xl backdrop-blur-md w-72 cursor-pointer overflow-hidden
+                    ${selectedProject?.id === project.id 
+                      ? 'bg-gradient-to-b from-white/80 via-purple-50/30 to-white/60 dark:from-white/10 dark:via-purple-900/10 dark:to-black/30' 
+                      : 'bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30'
+                    }
+                    border ${selectedProject?.id === project.id 
+                      ? 'border-purple-400/60 dark:border-purple-500/60' 
+                      : 'border-gray-200 dark:border-zinc-800/50'
+                    }
+                    ${selectedProject?.id === project.id
+                      ? 'shadow-[0_0_25px_rgba(168,85,247,0.5),0_0_15px_rgba(147,51,234,0.4)] dark:shadow-[0_0_35px_rgba(168,85,247,0.7),0_0_20px_rgba(147,51,234,0.6)]'
+                      : 'shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)]'
+                    }
                     hover:shadow-[0_15px_40px_-15px_rgba(0,0,0,0.2)] dark:hover:shadow-[0_15px_40px_-15px_rgba(0,0,0,0.9)]
                     transition-all duration-300
-                    ${selectedProject?.id === project.id ? 'border-purple-300 dark:border-purple-500/30 translate-y-[-2px]' : 'hover:translate-y-[-2px]'}
-                    ${selectedProject?.id === project.id ? `
-                        before:content-[""] before:absolute before:top-0 before:left-0 before:right-0 before:h-[2px] 
-                        before:rounded-t-[4px] before:bg-purple-500 
-                        before:shadow-[0_0_10px_2px_rgba(168,85,247,0.4)] dark:before:shadow-[0_0_20px_5px_rgba(168,85,247,0.7)]
-                        after:content-[""] after:absolute after:top-0 after:left-0 after:right-0 after:h-16
-                        after:bg-gradient-to-b after:from-purple-100 after:to-white dark:after:from-purple-500/20 dark:after:to-purple-500/5
-                        after:rounded-t-md after:pointer-events-none
-                      ` : ''}
+                    ${selectedProject?.id === project.id ? 'translate-y-[-2px]' : 'hover:translate-y-[-2px]'}
                   `}
-                >
-                  {/* Action buttons positioned in top-right corner */}
-                  <div className="absolute top-2 right-2 flex gap-2 z-20">
-                    {/* Pin button */}
+                                  >
+                  {/* Subtle aurora glow effect for selected card */}
+                  {selectedProject?.id === project.id && (
+                    <div className="absolute inset-0 rounded-xl overflow-hidden opacity-20">
+                      <div className="absolute -inset-[100px] bg-[radial-gradient(circle,rgba(168,85,247,0.8)_0%,rgba(147,51,234,0.6)_40%,transparent_70%)] blur-3xl animate-[pulse_8s_ease-in-out_infinite]"></div>
+                    </div>
+                  )}
+
+                  {/* Pin button positioned in top-left corner */}
+                  <div className="absolute top-2 left-2 z-20">
                     <button
                       onClick={(e) => handleTogglePin(e, project)}
                       className={`p-1.5 rounded-full ${project.pinned ? 'bg-purple-100 text-purple-700 dark:bg-purple-700/30 dark:text-purple-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'} hover:bg-purple-200 hover:text-purple-800 dark:hover:bg-purple-800/50 dark:hover:text-purple-300 transition-colors`}
@@ -640,8 +681,10 @@ export function ProjectPage({
                     >
                       <Pin className="w-3.5 h-3.5" fill={project.pinned ? 'currentColor' : 'none'} />
                     </button>
-                    
-                    {/* Delete button */}
+                  </div>
+                  
+                  {/* Delete button positioned in top-right corner */}
+                  <div className="absolute top-2 right-2 z-20">
                     <button
                       onClick={(e) => handleDeleteProject(e, project.id, project.title)}
                       className="p-1.5 rounded-full bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-600 dark:bg-gray-800/70 dark:text-gray-400 dark:hover:bg-red-900/30 dark:hover:text-red-400 transition-colors"
@@ -653,28 +696,54 @@ export function ProjectPage({
                   </div>
                   
                   <div className="relative z-10">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className={`p-2 rounded-md bg-${project.color || 'blue'}-500/10 text-${project.color || 'blue'}-500`}>
-                        {getProjectIcon(project.icon)}
-                      </div>
-                      <h3 className="text-gray-800 dark:text-white font-medium">
+                    <div className="h-14 flex items-center justify-center mb-4 px-2">
+                      <h3 className="text-gray-800 dark:text-white font-medium text-center leading-tight line-clamp-2">
                         {project.title}
                       </h3>
                     </div>
-                    <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
-                      {project.description || 'No description available'}
-                    </p>
-                    <div className="flex justify-between items-center text-xs text-gray-500 dark:text-gray-500">
-                      <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
-                          <div 
-                            className={`h-full bg-${project.color || 'blue'}-500`} 
-                            style={{ width: `${project.progress || 0}%` }}
-                          />
+                    <div className="flex items-stretch gap-2 w-full">
+                      {/* Neon pill boxes for task counts */}
+                      {/* Todo pill */}
+                      <div className="relative flex-1">
+                        <div className="absolute inset-0 bg-pink-600 rounded-full blur-md opacity-30 dark:opacity-75"></div>
+                        <div className="relative flex items-center h-12 bg-white/70 dark:bg-zinc-900/90 backdrop-blur-sm rounded-full border border-pink-300 dark:border-pink-500/50 shadow-sm dark:shadow-[0_0_10px_rgba(236,72,153,0.5)] hover:shadow-md dark:hover:shadow-[0_0_15px_rgba(236,72,153,0.7)] transition-all duration-300">
+                          <div className="flex flex-col items-center justify-center px-2 min-w-[40px]">
+                            <ListTodo className="w-4 h-4 text-pink-600 dark:text-pink-400" />
+                            <span className="text-[8px] text-pink-600 dark:text-pink-400 font-medium">ToDo</span>
+                          </div>
+                          <div className="flex-1 flex items-center justify-center border-l border-pink-300 dark:border-pink-500/30">
+                            <span className="text-lg font-bold text-pink-600 dark:text-pink-400">{projectTaskCounts[project.id]?.todo || 0}</span>
+                          </div>
                         </div>
-                        <span>{project.progress || 0}%</span>
                       </div>
-                      <span>Updated {project.updated || 'recently'}</span>
+                      
+                      {/* Doing pill */}
+                      <div className="relative flex-1">
+                        <div className="absolute inset-0 bg-blue-600 rounded-full blur-md opacity-30 dark:opacity-75"></div>
+                        <div className="relative flex items-center h-12 bg-white/70 dark:bg-zinc-900/90 backdrop-blur-sm rounded-full border border-blue-300 dark:border-blue-500/50 shadow-sm dark:shadow-[0_0_10px_rgba(59,130,246,0.5)] hover:shadow-md dark:hover:shadow-[0_0_15px_rgba(59,130,246,0.7)] transition-all duration-300">
+                          <div className="flex flex-col items-center justify-center px-2 min-w-[40px]">
+                            <Activity className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                            <span className="text-[8px] text-blue-600 dark:text-blue-400 font-medium">Doing</span>
+                          </div>
+                          <div className="flex-1 flex items-center justify-center border-l border-blue-300 dark:border-blue-500/30">
+                            <span className="text-lg font-bold text-blue-600 dark:text-blue-400">{projectTaskCounts[project.id]?.doing || 0}</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Done pill */}
+                      <div className="relative flex-1">
+                        <div className="absolute inset-0 bg-green-600 rounded-full blur-md opacity-30 dark:opacity-75"></div>
+                        <div className="relative flex items-center h-12 bg-white/70 dark:bg-zinc-900/90 backdrop-blur-sm rounded-full border border-green-300 dark:border-green-500/50 shadow-sm dark:shadow-[0_0_10px_rgba(34,197,94,0.5)] hover:shadow-md dark:hover:shadow-[0_0_15px_rgba(34,197,94,0.7)] transition-all duration-300">
+                          <div className="flex flex-col items-center justify-center px-2 min-w-[40px]">
+                            <CheckCircle2 className="w-4 h-4 text-green-600 dark:text-green-400" />
+                            <span className="text-[8px] text-green-600 dark:text-green-400 font-medium">Done</span>
+                          </div>
+                          <div className="flex-1 flex items-center justify-center border-l border-green-300 dark:border-green-500/30">
+                            <span className="text-lg font-bold text-green-600 dark:text-green-400">{projectTaskCounts[project.id]?.done || 0}</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </motion.div>
@@ -688,16 +757,6 @@ export function ProjectPage({
       {/* Project Details Section */}
       {showProjectDetails && selectedProject && (
         <motion.div variants={itemVariants}>
-          <div className="flex items-center gap-2 mb-6">
-            <h2 className="text-2xl font-bold bg-gradient-to-r from-purple-400 via-fuchsia-500 to-purple-400 text-transparent bg-clip-text">
-              {selectedProject.title}
-            </h2>
-            <ChevronRight className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-            <span className="text-gray-600 dark:text-gray-400 text-sm">
-              Project Details
-            </span>
-          </div>
-          
           <Tabs defaultValue="docs" value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList>
               <TabsTrigger value="docs" className="py-3 font-mono transition-all duration-300" color="blue">

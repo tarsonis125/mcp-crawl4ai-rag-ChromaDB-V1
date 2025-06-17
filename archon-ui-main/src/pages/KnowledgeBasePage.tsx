@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Search, Grid, Plus, Upload, Link as LinkIcon, Share2, Brain, Filter, BoxIcon, Trash2, List, RefreshCw, X, Globe, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MindMapView } from '../components/MindMapView';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -10,7 +9,6 @@ import { Badge } from '../components/ui/Badge';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import { useToast } from '../contexts/ToastContext';
 import { knowledgeBaseService, KnowledgeItem, KnowledgeItemMetadata } from '../services/knowledgeBaseService';
-import { KnowledgeItem as LegacyKnowledgeItem } from '../types/knowledge';
 import { knowledgeWebSocket } from '../services/websocketService';
 import { CrawlingProgressCard } from '../components/CrawlingProgressCard';
 import { CrawlProgressData, crawlProgressService } from '../services/crawlProgressService';
@@ -257,7 +255,7 @@ const GroupedKnowledgeItemCard = ({
 };
 
 export const KnowledgeBasePage = () => {
-  const [viewMode, setViewMode] = useState<'grid' | 'mind-map' | 'table'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [forceReanimate, setForceReanimate] = useState(0);
@@ -569,31 +567,6 @@ export const KnowledgeBasePage = () => {
     }
   };
 
-  // Transform new KnowledgeItem format to legacy format for MindMapView
-  const transformItemsForMindMap = (items: KnowledgeItem[]): LegacyKnowledgeItem[] => {
-    return items.map(item => ({
-      id: item.id,
-      title: item.title,
-      description: item.metadata.description || 'No description available',
-      source: item.url,
-      sourceType: item.metadata.source_type || 'url',
-      sourceUrl: item.metadata.source_type === 'url' ? item.url : undefined,
-      fileName: item.metadata.file_name,
-      fileType: item.metadata.file_type,
-      knowledgeType: item.metadata.knowledge_type || 'technical',
-      tags: item.metadata.tags || [],
-      lastUpdated: new Date(item.updated_at).toLocaleDateString(),
-      nextUpdate: item.metadata.next_update,
-      status: item.metadata.status || 'active',
-      metadata: {
-        size: `${item.metadata.chunks_count || 0} chunks`,
-        pageCount: item.metadata.page_count,
-        wordCount: item.metadata.word_count,
-        lastScraped: item.metadata.last_scraped
-      }
-    }));
-  };
-
   return <div>
       {/* Header with animation - stays static when changing views */}
       <motion.div className="flex justify-between items-center mb-8" initial="hidden" animate="visible" variants={headerContainerVariants}>
@@ -625,9 +598,6 @@ export const KnowledgeBasePage = () => {
             <button onClick={() => setViewMode('table')} className={`p-2 ${viewMode === 'table' ? 'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-500' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300'}`} title="Table View">
               <List className="w-4 h-4" />
             </button>
-            <button onClick={() => setViewMode('mind-map')} className={`p-2 ${viewMode === 'mind-map' ? 'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-500' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300'}`} title="Mind Map View">
-              <Share2 className="w-4 h-4" />
-            </button>
           </div>
           {/* Add Button */}
           <Button onClick={handleAddKnowledge} variant="primary" accentColor="purple" className="shadow-lg shadow-purple-500/20">
@@ -645,8 +615,7 @@ export const KnowledgeBasePage = () => {
               {loadingStrategy === 'websocket' ? 'Connecting to live updates...' : 'Loading knowledge items...'}
             </p>
           </div>
-        ) : viewMode === 'mind-map' ? <MindMapView items={transformItemsForMindMap(filteredItems)} /> : 
-        viewMode === 'table' ? (
+        ) : viewMode === 'table' ? (
           <KnowledgeTable 
             items={filteredItems} 
             onDelete={handleDeleteItem} 
