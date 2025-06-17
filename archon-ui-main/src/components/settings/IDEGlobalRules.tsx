@@ -55,6 +55,42 @@ export const IDEGlobalRules = () => {
           </Button>
         </div>
 
+        {/* IDE Cards Section */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          {/* Cursor Card */}
+          <div className="relative p-4 rounded-lg bg-gradient-to-br from-black to-gray-800 dark:from-white dark:to-gray-200 border border-gray-300 dark:border-gray-600 shadow-md">
+            <div className="flex items-center gap-2 mb-2">
+              <img src="/img/cursor.svg" alt="Cursor" className="w-5 h-5 filter invert dark:invert-0" />
+              <h3 className="text-sm font-semibold text-white dark:text-black">Cursor</h3>
+            </div>
+            <p className="text-xs text-gray-300 dark:text-gray-600">
+              Create .cursorrules file in project root or use Settings → Rules
+            </p>
+          </div>
+
+          {/* Windsurf Card */}
+          <div className="relative p-4 rounded-lg bg-gradient-to-br from-emerald-500 to-green-600 border-2 border-emerald-400 shadow-md shadow-emerald-500/25">
+            <div className="flex items-center gap-2 mb-2">
+              <img src="/img/windsurf-white-symbol.svg" alt="Windsurf" className="w-5 h-5" />
+              <h3 className="text-sm font-semibold text-white">Windsurf</h3>
+            </div>
+            <p className="text-xs text-emerald-100">
+              Create .windsurfrules file in project root or use IDE settings
+            </p>
+          </div>
+
+          {/* Claude Card */}
+          <div className="relative p-4 rounded-lg bg-gradient-to-br from-orange-500 to-orange-600 border-2 border-orange-400 shadow-md shadow-orange-500/25">
+            <div className="flex items-center gap-2 mb-2">
+              <img src="/img/claude-logo.svg" alt="Claude" className="w-5 h-5" />
+              <h3 className="text-sm font-semibold text-black dark:text-white">Claude</h3>
+            </div>
+            <p className="text-xs text-black dark:text-white opacity-80">
+              Create CLAUDE.md file in project root for Claude Desktop integration
+            </p>
+          </div>
+        </div>
+
         <div className="p-4 border border-blue-200 dark:border-blue-800/30 bg-blue-50/50 dark:bg-blue-900/10 rounded-md mt-2">
           <pre className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap font-mono">
             {globalRules}

@@ -138,6 +138,14 @@ const GroupedKnowledgeItemCard = ({
 
   const frequencyDisplay = getFrequencyDisplay();
 
+  // Calculate total word count
+  const totalWordCount = groupedItem.items.reduce((sum, item) => {
+    return sum + (item.metadata.word_count || 0);
+  }, 0);
+
+  // Format word count with thousands separator
+  const formattedWordCount = totalWordCount.toLocaleString();
+
   // Generate tooltip content for grouped items
   const tooltipContent = isGrouped ? (
     <div className="space-y-1">
@@ -217,9 +225,14 @@ const GroupedKnowledgeItemCard = ({
               )}
             </div>
           )}
-          <Badge color={statusColorMap[firstItem.metadata.status || 'active'] as any}>
-            {(firstItem.metadata.status || 'active').charAt(0).toUpperCase() + (firstItem.metadata.status || 'active').slice(1)}
-          </Badge>
+          <div className="flex flex-col items-end gap-1">
+            <Badge color="orange" variant="outline">
+              {formattedWordCount} words
+            </Badge>
+            <Badge color={statusColorMap[firstItem.metadata.status || 'active'] as any}>
+              {(firstItem.metadata.status || 'active').charAt(0).toUpperCase() + (firstItem.metadata.status || 'active').slice(1)}
+            </Badge>
+          </div>
         </div>
       </div>
 
