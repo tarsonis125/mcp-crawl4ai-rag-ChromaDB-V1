@@ -217,39 +217,23 @@ class RagAgent(BaseAgent[RagDependencies, RagQueryResult]):
         async def search_code_examples(ctx: RunContext[RagDependencies], query: str, source_filter: Optional[str] = None) -> str:
             """Search for code examples related to the query."""
             try:
-                from ..modules.rag_module import search_code_examples
+                from ..services.rag.search_service import SearchService
                 from ..utils import get_supabase_client
                 
                 supabase_client = get_supabase_client()
-                
-                # Create proper MCP context
-                lifespan_context = type('LifespanContext', (), {
-                    'supabase_client': supabase_client,
-                    'reranking_model': None
-                })()
-                
-                request_context = type('RequestContext', (), {
-                    'lifespan_context': lifespan_context
-                })()
-                
-                mcp_ctx = type('Context', (), {
-                    'request_context': request_context
-                })()
+                search_service = SearchService(supabase_client)
                 
                 # Use source filter from context if not provided
                 if source_filter is None:
                     source_filter = ctx.deps.source_filter
                 
-                result_json = await search_code_examples(
-                    ctx=mcp_ctx,
+                success, result = search_service.search_code_examples_service(
                     query=query,
                     source_id=source_filter,
                     match_count=ctx.deps.match_count
                 )
                 
-                result = json.loads(result_json)
-                
-                if not result.get('success'):
+                if not success:
                     return f"Code search failed: {result.get('error', 'Unknown error')}"
                 
                 examples = result.get('code_examples', [])
