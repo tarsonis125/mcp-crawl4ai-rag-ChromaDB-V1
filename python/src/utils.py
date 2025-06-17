@@ -299,9 +299,11 @@ async def add_documents_to_supabase(
         batch_progress_msg = f"Batch {batch_num}/{total_batches}: Processing items {i+1}-{batch_end} of {len(contents)}"
         print(f"\n{batch_progress_msg}")
         
-        # Report progress for this batch
-        batch_percentage = int((batch_num - 1) / total_batches * 100)
-        await report_progress(batch_progress_msg, batch_percentage)
+        # Calculate overall progress based on documents processed so far
+        # This gives smooth progress from 0-100% across all batches
+        documents_processed_so_far = i
+        overall_percentage = int((documents_processed_so_far / len(contents)) * 100)
+        await report_progress(batch_progress_msg, overall_percentage)
         
         # Get batch slices
         batch_urls = urls[i:batch_end]
@@ -312,8 +314,10 @@ async def add_documents_to_supabase(
         # Apply contextual embedding to each chunk if MODEL_CHOICE is set
         if use_contextual_embeddings:
             # Report that we're creating contextual embeddings
+            # Add small increment to show progress within batch
             embedding_msg = f"Batch {batch_num}/{total_batches}: Creating contextual embeddings..."
-            await report_progress(embedding_msg, batch_percentage + 5)
+            embedding_percentage = overall_percentage + int((5 / 100) * (100 / total_batches))
+            await report_progress(embedding_msg, min(embedding_percentage, 99))
             
             # Prepare arguments for parallel processing
             process_args = []
@@ -358,7 +362,8 @@ async def add_documents_to_supabase(
         
         # Create embeddings for the entire batch at once
         embeddings_msg = f"Batch {batch_num}/{total_batches}: Creating embeddings..."
-        await report_progress(embeddings_msg, batch_percentage + 10)
+        embeddings_percentage = overall_percentage + int((10 / 100) * (100 / total_batches))
+        await report_progress(embeddings_msg, min(embeddings_percentage, 99))
         # TODO: Pass cached API key to this function when called from context
         batch_embeddings = create_embeddings_batch(contextual_contents)
         
@@ -388,7 +393,8 @@ async def add_documents_to_supabase(
         
         # Insert batch into Supabase with retry logic
         storing_msg = f"Batch {batch_num}/{total_batches}: Storing in database..."
-        await report_progress(storing_msg, batch_percentage + 15)
+        storing_percentage = overall_percentage + int((15 / 100) * (100 / total_batches))
+        await report_progress(storing_msg, min(storing_percentage, 99))
         
         max_retries = 3
         retry_delay = 1.0  # Start with 1 second delay
@@ -430,6 +436,9 @@ async def add_documents_to_supabase(
             delay = 1.5 if use_contextual_embeddings else 0.5
             print(f"Waiting {delay} seconds before processing next batch...")
             time.sleep(delay)
+    
+    # Report final completion
+    await report_progress(f"Successfully stored all {len(contents)} documents", 100)
 
 def search_documents(
     client: Client,
