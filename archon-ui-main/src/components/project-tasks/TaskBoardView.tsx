@@ -195,16 +195,8 @@ export const TaskBoardView = ({
     <div className="flex flex-col h-full min-h-[70vh]">
       {/* Show Subtasks Toggle */}
       {showSubtasksToggle && onShowSubtasksChange && (
-        <div className="mb-4 flex justify-end">
-          <div className="flex items-center gap-3 p-3 rounded-lg bg-gradient-to-r from-blue-500/5 to-blue-500/0">
-            <div className="flex-1 min-w-0">
-              <p className="font-medium text-gray-800 dark:text-white text-sm">
-                Show Subtasks
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Display subtasks indented under parent tasks
-              </p>
-            </div>
+        <div className="mb-4 flex justify-start">
+          <div className="flex items-center gap-3">
             <div className="flex-shrink-0">
               <Toggle 
                 checked={showSubtasks} 
@@ -212,6 +204,11 @@ export const TaskBoardView = ({
                 accentColor="blue" 
                 icon={<List className="w-5 h-5" />} 
               />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-gray-500 dark:text-gray-400 leading-tight">
+                Show<br />Subtasks
+              </p>
             </div>
           </div>
         </div>

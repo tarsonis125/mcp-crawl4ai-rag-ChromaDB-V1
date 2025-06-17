@@ -617,8 +617,8 @@ export const TestStatus = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between cursor-pointer" onClick={() => setIsCollapsed(!isCollapsed)}>
         <div className="flex items-center gap-2">
-          <Terminal className="w-5 h-5 text-orange-500 dark:text-orange-400" />
-          <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Archon Unit Tests</h2>
+          <Terminal className="w-5 h-5 text-orange-500 dark:text-orange-400 filter drop-shadow-[0_0_8px_rgba(251,146,60,0.8)]" />
+          <h2 className="text-xl font-semibold text-white">Archon Unit Tests</h2>
           <div className={`transform transition-transform duration-300 ${isCollapsed ? '' : 'rotate-180'}`}>
             <ChevronDown className="w-5 h-5 text-gray-500 dark:text-gray-400" />
           </div>

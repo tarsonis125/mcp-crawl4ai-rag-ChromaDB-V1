@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Search, Grid, Plus, Upload, Link as LinkIcon, Share2, Brain, Filter, BoxIcon, Trash2, List, RefreshCw, X, Globe, FileText } from 'lucide-react';
+import { Search, Grid, Plus, Upload, Link as LinkIcon, Share2, Brain, Filter, BoxIcon, Trash2, List, RefreshCw, X, Globe, FileText, BookOpen } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -570,7 +570,8 @@ export const KnowledgeBasePage = () => {
   return <div>
       {/* Header with animation - stays static when changing views */}
       <motion.div className="flex justify-between items-center mb-8" initial="hidden" animate="visible" variants={headerContainerVariants}>
-        <motion.h1 className="text-3xl font-bold text-gray-800 dark:text-white" variants={titleVariants}>
+        <motion.h1 className="text-3xl font-bold text-white flex items-center gap-3" variants={titleVariants}>
+          <BookOpen className="w-7 h-7 text-green-500 filter drop-shadow-[0_0_8px_rgba(34,197,94,0.8)]" />
           Knowledge Base
         </motion.h1>
         <motion.div className="flex items-center gap-4" variants={headerItemVariants}>

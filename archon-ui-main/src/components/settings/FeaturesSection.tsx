@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Moon, Sun, FileText, Layout, Bot, Settings, Flame } from 'lucide-react';
+import { Moon, Sun, FileText, Layout, Bot, Settings, Palette, Flame } from 'lucide-react';
 import { Toggle } from '../ui/Toggle';
 import { useTheme } from '../../contexts/ThemeContext';
 import { credentialsService } from '../../services/credentialsService';
@@ -167,8 +167,8 @@ export const FeaturesSection = () => {
   return (
     <div className="space-y-6">
       <div className="flex items-center mb-4">
-        <Settings className="mr-2 text-blue-500" size={20} />
-        <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
+        <Palette className="mr-2 text-purple-500 filter drop-shadow-[0_0_8px_rgba(168,85,247,0.8)]" size={20} />
+        <h2 className="text-xl font-semibold text-white">
           Features & Theme
         </h2>
       </div>

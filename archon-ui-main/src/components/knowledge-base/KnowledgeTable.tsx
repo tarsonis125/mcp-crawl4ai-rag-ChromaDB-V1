@@ -128,7 +128,7 @@ export const KnowledgeTable: React.FC<KnowledgeTableProps> = ({ items, onDelete 
               Sources
             </th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-zinc-400 uppercase tracking-wider">
-              Chunks
+              Words
             </th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-zinc-400 uppercase tracking-wider">
               Updated

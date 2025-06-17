@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Loader } from 'lucide-react';
+import { Loader, Settings } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useToast } from '../contexts/ToastContext';
 import { useSettings } from '../contexts/SettingsContext';
@@ -72,9 +72,10 @@ export const SettingsPage = () => {
       {/* Header */}
       <motion.div className="flex justify-between items-center mb-8" variants={itemVariants}>
         <motion.h1
-          className="text-3xl font-bold text-gray-800 dark:text-white"
+          className="text-3xl font-bold text-white flex items-center gap-3"
           variants={titleVariants}
         >
+          <Settings className="w-7 h-7 text-blue-500 filter drop-shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
           Settings
         </motion.h1>
       </motion.div>
@@ -87,20 +88,20 @@ export const SettingsPage = () => {
             <FeaturesSection />
           </motion.div>
           <motion.div variants={itemVariants}>
-            <RAGSettings ragSettings={ragSettings} setRagSettings={setRagSettings} />
+            {projectsEnabled && <IDEGlobalRules />}
           </motion.div>
           <motion.div variants={itemVariants}>
-            {projectsEnabled && <IDEGlobalRules />}
+            <TestStatus />
           </motion.div>
         </div>
 
         {/* Right Column */}
-        <div className="space-y-10">
-          <motion.div variants={itemVariants} className="py-6">
-            <APIKeysSection />
+        <div className="space-y-6">
+          <motion.div variants={itemVariants}>
+            <RAGSettings ragSettings={ragSettings} setRagSettings={setRagSettings} />
           </motion.div>
           <motion.div variants={itemVariants}>
-            <TestStatus />
+            <APIKeysSection />
           </motion.div>
         </div>
       </div>

@@ -558,7 +558,8 @@ export function ProjectPage({
     >
       {/* Page Header with New Project Button */}
       <motion.div className="flex items-center justify-between mb-8" variants={itemVariants}>
-        <motion.h1 className="text-3xl font-bold text-gray-800 dark:text-white" variants={titleVariants}>
+        <motion.h1 className="text-3xl font-bold text-white flex items-center gap-3" variants={titleVariants}>
+          <img src="/logo-neon.svg" alt="Projects" className="w-7 h-7 filter drop-shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
           Projects
         </motion.h1>
         <Button 
@@ -648,7 +649,7 @@ export function ProjectPage({
                   className={`
                     relative p-4 rounded-xl backdrop-blur-md w-72 cursor-pointer overflow-hidden
                     ${selectedProject?.id === project.id 
-                      ? 'bg-gradient-to-b from-white/80 via-purple-50/30 to-white/60 dark:from-white/10 dark:via-purple-900/10 dark:to-black/30' 
+                      ? 'bg-gradient-to-b from-white/70 via-purple-50/20 to-white/50 dark:from-white/5 dark:via-purple-900/5 dark:to-black/20' 
                       : 'bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30'
                     }
                     border ${selectedProject?.id === project.id 
@@ -656,7 +657,7 @@ export function ProjectPage({
                       : 'border-gray-200 dark:border-zinc-800/50'
                     }
                     ${selectedProject?.id === project.id
-                      ? 'shadow-[0_0_25px_rgba(168,85,247,0.5),0_0_15px_rgba(147,51,234,0.4)] dark:shadow-[0_0_35px_rgba(168,85,247,0.7),0_0_20px_rgba(147,51,234,0.6)]'
+                      ? 'shadow-[0_0_15px_rgba(168,85,247,0.4),0_0_10px_rgba(147,51,234,0.3)] dark:shadow-[0_0_20px_rgba(168,85,247,0.5),0_0_15px_rgba(147,51,234,0.4)]'
                       : 'shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)]'
                     }
                     hover:shadow-[0_15px_40px_-15px_rgba(0,0,0,0.2)] dark:hover:shadow-[0_15px_40px_-15px_rgba(0,0,0,0.9)]
@@ -666,7 +667,7 @@ export function ProjectPage({
                                   >
                   {/* Subtle aurora glow effect for selected card */}
                   {selectedProject?.id === project.id && (
-                    <div className="absolute inset-0 rounded-xl overflow-hidden opacity-20">
+                    <div className="absolute inset-0 rounded-xl overflow-hidden opacity-30 dark:opacity-40">
                       <div className="absolute -inset-[100px] bg-[radial-gradient(circle,rgba(168,85,247,0.8)_0%,rgba(147,51,234,0.6)_40%,transparent_70%)] blur-3xl animate-[pulse_8s_ease-in-out_infinite]"></div>
                     </div>
                   )}
@@ -705,8 +706,8 @@ export function ProjectPage({
                       {/* Neon pill boxes for task counts */}
                       {/* Todo pill */}
                       <div className="relative flex-1">
-                        <div className="absolute inset-0 bg-pink-600 rounded-full blur-md opacity-30 dark:opacity-75"></div>
-                        <div className="relative flex items-center h-12 bg-white/70 dark:bg-zinc-900/90 backdrop-blur-sm rounded-full border border-pink-300 dark:border-pink-500/50 shadow-sm dark:shadow-[0_0_10px_rgba(236,72,153,0.5)] hover:shadow-md dark:hover:shadow-[0_0_15px_rgba(236,72,153,0.7)] transition-all duration-300">
+                        <div className={`absolute inset-0 bg-pink-600 rounded-full blur-md ${selectedProject?.id === project.id ? 'opacity-30 dark:opacity-75' : 'opacity-20 dark:opacity-40'}`}></div>
+                        <div className={`relative flex items-center h-12 bg-white/70 dark:bg-zinc-900/90 backdrop-blur-sm rounded-full border border-pink-300 dark:border-pink-500/50 shadow-sm ${selectedProject?.id === project.id ? 'dark:shadow-[0_0_10px_rgba(236,72,153,0.5)] hover:shadow-md dark:hover:shadow-[0_0_15px_rgba(236,72,153,0.7)]' : 'dark:shadow-[0_0_5px_rgba(236,72,153,0.3)] hover:shadow-md dark:hover:shadow-[0_0_8px_rgba(236,72,153,0.4)]'} transition-all duration-300`}>
                           <div className="flex flex-col items-center justify-center px-2 min-w-[40px]">
                             <ListTodo className="w-4 h-4 text-pink-600 dark:text-pink-400" />
                             <span className="text-[8px] text-pink-600 dark:text-pink-400 font-medium">ToDo</span>
@@ -719,8 +720,8 @@ export function ProjectPage({
                       
                       {/* Doing pill */}
                       <div className="relative flex-1">
-                        <div className="absolute inset-0 bg-blue-600 rounded-full blur-md opacity-30 dark:opacity-75"></div>
-                        <div className="relative flex items-center h-12 bg-white/70 dark:bg-zinc-900/90 backdrop-blur-sm rounded-full border border-blue-300 dark:border-blue-500/50 shadow-sm dark:shadow-[0_0_10px_rgba(59,130,246,0.5)] hover:shadow-md dark:hover:shadow-[0_0_15px_rgba(59,130,246,0.7)] transition-all duration-300">
+                        <div className={`absolute inset-0 bg-blue-600 rounded-full blur-md ${selectedProject?.id === project.id ? 'opacity-30 dark:opacity-75' : 'opacity-20 dark:opacity-40'}`}></div>
+                        <div className={`relative flex items-center h-12 bg-white/70 dark:bg-zinc-900/90 backdrop-blur-sm rounded-full border border-blue-300 dark:border-blue-500/50 shadow-sm ${selectedProject?.id === project.id ? 'dark:shadow-[0_0_10px_rgba(59,130,246,0.5)] hover:shadow-md dark:hover:shadow-[0_0_15px_rgba(59,130,246,0.7)]' : 'dark:shadow-[0_0_5px_rgba(59,130,246,0.3)] hover:shadow-md dark:hover:shadow-[0_0_8px_rgba(59,130,246,0.4)]'} transition-all duration-300`}>
                           <div className="flex flex-col items-center justify-center px-2 min-w-[40px]">
                             <Activity className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                             <span className="text-[8px] text-blue-600 dark:text-blue-400 font-medium">Doing</span>
@@ -733,8 +734,8 @@ export function ProjectPage({
                       
                       {/* Done pill */}
                       <div className="relative flex-1">
-                        <div className="absolute inset-0 bg-green-600 rounded-full blur-md opacity-30 dark:opacity-75"></div>
-                        <div className="relative flex items-center h-12 bg-white/70 dark:bg-zinc-900/90 backdrop-blur-sm rounded-full border border-green-300 dark:border-green-500/50 shadow-sm dark:shadow-[0_0_10px_rgba(34,197,94,0.5)] hover:shadow-md dark:hover:shadow-[0_0_15px_rgba(34,197,94,0.7)] transition-all duration-300">
+                        <div className={`absolute inset-0 bg-green-600 rounded-full blur-md ${selectedProject?.id === project.id ? 'opacity-30 dark:opacity-75' : 'opacity-20 dark:opacity-40'}`}></div>
+                        <div className={`relative flex items-center h-12 bg-white/70 dark:bg-zinc-900/90 backdrop-blur-sm rounded-full border border-green-300 dark:border-green-500/50 shadow-sm ${selectedProject?.id === project.id ? 'dark:shadow-[0_0_10px_rgba(34,197,94,0.5)] hover:shadow-md dark:hover:shadow-[0_0_15px_rgba(34,197,94,0.7)]' : 'dark:shadow-[0_0_5px_rgba(34,197,94,0.3)] hover:shadow-md dark:hover:shadow-[0_0_8px_rgba(34,197,94,0.4)]'} transition-all duration-300`}>
                           <div className="flex flex-col items-center justify-center px-2 min-w-[40px]">
                             <CheckCircle2 className="w-4 h-4 text-green-600 dark:text-green-400" />
                             <span className="text-[8px] text-green-600 dark:text-green-400 font-medium">Done</span>
