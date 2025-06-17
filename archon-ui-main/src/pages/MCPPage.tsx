@@ -280,8 +280,7 @@ export const MCPPage = () => {
           steps: [
             '1. Open a terminal and run the following command:',
             `2. claude mcp add --transport sse archon http://${config?.host}:${config?.port}/sse`,
-            '3. Or for Docker stdio: claude mcp add archon docker exec -i -e TRANSPORT=stdio archon-pyserver python src/mcp_server.py',
-            '4. The connection will be established automatically'
+            '3. The connection will be established automatically'
           ]
         };
     }

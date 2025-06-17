@@ -13,7 +13,7 @@ import Admonition from '@theme/Admonition';
 
 The Model Context Protocol (MCP) is an open standard that enables AI applications to securely access external data sources and tools. Archon implements both sides of MCP:
 
-- **MCP Server**: Exposes 30 tools for knowledge management and task organization
+- **MCP Server**: Exposes 14 tools following action-based patterns for knowledge management and task organization
 - **MCP Client**: Universal SSE-based client for connecting to any MCP server using Streamable HTTP transport
 
 <div className="row">
@@ -25,10 +25,10 @@ The Model Context Protocol (MCP) is an open standard that enables AI application
       <div className="card__body">
         <p>Archon as an MCP Server - Expose your knowledge base to AI clients</p>
         <ul>
-          <li>30 comprehensive tools for RAG and project management</li>
+          <li>14 comprehensive tools using flexible action-based patterns</li>
           <li>Real-time Logfire monitoring of all tool calls</li>
           <li>Compatible with Cursor, Windsurf, Claude Desktop</li>
-          <li>stdio transport for AI clients, SSE for web clients</li>
+          <li>SSE transport for all clients (stdio via docker exec)</li>
         </ul>
         <a href="/mcp-server" className="button button--primary">
           MCP Server Documentation
@@ -94,13 +94,13 @@ graph TB
         
         subgraph "🛠️ Archon MCP Server (Port 8051)"
             MCPCore["⚡ MCP Core Server<br/>+ Logfire Monitoring"]
-            Tools["🛠️ 25 MCP Tools"]
-            Health["🏥 Health Check"]
+            Tools["🛠️ 14 MCP Tools"]
+            Health["🏥 Health & Session"]
         end
         
         subgraph "🏗️ Backend Services (Port 8080)"
             RAGModule["🧠 RAG Module<br/>7 tools"]
-            ProjectModule["📊 Project Module<br/>17 tools"]
+            ProjectModule["📊 Project Module<br/>5 consolidated tools"]
             FastAPI["⚡ FastAPI Backend"]
             Supabase["🗄️ Supabase Database<br/>pgvector"]
             Logfire["🔥 Logfire Dashboard<br/>Real-time Monitoring"]
@@ -150,7 +150,7 @@ Connect your AI client to Archon's knowledge base:
 
 1. Start Archon (Docker or local)
 2. Configure your AI client (Cursor, Windsurf, etc.)
-3. Begin using 30 available tools
+3. Begin using 14 comprehensive tools
 
 **For Cursor (One-Click Install):**
 ```
@@ -215,16 +215,15 @@ Connect to any MCP server from Archon's UI:
 
 <Admonition type="info" icon="📊" title="Complete Tool Overview">
 
-**Archon provides 30 comprehensive MCP tools across multiple domains:**
+**Archon provides 14 comprehensive MCP tools following modern patterns:**
 
 </Admonition>
 
 | Category | Tools | Description | Key Features |
 |----------|-------|-------------|--------------|
-| **🧠 Knowledge Management** | 7 tools | Search, crawl, and manage knowledge | RAG queries, web crawling, document upload |
-| **📊 Project Management** | 18 tools | Tasks, projects, documentation | Task creation, status tracking, document management |
-| **📄 Document Versioning** | 4 tools | Version control for documents | Create versions, view history, restore versions |
-| **🏥 System Health** | 1 tool | Health monitoring and diagnostics | Comprehensive system status |
+| **🧠 RAG & Knowledge Management** | 7 tools | Search, crawl, and manage knowledge | RAG queries, web crawling, document upload, code search, source management |
+| **📊 Project & Task Management** | 5 tools | Complete project lifecycle management | Consolidated action-based patterns for projects, tasks, documents, and versions |
+| **🏥 System Health** | 2 tools | Health monitoring and diagnostics | Comprehensive system status and session management |
 
 ### Tool Categories Deep Dive
 
@@ -232,7 +231,7 @@ Connect to any MCP server from Archon's UI:
   <div className="col col--4">
     <div className="card">
       <div className="card__header">
-        <h4>🧠 **Knowledge Tools**</h4>
+        <h4>🧠 **RAG & Knowledge Tools (7)**</h4>
       </div>
       <div className="card__body">
         <ul>
@@ -242,7 +241,7 @@ Connect to any MCP server from Archon's UI:
           <li>`smart_crawl_url` - Intelligent crawling</li>
           <li>`upload_document` - Document processing</li>
           <li>`get_available_sources` - Source management</li>
-          <li>`delete_source_tool` - Source cleanup</li>
+          <li>`delete_source` - Source cleanup</li>
         </ul>
       </div>
     </div>
@@ -250,16 +249,15 @@ Connect to any MCP server from Archon's UI:
   <div className="col col--4">
     <div className="card">
       <div className="card__header">
-        <h4>📊 **Project Tools**</h4>
+        <h4>📊 **Project Tools (5)**</h4>
       </div>
       <div className="card__body">
         <ul>
-          <li>`create_project` - Project initialization</li>
-          <li>`create_task` - Task management</li>
-          <li>`update_task_status` - Status tracking</li>
-          <li>`add_project_document` - Documentation</li>
-          <li>`create_document_version` - Versioning</li>
-          <li>**+12 more tools** for comprehensive project management</li>
+          <li>`manage_project` - Create, list, get, delete projects</li>
+          <li>`manage_task` - Create, list, get, update, delete, archive tasks</li>
+          <li>`manage_document` - Add, list, get, update, delete documents</li>
+          <li>`manage_versions` - Create, list, get, restore versions</li>
+          <li>`get_project_features` - Retrieve project features</li>
         </ul>
       </div>
     </div>
@@ -267,15 +265,16 @@ Connect to any MCP server from Archon's UI:
   <div className="col col--4">
     <div className="card">
       <div className="card__header">
-        <h4>🔥 **Monitoring**</h4>
+        <h4>🏥 **System & Monitoring (2)**</h4>
       </div>
       <div className="card__body">
         <ul>
+          <li>`health_check` - System health diagnostics</li>
+          <li>`session_info` - Session management info</li>
           <li>**Real-time Logfire tracing** for all tools</li>
           <li>**Performance metrics** and timing</li>
           <li>**Client identification** (Cursor, Windsurf, etc.)</li>
           <li>**Error tracking** and debugging</li>
-          <li>**Usage analytics** and patterns</li>
         </ul>
       </div>
     </div>

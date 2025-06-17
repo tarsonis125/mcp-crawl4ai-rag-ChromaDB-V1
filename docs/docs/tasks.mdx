@@ -9,7 +9,7 @@ import Admonition from '@theme/Admonition';
 
 # Task Management System (Archon)
 
-Archon includes a comprehensive project and task management system that integrates seamlessly with your knowledge base and AI coding assistants. This system enables structured project organization, task tracking, and autonomous task management through MCP integration.
+Archon includes a comprehensive project and task management system that integrates seamlessly with your knowledge base and AI coding assistants. This system features a modern service-based architecture with 5 consolidated MCP tools following best practices for flexible, action-based interfaces.
 
 ## 🎯 Overview
 
@@ -52,32 +52,48 @@ graph TB
     subgraph "Backend API"
         ProjectAPI["projects_api.py<br/>528 lines"]
         TaskAPI["Task Management<br/>Endpoints"]
-        MCPTools["MCP Project Tools<br/>17 tools"]
+        MCPTools["MCP Project Tools<br/>5 consolidated tools"]
+    end
+    
+    subgraph "Service Layer"
+        ProjectService["ProjectService<br/>Project operations"]
+        TaskService["TaskService<br/>Task operations"]
+        DocumentService["DocumentService<br/>Document operations"]
+        VersioningService["VersioningService<br/>Version control"]
     end
     
     subgraph "Database (Supabase)"
         ProjectsTable(("projects table"))
         TasksTable(("tasks table"))
+        VersionsTable(("document_versions"))
     end
     
     subgraph "AI Clients"
         Cursor(Cursor IDE)
         Windsurf(Windsurf IDE)
-        Claude(Claude Desktop)
+        Claude(Claude Code)
     end
     
     TaskUI --> ProjectAPI
     ProjectUI --> ProjectAPI
     
-    ProjectAPI --> ProjectsTable
-    ProjectAPI --> TasksTable
-    TasksTable --> ProjectsTable
+    ProjectAPI --> ProjectService
+    ProjectAPI --> TaskService
+    ProjectAPI --> DocumentService
+    
+    MCPTools --> ProjectService
+    MCPTools --> TaskService
+    MCPTools --> DocumentService
+    MCPTools --> VersioningService
+    
+    ProjectService --> ProjectsTable
+    TaskService --> TasksTable
+    DocumentService --> ProjectsTable
+    VersioningService --> VersionsTable
     
     Cursor --> MCPTools
     Windsurf --> MCPTools
     Claude --> MCPTools
-    
-    MCPTools --> ProjectAPI
 ```
 
 ## 📊 Database Schema
@@ -383,45 +399,127 @@ curl "http://localhost:8080/api/tasks?project_id=550e8400-e29b-41d4-a716-4466554
 
 AI coding assistants can autonomously manage tasks through MCP tools:
 
-### Available MCP Tools (17 Project Tools)
+### Available MCP Tools (5 Consolidated Tools)
 
-<Admonition type="info" title="MCP Tools Overview">
-  The project module (`project_module.py` - 1065 lines) provides 17 MCP tools for complete project and task management automation.
+<Admonition type="success" title="Streamlined MCP Tools">
+  Following MCP best practices, we've consolidated 22 individual tools into 5 flexible, action-based tools. This provides better performance, easier maintenance, and more intuitive usage for AI agents.
 </Admonition>
 
-#### Core Project Tools
+#### Consolidated Project & Task Tools
 
-| Tool | Purpose | AI Usage Example |
-|------|---------|------------------|
-| `create_project` | Create new projects with PRD | "Start a new project for user management features" |
-| `list_projects` | Query existing projects | "What projects do we have?" |
-| `get_project` | Get detailed project info | "Show me details of the authentication project" |
-| `delete_project` | Remove completed projects | "Archive the completed migration project" |
+| Tool | Actions | Description | Parameters |
+|------|---------|-------------|------------|
+| **`manage_project`** | `create`, `list`, `get`, `delete` | Complete project lifecycle | `action`, `project_id`, `title`, `prd`, `github_repo` |
+| **`manage_task`** | `create`, `list`, `get`, `update`, `delete`, `archive` | All task operations | `action`, `task_id`, `project_id`, `filter_by`, `filter_value`, `update_fields` |
+| **`manage_document`** | `add`, `list`, `get`, `update`, `delete` | Document management | `action`, `project_id`, `doc_id`, `document_type`, `title`, `content`, `metadata` |
+| **`manage_versions`** | `create`, `list`, `get`, `restore` | Version control | `action`, `project_id`, `field_name`, `version_number`, `content` |
+| **`get_project_features`** | *(query only)* | Retrieve features | `project_id` |
 
-#### Task Management Tools
+#### Action Patterns
 
-| Tool | Purpose | AI Usage Example |
-|------|---------|------------------|
-| `create_task` | Create new tasks with context and assignee | "Create tasks for implementing OAuth login assigned to Archon" |
-| `list_tasks_by_project` | Get all project tasks | "Show me all tasks for the API project" |
-| `get_task` | Get detailed task info | "What's the status of the authentication task?" |
-| `update_task_status` | Change task status | "Mark the login feature as completed" |
-| `update_task` | Modify task details | "Update the task description with new requirements" |
-| `delete_task` | Remove obsolete tasks | "Remove the deprecated API task" |
-| `get_task_subtasks` | Get child tasks | "What subtasks are under the authentication epic?" |
-| `get_tasks_by_status` | Filter by status | "Show me all review tasks" |
+<Tabs>
+<TabItem value="project" label="Project Operations">
 
-#### Document Management Tools
+```python
+# Create a new project
+result = await manage_project(
+    action="create",
+    title="AI Documentation System",
+    prd={"overview": "Automated docs generation", "goals": ["Generate API docs", "Maintain accuracy"]},
+    github_repo="https://github.com/user/ai-docs"
+)
 
-| Tool | Purpose | Required Format | AI Usage Example |
-|------|---------|----------------|------------------|
-| `add_project_document` | Add documentation with structured content | Must use clean MCP format in `content` field | "Create a technical spec document with architecture and dependencies" |
-| `list_project_documents` | Get all project docs | N/A | "What documentation exists for this project?" |
-| `get_project_document` | Retrieve specific doc | N/A | "Show me the API specification document" |
-| `update_project_document` | Modify documents | Use clean MCP format for `content` updates | "Update the PRD with new requirements and timeline" |
-| `delete_project_document` | Remove outdated docs | N/A | "Remove the old design mockups" |
+# List all projects
+projects = await manage_project(action="list")
 
-**Critical for AI Agents**: When using `add_project_document` or `update_project_document`, the `content` field must follow the structured MCP format documented above. Do not use flat text or unstructured data.
+# Get specific project
+project = await manage_project(
+    action="get",
+    project_id="550e8400-e29b-41d4-a716-446655440000"
+)
+```
+
+</TabItem>
+<TabItem value="task" label="Task Operations">
+
+```python
+# Create a task
+task = await manage_task(
+    action="create",
+    project_id="project-uuid",
+    title="Implement JWT authentication",
+    description="Add JWT-based auth to all API endpoints",
+    assignee="Archon"
+)
+
+# Update task status
+await manage_task(
+    action="update",
+    task_id="task-uuid",
+    update_fields={"status": "done", "description": "Completed with tests"}
+)
+
+# List tasks by status
+tasks = await manage_task(
+    action="list",
+    filter_by="status",
+    filter_value="doing",
+    project_id="project-uuid"
+)
+
+# Get subtasks
+subtasks = await manage_task(
+    action="list",
+    filter_by="parent",
+    filter_value="parent-task-uuid"
+)
+```
+
+</TabItem>
+<TabItem value="document" label="Document Operations">
+
+```python
+# Add a document (MUST use clean MCP format)
+doc = await manage_document(
+    action="add",
+    project_id="project-uuid",
+    document_type="prd",
+    title="System Architecture Document",
+    content={
+        "project_overview": {
+            "description": "Microservices architecture",
+            "target_completion": "Q2 2024"
+        },
+        "architecture": {
+            "frontend": ["React", "TypeScript"],
+            "backend": ["FastAPI", "PostgreSQL"]
+        }
+    },
+    metadata={
+        "tags": ["architecture", "technical"],
+        "author": "System Architect"
+    }
+)
+
+# Update document
+await manage_document(
+    action="update",
+    project_id="project-uuid",
+    doc_id="doc-uuid",
+    content={
+        "project_overview": {
+            "description": "Updated microservices architecture with event sourcing"
+        }
+    }
+)
+```
+
+</TabItem>
+</Tabs>
+
+<Admonition type="warning" title="Document Format Requirements">
+  When using `manage_document` with `add` or `update` actions, the `content` field MUST follow the structured MCP format. The UI will automatically convert this to editable blocks. Do not use flat text or unstructured data.
+</Admonition>
 
 ### AI-Driven Task Management Examples
 
@@ -434,9 +532,9 @@ Create a project and break it down into tasks.
 ```
 
 **AI Actions**:
-1. `create_project` - Creates "User Profile Management" project with comprehensive PRD
-2. `search_knowledge` - Finds existing user management patterns in knowledge base
-3. `create_task` (multiple calls) - Creates structured task breakdown:
+1. `manage_project` with `action="create"` - Creates "User Profile Management" project with comprehensive PRD
+2. `perform_rag_query` - Finds existing user management patterns in knowledge base
+3. `manage_task` with `action="create"` (multiple calls) - Creates structured task breakdown:
    - Design user profile schema
    - Implement profile CRUD endpoints
    - Add profile validation
@@ -453,12 +551,11 @@ Update my tasks and suggest what to work on next.
 ```
 
 **AI Actions**:
-1. `list_tasks_by_project` - Gets current project tasks
-2. `get_tasks_by_status` - Finds tasks with status "doing"
-3. `update_task_status` - Marks registration task as "done"
-4. `update_task` - Adds completion notes and implementation details
-5. `get_task_subtasks` - Checks for dependent tasks
-6. Provides recommendations for next priority tasks
+1. `manage_task` with `action="list"` and `filter_by="project"` - Gets current project tasks
+2. `manage_task` with `filter_by="status"` and `filter_value="doing"` - Finds active tasks
+3. `manage_task` with `action="update"` - Marks registration task as "done"
+4. `manage_task` with `filter_by="parent"` - Checks for dependent tasks
+5. Provides recommendations for next priority tasks
 
 #### Scenario 3: Code Review Integration
 
@@ -469,14 +566,14 @@ Review this authentication code and create tasks for any improvements needed:
 ```
 
 **AI Actions**:
-1. `search_knowledge` - Finds coding standards and security patterns
+1. `perform_rag_query` - Finds coding standards and security patterns
 2. Analyzes code against documented best practices
-3. `create_task` - Creates improvement tasks:
+3. `manage_task` with `action="create"` - Creates improvement tasks:
    - Add input validation
    - Implement rate limiting
    - Add comprehensive error handling
    - Improve test coverage
-4. Links relevant documentation and code examples
+4. `manage_document` with `action="add"` - Documents findings
 5. Sets appropriate priorities and dependencies
 
 ## 📊 Project Management Patterns
@@ -919,9 +1016,9 @@ AI Response:
 I'll help you plan the authentication implementation. Let me create a project and break this down into manageable tasks.
 
 [AI uses MCP tools to:]
-1. create_project with authentication project details
-2. search_knowledge("FastAPI authentication JWT")
-3. create_task for each implementation step
+1. manage_project(action="create") with authentication project details
+2. perform_rag_query("FastAPI authentication JWT")
+3. manage_task(action="create") for each implementation step
 4. Link relevant documentation from knowledge base
 
 I've created a project "User Authentication System" with the following tasks:

@@ -920,7 +920,14 @@ async def update_project(project_id: str, request: UpdateProjectRequest):
                 
                 prep_span.set_attribute("update_fields_count", len(update_data) - 1)  # -1 for updated_at
             
-            # Create version snapshots for JSONB fields before updating (if versioning is available)
+            # Create version snapshots for JSONB fields before updating
+            # Check if versioning is available by trying to import the service
+            try:
+                from ..services.versioning_service import VersioningService
+                VERSIONING_AVAILABLE = True
+            except ImportError:
+                VERSIONING_AVAILABLE = False
+                
             if VERSIONING_AVAILABLE:
                 with logfire_logger.span("create_version_snapshots") as version_span:
                     version_count = 0
@@ -938,8 +945,9 @@ async def update_project(project_id: str, request: UpdateProjectRequest):
                                     
                                     # Only create version if content actually changed
                                     if current_content != new_content:
-                                        # Create version snapshot using direct function
-                                        await create_document_version_direct(
+                                        # Create version snapshot using versioning service
+                                        versioning_service = VersioningService(supabase_client)
+                                        success, result = versioning_service.create_version(
                                             project_id=project_id,
                                             field_name=field_name,
                                             content=current_content,
@@ -947,7 +955,8 @@ async def update_project(project_id: str, request: UpdateProjectRequest):
                                             change_type="update",
                                             created_by="api_user"
                                         )
-                                        version_count += 1
+                                        if success:
+                                            version_count += 1
                                         
                         version_span.set_attribute("versions_created", version_count)
                         logfire_logger.info(f"Created {version_count} version snapshots before update")
@@ -1673,7 +1682,7 @@ async def mcp_update_task_status_with_websockets(task_id: str, status: str):
             ctx.progress_callback = websocket_callback
             
             # Import and call MCP function directly with context
-            from src.modules.project_module import update_task_status_direct
+            from ..modules.project_module import update_task_status_direct
             result = await update_task_status_direct(ctx, task_id, status)
             
             # Parse result

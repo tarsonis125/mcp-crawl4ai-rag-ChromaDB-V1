@@ -11,7 +11,7 @@ import Admonition from '@theme/Admonition';
 
 ## Overview
 
-Archon's MCP Server exposes your knowledge base and project management capabilities to any MCP-compatible AI client. With 25 comprehensive tools, real-time Logfire monitoring, and multiple transport options, you can integrate Archon with your preferred AI development environment.
+Archon's MCP Server exposes your knowledge base and project management capabilities to any MCP-compatible AI client. With 14 comprehensive tools (5 consolidated project/task tools + 7 RAG tools + 2 system tools), real-time Logfire monitoring, and SSE transport, you can integrate Archon with your preferred AI development environment.
 
 ## MCP Server Architecture
 
@@ -36,29 +36,36 @@ Archon's MCP Server exposes your knowledge base and project management capabilit
 }}%%
 graph TB
     subgraph "🤖 AI Clients"
-        Cursor["💻 Cursor IDE<br/>stdio protocol"]
-        Windsurf["🏄 Windsurf IDE<br/>stdio protocol"]
-        Claude["🧠 Claude Desktop<br/>stdio protocol"]
-        Other["🔧 Other MCP Clients<br/>SSE/WebSocket"]
+        Cursor["💻 Cursor IDE<br/>SSE transport"]
+        Windsurf["🏄 Windsurf IDE<br/>SSE transport"]
+        Claude["🧠 Claude Code<br/>SSE transport"]
+        Other["🔧 Other MCP Clients<br/>SSE transport"]
     end
     
     subgraph "🔥 Archon MCP Server (Port 8051)"
-        MCPCore["⚡ MCP Core Server<br/>+ Logfire Monitoring"]
-        Tools["🛠️ 25 MCP Tools"]
-        Health["🏥 Health Check"]
+        MCPCore["⚡ FastMCP Server<br/>+ Logfire Monitoring"]
+        Tools["🛠️ 9 Consolidated Tools"]
+        Health["🏥 Health & Session Info"]
+    end
+    
+    subgraph "📦 Service Layer"
+        ProjectService["📊 Project Service"]
+        TaskService["📝 Task Service"]
+        DocumentService["📄 Document Service"]
+        VersioningService["🔄 Versioning Service"]
     end
     
     subgraph "🏗️ Backend Services"
-        RAGModule["🧠 RAG Module<br/>7 tools"]
-        ProjectModule["📊 Project Module<br/>17 tools"]
+        RAGModule["🧠 RAG Module<br/>4 tools"]
+        ProjectModule["📊 Project Module<br/>5 consolidated tools"]
         FastAPI["⚡ FastAPI Backend"]
         Supabase["🗄️ Supabase Database<br/>pgvector"]
         Logfire["🔥 Logfire Dashboard<br/>Real-time Monitoring"]
     end
     
-    Cursor -.->|JSON-RPC| MCPCore
-    Windsurf -.->|JSON-RPC| MCPCore
-    Claude -.->|JSON-RPC| MCPCore
+    Cursor -.->|SSE| MCPCore
+    Windsurf -.->|SSE| MCPCore
+    Claude -.->|SSE| MCPCore
     Other -.->|SSE| MCPCore
     
     MCPCore --> Tools
@@ -66,8 +73,18 @@ graph TB
     
     Tools --> RAGModule
     Tools --> ProjectModule
+    
+    ProjectModule --> ProjectService
+    ProjectModule --> TaskService
+    ProjectModule --> DocumentService
+    ProjectModule --> VersioningService
+    
     RAGModule --> FastAPI
-    ProjectModule --> FastAPI
+    ProjectService --> Supabase
+    TaskService --> Supabase
+    DocumentService --> Supabase
+    VersioningService --> Supabase
+    
     FastAPI --> Supabase
     MCPCore --> Logfire
     RAGModule --> Logfire
@@ -76,7 +93,7 @@ graph TB
 
 ## Available Tools
 
-Archon provides 30 MCP tools organized into logical categories:
+Archon provides 14 comprehensive MCP tools following best practices for flexible, action-based interfaces:
 
 ### Knowledge Management Tools (7 tools)
 
@@ -84,30 +101,85 @@ Archon provides 30 MCP tools organized into logical categories:
 |------|-------------|----------|
 | `perform_rag_query` | Semantic search across crawled content | "Find all documentation about authentication" |
 | `search_code_examples` | Search code with AI summaries | "Show me React hook examples" |
-| `crawl_single_page` | Index individual web pages | Add specific documentation pages |
+| `crawl_single_page` | Index a single web page | Quickly add specific documentation |
 | `smart_crawl_url` | Intelligent multi-page crawling | Index entire documentation sites |
-| `upload_document` | Process and index documents | Add PDFs, markdown files, etc. |
 | `get_available_sources` | List all indexed sources | See what knowledge is available |
-| `delete_source_tool` | Remove indexed sources | Clean up old or irrelevant content |
+| `upload_document` | Process and index documents | Upload PDFs, Word docs, markdown |
+| `delete_source` | Remove indexed content | Clean up outdated sources |
 
-### Project Management Tools (18 tools)
+### Project Management Tools (5 consolidated tools)
 
-| Category | Tools | Description |
-|----------|-------|-------------|
-| **Projects** | `create_project`, `list_projects`, `get_project`, `delete_project` | Full project lifecycle management |
-| **Tasks** | `create_task`, `list_tasks_by_project`, `get_task`, `update_task`, `update_task_status`, `delete_task` | Comprehensive task management |
-| **Subtasks** | `get_task_subtasks`, `get_tasks_by_status` | Hierarchical task organization |
-| **Documents** | `add_project_document`, `list_project_documents`, `get_project_document`, `update_project_document`, `delete_project_document` | Document management |
-| **Features** | `get_project_features` | Feature tracking and organization |
+<Admonition type="tip" icon="🚀" title="Action-Based Tools">
+  Following MCP best practices, we've consolidated 22 individual tools into 5 flexible, action-based tools. This provides better performance, easier maintenance, and more intuitive usage.
+</Admonition>
 
-### Document Versioning Tools (4 tools)
+| Tool | Actions | Description |
+|------|---------|-------------|
+| **`manage_project`** | `create`, `list`, `get`, `delete` | Complete project lifecycle management |
+| **`manage_task`** | `create`, `list`, `get`, `update`, `delete`, `archive` | Comprehensive task operations with filtering |
+| **`manage_document`** | `add`, `list`, `get`, `update`, `delete` | Project document management |
+| **`manage_versions`** | `create`, `list`, `get`, `restore` | Document version control |
+| **`get_project_features`** | *(query only)* | Retrieve project features |
 
-| Tool | Description | Use Case |
-|------|-------------|----------|
-| `create_document_version` | Create version snapshot | Save document state before changes |
-| `get_document_version_history` | View version history | Track document evolution |
-| `get_version_content` | Get specific version | View or compare past versions |
-| `restore_document_version` | Restore to version | Rollback to previous state |
+#### Action-Based Tool Examples
+
+**Project Management:**
+```json
+// Create a project
+{
+  "tool": "manage_project",
+  "arguments": {
+    "action": "create",
+    "title": "My AI Project",
+    "github_repo": "https://github.com/user/repo"
+  }
+}
+
+// List all projects
+{
+  "tool": "manage_project",
+  "arguments": {
+    "action": "list"
+  }
+}
+```
+
+**Task Management:**
+```json
+// Create a task
+{
+  "tool": "manage_task",
+  "arguments": {
+    "action": "create",
+    "project_id": "uuid-here",
+    "title": "Implement authentication",
+    "description": "Add JWT auth to API"
+  }
+}
+
+// Update task status
+{
+  "tool": "manage_task",
+  "arguments": {
+    "action": "update",
+    "task_id": "task-uuid",
+    "update_fields": {
+      "status": "done"
+    }
+  }
+}
+
+// List tasks by status
+{
+  "tool": "manage_task",
+  "arguments": {
+    "action": "list",
+    "filter_by": "status",
+    "filter_value": "doing",
+    "project_id": "project-uuid"
+  }
+}
+```
 
 ### System Health Tools (2 tools)
 
@@ -115,6 +187,72 @@ Archon provides 30 MCP tools organized into logical categories:
 |------|-------------|----------|
 | `health_check` | Comprehensive system diagnostics | Monitor server health and performance |
 | `session_info` | Session management information | Debug connections and view active sessions |
+
+## 🏗️ Service Layer Architecture
+
+<Admonition type="info" icon="🔧" title="Separation of Concerns">
+  The new architecture separates business logic into reusable service classes. This enables both MCP tools and FastAPI endpoints to share the same core functionality, reducing code duplication and improving maintainability.
+</Admonition>
+
+```mermaid
+%%{init:{
+  'theme':'base',
+  'themeVariables': {
+    'primaryColor':'#1f2937',
+    'primaryTextColor':'#ffffff',
+    'primaryBorderColor':'#8b5cf6',
+    'lineColor':'#a855f7',
+    'textColor':'#ffffff',
+    'fontFamily':'Inter',
+    'fontSize':'14px',
+    'background':'#000000',
+    'mainBkg':'#1f2937',
+    'secondBkg':'#111827',
+    'borderColor':'#8b5cf6'
+  }
+}}%%
+graph LR
+    subgraph "MCP Tools"
+        MP[manage_project]
+        MT[manage_task]
+        MD[manage_document]
+        MV[manage_versions]
+    end
+    
+    subgraph "Service Layer"
+        PS[ProjectService]
+        TS[TaskService]
+        DS[DocumentService]
+        VS[VersioningService]
+    end
+    
+    subgraph "FastAPI Endpoints"
+        API1[/api/projects]
+        API2[/api/tasks]
+        API3[/api/documents]
+    end
+    
+    MP --> PS
+    MT --> TS
+    MD --> DS
+    MV --> VS
+    
+    API1 --> PS
+    API2 --> TS
+    API3 --> DS
+    
+    PS --> DB[(Supabase)]
+    TS --> DB
+    DS --> DB
+    VS --> DB
+```
+
+### Service Benefits
+
+- **Code Reuse**: Business logic shared between MCP and API
+- **Testability**: Services can be unit tested independently
+- **Maintainability**: Changes in one place affect both interfaces
+- **Scalability**: Services can be extracted to microservices
 
 ## Setup {#setup}
 
@@ -377,7 +515,7 @@ Check the health of the Archon system
   "status": "healthy",
   "server": "running",
   "database": "connected", 
-  "tools_available": 30,
+  "tools_available": 14,
   "version": "2.0.0"
 }
 ```
@@ -671,7 +809,7 @@ curl http://localhost:8051/health
   "status": "healthy",
   "server": "running",
   "database": "connected",
-  "tools_available": 30,
+  "tools_available": 14,
   "version": "2.0.0",
   "uptime": "0:05:23",
   "memory_usage": "45.2 MB"

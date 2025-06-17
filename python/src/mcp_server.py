@@ -394,7 +394,7 @@ def register_modules():
             from src.modules.project_module import register_project_tools
             register_project_tools(mcp)
             modules_registered += 1
-            logger.info("✓ Project module registered")
+            logger.info("✓ Project module registered (5 consolidated tools)")
         except ImportError as e:
             logger.warning(f"⚠ Project module not available: {e}")
         except Exception as e:
@@ -403,17 +403,7 @@ def register_modules():
     else:
         logger.info("⚠ Project module skipped - Projects are disabled")
     
-    # Import and register Versioning module (for document versioning only - task versioning removed)
-    try:
-        from src.modules.versioning_module import register_versioning_tools
-        register_versioning_tools(mcp)
-        modules_registered += 1
-        logger.info("✓ Versioning module registered (document versioning only)")
-    except ImportError as e:
-        logger.warning(f"⚠ Versioning module not available: {e}")
-    except Exception as e:
-        logger.error(f"✗ Error registering Versioning module: {e}")
-        logger.error(traceback.format_exc())
+    # Versioning is now integrated into the project module
     
     # Future UI module will be added here
     # try:

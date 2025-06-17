@@ -594,17 +594,17 @@ class MCPServerConfig:
     
     # Tool configuration
     rag_tools_enabled: bool = True      # 7 RAG tools
-    project_tools_enabled: bool = True  # 17 project tools
-    health_tools_enabled: bool = True   # 1 health tool
+    project_tools_enabled: bool = True  # 5 consolidated project tools
+    health_tools_enabled: bool = True   # 2 system tools
 ```
 
-**Available MCP Tools** (25 total):
+**Available MCP Tools** (14 total):
 
 | Category | Count | Tools |
 |----------|-------|-------|
-| **RAG Tools** | 7 | `crawl_single_page`, `smart_crawl_url`, `get_available_sources`, `perform_rag_query`, `delete_source_tool`, `search_code_examples`, `upload_document` |
-| **Project Tools** | 17 | `create_project`, `list_projects`, `get_project`, `delete_project`, `create_task`, `list_tasks_by_project`, `get_task`, `update_task_status`, `update_task`, `delete_task`, `get_task_subtasks`, `get_tasks_by_status`, `add_project_document`, `list_project_documents`, `get_project_document`, `update_project_document`, `delete_project_document` |
-| **Health Tools** | 1 | `health_check` |
+| **RAG Tools** | 7 | `crawl_single_page`, `smart_crawl_url`, `get_available_sources`, `perform_rag_query`, `delete_source`, `search_code_examples`, `upload_document` |
+| **Project Tools** | 5 | `manage_project` (create, list, get, delete), `manage_task` (create, list, get, update, delete, archive), `manage_document` (add, list, get, update, delete), `manage_versions` (create, list, get, restore), `get_project_features` |
+| **System Tools** | 2 | `health_check`, `session_info` |
 
 ## 🔧 Advanced Configuration
 

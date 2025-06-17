@@ -698,7 +698,7 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
         })
 
 
-async def delete_source(ctx, source_id: str) -> str:
+async def delete_source_standalone(ctx, source_id: str) -> str:
     """
     Delete a source and all associated crawled pages and code examples from the database.
     
@@ -1085,7 +1085,7 @@ def register_rag_tools(mcp: FastMCP):
                 return json.dumps(error_response, indent=2)
     
     @mcp.tool()
-    async def delete_source_tool(ctx: Context, source_id: str) -> str:
+    async def delete_source(ctx: Context, source_id: str) -> str:
         """
         Delete a source and all associated crawled pages and code examples from the database.
         
@@ -1096,7 +1096,7 @@ def register_rag_tools(mcp: FastMCP):
             JSON string with deletion results
         """
         # Call the standalone function
-        return await delete_source(ctx, source_id)
+        return await delete_source_standalone(ctx, source_id)
     
     @mcp.tool()
     async def search_code_examples(ctx: Context, query: str, source_id: str = None, match_count: int = 5) -> str:
