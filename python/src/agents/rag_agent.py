@@ -40,7 +40,7 @@ class RagQueryResult(BaseModel):
     success: bool = Field(description="Whether the query was successful")
     message: str = Field(description="Status message or error description")
 
-class RagAgent(BaseAgent[RagDependencies, RagQueryResult]):
+class RagAgent(BaseAgent[RagDependencies, str]):
     """
     Conversational agent for RAG-based document search and retrieval.
     
@@ -67,7 +67,6 @@ class RagAgent(BaseAgent[RagDependencies, RagQueryResult]):
         agent = Agent(
             model=self.model,
             deps_type=RagDependencies,
-            result_type=RagQueryResult,
             system_prompt="""You are a RAG (Retrieval-Augmented Generation) Assistant that helps users search and understand documentation through conversation.
 
 **Your Capabilities:**
@@ -332,9 +331,47 @@ class RagAgent(BaseAgent[RagDependencies, RagQueryResult]):
         )
         
         try:
-            result = await self.run(user_message, deps)
-            self.logger.info(f"RAG query completed: {result.query_type}")
-            return result
+            # Run the agent and get the string response
+            response_text = await self.run(user_message, deps)
+            self.logger.info(f"RAG query completed successfully")
+            
+            # Create a structured result from the response text
+            # Try to extract some basic information from the response
+            query_type = "search"  # Default type
+            results_found = 0
+            sources = []
+            
+            # Simple analysis of the response to gather metadata
+            if "found" in response_text.lower() and "results" in response_text.lower():
+                # Try to extract number of results
+                import re
+                match = re.search(r'found (\d+)', response_text.lower())
+                if match:
+                    results_found = int(match.group(1))
+            
+            if "available sources" in response_text.lower():
+                query_type = "list_sources"
+            elif "code example" in response_text.lower():
+                query_type = "code_search"
+            elif "no results" in response_text.lower():
+                results_found = 0
+            
+            # Extract source references if present
+            source_lines = [line for line in response_text.split('\n') if 'Source:' in line]
+            sources = [line.split('Source:')[-1].strip() for line in source_lines]
+            
+            return RagQueryResult(
+                query_type=query_type,
+                original_query=user_message,
+                refined_query=None,
+                results_found=results_found,
+                sources=list(set(sources)),  # Remove duplicates
+                answer=response_text,
+                citations=[],  # Could be enhanced to extract citations
+                success=True,
+                message="Query completed successfully"
+            )
+            
         except Exception as e:
             self.logger.error(f"RAG query failed: {str(e)}")
             # Return error result
