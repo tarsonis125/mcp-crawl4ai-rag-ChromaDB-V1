@@ -17,6 +17,7 @@ CREATE TYPE task_assignee AS ENUM ('User','Archon','AI IDE Agent');
 create table if not exists projects (
   id uuid primary key default gen_random_uuid(),
   title text not null,
+  description text default '',
   docs jsonb default '[]'::jsonb,
   features jsonb default '[]'::jsonb,
   data jsonb default '[]'::jsonb,

@@ -386,7 +386,15 @@ export function ProjectPage({
     } catch (error) {
       console.error('Failed to create project:', error);
       setIsCreatingProject(false);
-      // TODO: Add toast notification for error
+      showToast(
+        error instanceof Error ? error.message : 'Failed to create project. Please try again.',
+        'error'
+      );
+      // If we're in the progress view, allow closing the modal
+      if (showCreationProgress) {
+        setShowCreationProgress(false);
+        setProjectCreationProgress(null);
+      }
     }
   };
 

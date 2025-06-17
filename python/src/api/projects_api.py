@@ -557,7 +557,8 @@ async def list_projects():
                     "features": project.get("features", []),
                     "data": project.get("data", []),
                     "technical_sources": technical_sources,
-                    "business_sources": business_sources
+                    "business_sources": business_sources,
+                    "pinned": project.get("pinned", False)  # Include pinned field with default False
                 })
             
             logfire_logger.info("Projects listed successfully", count=len(projects))
@@ -709,13 +710,42 @@ async def _create_project_background(progress_id: str, request: CreateProjectReq
                 'log': f'⚠️ AI generation failed - created basic project structure'
             })
         
-        # Final success
-        await project_creation_manager.update_progress(progress_id, {
-            'percentage': 100,
-            'step': 'completed',
-            'log': f'🎉 Project "{request.title}" created successfully!',
-            'project_id': project_id
-        })
+        # Final success - fetch the complete project data to send to frontend
+        final_project_response = supabase.table('projects').select('*').eq('id', project_id).execute()
+        if final_project_response.data:
+            final_project = final_project_response.data[0]
+            # Include the pinned field (default to False if not present)
+            project_data_for_frontend = {
+                'id': final_project['id'],
+                'title': final_project['title'],
+                'description': final_project.get('description', ''),
+                'github_repo': final_project.get('github_repo'),
+                'created_at': final_project['created_at'],
+                'updated_at': final_project['updated_at'],
+                'prd': final_project.get('prd', {}),
+                'docs': final_project.get('docs', []),
+                'features': final_project.get('features', []),
+                'data': final_project.get('data', []),
+                'pinned': final_project.get('pinned', False),  # Include pinned field
+                'color': request.color or 'blue',
+                'icon': request.icon or 'Briefcase'
+            }
+            
+            await project_creation_manager.update_progress(progress_id, {
+                'percentage': 100,
+                'step': 'completed',
+                'log': f'🎉 Project "{request.title}" created successfully!',
+                'project_id': project_id,
+                'project': project_data_for_frontend  # Send full project object
+            })
+        else:
+            # Fallback if we can't fetch the project
+            await project_creation_manager.update_progress(progress_id, {
+                'percentage': 100,
+                'step': 'completed',
+                'log': f'🎉 Project "{request.title}" created successfully!',
+                'project_id': project_id
+            })
         
     except Exception as e:
         logger.error(f"Project creation failed: {str(e)}")
@@ -852,7 +882,8 @@ async def get_project(project_id: str):
                     "features": project.get("features", []),
                     "data": project.get("data", []),
                     "technical_sources": technical_sources,
-                    "business_sources": business_sources
+                    "business_sources": business_sources,
+                    "pinned": project.get("pinned", False)  # Include pinned field with default False
                 }
             else:
                 logfire_logger.warning("Project not found", project_id=project_id)
@@ -1105,7 +1136,8 @@ async def update_project(project_id: str, request: UpdateProjectRequest):
                 "features": project.get("features", []),
                 "data": project.get("data", []),
                 "technical_sources": technical_sources,
-                "business_sources": business_sources
+                "business_sources": business_sources,
+                "pinned": project.get("pinned", False)  # Include pinned field with default False
             }
                 
         except HTTPException:

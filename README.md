@@ -47,11 +47,11 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_KEY=your-service-key-here
 ```
 
-## Step 1: Enable RAG Crawl and Document Upload
+## Step 1: Initial Setup - Enable RAG Crawl and Document Upload
 
 1. **Set Up Database**: In your [Supabase project](https://supabase.com/dashboard) SQL Editor, run:
    ```sql
-   -- Copy and paste the contents of migration/initial_setup.sql
+   -- Copy and paste the contents of migration/1_initial_setup.sql
    ```
 
 2. **Start Archon**:
@@ -64,11 +64,11 @@ SUPABASE_SERVICE_KEY=your-service-key-here
    - Go to **Settings** → Add your OpenAI API key
    - Test by uploading a document or crawling a website
 
-## Step 2: Enable Archon Projects and Tasks
+## Step 2: Install Projects Module
 
 1. **Add Project Management**: In Supabase SQL Editor, run:
    ```sql
-   -- Copy and paste the contents of migration/archon_tasks.sql
+   -- Copy and paste the contents of migration/2_archon_projects.sql
    ```
 
 2. **Restart Python Server**:
@@ -80,6 +80,22 @@ SUPABASE_SERVICE_KEY=your-service-key-here
    - Go to **Settings** in the web interface
    - Toggle **"Enable Projects Feature"** to ON
    - Access projects at http://localhost:3737/projects
+
+## Step 3: Enable MCP Client Management (Optional)
+
+1. **Add MCP Client Features**: In Supabase SQL Editor, run:
+   ```sql
+   -- Copy and paste the contents of migration/3_mcp_client_management.sql
+   ```
+
+2. **Restart Services**:
+   ```bash
+   docker-compose restart
+   ```
+
+3. **Configure MCP Clients**:
+   - Access MCP Dashboard at http://localhost:3737/mcp
+   - Add and manage MCP client connections
 
 ## 🔌 Connecting to Cursor IDE
 

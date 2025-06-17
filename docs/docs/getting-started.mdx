@@ -78,11 +78,17 @@ LOGFIRE_TOKEN=your-logfire-token-here
 ### 3. Set Up Database
 
 <Admonition type="info" icon="🗄️" title="Database Setup">
-Create a new [Supabase project](https://supabase.com/dashboard), then run these SQL scripts **in order** in the SQL Editor:
+Create a new [Supabase project](https://supabase.com/dashboard), then follow these setup steps in order:
 </Admonition>
 
-1. **`migration/initial_setup.sql`** - Creates vector database, credentials, and core tables
-2. **`migration/archon_tasks.sql`** - Creates project and task management tables
+#### Step 1: Initial Setup - Enable RAG Crawl and Document Upload
+**Run `migration/1_initial_setup.sql`** - Creates vector database, credentials, and core tables
+
+#### Step 2: Install Projects Module
+**Run `migration/2_archon_projects.sql`** - Creates project and task management tables
+
+#### Step 3: Enable MCP Client Management (Optional)
+**Run `migration/3_mcp_client_management.sql`** - Adds MCP client connection management features
 
 <details>
 <summary>🔍 **How to run SQL scripts in Supabase**</summary>
@@ -91,16 +97,16 @@ Create a new [Supabase project](https://supabase.com/dashboard), then run these 
 2. Select your project
 3. Navigate to **SQL Editor** in the left sidebar
 4. Click **"New Query"**
-5. Copy the contents of `migration/initial_setup.sql` from your local files
+5. Copy the contents of each migration file from your local files
 6. Paste and click **"Run"**
-7. Repeat for `migration/archon_tasks.sql`
+7. Run each script in order: Step 1 → Step 2 → Step 3 (optional)
 
 </details>
 
 ### 4. Start Archon
 
 ```bash
-docker-compose up -d
+docker-compose up --build -d
 ```
 
 ### 5. Access & Configure

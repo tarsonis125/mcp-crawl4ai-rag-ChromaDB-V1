@@ -67,8 +67,20 @@ async function callAPI<T = any>(endpoint: string, options: RequestInit = {}): Pr
     });
 
     if (!response.ok) {
+      // Try to get error details from response body
+      let errorMessage = `HTTP error! status: ${response.status}`;
+      try {
+        const errorBody = await response.text();
+        if (errorBody) {
+          const errorJson = JSON.parse(errorBody);
+          errorMessage = errorJson.detail || errorJson.error || errorMessage;
+        }
+      } catch (e) {
+        // Ignore parse errors, use default message
+      }
+      
       throw new ProjectServiceError(
-        `HTTP error! status: ${response.status}`, 
+        errorMessage, 
         'HTTP_ERROR', 
         response.status
       );
@@ -229,20 +241,32 @@ export const projectService = {
    */
   async createProjectWithStreaming(projectData: CreateProjectRequest): Promise<{ progress_id: string; status: string; message: string }> {
     // Validate input
+    console.log('[PROJECT SERVICE] Validating project data:', projectData);
     const validation = validateCreateProject(projectData);
     if (!validation.success) {
+      console.error('[PROJECT SERVICE] Validation failed:', validation.error);
       throw new ValidationError(formatValidationErrors(validation.error));
     }
+    console.log('[PROJECT SERVICE] Validation passed:', validation.data);
 
     try {
+      console.log('[PROJECT SERVICE] Sending project creation request:', validation.data);
       const response = await callAPI<{ progress_id: string; status: string; message: string }>('/api/projects', {
         method: 'POST',
         body: JSON.stringify(validation.data)
       });
       
+      console.log('[PROJECT SERVICE] Project creation response:', response);
       return response;
     } catch (error) {
-      console.error('Failed to initiate project creation:', error);
+      console.error('[PROJECT SERVICE] Failed to initiate project creation:', error);
+      if (error instanceof ProjectServiceError) {
+        console.error('[PROJECT SERVICE] Error details:', {
+          message: error.message,
+          code: error.code,
+          statusCode: error.statusCode
+        });
+      }
       throw error;
     }
   },
