@@ -652,8 +652,8 @@ async def _create_project_background(progress_id: str, request: CreateProjectReq
         
         # Only initialize DocumentAgent if we have an OpenAI API key
         try:
-            from ..utils import get_openai_api_key_sync
-            api_key = get_openai_api_key_sync()
+            import os
+            api_key = os.getenv("OPENAI_API_KEY")
             
             if api_key:
                 # Import DocumentAgent (lazy import to avoid startup issues)

@@ -615,6 +615,13 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         print(f"🚀 CRAWL: Starting crawl function with progress_id: {progress_id}")
         print(f"🚀 CRAWL: URL: {request.url}")
         
+        # CRITICAL FIX: Wait for WebSocket to connect before starting work
+        # This prevents the "No WebSockets found" issue where progress updates
+        # are sent before the frontend WebSocket has time to connect
+        print(f"🚀 CRAWL: Waiting for WebSocket connection for progress_id: {progress_id}")
+        await asyncio.sleep(2.0)  # Give WebSocket time to connect
+        print(f"🚀 CRAWL: Starting crawl work for progress_id: {progress_id}")
+        
         # Create a progress callback that will be called by the crawling function
         async def progress_callback(status: str, percentage: int, message: str, **kwargs):
             """Callback function to receive real-time progress updates from crawling."""

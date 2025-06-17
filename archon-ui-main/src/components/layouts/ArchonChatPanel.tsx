@@ -4,18 +4,18 @@ import { ArchonLoadingSpinner, EdgeLitEffect } from '../animations/Animations';
 import { agentChatService, ChatMessage } from '../../services/agentChatService';
 
 /**
- * Props for the KnowledgeChatPanel component
+ * Props for the ArchonChatPanel component
  */
-interface KnowledgeChatPanelProps {
+interface ArchonChatPanelProps {
   'data-id'?: string;
 }
 /**
- * KnowledgeChatPanel - A chat interface for the knowledge assistant
+ * ArchonChatPanel - A chat interface for the Archon AI assistant
  *
  * This component provides a resizable chat panel with message history,
  * loading states, and input functionality connected to real AI agents.
  */
-export const KnowledgeChatPanel: React.FC<KnowledgeChatPanelProps> = props => {
+export const ArchonChatPanel: React.FC<ArchonChatPanelProps> = props => {
   // State for messages, session, and other chat functionality
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -54,6 +54,9 @@ export const KnowledgeChatPanel: React.FC<KnowledgeChatPanelProps> = props => {
         }
         
         setConnectionStatus('connecting');
+        
+        // Add a small delay to prevent WebSocket race conditions on page refresh
+        await new Promise(resolve => setTimeout(resolve, 500));
         
         // Create a new chat session
         try {

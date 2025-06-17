@@ -20,60 +20,23 @@ from .logfire_config import search_logger
 
 # OpenAI client will be configured dynamically when needed
 
+# Deprecated functions - kept for backwards compatibility but should not be used
+# The OpenAI API key is loaded into environment at startup via initialize_credentials()
+# All code should use os.getenv("OPENAI_API_KEY") directly
+
 async def get_openai_api_key() -> Optional[str]:
     """
-    Get the decrypted OpenAI API key from the credential service.
-    
-    Returns:
-        Decrypted OpenAI API key or None if not available
+    DEPRECATED: Use os.getenv("OPENAI_API_KEY") directly.
+    API key is loaded into environment at startup.
     """
-    try:
-        from src.credential_service import credential_service
-        return await credential_service.get_credential('OPENAI_API_KEY', decrypt=True)
-    except Exception as e:
-        print(f"Error getting OpenAI API key from credential service: {e}")
-        # Fallback to environment variable
-        return os.getenv("OPENAI_API_KEY")
+    return os.getenv("OPENAI_API_KEY")
 
 def get_openai_api_key_sync() -> Optional[str]:
     """
-    Synchronous version of get_openai_api_key for use in non-async contexts.
-    
-    Returns:
-        Decrypted OpenAI API key or None if not available
+    DEPRECATED: Use os.getenv("OPENAI_API_KEY") directly.
+    API key is loaded into environment at startup.
     """
-    try:
-        print("Attempting to get OpenAI API key...")
-        
-        # Try to get from credential service directly (sync approach)
-        from src.credential_service import credential_service
-        
-        # Check if we have cached credentials
-        if hasattr(credential_service, '_cache') and credential_service._cache_initialized:
-            cached_value = credential_service._cache.get('OPENAI_API_KEY')
-            if isinstance(cached_value, dict) and cached_value.get("is_encrypted"):
-                encrypted_value = cached_value.get("encrypted_value")
-                if encrypted_value:
-                    try:
-                        decrypted_key = credential_service._decrypt_value(encrypted_value)
-                        print(f"Retrieved from cached credentials: {'***' if decrypted_key else 'None'}")
-                        return decrypted_key
-                    except Exception as decrypt_error:
-                        print(f"Error decrypting cached credential: {decrypt_error}")
-            elif cached_value:
-                print(f"Retrieved plain text from cache: {'***' if cached_value else 'None'}")
-                return cached_value
-        
-        # If no cached credentials, try environment variable
-        env_key = os.getenv("OPENAI_API_KEY")
-        print(f"Fallback to environment variable: {'***' if env_key else 'None'}")
-        return env_key
-        
-    except Exception as e:
-        print(f"Error getting OpenAI API key: {e}")
-        env_key = os.getenv("OPENAI_API_KEY")
-        print(f"Final fallback to environment: {'***' if env_key else 'None'}")
-        return env_key
+    return os.getenv("OPENAI_API_KEY")
 
 def get_supabase_client() -> Client:
     """
@@ -107,13 +70,12 @@ def get_supabase_client() -> Client:
         logging.error(f"Error initializing Supabase client: {e}")
         raise
 
-def create_embeddings_batch(texts: List[str], cached_api_key: str = None) -> List[List[float]]:
+def create_embeddings_batch(texts: List[str]) -> List[List[float]]:
     """
     Create embeddings for multiple texts in a single API call.
     
     Args:
         texts: List of texts to create embeddings for
-        cached_api_key: Pre-cached OpenAI API key from context
         
     Returns:
         List of embeddings (each embedding is a list of floats)
@@ -121,19 +83,13 @@ def create_embeddings_batch(texts: List[str], cached_api_key: str = None) -> Lis
     if not texts:
         return []
     
-    # FIRST TRY CACHED API KEY FROM CONTEXT!
-    api_key = cached_api_key
+    # Get API key directly from environment (loaded at startup)
+    api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        # Fallback to credential service
-        api_key = get_openai_api_key_sync()
-    if not api_key:
-        print("ERROR: No OpenAI API key available (neither cached nor from credentials)")
+        print("ERROR: No OpenAI API key found in environment")
         return [[0.0] * 1536 for _ in texts]
     
-    # Debug logging (redacted key)
-    print(f"✓ Using {'CACHED' if cached_api_key else 'CREDENTIAL'} OpenAI API key: {api_key[:8]}...{api_key[-4:] if len(api_key) > 8 else '***'}")
-    
-    # Create OpenAI client with the decrypted key
+    # Create OpenAI client with the API key
     client = openai.OpenAI(api_key=api_key)
     
     max_retries = 3
@@ -175,19 +131,18 @@ def create_embeddings_batch(texts: List[str], cached_api_key: str = None) -> Lis
                 print(f"Successfully created {successful_count}/{len(texts)} embeddings individually")
                 return embeddings
 
-def create_embedding(text: str, cached_api_key: str = None) -> List[float]:
+def create_embedding(text: str) -> List[float]:
     """
     Create an embedding for a single text using OpenAI's API.
     
     Args:
         text: Text to create an embedding for
-        cached_api_key: Pre-cached OpenAI API key from context
         
     Returns:
         List of floats representing the embedding
     """
     try:
-        embeddings = create_embeddings_batch([text], cached_api_key=cached_api_key)
+        embeddings = create_embeddings_batch([text])
         return embeddings[0] if embeddings else [0.0] * 1536
     except Exception as e:
         print(f"Error creating embedding: {e}")
@@ -207,13 +162,13 @@ def generate_contextual_embedding(full_document: str, chunk: str) -> Tuple[str, 
         - The contextual text that situates the chunk within the document
         - Boolean indicating if contextual embedding was performed
     """
-    # Get the decrypted API key
-    api_key = get_openai_api_key_sync()
+    # Get API key directly from environment (loaded at startup)
+    api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        print("Error: No OpenAI API key available for contextual embedding")
+        print("Error: No OpenAI API key found in environment")
         return chunk, False
     
-    # Create OpenAI client with the decrypted key
+    # Create OpenAI client with the API key
     client = openai.OpenAI(api_key=api_key)
     
     model_choice = os.getenv("MODEL_CHOICE")

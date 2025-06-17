@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SideNavigation } from './SideNavigation';
-import { KnowledgeChatPanel } from './KnowledgeChatPanel';
+import { ArchonChatPanel } from './ArchonChatPanel';
 import { X } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { credentialsService } from '../../services/credentialsService';
@@ -161,7 +161,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
             <X className="w-5 h-5 text-pink-500" />
           </button>}
         {/* Knowledge Chat Panel */}
-        <KnowledgeChatPanel data-id="knowledge-chat" />
+        <ArchonChatPanel data-id="archon-chat" />
       </div>
     </div>;
 };

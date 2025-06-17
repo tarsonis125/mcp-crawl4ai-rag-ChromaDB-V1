@@ -114,17 +114,14 @@ class ChatSessionManager:
         """Lazy initialization of document agent to avoid OpenAI key requirement at startup."""
         if self._document_agent is None:
             print("DEBUG: Initializing DocumentAgent...")
-            # Set OpenAI API key from credential service before initializing agent
+            # Verify OpenAI API key is in environment (should be loaded at startup)
             import os
-            from ..utils import get_openai_api_key_sync
             
-            print("DEBUG: Getting OpenAI API key...")
-            api_key = get_openai_api_key_sync()
+            api_key = os.getenv('OPENAI_API_KEY')
             if api_key:
-                print(f"DEBUG: Got API key: {api_key[:8]}...{api_key[-4:] if len(api_key) > 8 else '***'}")
-                os.environ['OPENAI_API_KEY'] = api_key
+                print(f"DEBUG: API key found in environment: {api_key[:8]}...{api_key[-4:] if len(api_key) > 8 else '***'}")
             else:
-                print("DEBUG: No API key found!")
+                print("DEBUG: WARNING - No OPENAI_API_KEY found in environment!")
             
             print("DEBUG: Creating DocumentAgent instance...")
             self._document_agent = DocumentAgent()

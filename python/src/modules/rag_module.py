@@ -307,20 +307,33 @@ async def crawl_batch_with_progress(crawler: AsyncWebCrawler, urls: List[str], m
     total_urls = len(urls)
     await report_progress(start_progress, f'Starting to crawl {total_urls} URLs...')
     
-    results = await crawler.arun_many(urls=urls, config=crawl_config, dispatcher=dispatcher)
-    
-    # Process results and report progress
+    # Process URLs in smaller batches for better progress reporting
+    batch_size = min(20, max_concurrent)  # Process in batches of 20 or max_concurrent
     successful_results = []
     processed = 0
     
-    for result in results:
-        processed += 1
-        if result.success and result.markdown:
-            successful_results.append({'url': result.url, 'markdown': result.markdown})
+    for i in range(0, total_urls, batch_size):
+        batch_urls = urls[i:i + batch_size]
+        batch_start = i
+        batch_end = min(i + batch_size, total_urls)
         
-        # Calculate progress between start_progress and end_progress
+        # Report batch start
         progress_percentage = start_progress + int((processed / total_urls) * (end_progress - start_progress))
-        await report_progress(progress_percentage, f'Crawled {processed}/{total_urls} pages ({len(successful_results)} successful)')
+        await report_progress(progress_percentage, f'Processing batch {batch_start+1}-{batch_end} of {total_urls} URLs...')
+        
+        # Crawl this batch
+        batch_results = await crawler.arun_many(urls=batch_urls, config=crawl_config, dispatcher=dispatcher)
+        
+        # Process batch results
+        for result in batch_results:
+            processed += 1
+            if result.success and result.markdown:
+                successful_results.append({'url': result.url, 'markdown': result.markdown})
+            
+            # Report individual URL progress
+            progress_percentage = start_progress + int((processed / total_urls) * (end_progress - start_progress))
+            if processed % 10 == 0 or processed == total_urls:  # Report every 10 URLs or at the end
+                await report_progress(progress_percentage, f'Crawled {processed}/{total_urls} pages ({len(successful_results)} successful)')
     
     await report_progress(end_progress, f'Batch crawling completed: {len(successful_results)}/{total_urls} pages successful')
     return successful_results
@@ -366,31 +379,49 @@ async def crawl_recursive_with_progress(crawler: AsyncWebCrawler, start_urls: Li
         
         await report_progress(depth_start, f'Crawling depth {depth + 1}/{max_depth}: {len(urls_to_crawl)} URLs to process')
 
-        results = await crawler.arun_many(urls=urls_to_crawl, config=run_config, dispatcher=dispatcher)
+        # Process URLs in smaller batches for better progress reporting
+        batch_size = min(20, max_concurrent)  # Process in batches of 20
         next_level_urls = set()
         depth_successful = 0
-
-        for i, result in enumerate(results):
-            norm_url = normalize_url(result.url)
-            visited.add(norm_url)
-            total_processed += 1
-
-            if result.success and result.markdown:
-                results_all.append({'url': result.url, 'markdown': result.markdown})
-                depth_successful += 1
+        
+        for batch_idx in range(0, len(urls_to_crawl), batch_size):
+            batch_urls = urls_to_crawl[batch_idx:batch_idx + batch_size]
+            batch_end_idx = min(batch_idx + batch_size, len(urls_to_crawl))
+            
+            # Calculate progress for this batch within the depth
+            batch_progress = depth_start + int((batch_idx / len(urls_to_crawl)) * (depth_end - depth_start))
+            await report_progress(batch_progress, 
+                                f'Depth {depth + 1}: crawling URLs {batch_idx + 1}-{batch_end_idx} of {len(urls_to_crawl)}',
+                                totalPages=total_processed + batch_idx, 
+                                processedPages=len(results_all))
+            
+            # Crawl this batch
+            batch_results = await crawler.arun_many(urls=batch_urls, config=run_config, dispatcher=dispatcher)
+            
+            # Process each result in the batch
+            for i, result in enumerate(batch_results):
+                norm_url = normalize_url(result.url)
+                visited.add(norm_url)
+                total_processed += 1
                 
-                # Find internal links for next depth
-                for link in result.links.get("internal", []):
-                    next_url = normalize_url(link["href"])
-                    if next_url not in visited:
-                        next_level_urls.add(next_url)
-
-            # Report progress within this depth level
-            if len(urls_to_crawl) > 0:
-                depth_progress = depth_start + int((i + 1) / len(urls_to_crawl) * (depth_end - depth_start))
-                await report_progress(depth_progress, 
-                                    f'Depth {depth + 1}: processed {i + 1}/{len(urls_to_crawl)} URLs ({depth_successful} successful)',
-                                    totalPages=total_processed, processedPages=len(results_all))
+                if result.success and result.markdown:
+                    results_all.append({'url': result.url, 'markdown': result.markdown})
+                    depth_successful += 1
+                    
+                    # Find internal links for next depth
+                    for link in result.links.get("internal", []):
+                        next_url = normalize_url(link["href"])
+                        if next_url not in visited:
+                            next_level_urls.add(next_url)
+                
+                # Report progress every few URLs
+                current_idx = batch_idx + i + 1
+                if current_idx % 5 == 0 or current_idx == len(urls_to_crawl):
+                    current_progress = depth_start + int((current_idx / len(urls_to_crawl)) * (depth_end - depth_start))
+                    await report_progress(current_progress,
+                                        f'Depth {depth + 1}: processed {current_idx}/{len(urls_to_crawl)} URLs ({depth_successful} successful)',
+                                        totalPages=total_processed, 
+                                        processedPages=len(results_all))
 
         current_urls = next_level_urls
         
@@ -1341,32 +1372,37 @@ async def store_documents_with_progress(
     
     # Get unique URLs to delete existing records
     unique_urls = list(set(urls))
+    total_batches = (len(contents) + batch_size - 1) // batch_size
     
-    await report_progress_internal(0, f'Deleting {len(unique_urls)} existing URL records...')
+    await report_progress_internal(0, f'Preparing to process {len(contents)} chunks in {total_batches} batches...')
     
-    # Delete existing records for these URLs in a single operation
+    # Delete existing records for these URLs to prevent duplicates
+    await report_progress_internal(1, f'Cleaning {len(unique_urls)} existing URL records (prevents duplicates)...')
+    
     try:
         if unique_urls:
             supabase_client.table("crawled_pages").delete().in_("url", unique_urls).execute()
+            # Deletion completed
     except Exception as e:
-        await report_progress_internal(0, f'Batch delete failed, using fallback: {str(e)[:50]}...')
+        await report_progress_internal(2, f'Batch delete failed, using fallback: {str(e)[:50]}...', batch_info)
         # Fallback: delete records one by one
         for i, url in enumerate(unique_urls):
             try:
                 supabase_client.table("crawled_pages").delete().eq("url", url).execute()
                 if i % 10 == 0:  # Progress every 10 deletions
-                    await report_progress_internal(0 + (i / len(unique_urls)) * 5, f'Deleting records: {i+1}/{len(unique_urls)}')
+                    await report_progress_internal(2 + (i / len(unique_urls)) * 3, f'Deleting records: {i+1}/{len(unique_urls)}')
             except Exception:
                 pass  # Continue with next URL
+        # Deletion completed
     
-    await report_progress_internal(5, 'Preparing document batches...')
+    await report_progress_internal(5, 'Document preparation complete, starting batch processing...')
     
     # Check if contextual embeddings are enabled
     use_contextual_embeddings = os.getenv("USE_CONTEXTUAL_EMBEDDINGS", "false") == "true"
     max_workers = int(os.getenv("CONTEXTUAL_EMBEDDINGS_MAX_WORKERS", "3"))
     
     # Process in batches to avoid memory issues
-    total_batches = (len(contents) + batch_size - 1) // batch_size
+    # total_batches already calculated above
     
     # Use simple linear progress from 5% to 95% without conflicting calculations
     current_progress = 5.0
@@ -1387,7 +1423,8 @@ async def store_documents_with_progress(
         # Apply contextual embedding if enabled (sequential processing to avoid progress conflicts)
         if use_contextual_embeddings:
             current_progress += progress_per_batch * 0.1  # 10% of batch progress
-            await report_progress_internal(current_progress, f'Applying contextual embeddings to batch {current_batch}...')
+            await report_progress_internal(current_progress, f'Batch {current_batch}/{total_batches}: Applying contextual embeddings...')
+            
             # Process sequentially to maintain accurate progress reporting
             contextual_contents = []
             for j, content in enumerate(batch_contents):
@@ -1403,24 +1440,25 @@ async def store_documents_with_progress(
                     print(f"Error processing chunk {j}: {e}")
                     contextual_contents.append(content)
                 
-                # Report progress every 5 chunks within this 40% of batch progress
-                if j % 5 == 0 or j == len(batch_contents) - 1:
+                # Report progress for every few chunks
+                if j % 5 == 0 or j == len(batch_contents) - 1:  # Update every 5 chunks
                     chunk_progress = (j + 1) / len(batch_contents) * (progress_per_batch * 0.4)
-                    await report_progress_internal(current_progress + chunk_progress, f'Processed {j+1}/{len(batch_contents)} contextual embeddings')
+                    await report_progress_internal(current_progress + chunk_progress, 
+                                                 f'Batch {current_batch}/{total_batches}: Contextual embeddings {j+1}/{len(batch_contents)}')
             
             current_progress += progress_per_batch * 0.4  # 40% of batch progress for contextual embeddings
         else:
             contextual_contents = batch_contents
             current_progress += progress_per_batch * 0.5  # Skip contextual processing, move to embeddings
         
-        await report_progress_internal(current_progress, f'Creating embeddings for batch {current_batch}...')
+        await report_progress_internal(current_progress, f'Batch {current_batch}/{total_batches}: Creating embeddings...')
         
         # Create embeddings for the entire batch at once - this is another slow operation
         from src.utils import create_embeddings_batch
         batch_embeddings = create_embeddings_batch(contextual_contents)
         
         current_progress += progress_per_batch * 0.2  # 20% of batch progress for embeddings
-        await report_progress_internal(current_progress, f'Preparing batch {current_batch} for database insertion...')
+        await report_progress_internal(current_progress, f'Batch {current_batch}/{total_batches}: Preparing for database insertion...')
         
         # Prepare batch data
         batch_data = []
@@ -1444,7 +1482,8 @@ async def store_documents_with_progress(
             batch_data.append(data)
         
         current_progress += progress_per_batch * 0.1  # 10% of batch progress for preparation
-        await report_progress_internal(current_progress, f'Inserting batch {current_batch} into database...')
+        
+        await report_progress_internal(current_progress, f'Batch {current_batch}/{total_batches}: Inserting into database...')
         
         # Insert batch into Supabase with retry logic
         max_retries = 3
@@ -1456,18 +1495,19 @@ async def store_documents_with_progress(
                 break  # Success
             except Exception as e:
                 if retry < max_retries - 1:
-                    await report_progress_internal(current_progress, f'Retry {retry + 1}/{max_retries} for batch {current_batch}...')
+                    await report_progress_internal(current_progress, f'Batch {current_batch}/{total_batches}: Retry {retry + 1}/{max_retries}...')
                     import time
                     time.sleep(retry_delay)
                     retry_delay *= 2
                 else:
                     # Final attempt failed, try individual inserts
-                    await report_progress_internal(current_progress, f'Batch insert failed, trying individual records...')
+                    await report_progress_internal(current_progress, f'Batch {current_batch}/{total_batches}: Trying individual records...')
                     successful_inserts = 0
-                    for record in batch_data:
+                    for i, record in enumerate(batch_data):
                         try:
                             supabase_client.table("crawled_pages").insert(record).execute()
                             successful_inserts += 1
+                            # Progress updates removed for simplicity
                         except:
                             pass
                     
