@@ -13,6 +13,21 @@ from src.utils import get_supabase_client
 
 logger = logging.getLogger(__name__)
 
+# Import WebSocket broadcasting capability
+_task_update_manager = None
+
+def get_task_update_manager():
+    """Get the global task update manager instance"""
+    global _task_update_manager
+    if _task_update_manager is None:
+        try:
+            from src.api.projects_api import task_update_manager
+            _task_update_manager = task_update_manager
+        except ImportError:
+            logger.warning("TaskUpdateManager not available - WebSocket broadcasting disabled")
+            _task_update_manager = False  # Use False to indicate not available
+    return _task_update_manager if _task_update_manager is not False else None
+
 
 class TaskService:
     """Service class for task operations"""
@@ -36,7 +51,7 @@ class TaskService:
             return False, f"Invalid assignee '{assignee}'. Must be one of: {', '.join(self.VALID_ASSIGNEES)}"
         return True, ""
     
-    def create_task(self, project_id: str, title: str, description: str = "", 
+    async def create_task(self, project_id: str, title: str, description: str = "", 
                    assignee: str = "User", task_order: int = 0, feature: str = None,
                    parent_task_id: str = None, sources: List[Dict[str, Any]] = None,
                    code_examples: List[Dict[str, Any]] = None) -> Tuple[bool, Dict[str, Any]]:
@@ -82,6 +97,20 @@ class TaskService:
             
             if response.data:
                 task = response.data[0]
+                
+                # Broadcast WebSocket update for new task
+                task_manager = get_task_update_manager()
+                if task_manager:
+                    try:
+                        await task_manager.broadcast_task_update(
+                            project_id=task["project_id"],
+                            event_type="task_created",
+                            task_data=task
+                        )
+                        logger.info(f"WebSocket broadcast sent for new task {task['id']}")
+                    except Exception as ws_error:
+                        logger.warning(f"Failed to broadcast WebSocket update for new task {task['id']}: {ws_error}")
+                
                 return True, {
                     "task": {
                         "id": task["id"],
@@ -189,7 +218,7 @@ class TaskService:
             logger.error(f"Error getting task: {e}")
             return False, {"error": f"Error getting task: {str(e)}"}
     
-    def update_task(self, task_id: str, update_fields: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+    async def update_task(self, task_id: str, update_fields: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
         """
         Update task with specified fields.
         
@@ -232,6 +261,21 @@ class TaskService:
             
             if response.data:
                 task = response.data[0]
+                
+                # Broadcast WebSocket update
+                task_manager = get_task_update_manager()
+                if task_manager:
+                    try:
+                        await task_manager.broadcast_task_update(
+                            project_id=task["project_id"],
+                            event_type="task_updated",
+                            task_data=task
+                        )
+                        logger.info(f"WebSocket broadcast sent for task {task_id}")
+                    except Exception as ws_error:
+                        # Don't fail the task update if WebSocket broadcasting fails
+                        logger.warning(f"Failed to broadcast WebSocket update for task {task_id}: {ws_error}")
+                
                 return True, {
                     "task": task,
                     "message": "Task updated successfully"
@@ -243,7 +287,7 @@ class TaskService:
             logger.error(f"Error updating task: {e}")
             return False, {"error": f"Error updating task: {str(e)}"}
     
-    def archive_task(self, task_id: str, archived_by: str = "mcp") -> Tuple[bool, Dict[str, Any]]:
+    async def archive_task(self, task_id: str, archived_by: str = "mcp") -> Tuple[bool, Dict[str, Any]]:
         """
         Archive a task and all its subtasks (soft delete).
         
@@ -279,6 +323,19 @@ class TaskService:
                 # Also archive all subtasks
                 if subtasks_count > 0:
                     self.supabase_client.table("tasks").update(archive_data).eq("parent_task_id", task_id).or_("archived.is.null,archived.eq.false").execute()
+                
+                # Broadcast WebSocket update for archived task
+                task_manager = get_task_update_manager()
+                if task_manager:
+                    try:
+                        await task_manager.broadcast_task_update(
+                            project_id=task["project_id"],
+                            event_type="task_archived",
+                            task_data={"id": task_id, "project_id": task["project_id"], "archived_subtasks": subtasks_count}
+                        )
+                        logger.info(f"WebSocket broadcast sent for archived task {task_id}")
+                    except Exception as ws_error:
+                        logger.warning(f"Failed to broadcast WebSocket update for archived task {task_id}: {ws_error}")
                 
                 return True, {
                     "task_id": task_id,

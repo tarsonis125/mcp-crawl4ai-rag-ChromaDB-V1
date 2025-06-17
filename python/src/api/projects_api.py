@@ -379,10 +379,6 @@ class DatabaseChangeDetector:
         if project_id in self.polling_tasks:
             return  # Already monitoring
         
-        # TEMPORARILY DISABLE POLLING TO FIX WEBSOCKET SPAM
-        logger.info(f"Database change monitoring temporarily disabled for project {project_id}")
-        return
-        
         self.last_check_times[project_id] = datetime.now()
         
         async def monitor_loop():

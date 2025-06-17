@@ -857,7 +857,7 @@ async def _perform_upload_with_progress(progress_id: str, file_content: bytes, f
         await progress_callback('summarizing', 65, f'AI summary generated and source created')
         
         # Step 6: Store chunks with REAL-TIME progress reporting during storage
-        await progress_callback('document_storage', 0, f'Starting document storage for {len(chunks)} chunks...')
+        # Progress will be reported by add_documents_to_supabase through scaled callback
         
         documents = []
         for i, chunk in enumerate(chunks):
@@ -895,7 +895,14 @@ async def _perform_upload_with_progress(progress_id: str, file_content: bytes, f
             # Instead of calling add_documents_to_supabase silently, we'll call it with progress
             from src.utils import add_documents_to_supabase
             
-            # Call add_documents_to_supabase with progress callback
+            # Create a scaled progress callback that maps 0-100% to 65-100%
+            async def scaled_progress_callback(status: str, percentage: int, message: str, **kwargs):
+                # Scale the percentage from document storage (0-100) to overall progress (65-100)
+                scaled_percentage = 65 + int((percentage / 100.0) * 35)
+                # Keep status consistent as 'summarizing' to avoid frontend progress bar reset
+                await progress_callback('summarizing', scaled_percentage, message, **kwargs)
+            
+            # Call add_documents_to_supabase with scaled progress callback
             await add_documents_to_supabase(
                 supabase_client, 
                 urls, 
@@ -904,11 +911,10 @@ async def _perform_upload_with_progress(progress_id: str, file_content: bytes, f
                 metadatas, 
                 url_to_full_document,
                 batch_size=20,
-                progress_callback=progress_callback
+                progress_callback=scaled_progress_callback
             )
             
-            # Report progress after storage completes
-            await progress_callback('document_storage', 100, f'Successfully stored {len(chunks)} document chunks')
+            # Progress already reported to 100% by scaled callback
             
             logfire.info("Document chunks inserted successfully", 
                        source_id=source_id, 

@@ -201,7 +201,7 @@ def register_project_tools(mcp: FastMCP):
                     if not title:
                         return json.dumps({"success": False, "error": "title is required for create action"})
                     
-                    success, result = service.create_task(
+                    success, result = await service.create_task(
                         project_id, title, description, assignee, task_order,
                         feature, parent_task_id, sources, code_examples
                     )
@@ -250,7 +250,7 @@ def register_project_tools(mcp: FastMCP):
                     if not update_fields:
                         return json.dumps({"success": False, "error": "update_fields is required for update action"})
                     
-                    success, result = service.update_task(task_id, update_fields)
+                    success, result = await service.update_task(task_id, update_fields)
                     
                     # Broadcast WebSocket update if available
                     if success:
@@ -270,7 +270,7 @@ def register_project_tools(mcp: FastMCP):
                 elif action in ["delete", "archive"]:
                     if not task_id:
                         return json.dumps({"success": False, "error": "task_id is required for delete/archive action"})
-                    success, result = service.archive_task(task_id)
+                    success, result = await service.archive_task(task_id)
                     span.set_attribute("success", success)
                     return json.dumps({"success": success, **result})
                 

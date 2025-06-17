@@ -22,7 +22,7 @@ export const ArchonChatPanel: React.FC<ArchonChatPanelProps> = props => {
   const [isInitialized, setIsInitialized] = useState(false);
   // State for input field, panel width, loading state, and dragging state
   const [inputValue, setInputValue] = useState('');
-  const [width, setWidth] = useState(320); // Default width
+  const [width, setWidth] = useState(416); // Default width - increased by 30% from 320px
   const [isTyping, setIsTyping] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);

@@ -301,8 +301,13 @@ async def add_documents_to_supabase(
         
         # Calculate overall progress based on documents processed so far
         # This gives smooth progress from 0-100% across all batches
-        documents_processed_so_far = i
-        overall_percentage = int((documents_processed_so_far / len(contents)) * 100)
+        # For first batch, start at 10% to avoid any reset issues
+        if i == 0:
+            overall_percentage = 10  # Start at 10% for first batch
+        else:
+            documents_processed_so_far = i
+            overall_percentage = int((documents_processed_so_far / len(contents)) * 100)
+        
         await report_progress(batch_progress_msg, overall_percentage)
         
         # Get batch slices
@@ -403,7 +408,8 @@ async def add_documents_to_supabase(
             try:
                 client.table("crawled_pages").insert(batch_data).execute()
                 # Success - report completion of this batch
-                completion_percentage = int(batch_num / total_batches * 100)
+                # Use consistent calculation based on documents processed
+                completion_percentage = int(batch_end / len(contents) * 100)
                 complete_msg = f"Batch {batch_num}/{total_batches}: Completed storing {len(batch_data)} chunks"
                 await report_progress(complete_msg, completion_percentage)
                 # Success - break out of retry loop
