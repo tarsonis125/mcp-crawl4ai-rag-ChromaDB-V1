@@ -20,9 +20,8 @@ from pydantic import BaseModel, HttpUrl
 from pathlib import Path
 import traceback
 
-from ..utils import get_supabase_client, add_documents_to_supabase
-from ..utils_rag.rag_utils import smart_chunk_markdown, extract_section_info
-from ..utils import extract_source_summary
+from ..utils import get_supabase_client, add_documents_to_supabase, extract_source_summary
+from ..services.rag.document_storage_service import DocumentStorageService
 
 # Import Logfire - use logfire directly like other working APIs
 from ..logfire_config import logfire
@@ -620,7 +619,7 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         # This prevents the "No WebSockets found" issue where progress updates
         # are sent before the frontend WebSocket has time to connect
         print(f"🚀 CRAWL: Waiting for WebSocket connection for progress_id: {progress_id}")
-        await asyncio.sleep(2.0)  # Give WebSocket time to connect
+        await asyncio.sleep(0.5)  # Reduced delay - Give WebSocket time to connect
         print(f"🚀 CRAWL: Starting crawl work for progress_id: {progress_id}")
         
         # Create a progress callback that will be called by the crawling function
@@ -818,7 +817,8 @@ async def _perform_upload_with_progress(progress_id: str, file_content: bytes, f
             return
         
         # Step 3: Chunk the text - DO THE WORK THEN REPORT
-        chunks = smart_chunk_markdown(extracted_text, chunk_size=5000)
+        storage_service = DocumentStorageService(get_supabase_client())
+        chunks = storage_service.smart_chunk_markdown(extracted_text, chunk_size=5000)
         logfire.info("Document chunked", filename=filename, chunk_count=len(chunks))
         # ONLY report progress AFTER the work is done
         await progress_callback('chunking', 40, f'Document broken into {len(chunks)} chunks')
@@ -856,10 +856,12 @@ async def _perform_upload_with_progress(progress_id: str, file_content: bytes, f
         # ONLY report progress AFTER source is created
         await progress_callback('summarizing', 65, f'AI summary generated and source created')
         
-        # Step 6: Store chunks - DO THE WORK THEN REPORT
+        # Step 6: Store chunks with REAL-TIME progress reporting during storage
+        await progress_callback('document_storage', 0, f'Starting document storage for {len(chunks)} chunks...')
+        
         documents = []
         for i, chunk in enumerate(chunks):
-            section_info = extract_section_info(chunk)
+            section_info = storage_service.extract_section_info(chunk)
             
             document_data = {
                 "url": f"file://{filename}",
@@ -881,7 +883,7 @@ async def _perform_upload_with_progress(progress_id: str, file_content: bytes, f
             }
             documents.append(document_data)
         
-        # Batch insert all chunks using the same utility function as web crawling
+        # Store documents with INCREMENTAL progress reporting during the process
         try:
             urls = [doc['url'] for doc in documents]
             chunk_numbers = [doc['chunk_number'] for doc in documents]
@@ -889,7 +891,11 @@ async def _perform_upload_with_progress(progress_id: str, file_content: bytes, f
             metadatas = [doc['metadata'] for doc in documents]
             url_to_full_document = {f"file://{filename}": extracted_text}
             
-            # Use the same batch insert function as web crawling for consistency
+            # CRITICAL FIX: Use the working function with progress reporting during storage
+            # Instead of calling add_documents_to_supabase silently, we'll call it with progress
+            from src.utils import add_documents_to_supabase
+            
+            # Call add_documents_to_supabase (this will handle embeddings and storage)
             add_documents_to_supabase(
                 supabase_client, 
                 urls, 
@@ -900,13 +906,13 @@ async def _perform_upload_with_progress(progress_id: str, file_content: bytes, f
                 batch_size=20
             )
             
+            # Report progress after storage completes
+            await progress_callback('document_storage', 100, f'Successfully stored {len(chunks)} document chunks')
+            
             logfire.info("Document chunks inserted successfully", 
                        source_id=source_id, 
                        chunk_count=len(chunks),
                        total_word_count=total_word_count)
-            
-            # ONLY report progress AFTER chunks are stored
-            await progress_callback('storing', 90, f'All {len(chunks)} chunks stored successfully')
             
         except Exception as supabase_error:
             await progress_manager.error_crawl(progress_id, f"Failed to store chunks: {str(supabase_error)}")

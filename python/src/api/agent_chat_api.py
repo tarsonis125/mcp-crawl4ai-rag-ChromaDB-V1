@@ -620,7 +620,7 @@ async def create_chat_session(request: CreateSessionRequest):
                 "message": "Chat session created successfully"
             }
         except Exception as e:
-            logfire.error("Failed to create chat session", error=str(e), agent_type=agent_type)
+            logfire.error("Failed to create chat session", error=str(e), agent_type=request.agent_type)
             span.set_attribute("error", str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -641,6 +641,11 @@ async def get_chat_session(session_id: str):
                 raise HTTPException(status_code=404, detail="Session not found")
             
             session = chat_manager.sessions[session_id]
+            
+            print(f"DEBUG: GET session {session_id} - agent_type: {session.agent_type}")
+            print(f"DEBUG: Session messages: {len(session.messages)}")
+            if session.messages:
+                print(f"DEBUG: First message content: {session.messages[0].content[:100]}...")
             
             logfire.info("Chat session retrieved", session_id=session_id, message_count=len(session.messages))
             span.set_attribute("found", True)
@@ -811,7 +816,7 @@ async def debug_token_usage():
             }
             
             logfire.info("Debug token usage info retrieved")
-            span.set_attribute("agent_type", debug_info["agent_type"])
+            span.set_attribute("agent_types", debug_info["agent_types"])
             span.set_attribute("model", debug_info["model"])
             
             return {

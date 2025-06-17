@@ -10,38 +10,13 @@ from urllib.parse import urlparse
 import openai
 import re
 import time
-import asyncio
-import logging
-import uuid
-from datetime import datetime
 
-# Import Logfire
-from .logfire_config import search_logger
-
-# OpenAI client will be configured dynamically when needed
-
-# Deprecated functions - kept for backwards compatibility but should not be used
-# The OpenAI API key is loaded into environment at startup via initialize_credentials()
-# All code should use os.getenv("OPENAI_API_KEY") directly
-
-async def get_openai_api_key() -> Optional[str]:
-    """
-    DEPRECATED: Use os.getenv("OPENAI_API_KEY") directly.
-    API key is loaded into environment at startup.
-    """
-    return os.getenv("OPENAI_API_KEY")
-
-def get_openai_api_key_sync() -> Optional[str]:
-    """
-    DEPRECATED: Use os.getenv("OPENAI_API_KEY") directly.
-    API key is loaded into environment at startup.
-    """
-    return os.getenv("OPENAI_API_KEY")
+# Load OpenAI API key for embeddings
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 def get_supabase_client() -> Client:
     """
     Get a Supabase client with the URL and key from environment variables.
-    Uses the standard Supabase client initialization.
     
     Returns:
         Supabase client instance
@@ -52,23 +27,7 @@ def get_supabase_client() -> Client:
     if not url or not key:
         raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in environment variables")
     
-    try:
-        # Initialize with standard Supabase client - no need for custom headers
-        client = create_client(url, key)
-        
-        # Extract project ID from URL for logging purposes only
-        import re
-        match = re.match(r'https://([^.]+)\.supabase\.co', url)
-        if match:
-            project_id = match.group(1)
-            print(f"Supabase client initialized for project: {project_id}")
-        else:
-            print("Supabase client initialized successfully")
-        
-        return client
-    except Exception as e:
-        logging.error(f"Error initializing Supabase client: {e}")
-        raise
+    return create_client(url, key)
 
 def create_embeddings_batch(texts: List[str]) -> List[List[float]]:
     """
@@ -83,21 +42,12 @@ def create_embeddings_batch(texts: List[str]) -> List[List[float]]:
     if not texts:
         return []
     
-    # Get API key directly from environment (loaded at startup)
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        print("ERROR: No OpenAI API key found in environment")
-        return [[0.0] * 1536 for _ in texts]
-    
-    # Create OpenAI client with the API key
-    client = openai.OpenAI(api_key=api_key)
-    
     max_retries = 3
     retry_delay = 1.0  # Start with 1 second delay
     
     for retry in range(max_retries):
         try:
-            response = client.embeddings.create(
+            response = openai.embeddings.create(
                 model="text-embedding-3-small", # Hardcoding embedding model for now, will change this later to be more dynamic
                 input=texts
             )
@@ -117,7 +67,7 @@ def create_embeddings_batch(texts: List[str]) -> List[List[float]]:
                 
                 for i, text in enumerate(texts):
                     try:
-                        individual_response = client.embeddings.create(
+                        individual_response = openai.embeddings.create(
                             model="text-embedding-3-small",
                             input=[text]
                         )
@@ -162,22 +112,12 @@ def generate_contextual_embedding(full_document: str, chunk: str) -> Tuple[str, 
         - The contextual text that situates the chunk within the document
         - Boolean indicating if contextual embedding was performed
     """
-    # Get API key directly from environment (loaded at startup)
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        print("Error: No OpenAI API key found in environment")
-        return chunk, False
-    
-    # Create OpenAI client with the API key
-    client = openai.OpenAI(api_key=api_key)
-    
     model_choice = os.getenv("MODEL_CHOICE")
     
     try:
         # Create the prompt for generating contextual information
-        # Reduced from 25000 to 5000 to avoid token rate limits
         prompt = f"""<document> 
-{full_document[:5000]} 
+{full_document[:25000]} 
 </document>
 Here is the chunk we want to situate within the whole document 
 <chunk> 
@@ -186,7 +126,7 @@ Here is the chunk we want to situate within the whole document
 Please give a short succinct context to situate this chunk within the overall document for the purposes of improving search retrieval of the chunk. Answer only with the succinct context and nothing else."""
 
         # Call the OpenAI API to generate contextual information
-        response = client.chat.completions.create(
+        response = openai.chat.completions.create(
             model=model_choice,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that provides concise contextual information."},
@@ -202,18 +142,10 @@ Please give a short succinct context to situate this chunk within the overall do
         # Combine the context with the original chunk
         contextual_text = f"{context}\n---\n{chunk}"
         
-        # Add a small delay to prevent rate limiting when running in parallel
-        import time
-        time.sleep(0.3)  # 300ms delay between requests - reduced from 500ms
-        
         return contextual_text, True
     
     except Exception as e:
-        error_str = str(e)
-        if "rate_limit_exceeded" in error_str:
-            print(f"RATE LIMIT HIT in contextual embedding: {error_str[:200]}...")
-        else:
-            print(f"Error generating contextual embedding: {e}. Using original chunk instead.")
+        print(f"Error generating contextual embedding: {e}. Using original chunk instead.")
         return chunk, False
 
 def process_chunk_with_context(args):
@@ -239,7 +171,7 @@ def add_documents_to_supabase(
     contents: List[str], 
     metadatas: List[Dict[str, Any]],
     url_to_full_document: Dict[str, str],
-    batch_size: int = 15
+    batch_size: int = 20
 ) -> None:
     """
     Add documents to the Supabase crawled_pages table in batches.
@@ -274,18 +206,11 @@ def add_documents_to_supabase(
     
     # Check if MODEL_CHOICE is set for contextual embeddings
     use_contextual_embeddings = os.getenv("USE_CONTEXTUAL_EMBEDDINGS", "false") == "true"
-    # Increased back to 2 workers - should be safe with 5k context
-    max_workers = int(os.getenv("CONTEXTUAL_EMBEDDINGS_MAX_WORKERS", "2"))
-    print(f"\n\nUse contextual embeddings: {use_contextual_embeddings}")
-    print(f"Max workers for contextual embeddings: {max_workers}")
-    print(f"Total documents to process: {len(contents)}")
-    print(f"Batch size: {batch_size}\n\n")
+    print(f"\n\nUse contextual embeddings: {use_contextual_embeddings}\n\n")
     
     # Process in batches to avoid memory issues
-    total_batches = (len(contents) + batch_size - 1) // batch_size
-    for batch_num, i in enumerate(range(0, len(contents), batch_size), 1):
+    for i in range(0, len(contents), batch_size):
         batch_end = min(i + batch_size, len(contents))
-        print(f"\nProcessing batch {batch_num}/{total_batches} (items {i+1}-{batch_end} of {len(contents)})")
         
         # Get batch slices
         batch_urls = urls[i:batch_end]
@@ -302,42 +227,36 @@ def add_documents_to_supabase(
                 full_document = url_to_full_document.get(url, "")
                 process_args.append((url, content, full_document))
             
-            # Estimate token usage for this batch
-            avg_chunk_size = sum(len(c) for c in batch_contents) // len(batch_contents)
-            estimated_tokens = (5000 + avg_chunk_size) * len(batch_contents) // 4  # Rough estimate: 1 token = 4 chars
-            print(f"Estimated tokens for this batch: ~{estimated_tokens:,} tokens")
-            
             # Process in parallel using ThreadPoolExecutor
-            contextual_contents = [None] * len(batch_contents)  # Pre-allocate with None
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            contextual_contents = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
                 # Submit all tasks and collect results
                 future_to_idx = {executor.submit(process_chunk_with_context, arg): idx 
                                 for idx, arg in enumerate(process_args)}
                 
-                # Process results as they complete, but store in correct order
+                # Process results as they complete
                 for future in concurrent.futures.as_completed(future_to_idx):
                     idx = future_to_idx[future]
                     try:
                         result, success = future.result()
-                        contextual_contents[idx] = result  # Store in correct position!
+                        contextual_contents.append(result)
                         if success:
                             batch_metadatas[idx]["contextual_embedding"] = True
                     except Exception as e:
                         print(f"Error processing chunk {idx}: {e}")
                         # Use original content as fallback
-                        contextual_contents[idx] = batch_contents[idx]
+                        contextual_contents.append(batch_contents[idx])
             
-            # Check for any None values and replace with original content
-            for idx, content in enumerate(contextual_contents):
-                if content is None:
-                    print(f"Warning: Missing result for chunk {idx}, using original content")
-                    contextual_contents[idx] = batch_contents[idx]
+            # Sort results back into original order if needed
+            if len(contextual_contents) != len(batch_contents):
+                print(f"Warning: Expected {len(batch_contents)} results but got {len(contextual_contents)}")
+                # Use original contents as fallback
+                contextual_contents = batch_contents
         else:
             # If not using contextual embeddings, use original contents
             contextual_contents = batch_contents
         
         # Create embeddings for the entire batch at once
-        # TODO: Pass cached API key to this function when called from context
         batch_embeddings = create_embeddings_batch(contextual_contents)
         
         batch_data = []
@@ -394,123 +313,46 @@ def add_documents_to_supabase(
                     
                     if successful_inserts > 0:
                         print(f"Successfully inserted {successful_inserts}/{len(batch_data)} records individually")
-        
-        # Add a delay between batches to prevent rate limiting
-        if i + batch_size < len(contents):
-            # Reduced delay - with 5k context we use much fewer tokens
-            delay = 1.5 if use_contextual_embeddings else 0.5
-            print(f"Waiting {delay} seconds before processing next batch...")
-            time.sleep(delay)
 
 def search_documents(
-    client: Client,
-    query: str,
-    match_count: int = 5,
-    threshold: float = 0.7,
-    filter_metadata: dict = None,
-    use_hybrid_search: bool = False,
-    cached_api_key: str = None
+    client: Client, 
+    query: str, 
+    match_count: int = 10, 
+    filter_metadata: Optional[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
     """
-    Search for documents in the database using semantic search.
+    Search for documents in Supabase using vector similarity.
     
     Args:
         client: Supabase client
-        query: Search query string
-        match_count: Number of results to return
-        threshold: Similarity threshold for results
-        filter_metadata: Optional metadata filter dict
-        use_hybrid_search: Whether to use hybrid keyword + semantic search
-        cached_api_key: Cached OpenAI API key for embeddings
-    
+        query: Query text
+        match_count: Maximum number of results to return
+        filter_metadata: Optional metadata filter
+        
     Returns:
         List of matching documents
     """
-    with search_logger.span("vector_search", 
-                           query_length=len(query),
-                           match_count=match_count,
-                           threshold=threshold,
-                           has_filter=filter_metadata is not None) as span:
-        try:
-            search_logger.info("Document search started", 
-                              query=query[:100] + "..." if len(query) > 100 else query,
-                              match_count=match_count,
-                              threshold=threshold,
-                              filter_metadata=filter_metadata)
-            
-            # Create embedding for the query
-            with search_logger.span("create_embedding"):
-                query_embedding = create_embedding(query)
-                
-                if not query_embedding:
-                    search_logger.error("Failed to create embedding for query")
-                    return []
-                
-                span.set_attribute("embedding_dimensions", len(query_embedding))
-            
-            # Build the filter for the RPC call
-            with search_logger.span("prepare_rpc_params"):
-                rpc_params = {
-                    "query_embedding": query_embedding,
-                    "match_count": match_count
-                }
-                
-                # Add filter to RPC params if provided
-                if filter_metadata:
-                    search_logger.debug("Adding filter to RPC params", filter_metadata=filter_metadata)
-                    
-                    # Check if we have a source filter specifically
-                    if "source" in filter_metadata:
-                        # Use the version with source_filter parameter
-                        rpc_params["source_filter"] = filter_metadata["source"]
-                        # Also add the general filter as empty jsonb to satisfy the function signature
-                        rpc_params["filter"] = {}
-                    else:
-                        # Use the general filter parameter
-                        rpc_params["filter"] = filter_metadata
-                    
-                    span.set_attribute("filter_applied", True)
-                    span.set_attribute("filter_keys", list(filter_metadata.keys()) if filter_metadata else [])
-                else:
-                    # No filter provided - use empty jsonb for filter parameter
-                    rpc_params["filter"] = {}
-            
-            # Call the RPC function
-            with search_logger.span("supabase_rpc_call"):
-                search_logger.debug("Calling Supabase RPC function", 
-                                  function_name="match_crawled_pages",
-                                  rpc_params_keys=list(rpc_params.keys()))
-                
-                response = client.rpc("match_crawled_pages", rpc_params).execute()
-                span.set_attribute("rpc_success", True)
-                span.set_attribute("raw_results_count", len(response.data) if response.data else 0)
-            
-            results_count = len(response.data) if response.data else 0
-            
-            span.set_attribute("success", True)
-            span.set_attribute("final_results_count", results_count)
-            
-            if results_count > 0:
-                search_logger.debug("Search results preview",
-                                  first_result_url=response.data[0].get('url') if response.data else None,
-                                  first_result_similarity=response.data[0].get('similarity') if response.data else None)
-            
-            search_logger.info("Document search completed successfully", 
-                              final_results_count=results_count)
-            
-            return response.data or []
-            
-        except Exception as e:
-            span.record_exception(e)
-            span.set_attribute("success", False)
-            span.set_attribute("error_type", type(e).__name__)
-            
-            search_logger.exception("Document search failed",
-                                   error=str(e),
-                                   error_type=type(e).__name__,
-                                   query=query[:50])
-            # Return empty list on error instead of raising
-            return []
+    # Create embedding for the query
+    query_embedding = create_embedding(query)
+    
+    # Execute the search using the match_crawled_pages function
+    try:
+        # Only include filter parameter if filter_metadata is provided and not empty
+        params = {
+            'query_embedding': query_embedding,
+            'match_count': match_count
+        }
+        
+        # Only add the filter if it's actually provided and not empty
+        if filter_metadata:
+            params['filter'] = filter_metadata  # Pass the dictionary directly, not JSON-encoded
+        
+        result = client.rpc('match_crawled_pages', params).execute()
+        
+        return result.data
+    except Exception as e:
+        print(f"Error searching documents: {e}")
+        return []
 
 
 def extract_code_blocks(markdown_content: str, min_length: int = 1000) -> List[Dict[str, Any]]:
@@ -607,15 +449,6 @@ def generate_code_example_summary(code: str, context_before: str, context_after:
     Returns:
         A summary of what the code example demonstrates
     """
-    # Get the decrypted API key
-    api_key = get_openai_api_key_sync()
-    if not api_key:
-        print("Error: No OpenAI API key available for code example summary")
-        return "Code example for demonstration purposes."
-    
-    # Create OpenAI client with the decrypted key
-    client = openai.OpenAI(api_key=api_key)
-    
     model_choice = os.getenv("MODEL_CHOICE")
     
     # Create the prompt
@@ -635,7 +468,7 @@ Based on the code example and its surrounding context, provide a concise summary
 """
     
     try:
-        response = client.chat.completions.create(
+        response = openai.chat.completions.create(
             model=model_choice,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that provides concise code example summaries."},
@@ -645,12 +478,7 @@ Based on the code example and its surrounding context, provide a concise summary
             max_tokens=100
         )
         
-        result = response.choices[0].message.content.strip()
-        
-        # Add a small delay to prevent rate limiting when running in parallel
-        time.sleep(0.3)  # 300ms delay between requests - reduced from 500ms
-        
-        return result
+        return response.choices[0].message.content.strip()
     
     except Exception as e:
         print(f"Error generating code example summary: {e}")
@@ -766,189 +594,37 @@ def add_code_examples_to_supabase(
         print(f"Inserted batch {i//batch_size + 1} of {(total_items + batch_size - 1)//batch_size} code examples")
 
 
-def generate_source_title_and_metadata(source_id: str, content: str, knowledge_type: str = "technical", tags: List[str] = None) -> Tuple[str, Dict[str, Any]]:
+def update_source_info(client: Client, source_id: str, summary: str, word_count: int):
     """
-    Generate a descriptive title and metadata for a source using OpenAI.
-    
-    Args:
-        source_id: The source ID (domain)
-        content: The content to analyze
-        knowledge_type: Type of knowledge (technical/business)
-        tags: List of tags to include in metadata
-        
-    Returns:
-        Tuple of (title, metadata_dict)
-    """
-    if tags is None:
-        tags = []
-    
-    # Get the decrypted API key
-    api_key = get_openai_api_key_sync()
-    if not api_key:
-        print(f"Error: No OpenAI API key available for title/metadata generation for {source_id}")
-        return f"Content from {source_id}", {
-            "knowledge_type": knowledge_type,
-            "tags": tags,
-            "auto_generated": False
-        }
-    
-    # Create OpenAI client with the decrypted key
-    client = openai.OpenAI(api_key=api_key)
-    
-    # Get the model choice from environment variables
-    model_choice = os.getenv("MODEL_CHOICE", "gpt-4o-mini")
-    
-    # Limit content length to avoid token limits
-    truncated_content = content[:15000] if len(content) > 15000 else content
-    
-    # Create the prompt for generating title and metadata
-    prompt = f"""<source_content>
-{truncated_content}
-</source_content>
-
-Analyze the above content from '{source_id}' and provide:
-
-1. A concise, descriptive title (max 80 characters) that clearly describes what this resource is about. Examples:
-   - "Pydantic AI API Reference"
-   - "FastAPI Complete Guide" 
-   - "React Component Library Documentation"
-   - "Machine Learning Best Practices"
-
-2. Determine the knowledge type: "technical" or "business"
-
-3. Generate 3-7 relevant tags that categorize this content (e.g., python, ai, framework, documentation, tutorial, api, etc.)
-
-4. Identify the primary category (e.g., documentation, tutorial, reference, guide, blog, paper)
-
-5. If applicable, identify the programming language or technology focus
-
-Respond in this exact JSON format:
-{{
-  "title": "Your generated title here",
-  "knowledge_type": "technical",
-  "tags": ["tag1", "tag2", "tag3"],
-  "category": "documentation",
-  "technology": "python",
-  "difficulty": "beginner|intermediate|advanced"
-}}"""
-    
-    try:
-        # Call the OpenAI API to generate title and metadata
-        response = client.chat.completions.create(
-            model=model_choice,
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant that analyzes technical content and generates descriptive titles and metadata. Always respond with valid JSON."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3,
-            max_tokens=300
-        )
-        
-        # Parse the JSON response
-        response_text = response.choices[0].message.content.strip()
-        
-        # Try to extract JSON from the response
-        import json
-        try:
-            # Find JSON in the response (in case there's extra text)
-            start_idx = response_text.find('{')
-            end_idx = response_text.rfind('}') + 1
-            if start_idx != -1 and end_idx != 0:
-                json_str = response_text[start_idx:end_idx]
-                result = json.loads(json_str)
-            else:
-                result = json.loads(response_text)
-            
-            # Extract title and build metadata
-            title = result.get("title", f"Content from {source_id}")
-            metadata = {
-                "knowledge_type": result.get("knowledge_type", knowledge_type),
-                "tags": result.get("tags", tags),
-                "category": result.get("category", "documentation"),
-                "technology": result.get("technology"),
-                "difficulty": result.get("difficulty"),
-                "auto_generated": True,
-                "generated_at": time.strftime("%Y-%m-%d")
-            }
-            
-            # Remove None values
-            metadata = {k: v for k, v in metadata.items() if v is not None}
-            
-            print(f"Generated title for {source_id}: {title}")
-            
-            # Add a small delay to prevent rate limiting when running in parallel
-            time.sleep(0.3)  # 300ms delay between requests - reduced from 500ms
-            
-            return title, metadata
-            
-        except json.JSONDecodeError as json_error:
-            print(f"Error parsing JSON response for {source_id}: {json_error}")
-            print(f"Response was: {response_text}")
-            # Fallback to basic title and metadata
-            return f"Content from {source_id}", {
-                "knowledge_type": knowledge_type,
-                "tags": tags,
-                "auto_generated": False
-            }
-    
-    except Exception as e:
-        print(f"Error generating title/metadata with LLM for {source_id}: {e}")
-        return f"Content from {source_id}", {
-            "knowledge_type": knowledge_type,
-            "tags": tags,
-            "auto_generated": False
-        }
-
-
-def update_source_info(client: Client, source_id: str, summary: str, word_count: int, content: str = "", knowledge_type: str = "technical", tags: List[str] = None, update_frequency: int = 7):
-    """
-    Update or insert source information in the sources table with enhanced title and metadata.
+    Update or insert source information in the sources table.
     
     Args:
         client: Supabase client
         source_id: The source ID (domain)
         summary: Summary of the source
         word_count: Total word count for the source
-        content: Full content for title/metadata generation
-        knowledge_type: Type of knowledge (technical/business)
-        tags: List of tags to include in metadata
-        update_frequency: Update frequency in days (1=daily, 7=weekly, 30=monthly, 0=never)
     """
-    if tags is None:
-        tags = []
-    
-    # Generate enhanced title and metadata using LLM
-    title, metadata = generate_source_title_and_metadata(
-        source_id=source_id, 
-        content=content,  # Pass content as keyword argument
-        knowledge_type=knowledge_type,
-        tags=tags
-    )
-    
-    # Check if source already exists
-    existing_source = client.from_('sources').select('source_id').eq('source_id', source_id).execute()
-    
-    source_data = {
-        'source_id': source_id,
-        'title': title,
-        'summary': summary,
-        'total_word_count': word_count,
-        'metadata': metadata,
-        'update_frequency': update_frequency,  # Store the update frequency
-        'updated_at': 'now()'
-    }
-    
-    if existing_source.data:
-        # Update existing source
-        result = client.from_('sources').update(source_data).eq('source_id', source_id).execute()
-        print(f"Updated existing source: {source_id}")
-    else:
-        # Insert new source
-        source_data['created_at'] = 'now()'
-        result = client.from_('sources').insert(source_data).execute()
-        print(f"Created new source: {source_id}")
-    
-    return result
+    try:
+        # Try to update existing source
+        result = client.table('sources').update({
+            'summary': summary,
+            'total_word_count': word_count,
+            'updated_at': 'now()'
+        }).eq('source_id', source_id).execute()
+        
+        # If no rows were updated, insert new source
+        if not result.data:
+            client.table('sources').insert({
+                'source_id': source_id,
+                'summary': summary,
+                'total_word_count': word_count
+            }).execute()
+            print(f"Created new source: {source_id}")
+        else:
+            print(f"Updated source: {source_id}")
+            
+    except Exception as e:
+        print(f"Error updating source {source_id}: {e}")
 
 
 def extract_source_summary(source_id: str, content: str, max_length: int = 500) -> str:
@@ -959,7 +635,7 @@ def extract_source_summary(source_id: str, content: str, max_length: int = 500) 
     
     Args:
         source_id: The source ID (domain)
-        content: the content to extract a summary from
+        content: The content to extract a summary from
         max_length: Maximum length of the summary
         
     Returns:
@@ -970,15 +646,6 @@ def extract_source_summary(source_id: str, content: str, max_length: int = 500) 
     
     if not content or len(content.strip()) == 0:
         return default_summary
-    
-    # Get the decrypted API key
-    api_key = get_openai_api_key_sync()
-    if not api_key:
-        print(f"Error: No OpenAI API key available for source summary generation for {source_id}")
-        return default_summary
-    
-    # Create OpenAI client with the decrypted key
-    client = openai.OpenAI(api_key=api_key)
     
     # Get the model choice from environment variables
     model_choice = os.getenv("MODEL_CHOICE")
@@ -996,7 +663,7 @@ The above content is from the documentation for '{source_id}'. Please provide a 
     
     try:
         # Call the OpenAI API to generate the summary
-        response = client.chat.completions.create(
+        response = openai.chat.completions.create(
             model=model_choice,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that provides concise library/tool/framework summaries."},
@@ -1012,9 +679,6 @@ The above content is from the documentation for '{source_id}'. Please provide a 
         # Ensure the summary is not too long
         if len(summary) > max_length:
             summary = summary[:max_length] + "..."
-        
-        # Add a small delay to prevent rate limiting when running in parallel
-        time.sleep(0.3)  # 300ms delay between requests - reduced from 500ms
             
         return summary
     
@@ -1068,7 +732,7 @@ def search_code_examples(
         
         result = client.rpc('match_code_examples', params).execute()
         
-        return result.data if result.data else []
+        return result.data
     except Exception as e:
         print(f"Error searching code examples: {e}")
         return []

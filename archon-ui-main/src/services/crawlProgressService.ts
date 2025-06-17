@@ -8,7 +8,7 @@ export interface ProgressStep {
 
 export interface CrawlProgressData {
   progressId: string;
-  status: 'starting' | 'crawling' | 'analyzing' | 'sitemap' | 'text_file' | 'webpage' | 'processing' | 'storing' | 'completed' | 'error' | 'waiting' | 'reading' | 'extracting' | 'chunking' | 'creating_source' | 'summarizing';
+  status: 'starting' | 'crawling' | 'analyzing' | 'sitemap' | 'text_file' | 'webpage' | 'processing' | 'storing' | 'completed' | 'error' | 'waiting' | 'reading' | 'extracting' | 'chunking' | 'creating_source' | 'summarizing' | 'source_creation' | 'document_storage' | 'code_storage' | 'finalization';
   percentage: number;
   currentUrl?: string;
   eta?: string;
@@ -18,6 +18,7 @@ export interface CrawlProgressData {
   wordCount?: number;
   duration?: string;
   error?: string;
+  log?: string;  // Single log message from backend
   logs: string[];
   // New fields for multi-progress tracking
   steps?: ProgressStep[];

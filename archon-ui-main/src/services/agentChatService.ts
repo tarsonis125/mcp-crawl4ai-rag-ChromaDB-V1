@@ -318,15 +318,18 @@ class AgentChatService {
    * Create a new chat session with an agent
    */
   async createSession(projectId?: string, agentType: string = 'docs'): Promise<{ session_id: string }> {
+    const requestBody = {
+      project_id: projectId,
+      agent_type: agentType,
+    };
+    console.log(`[AGENT SERVICE] Creating session with body:`, requestBody);
+    
     const response = await fetch(`${this.baseUrl}/api/agent-chat/sessions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        project_id: projectId,
-        agent_type: agentType,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {

@@ -34,7 +34,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
     if (hasShownApiKeyToast) return; // Don't show multiple times per session
     
     const checkBackendHealth = async (retryCount = 0) => {
-      const maxRetries = 5;
+      const maxRetries = 10; // Increased retries for initialization
       const retryDelay = 1000;
       
       try {
@@ -45,22 +45,60 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
         } as any);
         
         if (response.ok) {
-          console.log('✅ Backend is ready, checking credentials...');
-          setBackendReady(true);
-          // Backend is ready, now check credentials
-          setTimeout(() => checkOpenAIKey(), 500);
+          const healthData = await response.json();
+          console.log('📋 Backend health check:', healthData);
+          
+          // Check if backend is truly ready (not just started)
+          if (healthData.ready === true) {
+            console.log('✅ Backend is fully initialized, checking credentials...');
+            setBackendReady(true);
+            
+            // If OpenAI key status is already available from health check, use it
+            if (healthData.openai_key_available === false) {
+              showToast('OpenAI API Key missing! Click here to go to Settings and configure it.', 'warning', 8000);
+              setHasShownApiKeyToast(true);
+              
+              // Add click handler to navigate to settings when toast is clicked
+              const handleToastClick = (e: any) => {
+                if (e.target.closest('.fixed.top-4.right-4')) {
+                  navigate('/settings');
+                  document.removeEventListener('click', handleToastClick);
+                }
+              };
+              document.addEventListener('click', handleToastClick);
+            } else if (healthData.openai_key_available === true) {
+              console.log('✅ OpenAI API key is configured (from health check)');
+              setHasShownApiKeyToast(true);
+            } else {
+              // Fallback to detailed credential check if health check doesn't include key status
+              setTimeout(() => checkOpenAIKey(), 100);
+            }
+          } else {
+            // Backend is starting up but not ready yet
+            console.log(`🔄 Backend initializing... (attempt ${retryCount + 1}/${maxRetries}):`, healthData.message || 'Loading credentials...');
+            
+            // Retry with shorter interval during initialization
+            if (retryCount < maxRetries) {
+              setTimeout(() => {
+                checkBackendHealth(retryCount + 1);
+              }, retryDelay); // Constant 1s retry during initialization
+            } else {
+              console.warn('Backend initialization taking too long - skipping credential check');
+              setBackendReady(false);
+            }
+          }
         } else {
           throw new Error(`Backend health check failed: ${response.status}`);
         }
-              } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-          console.log(`Backend not ready yet (attempt ${retryCount + 1}/${maxRetries}):`, errorMessage);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.log(`Backend not ready yet (attempt ${retryCount + 1}/${maxRetries}):`, errorMessage);
         
         // Retry if we haven't exceeded max retries
         if (retryCount < maxRetries) {
           setTimeout(() => {
             checkBackendHealth(retryCount + 1);
-          }, retryDelay * Math.pow(1.5, retryCount)); // Exponential backoff
+          }, retryDelay * Math.pow(1.5, retryCount)); // Exponential backoff for connection errors
         } else {
           console.warn('Backend not ready after maximum retries - skipping credential check');
           setBackendReady(false);

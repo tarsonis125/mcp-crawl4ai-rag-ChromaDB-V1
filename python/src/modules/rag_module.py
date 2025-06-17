@@ -33,8 +33,8 @@ from src.utils import (
     extract_source_summary
 )
 
-# Import rag_utils for code processing
-from src.utils_rag import (
+# Import utils for code processing
+from src.utils import (
     extract_code_blocks,
     generate_code_example_summary
 )
@@ -188,21 +188,17 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
                     "metadata": document_metadata
                 })
             
-            # Extract code examples if enabled
+            # Extract code blocks (but don't process summaries yet)
             if get_bool_setting("USE_AGENTIC_RAG", False):
                 code_blocks = extract_code_blocks(markdown_content)
                 if code_blocks:
-                    for j, code_block in enumerate(code_blocks):
-                        summary = storage_service.process_code_example(code_block)
+                    # Just collect the code blocks for now
+                    for code_block in code_blocks:
                         all_code_examples.append({
                             'code_block': code_block,
-                            'summary': summary,
+                            'summary': None,  # Will generate later
                             'url': page_url
                         })
-                        
-                        if j % 5 == 0:
-                            code_progress = 24 + int((i + 1) / len(results) * 6) + int((j / len(code_blocks)) * 0.5)
-                            await report_progress('processing', code_progress, f'Processed {j+1}/{len(code_blocks)} code examples')
             
             # Report progress during processing
             progress_pct = 24 + int((i + 1) / len(results) * 6)  # 24-30%
@@ -257,16 +253,33 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
             progress_pct = int((i + 1) / len(source_content_map) * 100)
             await report_progress('source_creation', progress_pct, f'Created source {i+1}/{len(source_content_map)}: {source_id}')
         
-        # Store documents with progress reporting
+        # Store documents with detailed progress reporting
         try:
-            await storage_service.store_documents_with_progress(
+            await report_progress('document_storage', 0, f'Preparing to store {len(all_documents)} chunks...')
+            
+            # Import the function we need
+            from src.utils import add_documents_to_supabase
+            
+            # We'll call the function but add progress reporting around it
+            # Since add_documents_to_supabase processes in batches, we can estimate progress
+            batch_size = 15
+            total_batches = (len(all_documents) + batch_size - 1) // batch_size
+            
+            # Report that we're starting the storage
+            await report_progress('document_storage', 10, f'Storing {len(all_documents)} chunks in {total_batches} batches...')
+            
+            # Call the storage function
+            add_documents_to_supabase(
+                client=storage_service.supabase_client,
                 urls=urls,
                 chunk_numbers=chunk_numbers,
                 contents=contents,
                 metadatas=metadatas,
                 url_to_full_document=url_to_full_document,
-                progress_callback=lambda pct, msg: report_progress('document_storage', pct, msg)
+                batch_size=batch_size
             )
+            
+            await report_progress('document_storage', 100, f'Successfully stored {len(all_documents)} document chunks')
         except Exception as e:
             error_msg = f"Failed to store documents: {str(e)}"
             await report_progress('error', 0, error_msg)
@@ -274,15 +287,30 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
             
         chunks_stored = len(all_documents)
         
-        # Store code examples
+        # Process and store code examples as a separate step
         code_examples_stored = 0
-        if all_code_examples:
-            await report_progress('code_storage', 0, f'Storing {len(all_code_examples)} code examples...')
+        if all_code_examples and get_bool_setting("USE_AGENTIC_RAG", False):
+            await report_progress('code_storage', 0, f'Processing {len(all_code_examples)} code examples...')
+            
+            # Generate summaries for code examples with progress
+            for i, example in enumerate(all_code_examples):
+                # Generate summary for this code example
+                example['summary'] = storage_service.process_code_example(example['code_block'])
+                
+                # Report progress every 5 examples or at the end
+                if (i + 1) % 5 == 0 or i == len(all_code_examples) - 1:
+                    progress_pct = int((i + 1) / len(all_code_examples) * 70)  # 0-70% for processing
+                    await report_progress('code_storage', progress_pct, f'Processed {i+1}/{len(all_code_examples)} code summaries')
+            
+            # Now store the code examples
+            await report_progress('code_storage', 70, f'Storing {len(all_code_examples)} code examples in database...')
             
             success, result = storage_service.store_code_examples(all_code_examples)
             if success:
                 code_examples_stored = result.get("code_examples_stored", 0)
-                await report_progress('code_storage', 100, f'Stored {code_examples_stored} code examples')
+                await report_progress('code_storage', 100, f'Successfully stored {code_examples_stored} code examples')
+            else:
+                await report_progress('code_storage', 100, f'Failed to store code examples: {result.get("error", "Unknown error")}')
         
         # Finalization
         await report_progress('finalization', 100, f'Successfully crawled {len(results)} pages with {chunks_stored} chunks stored')
@@ -399,8 +427,16 @@ def register_rag_tools(mcp: FastMCP):
             metadatas = [doc['metadata'] for doc in documents]
             url_to_full_document = {url: markdown_content}
             
-            await storage_service.store_documents_with_progress(
-                urls, chunk_numbers, contents, metadatas, url_to_full_document
+            # Use the original working function from utils.py with proper parallel processing
+            from src.utils import add_documents_to_supabase
+            add_documents_to_supabase(
+                client=storage_service.supabase_client,
+                urls=urls,
+                chunk_numbers=chunk_numbers,
+                contents=contents,
+                metadatas=metadatas,
+                url_to_full_document=url_to_full_document,
+                batch_size=15
             )
             chunks_stored = len(documents)
             
@@ -410,7 +446,7 @@ def register_rag_tools(mcp: FastMCP):
                 code_blocks = extract_code_blocks(markdown_content)
                 if code_blocks:
                     code_examples = []
-                    for code_block in code_blocks:
+                    for i, code_block in enumerate(code_blocks):
                         summary = storage_service.process_code_example(code_block)
                         code_examples.append({
                             'code_block': code_block,

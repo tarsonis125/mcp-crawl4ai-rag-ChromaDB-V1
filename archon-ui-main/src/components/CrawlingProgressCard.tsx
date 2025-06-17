@@ -192,50 +192,56 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
 
       // Set specific messages based on current status
       if (step.status === 'active') {
-        if (isUpload) {
-          switch (step.id) {
-            case 'reading':
-              step.message = `Reading ${progressData.fileName || 'file'}...`;
-              break;
-            case 'extracting':
-              step.message = `Extracting text from ${progressData.fileType || 'document'}...`;
-              break;
-            case 'chunking':
-              step.message = 'Breaking into chunks...';
-              break;
-            case 'creating_source':
-              step.message = 'Creating source entry...';
-              break;
-            case 'summarizing':
-              step.message = 'Generating AI summary...';
-              break;
-            case 'storing':
-              step.message = 'Storing in database...';
-              break;
-          }
+        // Use the log message from backend if available
+        if (progressData.log) {
+          step.message = progressData.log;
         } else {
-          switch (step.id) {
-            case 'analyzing':
-              step.message = 'Detecting URL type...';
-              break;
-            case 'crawling':
-              step.message = `${progressData.processedPages || 0} of ${progressData.totalPages || 0} pages`;
-              break;
-            case 'processing':
-              step.message = 'Chunking content...';
-              break;
-            case 'source_creation':
-              step.message = 'Creating source records...';
-              break;
-            case 'document_storage':
-              step.message = 'Saving to database...';
-              break;
-            case 'code_storage':
-              step.message = 'Extracting code blocks...';
-              break;
-            case 'finalization':
-              step.message = 'Completing crawl...';
-              break;
+          // Fallback to default messages
+          if (isUpload) {
+            switch (step.id) {
+              case 'reading':
+                step.message = `Reading ${progressData.fileName || 'file'}...`;
+                break;
+              case 'extracting':
+                step.message = `Extracting text from ${progressData.fileType || 'document'}...`;
+                break;
+              case 'chunking':
+                step.message = 'Breaking into chunks...';
+                break;
+              case 'creating_source':
+                step.message = 'Creating source entry...';
+                break;
+              case 'summarizing':
+                step.message = 'Generating AI summary...';
+                break;
+              case 'storing':
+                step.message = 'Storing in database...';
+                break;
+            }
+          } else {
+            switch (step.id) {
+              case 'analyzing':
+                step.message = 'Detecting URL type...';
+                break;
+              case 'crawling':
+                step.message = `${progressData.processedPages || 0} of ${progressData.totalPages || 0} pages`;
+                break;
+              case 'processing':
+                step.message = 'Chunking content...';
+                break;
+              case 'source_creation':
+                step.message = 'Creating source records...';
+                break;
+              case 'document_storage':
+                step.message = 'Saving to database...';
+                break;
+              case 'code_storage':
+                step.message = 'Extracting code blocks...';
+                break;
+              case 'finalization':
+                step.message = 'Completing crawl...';
+                break;
+            }
           }
         }
       }
@@ -304,6 +310,30 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
           text: 'Storing chunks...',
           color: 'blue' as const,
           icon: <Database className="w-4 h-4" />
+        };
+      case 'source_creation':
+        return {
+          text: 'Creating source records...',
+          color: 'blue' as const,
+          icon: <FileText className="w-4 h-4" />
+        };
+      case 'document_storage':
+        return {
+          text: 'Storing documents...',
+          color: 'blue' as const,
+          icon: <Database className="w-4 h-4" />
+        };
+      case 'code_storage':
+        return {
+          text: 'Processing code examples...',
+          color: 'blue' as const,
+          icon: <Code className="w-4 h-4" />
+        };
+      case 'finalization':
+        return {
+          text: 'Finalizing...',
+          color: 'blue' as const,
+          icon: <Zap className="w-4 h-4" />
         };
       default:
         const activeStep = progressSteps.find(step => step.status === 'active');

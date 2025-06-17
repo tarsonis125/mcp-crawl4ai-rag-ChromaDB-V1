@@ -136,9 +136,15 @@ class CrawlingContext:
 # Global crawling context instance
 crawling_context = CrawlingContext()
 
+# Global flag to track if initialization is complete
+_initialization_complete = False
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager for startup and shutdown tasks."""
+    global _initialization_complete
+    _initialization_complete = False
+    
     # Startup
     logger.info("🚀 Starting Archon backend...")
     
@@ -202,6 +208,8 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             api_logger.warning(f"Could not start MCP client service: {str(e)}")
         
+        # Mark initialization as complete
+        _initialization_complete = True
         api_logger.info("🎉 Archon backend started successfully!")
         
     except Exception as e:
@@ -211,6 +219,7 @@ async def lifespan(app: FastAPI):
     yield
     
     # Shutdown
+    _initialization_complete = False
     api_logger.info("🛑 Shutting down Archon backend...")
     
     try:
@@ -280,11 +289,30 @@ async def root():
 # Health check endpoint
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """Health check endpoint that indicates true readiness including credential loading."""
+    from datetime import datetime
+    import os
+    
+    # Check if initialization is complete
+    if not _initialization_complete:
+        return {
+            "status": "initializing",
+            "service": "archon-backend",
+            "timestamp": datetime.now().isoformat(),
+            "message": "Backend is starting up, credentials loading...",
+            "ready": False
+        }
+    
+    # Check if credentials are actually loaded
+    openai_key_available = bool(os.getenv("OPENAI_API_KEY"))
+    
     return {
         "status": "healthy",
-        "service": "archon-backend",
-        "timestamp": "2024-01-01T00:00:00Z"
+        "service": "archon-backend", 
+        "timestamp": datetime.now().isoformat(),
+        "ready": True,
+        "credentials_loaded": True,
+        "openai_key_available": openai_key_available
     }
 
 if __name__ == "__main__":
