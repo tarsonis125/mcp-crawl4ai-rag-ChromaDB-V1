@@ -192,20 +192,64 @@ export const MCPPage = () => {
     showToast('Configuration copied to clipboard', 'success');
   };
 
+  const generateCursorDeeplink = () => {
+    if (!config) return '';
+    
+    const sseConfig = {
+      archon: {
+        url: `http://${config.host}:${config.port}/sse`
+      }
+    };
+    
+    const configString = JSON.stringify(sseConfig);
+    const base64Config = btoa(configString);
+    return `cursor://anysphere.cursor-deeplink/mcp/install?name=archon&config=${base64Config}`;
+  };
+
+  const handleCursorOneClick = () => {
+    const deeplink = generateCursorDeeplink();
+    window.location.href = deeplink;
+    showToast('Opening Cursor with Archon MCP configuration...', 'info');
+  };
+
 
 
   const getConfigForIDE = (ide: 'windsurf' | 'cursor' | 'claudecode') => {
     if (!config) return '';
     
-    const sseConfig = {
-      mcpServers: {
-        archon: {
-          transport: "sse",
-          serverUrl: `http://${config.host}:${config.port}/sse`
+    if (ide === 'cursor') {
+      // Cursor connecting to SSE server
+      const cursorConfig = {
+        mcpServers: {
+          archon: {
+            url: `http://${config.host}:${config.port}/sse`
+          }
         }
-      }
-    };
-    return JSON.stringify(sseConfig, null, 2);
+      };
+      return JSON.stringify(cursorConfig, null, 2);
+    } else if (ide === 'windsurf') {
+      // Windsurf can use SSE transport
+      const windsurfConfig = {
+        mcpServers: {
+          archon: {
+            command: "npx",
+            args: [
+              "mcp-remote",
+              `http://${config.host}:${config.port}/sse`
+            ]
+          }
+        }
+      };
+      return JSON.stringify(windsurfConfig, null, 2);
+    } else {
+      // Claude Code uses CLI commands, show SSE config as example
+      const claudeConfig = {
+        name: "archon",
+        transport: "sse",
+        url: `http://${config.host}:${config.port}/sse`
+      };
+      return JSON.stringify(claudeConfig, null, 2);
+    }
   };
 
   const getIDEInstructions = (ide: 'windsurf' | 'cursor' | 'claudecode') => {
@@ -214,19 +258,19 @@ export const MCPPage = () => {
         return {
           title: 'Windsurf Configuration',
           steps: [
-            '1. Open Windsurf settings',
-            '2. Navigate to MCP Servers configuration',
-            '3. Add the configuration shown below',
-            '4. Save and restart Windsurf'
+            '1. Open Windsurf and click the "MCP servers" button (hammer icon)',
+            '2. Click "Configure" and then "View raw config"',
+            '3. Add the configuration shown below to the mcpServers object',
+            '4. Click "Refresh" to connect to the server'
           ]
         };
       case 'cursor':
         return {
           title: 'Cursor Configuration',
           steps: [
-            '1. Open Cursor settings (⌘+, on Mac, Ctrl+, on Windows/Linux)',
-            '2. Search for "MCP" in settings',
-            '3. Add the configuration to your MCP servers',
+            '1. Option A: Use the one-click install button below (recommended)',
+            '2. Option B: Manually edit ~/.cursor/mcp.json',
+            '3. Add the configuration shown below',
             '4. Restart Cursor for changes to take effect'
           ]
         };
@@ -234,9 +278,9 @@ export const MCPPage = () => {
         return {
           title: 'Claude Code Configuration',
           steps: [
-            '1. Open Claude Code settings',
-            '2. Navigate to the MCP section',
-            '3. Add a new MCP server with the configuration below',
+            '1. Open a terminal and run the following command:',
+            `2. claude mcp add --transport sse archon http://${config?.host}:${config?.port}/sse`,
+            '3. Or for Docker stdio: claude mcp add archon docker exec -i -e TRANSPORT=stdio archon-pyserver python src/mcp_server.py',
             '4. The connection will be established automatically'
           ]
         };
@@ -490,9 +534,32 @@ export const MCPPage = () => {
                         {getConfigForIDE(selectedIDE)}
                       </pre>
                       <p className="text-xs text-gray-500 dark:text-zinc-500 mt-3 font-sans">
-                        Copy this configuration and add it to your {selectedIDE === 'windsurf' ? 'Windsurf' : selectedIDE === 'cursor' ? 'Cursor' : 'Claude Code'} settings
+                        {selectedIDE === 'cursor' 
+                          ? 'Copy this configuration and add it to ~/.cursor/mcp.json'
+                          : selectedIDE === 'windsurf'
+                          ? 'Copy this configuration and add it to your Windsurf MCP settings'
+                          : 'This shows the configuration format for Claude Code'
+                        }
                       </p>
                     </div>
+                    
+                    {/* One-click install button for Cursor */}
+                    {selectedIDE === 'cursor' && serverStatus.status === 'running' && (
+                      <div className="mt-4">
+                        <Button
+                          variant="primary"
+                          accentColor="blue"
+                          onClick={handleCursorOneClick}
+                          className="w-full"
+                        >
+                          <Server className="w-4 h-4 mr-2 inline" />
+                          One-Click Install for Cursor
+                        </Button>
+                        <p className="text-xs text-gray-500 dark:text-zinc-500 mt-2 text-center">
+                          Requires Cursor to be installed and will open a deeplink
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
               </Card>

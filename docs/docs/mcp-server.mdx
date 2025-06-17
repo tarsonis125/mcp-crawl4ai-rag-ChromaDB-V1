@@ -167,40 +167,73 @@ python src/mcp_server.py
 <Tabs>
 <TabItem value="cursor" label="💻 Cursor IDE" default>
 
-**1. Open Cursor Settings**
-- `Ctrl/Cmd + ,` → Search "MCP"
-- Or edit `~/.cursor/mcp.json` directly
+**Option 1: One-Click Install (Recommended)**
 
-**2. Add Archon Configuration**
+1. **Generate Deeplink**: Visit the Archon MCP page and click "One-Click Install for Cursor"
+2. **Or use this deeplink format**:
+```
+cursor://anysphere.cursor-deeplink/mcp/install?name=archon&config=BASE64_ENCODED_CONFIG
+```
+
+**Option 2: Manual Configuration**
+
+1. **Open Cursor Settings**
+   - `Ctrl/Cmd + ,` → Search "MCP"
+   - Or edit `~/.cursor/mcp.json` directly
+
+2. **Add Archon Configuration**
 
 ```json title="~/.cursor/mcp.json"
 {
   "mcpServers": {
     "archon": {
-      "command": "docker",
+      "url": "http://localhost:8051/sse"
+    }
+  }
+}
+```
+
+3. **Restart Cursor**
+   - Close and reopen Cursor to load the new configuration
+
+**Deeplink Generation Example**:
+```javascript
+const config = {
+  "archon": {
+    "url": "http://localhost:8051/sse"
+  }
+};
+const base64Config = btoa(JSON.stringify(config));
+const deeplink = `cursor://anysphere.cursor-deeplink/mcp/install?name=archon&config=${base64Config}`;
+```
+
+</TabItem>
+<TabItem value="windsurf" label="🏄 Windsurf IDE">
+
+**1. Open Windsurf MCP Settings**
+- Click the "MCP servers" button (hammer icon)
+- Click "Configure"
+- Select "View raw config"
+
+**2. Add Server Configuration**
+
+**Option A: Remote MCP Server (SSE)**
+```json title="windsurf mcp configuration"
+{
+  "mcpServers": {
+    "archon": {
+      "command": "npx",
       "args": [
-        "exec", "-i",
-        "-e", "TRANSPORT=stdio",
-        "archon-pyserver",
-        "python", "src/mcp_server.py"
+        "mcp-remote",
+        "http://localhost:8051/sse"
       ]
     }
   }
 }
 ```
 
-**3. Restart Cursor**
-- Close and reopen Cursor to load the new configuration
-
-</TabItem>
-<TabItem value="windsurf" label="🏄 Windsurf IDE">
-
-**1. Open Windsurf Settings**
-- Navigate to MCP settings in preferences
-
-**2. Add Server Configuration**
-
-```json title="windsurf-mcp.json"
+**Option B: Local Docker Server (stdio)**
+```json title="windsurf mcp configuration"
 {
   "mcpServers": {
     "archon": {
@@ -215,6 +248,53 @@ python src/mcp_server.py
   }
 }
 ```
+
+**3. Refresh Connection**
+- Click "Refresh" button to connect to the server
+- The server status should show as connected
+
+</TabItem>
+<TabItem value="claudecode" label="🧳 Claude Code">
+
+**Claude Code uses CLI commands for MCP server management:**
+
+**Option 1: Add SSE Server**
+```bash
+# Add Archon as an SSE server
+claude mcp add --transport sse archon http://localhost:8051/sse
+
+# With environment variables
+claude mcp add --transport sse archon -e API_KEY=your-key http://localhost:8051/sse
+```
+
+**Option 2: Add stdio Server (Docker)**
+```bash
+# Add Archon with Docker stdio transport
+claude mcp add archon docker exec -i -e TRANSPORT=stdio archon-pyserver python src/mcp_server.py
+
+# With specific scope (local, project, user)
+claude mcp add -s project archon docker exec -i -e TRANSPORT=stdio archon-pyserver python src/mcp_server.py
+```
+
+**Managing MCP Servers**
+```bash
+# List all configured servers
+claude mcp list
+
+# Get details for Archon server
+claude mcp get archon
+
+# Remove server if needed
+claude mcp remove archon
+
+# Import from Claude Desktop
+claude mcp add-from-claude-desktop
+```
+
+**Scope Options**:
+- `local` (default): Available only in current project
+- `project`: Shared via `.mcp.json` file in project
+- `user`: Available across all projects
 
 </TabItem>
 <TabItem value="claude" label="🧠 Claude Desktop">
