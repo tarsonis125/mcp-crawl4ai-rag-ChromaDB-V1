@@ -232,11 +232,7 @@ export const MCPPage = () => {
       const windsurfConfig = {
         mcpServers: {
           archon: {
-            command: "npx",
-            args: [
-              "mcp-remote",
-              `http://${config.host}:${config.port}/sse`
-            ]
+            "serverUrl": `http://${config.host}:${config.port}/sse`
           }
         }
       };
