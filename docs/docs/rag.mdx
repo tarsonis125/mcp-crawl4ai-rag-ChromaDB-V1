@@ -218,8 +218,10 @@ Each RAG query returns structured results with:
 - **🎯 Source Filtering**: Filter by domain (e.g., `ai.pydantic.dev`)
 - **📊 Real-time Monitoring**: Complete Logfire integration
 - **🔍 Semantic Search**: OpenAI embeddings with similarity scoring
-- **📝 Document Chunking**: Intelligent content segmentation
+- **📝 Document Chunking**: Intelligent content segmentation with 5k context window
 - **⚡ Error Handling**: Comprehensive error recovery and logging
+- **📈 Progress Reporting**: Smooth batch progress updates via WebSockets
+- **🎛️ Rate Limiting**: Optimized for OpenAI token limits with contextual embeddings
 
 ### Recent Fixes Applied
 
@@ -228,6 +230,9 @@ Each RAG query returns structured results with:
 - **Logfire Integration**: Added comprehensive monitoring and debugging
 - **Span API Issues**: Corrected Logfire span methodology
 - **Import Dependencies**: Fixed missing imports in RAG module
+- **Rate Limiting**: Reduced context window from 25k to 5k characters to stay within OpenAI limits
+- **Progress Reporting**: Fixed async/sync mismatch for smooth batch progress updates
+- **WebSocket Timing**: Added connection delays to prevent race conditions
 
 </TabItem>
 <TabItem value="monitoring" label="🔥 Monitoring">
@@ -430,16 +435,24 @@ CREATE TABLE code_examples (
 ```python
 # Configuration for contextual embeddings
 contextual_config = {
-    "contextual_embeddings": True,
-    "context_window_size": 500,  # characters before/after chunk
-    "context_overlap": 0.2       # overlap between contexts
+    "USE_CONTEXTUAL_EMBEDDINGS": "true",
+    "CONTEXTUAL_EMBEDDINGS_CONTEXT_SIZE": "5000",  # Reduced from 25k to avoid rate limits
+    "CONTEXTUAL_EMBEDDINGS_MAX_WORKERS": "2",       # Parallel processing workers
+    "MODEL_CHOICE": "gpt-4o-nano"                   # Optimized for embeddings
 }
 ```
+
+**Key Improvements:**
+- 🎯 **Optimized Context Window**: 5k characters provides sufficient context while staying within OpenAI's 200k tokens/minute limit
+- 🔄 **Parallel Processing**: 2 workers balance speed and rate limit compliance
+- 📊 **Token Usage**: ~7-8k tokens per embedding request with 5k context
+- ⚡ **Batch Processing**: 15-document batches with smart progress reporting
 
 **Benefits:**
 - 🎯 Improved understanding of technical concepts
 - 🔗 Better handling of cross-references
 - 📚 Enhanced domain-specific terminology recognition
+- 🚀 No more rate limiting errors (429)
 
 ### 2. Intelligent Source Filtering
 
@@ -474,6 +487,50 @@ code_results = await mcp_archon_search_code_examples(
 - 📝 AI-generated code summaries
 - 🔍 Implementation pattern recognition
 
+## 📈 Progress Reporting & Real-Time Updates
+
+### WebSocket-Based Progress Tracking
+
+**Smooth, real-time progress updates during document processing**
+
+```javascript
+// WebSocket connection for progress updates
+const ws = new WebSocket('ws://localhost:8080/api/crawl-progress/{progressId}');
+
+ws.onmessage = (event) => {
+  const progress = JSON.parse(event.data);
+  // Progress shows smooth 0-100% across all batches
+  console.log(`${progress.log} - ${progress.percentage}%`);
+};
+```
+
+**Progress Reporting Features:**
+- 📊 **Smooth Progress**: Linear progression from 0-100% across all document batches
+- 📦 **Batch Details**: "Batch 1/9: Processing items 1-15..." with accurate percentages
+- 🔄 **Real-Time Updates**: WebSocket broadcasts for each processing step
+- ⏱️ **No Progress Jumps**: Fixed the issue of progress bar resetting between batches
+
+### Processing Steps with Progress
+
+1. **Document Analysis** (0-10%)
+   - URL type detection
+   - Content extraction
+   - Initial processing
+
+2. **Document Storage** (10-90%)
+   - Batch processing with smooth progress
+   - Contextual embedding generation
+   - Database storage operations
+
+3. **Code Examples** (90-95%)
+   - Code block extraction
+   - AI summary generation
+   - Separate progress phase
+
+4. **Finalization** (95-100%)
+   - Index updates
+   - Completion verification
+
 ## ⚡ Performance Optimization
 
 ### Query Performance Metrics
@@ -483,6 +540,8 @@ code_results = await mcp_archon_search_code_examples(
 - **Embedding Generation**: 80-120ms  
 - **Vector Search**: 100-150ms
 - **Result Processing**: 20-30ms
+- **Batch Processing**: 15 documents per batch
+- **Context Window**: 5,000 characters (optimized)
 </Admonition>
 
 ### Optimization Strategies

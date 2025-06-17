@@ -234,6 +234,8 @@ USE_RERANKING="true"
 ```bash
 # Advanced configuration (highest accuracy)
 USE_CONTEXTUAL_EMBEDDINGS="true"
+CONTEXTUAL_EMBEDDINGS_CONTEXT_SIZE="5000"  # Optimized for rate limits
+CONTEXTUAL_EMBEDDINGS_MAX_WORKERS="2"      # Balanced parallelism
 USE_HYBRID_SEARCH="true"
 USE_AGENTIC_RAG="true"
 USE_RERANKING="true"
@@ -241,7 +243,7 @@ USE_RERANKING="true"
 
 **Performance:** ~300ms average query time  
 **Accuracy:** Maximum for complex queries  
-**Resource Usage:** High
+**Resource Usage:** High (but optimized for OpenAI rate limits)
 
 </TabItem>
 </Tabs>
@@ -254,6 +256,33 @@ USE_RERANKING="true"
 | **Hybrid Search** | Combines vector + keyword search | +50ms | +25% |
 | **Agentic RAG** | AI-powered code extraction | +150ms | +20% |
 | **Reranking** | Cross-encoder result reordering | +30ms | +10% |
+
+### Contextual Embeddings Configuration
+
+<Admonition type="info" title="Optimized for OpenAI Rate Limits">
+  The contextual embeddings system has been optimized to work within OpenAI's token rate limits while maintaining high-quality search results.
+</Admonition>
+
+**Configuration Options:**
+
+```bash
+# Contextual embeddings settings
+USE_CONTEXTUAL_EMBEDDINGS="true"           # Enable/disable contextual embeddings
+CONTEXTUAL_EMBEDDINGS_CONTEXT_SIZE="5000"  # Characters of context (reduced from 25k)
+CONTEXTUAL_EMBEDDINGS_MAX_WORKERS="2"      # Parallel processing workers
+MODEL_CHOICE="gpt-4o-nano"                 # Model for generating context
+
+# Token usage with 5k context:
+# - ~7,000-8,000 tokens per embedding request
+# - Stays well within 200,000 tokens/minute limit
+# - Allows ~25 embeddings per minute with headroom
+```
+
+**Key Improvements:**
+- **Context Window**: 5,000 characters provides sufficient context without hitting rate limits
+- **Batch Processing**: 15 documents per batch with smooth progress reporting
+- **Worker Threads**: 2 parallel workers balance speed and rate compliance
+- **Delays**: 1.5s between batches when using contextual embeddings
 
 ### Runtime Strategy Configuration
 

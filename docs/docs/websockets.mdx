@@ -489,12 +489,18 @@ const mapDatabaseTaskToUITask = (dbTask: any): UITask => {
 
 ### Progress Tracking: `/api/crawl-progress/{progress_id}`
 
-**Purpose**: Real-time progress updates during crawling operations
+**Purpose**: Real-time progress updates during crawling and document processing operations
 
 **Message Types**:
 - `crawl_progress`: Ongoing progress updates
 - `crawl_completed`: Final completion notification
 - `heartbeat`: Keep-alive ping
+
+**Key Improvements**:
+- **📊 Smooth Progress**: Linear progression from 0-100% across all document batches
+- **📦 Detailed Batch Info**: "Batch 2/9: Processing items 16-30..." with accurate percentages
+- **🔄 Real-Time Updates**: WebSocket broadcasts for each processing step
+- **⏱️ No Progress Jumps**: Fixed the issue of progress bar resetting between batches
 
 **Example Message Flow**:
 ```json
@@ -503,26 +509,56 @@ const mapDatabaseTaskToUITask = (dbTask: any): UITask => {
   "type": "crawl_progress",
   "data": {
     "progressId": "8b74d6a0-4970-4d7f-bf82-52a7c08916ad",
-    "status": "crawling",
-    "percentage": 10,
+    "status": "analyzing",
+    "percentage": 2,
     "start_time": "2025-06-04T20:57:34.081424",
     "currentUrl": "https://www.example.com",
-    "totalPages": 24,
-    "processedPages": 2,
-    "log": "Starting crawl...",
+    "log": "Analyzing URL type: https://www.example.com",
     "logs": ["Starting crawl...", "Analyzing URL type..."]
   }
 }
 
-// Progress update
+// Document storage with smooth batch progress
 {
   "type": "crawl_progress", 
   "data": {
     "progressId": "8b74d6a0-4970-4d7f-bf82-52a7c08916ad",
-    "status": "crawling",
-    "percentage": 45,
-    "processedPages": 11,
-    "log": "Processed 11/24 pages"
+    "status": "document_storage",
+    "percentage": 35,  // Smooth progression, not jumping
+    "log": "Batch 3/9: Processing items 31-45 of 129"
+  }
+}
+
+// Contextual embeddings progress
+{
+  "type": "crawl_progress",
+  "data": {
+    "progressId": "8b74d6a0-4970-4d7f-bf82-52a7c08916ad",
+    "status": "document_storage",
+    "percentage": 38,
+    "log": "Batch 3/9: Creating contextual embeddings..."
+  }
+}
+
+// Database storage progress
+{
+  "type": "crawl_progress",
+  "data": {
+    "progressId": "8b74d6a0-4970-4d7f-bf82-52a7c08916ad",
+    "status": "document_storage",
+    "percentage": 42,
+    "log": "Batch 3/9: Storing in database..."
+  }
+}
+
+// Code examples processing (separate phase)
+{
+  "type": "crawl_progress",
+  "data": {
+    "progressId": "8b74d6a0-4970-4d7f-bf82-52a7c08916ad",
+    "status": "code_storage",
+    "percentage": 92,
+    "log": "Processed 45/50 code summaries"
   }
 }
 
@@ -533,8 +569,9 @@ const mapDatabaseTaskToUITask = (dbTask: any): UITask => {
     "progressId": "8b74d6a0-4970-4d7f-bf82-52a7c08916ad", 
     "status": "completed",
     "percentage": 100,
-    "chunksStored": 89,
-    "wordCount": 25000,
+    "chunksStored": 129,
+    "codeExamplesStored": 50,
+    "wordCount": 45000,
     "completed_at": "2025-06-04T20:58:45.123456"
   }
 }

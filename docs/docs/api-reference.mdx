@@ -197,7 +197,7 @@ curl -X POST "http://localhost:8080/api/knowledge-items/crawl" \
 
 **WebSocket** `/api/crawl-progress/{progress_id}`
 
-Real-time progress updates for crawling operations with detailed status information.
+Real-time progress updates for crawling operations with smooth batch progress and detailed status information.
 
 #### Connection Example
 
@@ -209,34 +209,56 @@ ws.onmessage = function(event) {
   if (data.type === 'crawl_progress') {
     console.log('Progress:', data.data.percentage + '%');
     console.log('Status:', data.data.status);
-    console.log('Current URL:', data.data.currentUrl);
+    console.log('Log:', data.data.log);
   }
 };
 ```
 
 #### Progress Message Format
 
+**New Progress Features:**
+- **📊 Smooth Progress**: Linear 0-100% progression across all document batches
+- **📦 Detailed Batch Info**: "Batch 3/9: Processing items 31-45..." with accurate percentages
+- **🔄 Real-Time Updates**: WebSocket broadcasts for each processing step
+- **⏱️ No Progress Jumps**: Progress bar advances smoothly without resetting
+
 ```json
 {
   "type": "crawl_progress",
   "data": {
     "progressId": "183e2615-fca4-4a71-a051-ab5a0292f9ff",
-    "status": "crawling",
-    "percentage": 45,
+    "status": "document_storage",
+    "percentage": 35,  // Smooth progression, not jumping
     "start_time": "2024-01-15T10:30:00Z",
-    "currentUrl": "https://docs.python.org/3/tutorial/classes.html",
+    "currentUrl": "https://docs.python.org/3/tutorial/",
     "totalPages": 12,
     "processedPages": 5,
-    "log": "Crawling depth 2: processed 5/12 pages",
+    "log": "Batch 3/9: Processing items 31-45 of 129",
     "logs": [
       "Starting crawl...",
-      "Starting crawl of https://docs.python.org/3/tutorial/",
+      "Analyzing URL type: https://docs.python.org/3/tutorial/",
       "Detected webpage, starting recursive crawl...",
-      "Crawling depth 1: 8 URLs to process",
-      "Crawling depth 2: processed 5/12 pages"
+      "Processed 5/12 pages",
+      "Processing 129 pages into chunks...",
+      "Batch 1/9: Processing items 1-15 of 129",
+      "Batch 2/9: Processing items 16-30 of 129",
+      "Batch 3/9: Processing items 31-45 of 129"
     ]
   }
 }
+```
+
+#### Progress Phases
+
+1. **`analyzing`** (0-5%): URL type detection and strategy selection
+2. **`crawling`** (5-25%): Web page retrieval and content extraction
+3. **`processing`** (25-30%): Document chunking and preparation
+4. **`source_creation`** (30-35%): Creating source records in database
+5. **`document_storage`** (35-90%): Batch processing with contextual embeddings
+   - Each batch shows: "Batch X/Y: Processing items..."
+   - Sub-steps: Creating embeddings → Storing in database
+6. **`code_storage`** (90-95%): Extracting and storing code examples
+7. **`finalization`** (95-100%): Completing crawl and cleanup
 ```
 
 ## 📄 Document Management API
