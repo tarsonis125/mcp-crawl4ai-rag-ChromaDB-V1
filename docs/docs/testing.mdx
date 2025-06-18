@@ -18,22 +18,6 @@ Archon employs a comprehensive testing strategy across both backend (Python/pyte
 ## 🏗️ Testing Architecture
 
 ```mermaid
-%%{init:{
-  'theme':'base',
-  'themeVariables': {
-    'primaryColor':'#1f2937',
-    'primaryTextColor':'#ffffff',
-    'primaryBorderColor':'#8b5cf6',
-    'lineColor':'#a855f7',
-    'textColor':'#ffffff',
-    'fontFamily':'Inter',
-    'fontSize':'14px',
-    'background':'#000000',
-    'mainBkg':'#1f2937',
-    'secondBkg':'#111827',
-    'borderColor':'#8b5cf6'
-  }
-}}%%
 graph TB
     subgraph "Backend Testing (Python)"
         PyUnit["Unit Tests<br/>⚡ pytest + mocks<br/>Services, Utils, Models"]
@@ -47,10 +31,11 @@ graph TB
         JSE2E["E2E Tests<br/>🔍 Playwright<br/>Full Application"]
     end
 
-    subgraph "Test Execution"
+    subgraph "Test Execution & Reporting"
+        UI["UI Test Runner<br/>Settings Page<br/>Real-time Results"]
         Local["Local Development<br/>npm test, pytest"]
         CI["CI/CD Pipeline<br/>GitHub Actions"]
-        UI["UI Test Runner<br/>Settings Page"]
+        Coverage["Coverage Reports<br/>HTML, JSON, LCOV"]
     end
 
     PyUnit --> PyInt
@@ -58,1071 +43,375 @@ graph TB
     JSUnit --> JSInt
     JSInt --> JSE2E
     
-    PyE2E --> Local
-    JSE2E --> Local
+    PyE2E --> UI
+    JSE2E --> UI
+    UI --> Coverage
     Local --> CI
-    Local --> UI
+    UI --> Local
 ```
 
-## 🚀 UI Test Runner
+## 🚀 UI Test Runner & Results Dashboard
 
-Archon includes a built-in test runner accessible from the Settings page in the UI. This allows you to:
+Archon includes a built-in test runner with comprehensive reporting accessible from the Settings page. This provides:
 
-- **Run Tests On-Demand**: Execute Python and React test suites without command line access
-- **Real-time Output**: See test results streamed in real-time via WebSockets
-- **Test History**: View previous test runs and their results
-- **Visual Feedback**: Green/red indicators for pass/fail status
-- **Coverage Reports**: Access HTML coverage reports directly from the UI
+### **Test Results Modal Features**
+- **Test Health Score**: Executive summary combining test success rate + coverage percentage
+- **Test Summary**: Pass/fail counts, duration, and individual test suite breakdown
+- **Coverage Analysis**: Lines, functions, statements, and branches coverage with visual progress bars
+- **Color-coded Indicators**: Green ≥80%, Yellow ≥60%, Red `<60%`
+- **Real-time Updates**: Button appears automatically after successful test runs
 
-### Accessing the Test Runner
-
+### **Accessing the Test Runner**
 1. Navigate to **Settings** in the Archon UI
-2. Click on the **Tests** tab
-3. Select which test suite to run:
-   - **Python Tests**: Runs pytest suite for backend
-   - **React Tests**: Runs Vitest suite for frontend
-4. Click **Run Tests** to execute
-5. View real-time output and results
+2. Scroll to the **Archon Unit Tests** section
+3. Run React UI tests to generate test results and coverage
+4. Click **Test Results** button (appears after tests complete)
+5. View comprehensive test health report in modal
+
+### **Key Capabilities**
+- **On-Demand Execution**: Run Python and React test suites without command line
+- **Streaming Output**: Real-time test results via WebSockets
+- **Visual Feedback**: Color-coded status indicators and progress bars
+- **Coverage Integration**: Automatic HTML coverage report generation
+- **Test History**: Previous test run tracking
 
 ## 📋 Testing Strategy Documents
 
 For detailed testing strategies and best practices:
 
-- **[Python Testing Strategy](./testing-python-strategy)** - Comprehensive pytest guide for backend testing
-- **[Vitest Testing Strategy](./testing-vitest-strategy)** - React & TypeScript testing with Vitest
+- **[Vitest Testing Strategy](./testing-vitest-strategy)** - Comprehensive React & TypeScript testing guide
+- **[Python Testing Strategy](./testing-python-strategy)** - Backend testing with pytest
 
 ## 📁 Test Directory Structure
 
+### Frontend (React/TypeScript)
+
+```
+archon-ui-main/
+├── vitest.config.ts           # Vitest configuration with coverage
+├── vite.config.ts             # Dev server with test endpoints
+├── test/
+│   ├── setup.ts              # Enhanced test setup with mocks
+│   ├── README_TEST_GUIDE.md   # Comprehensive testing guide
+│   ├── TEST_STRUCTURE.md      # File structure documentation
+│   ├── components/           # Component tests (73 files)
+│   │   ├── ui/               # UI component tests
+│   │   ├── layouts/          # Layout component tests
+│   │   ├── mcp/              # MCP component tests
+│   │   ├── settings/         # Settings component tests
+│   │   └── project-tasks/    # Project task component tests
+│   ├── services/             # Service layer tests (12 files)
+│   ├── pages/                # Page component tests (5 files)
+│   ├── hooks/                # Custom hook tests (2 files)
+│   ├── contexts/             # Context provider tests (3 files)
+│   ├── lib/                  # Utility function tests (2 files)
+│   ├── integration/          # Integration tests (8 files)
+│   ├── e2e/                  # End-to-end tests (5 files)
+│   ├── performance/          # Performance tests (3 files)
+│   ├── fixtures/             # Test data and mocks
+│   └── utils/                # Test utilities
+└── coverage/                 # Generated coverage reports
+    ├── index.html            # HTML coverage report
+    ├── coverage-summary.json # Coverage summary
+    └── test-results.json     # Test execution results
+```
+
+### Backend (Python)
+
 ```
 python/
-├── tests/                   # Backend test suite
+├── tests/                    # Backend test suite
 │   ├── unit/                # Unit tests
-│   │   ├── test_auth.py
-│   │   ├── test_vector_store.py
-│   │   ├── test_mcp_client.py
-│   │   ├── test_rag_pipeline.py
-│   │   └── test_utils.py
 │   ├── integration/         # Integration tests
-│   │   ├── test_api_endpoints.py
-│   │   ├── test_database.py
-│   │   ├── test_mcp_server.py
-│   │   └── test_websockets.py
 │   ├── e2e/                 # End-to-end tests
-│   │   ├── test_user_flows.py
-│   │   ├── test_document_upload.py
-│   │   └── test_chat_interface.py
 │   ├── performance/         # Performance tests
-│   │   ├── test_load.py
-│   │   └── test_stress.py
 │   ├── fixtures/            # Test data
-│   │   ├── sample_documents/
-│   │   ├── mock_responses/
-│   │   └── test_data.json
 │   ├── conftest.py         # Pytest configuration
-│   └── requirements-test.txt # Test dependencies
 │   └── pytest.ini         # Pytest settings
 ├── src/                     # Application source code
 └── pyproject.toml          # Python project configuration
 ```
 
-## 🚀 Quick Start
+## 🔧 Test Configuration
 
-### Prerequisites
+### Frontend Vitest Configuration
 
-```bash
-# Navigate to python directory
-cd python
-
-# Install test dependencies
-pip install -r requirements-test.txt
-
-# Or install with development dependencies
-pip install -e ".[dev]"
+```typescript
+// vitest.config.ts
+export default defineConfig({
+  plugins: [react()],
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: './test/setup.ts',
+    include: ['test/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    exclude: ['node_modules', 'dist', '.git', '.cache'],
+    reporters: ['default', 'json'],
+    outputFile: { 
+      json: './coverage/test-results.json' 
+    },
+    coverage: {
+      provider: 'v8',
+      reporter: [
+        'text-summary', 
+        'html', 
+        'json', 
+        'json-summary',
+        'lcov'
+      ],
+      reportsDirectory: './coverage',
+      thresholds: {
+        global: {
+          statements: 70,
+          branches: 65,
+          functions: 70,
+          lines: 70,
+        },
+        'src/services/**/*.ts': {
+          statements: 80,
+          branches: 75,
+          functions: 80,
+          lines: 80,
+        }
+      }
+    },
+  },
+})
 ```
 
-### Running Tests
+### Enhanced Test Setup
+
+```typescript
+// test/setup.ts - Comprehensive test environment setup
+import '@testing-library/jest-dom'
+import { vi } from 'vitest'
+
+// Comprehensive Lucide React icon mocks (170+ icons)
+vi.mock('lucide-react', () => ({
+  Settings: ({ className, ...props }: any) => 
+    React.createElement('span', { 
+      className, 
+      'data-testid': 'settings-icon',
+      'data-lucide': 'Settings',
+      ...props 
+    }, 'Settings'),
+  // ... 170+ icon mocks
+}))
+
+// Enhanced WebSocket mocking with lifecycle simulation
+export class MockWebSocket {
+  static CONNECTING = 0
+  static OPEN = 1
+  static CLOSING = 2
+  static CLOSED = 3
+
+  constructor(url: string) {
+    this.url = url
+    // Simulate connection opening asynchronously
+    setTimeout(() => {
+      this.readyState = MockWebSocket.OPEN
+      if (this.onopen) {
+        this.onopen(new Event('open'))
+      }
+    }, 0)
+  }
+
+  send = vi.fn()
+  close = vi.fn(() => {
+    this.readyState = MockWebSocket.CLOSED
+    if (this.onclose) {
+      this.onclose(new CloseEvent('close'))
+    }
+  })
+}
+
+// Enhanced WebSocket service mock
+vi.mock('@/services/websocketService', () => ({
+  websocketService: {
+    connect: vi.fn().mockResolvedValue(undefined),
+    disconnect: vi.fn(),
+    subscribe: vi.fn().mockReturnValue(vi.fn()),
+    send: vi.fn(),
+    getConnectionState: vi.fn().mockReturnValue('connected')
+  }
+}))
+```
+
+## 🚀 Quick Start Commands
+
+### Frontend Testing (React/Vitest)
 
 ```bash
-# Run all tests (from python/ directory)
+# Navigate to frontend directory
+cd archon-ui-main
+
+# Run all tests
+npm test
+
+# Run tests with coverage and results generation
+npm run test:coverage
+
+# Run tests in watch mode
+npm test -- --watch
+
+# Run tests with UI
+npm run test:ui
+
+# Run specific test file
+npm test -- Button.test.tsx
+
+# Run tests matching pattern
+npm test -- --grep "should handle"
+```
+
+### Backend Testing (Python/Pytest)
+
+```bash
+# Navigate to backend directory
+cd python
+
+# Run all tests
 pytest
 
 # Run with coverage
 pytest --cov=src --cov-report=html
 
 # Run specific test categories
-pytest tests/unit/          # Unit tests only
-pytest tests/integration/   # Integration tests only
-pytest tests/e2e/          # E2E tests only
-
-# Run tests with specific markers
-pytest -m "not slow"       # Skip slow tests
-pytest -m "api"            # Run API tests only
-pytest -m "database"       # Run database tests only
+pytest -m "unit"
+pytest -m "integration"
+pytest -m "mcp"
 ```
 
-### Test Configuration
-
-```ini
-# python/pytest.ini
-[tool:pytest]
-minversion = 6.0
-addopts = 
-    -ra
-    --strict-markers
-    --strict-config
-    --cov=src
-    --cov-branch
-    --cov-report=term-missing:skip-covered
-    --cov-report=html:htmlcov
-    --cov-report=xml
-    --cov-fail-under=80
-testpaths = tests
-markers =
-    slow: marks tests as slow (deselect with '-m "not slow"')
-    api: marks tests as API tests
-    database: marks tests as database tests
-    mcp: marks tests as MCP-related tests
-    rag: marks tests as RAG-related tests
-    auth: marks tests as authentication tests
-    websocket: marks tests as WebSocket tests
-```
-
-## 🔧 Test Configuration & Fixtures
-
-### conftest.py
-
-```python
-# python/tests/conftest.py
-import pytest
-import asyncio
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from unittest.mock import Mock, patch
-
-from src.main import app
-from src.database import get_db, Base
-from src.config import Settings
-from src.auth import get_current_user
-
-# Test database setup
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create an instance of the default event loop for the test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
-@pytest.fixture(scope="function")
-def db_session():
-    """Create a fresh database session for each test."""
-    Base.metadata.create_all(bind=engine)
-    session = TestingSessionLocal()
-    try:
-        yield session
-    finally:
-        session.close()
-        Base.metadata.drop_all(bind=engine)
-
-@pytest.fixture(scope="function")
-def client(db_session):
-    """Create a test client with dependency overrides."""
-    def override_get_db():
-        try:
-            yield db_session
-        finally:
-            db_session.close()
-
-    def override_get_current_user():
-        return {"id": "test-user", "email": "test@example.com"}
-
-    app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_current_user] = override_get_current_user
-
-    with TestClient(app) as test_client:
-        yield test_client
-
-    app.dependency_overrides.clear()
-
-@pytest.fixture
-def mock_openai():
-    """Mock OpenAI API calls."""
-    with patch("openai.Embedding.create") as mock_embed, \
-         patch("openai.ChatCompletion.create") as mock_chat:
-
-        mock_embed.return_value = {
-            "data": [{"embedding": [0.1] * 1536}]
-        }
-
-        mock_chat.return_value = {
-            "choices": [{
-                "message": {
-                    "content": "Test response from OpenAI"
-                }
-            }]
-        }
-
-        yield {"embed": mock_embed, "chat": mock_chat}
-
-@pytest.fixture
-def mock_supabase():
-    """Mock Supabase client."""
-    mock_client = Mock()
-    mock_client.table.return_value.insert.return_value.execute.return_value = {
-        "data": [{"id": 1, "content": "test"}]
-    }
-    mock_client.table.return_value.select.return_value.execute.return_value = {
-        "data": [{"id": 1, "content": "test", "embedding": [0.1] * 1536}]
-    }
-    return mock_client
-
-@pytest.fixture
-def sample_document():
-    """Sample document for testing."""
-    return {
-        "title": "Test Document",
-        "content": "This is a test document for RAG testing.",
-        "metadata": {
-            "source": "test",
-            "type": "text"
-        }
-    }
-```
-
-## 🧪 Unit Tests
-
-### Authentication Tests
-
-```python
-# python/tests/unit/test_auth.py
-import pytest
-from unittest.mock import patch, Mock
-from src.auth import create_access_token, verify_token, hash_password, verify_password
-
-class TestAuthentication:
-
-    def test_create_access_token(self):
-        """Test JWT token creation."""
-        data = {"sub": "test@example.com"}
-        token = create_access_token(data)
-
-        assert isinstance(token, str)
-        assert len(token) > 0
-
-    def test_verify_token_valid(self):
-        """Test token verification with valid token."""
-        data = {"sub": "test@example.com"}
-        token = create_access_token(data)
-
-        payload = verify_token(token)
-        assert payload["sub"] == "test@example.com"
-
-    def test_verify_token_invalid(self):
-        """Test token verification with invalid token."""
-        with pytest.raises(ValueError):
-            verify_token("invalid.token.here")
-
-    def test_password_hashing(self):
-        """Test password hashing and verification."""
-        password = "test_password_123"
-        hashed = hash_password(password)
-
-        assert hashed != password
-        assert verify_password(password, hashed) is True
-        assert verify_password("wrong_password", hashed) is False
-```
-
-### Vector Store Tests
-
-```python
-# python/tests/unit/test_vector_store.py
-import pytest
-import numpy as np
-from unittest.mock import Mock, patch
-from src.vector_store import VectorStore, generate_embedding, search_similar
-
-class TestVectorStore:
-
-    @pytest.fixture
-    def vector_store(self, mock_supabase):
-        """Create vector store instance with mocked dependencies."""
-        return VectorStore(client=mock_supabase)
-
-    def test_generate_embedding(self, mock_openai):
-        """Test embedding generation."""
-        text = "This is a test document"
-        embedding = generate_embedding(text)
-
-        assert isinstance(embedding, list)
-        assert len(embedding) == 1536
-        assert all(isinstance(x, float) for x in embedding)
-
-    def test_search_similar(self, vector_store, mock_supabase):
-        """Test similarity search."""
-        query_embedding = [0.1] * 1536
-        
-        # Mock database response
-        mock_supabase.rpc.return_value.execute.return_value = {
-            "data": [
-                {
-                    "id": 1,
-                    "content": "Similar document",
-                    "similarity": 0.95
-                }
-            ]
-        }
-
-        results = vector_store.search_similar(query_embedding, limit=5)
-
-        assert len(results) == 1
-        assert results[0]["similarity"] >= 0.9
-        mock_supabase.rpc.assert_called_once()
-```
-
-### RAG Pipeline Tests
-
-```python
-# python/tests/unit/test_rag_pipeline.py
-import pytest
-from unittest.mock import Mock, patch
-from src.rag_pipeline import RAGPipeline, process_query, chunk_document
-
-class TestRAGPipeline:
-
-    @pytest.fixture
-    def rag_pipeline(self, mock_supabase, mock_openai):
-        """Create RAG pipeline with mocked dependencies."""
-        return RAGPipeline(
-            vector_store=Mock(),
-            llm_client=Mock()
-        )
-
-    def test_chunk_document(self):
-        """Test document chunking."""
-        document = "This is a long document. " * 100
-        chunks = chunk_document(document, chunk_size=200, overlap=50)
-
-        assert len(chunks) > 1
-        assert all(len(chunk) <= 250 for chunk in chunks)  # 200 + overlap
-        assert len(chunks[0]) >= 200
-
-    def test_process_query(self, rag_pipeline):
-        """Test query processing."""
-        query = "What is machine learning?"
-        
-        # Mock vector search results
-        rag_pipeline.vector_store.search_similar.return_value = [
-            {
-                "content": "Machine learning is a subset of AI...",
-                "similarity": 0.9
-            }
-        ]
-
-        # Mock LLM response
-        rag_pipeline.llm_client.chat.return_value = {
-            "choices": [{
-                "message": {
-                    "content": "Machine learning is a method of data analysis..."
-                }
-            }]
-        }
-
-        response = rag_pipeline.process_query(query)
-
-        assert "machine learning" in response.lower()
-        rag_pipeline.vector_store.search_similar.assert_called_once()
-```
-
-## 🔗 Integration Tests
-
-### API Endpoint Tests
-
-```python
-# python/tests/integration/test_api_endpoints.py
-import pytest
-import json
-from fastapi.testclient import TestClient
-
-class TestKnowledgeAPI:
-
-    def test_upload_document(self, client):
-        """Test document upload endpoint."""
-        test_file = ("test.txt", "This is test content", "text/plain")
-        
-        response = client.post(
-            "/api/documents/upload",
-            files={"file": test_file},
-            data={"knowledge_type": "technical"}
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["filename"] == "test.txt"
-        assert "document_id" in data
-
-    def test_search_knowledge(self, client, sample_document):
-        """Test knowledge search endpoint."""
-        # First upload a document
-        test_file = ("sample.txt", sample_document["content"], "text/plain")
-        upload_response = client.post(
-            "/api/documents/upload",
-            files={"file": test_file},
-            data={"knowledge_type": "technical"}
-        )
-        assert upload_response.status_code == 200
-
-        # Then search for it
-        search_response = client.post(
-            "/api/rag/query",
-            json={
-                "query": "test document",
-                "limit": 5
-            }
-        )
-
-        assert search_response.status_code == 200
-        data = search_response.json()
-        assert "results" in data
-        assert len(data["results"]) > 0
-
-    def test_list_documents(self, client):
-        """Test document listing endpoint."""
-        response = client.get("/api/knowledge-items")
-
-        assert response.status_code == 200
-        data = response.json()
-        assert "items" in data
-        assert "total" in data
-
-    def test_delete_document(self, client):
-        """Test document deletion."""
-        # Upload a document first
-        test_file = ("delete_test.txt", "Content to delete", "text/plain")
-        upload_response = client.post(
-            "/api/documents/upload",
-            files={"file": test_file}
-        )
-        
-        document_id = upload_response.json()["document_id"]
-
-        # Delete the document
-        delete_response = client.delete(f"/api/knowledge-items/{document_id}")
-        
-        assert delete_response.status_code == 200
-        assert "deleted" in delete_response.json()["message"].lower()
-```
-
-### Database Tests
-
-```python
-# python/tests/integration/test_database.py
-import pytest
-from src.database import get_supabase_client, create_tables, insert_document
-
-class TestDatabase:
-
-    def test_supabase_connection(self):
-        """Test Supabase connection."""
-        client = get_supabase_client()
-        
-        # Test basic operation
-        response = client.table("crawled_pages").select("*").limit(1).execute()
-        assert "data" in response
-
-    def test_insert_document(self, sample_document):
-        """Test document insertion."""
-        client = get_supabase_client()
-        
-        result = insert_document(
-            client=client,
-            content=sample_document["content"],
-            metadata=sample_document["metadata"],
-            embedding=[0.1] * 1536
-        )
-
-        assert result["success"] is True
-        assert "id" in result
-
-    def test_vector_search(self):
-        """Test vector similarity search."""
-        client = get_supabase_client()
-        
-        query_embedding = [0.1] * 1536
-        
-        response = client.rpc(
-            "match_crawled_pages",
-            {
-                "query_embedding": query_embedding,
-                "match_count": 5,
-                "filter": {}
-            }
-        ).execute()
-
-        assert "data" in response
-        assert isinstance(response["data"], list)
-```
-
-### MCP Server Tests
-
-```python
-# python/tests/integration/test_mcp_server.py
-import pytest
-import asyncio
-import json
-from unittest.mock import Mock
-from src.mcp_server import MCPServer
-
-class TestMCPServer:
-
-    @pytest.fixture
-    async def mcp_server(self):
-        """Create MCP server instance."""
-        server = MCPServer()
-        await server.initialize()
-        return server
-
-    @pytest.mark.asyncio
-    async def test_search_tool(self, mcp_server):
-        """Test MCP search tool."""
-        request = {
-            "tool": "search_knowledge",
-            "arguments": {
-                "query": "test query",
-                "limit": 5
-            }
-        }
-
-        response = await mcp_server.call_tool(request)
-
-        assert response["success"] is True
-        assert "results" in response
-
-    @pytest.mark.asyncio
-    async def test_create_task_tool(self, mcp_server):
-        """Test MCP task creation tool."""
-        request = {
-            "tool": "create_task",
-            "arguments": {
-                "title": "Test Task",
-                "description": "This is a test task",
-                "project_id": "test-project"
-            }
-        }
-
-        response = await mcp_server.call_tool(request)
-
-        assert response["success"] is True
-        assert response["task"]["title"] == "Test Task"
-```
-
-## 🌐 End-to-End Tests
-
-### User Flow Tests
-
-```python
-# python/tests/e2e/test_user_flows.py
-import pytest
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-
-class TestUserFlows:
-
-    @pytest.fixture(scope="class")
-    def driver(self):
-        """Create web driver instance."""
-        options = webdriver.ChromeOptions()
-        options.add_argument("--headless")
-        driver = webdriver.Chrome(options=options)
-        driver.implicitly_wait(10)
-        yield driver
-        driver.quit()
-
-    def test_complete_document_workflow(self, driver):
-        """Test complete document upload and search workflow."""
-        # Navigate to application
-        driver.get("http://localhost:3737")
-
-        # Upload document
-        upload_button = driver.find_element(By.TEXT, "Upload Document")
-        upload_button.click()
-
-        file_input = driver.find_element(By.CSS_SELECTOR, "input[type='file']")
-        file_input.send_keys("/path/to/test/document.pdf")
-
-        submit_button = driver.find_element(By.TEXT, "Upload")
-        submit_button.click()
-
-        # Wait for upload completion
-        WebDriverWait(driver, 30).until(
-            EC.presence_of_element_located((By.TEXT, "Upload successful"))
-        )
-
-        # Search for uploaded document
-        search_input = driver.find_element(By.CSS_SELECTOR, "input[placeholder*='Search']")
-        search_input.send_keys("test document content")
-        search_input.submit()
-
-        # Verify search results
-        results = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CLASS_NAME, "search-results"))
-        )
-
-        assert len(results.find_elements(By.CLASS_NAME, "result-item")) > 0
-
-    def test_mcp_connection_workflow(self, driver):
-        """Test MCP connection setup workflow."""
-        driver.get("http://localhost:3737")
-
-        # Navigate to MCP settings
-        settings_link = driver.find_element(By.TEXT, "Settings")
-        settings_link.click()
-
-        mcp_tab = driver.find_element(By.TEXT, "MCP Server")
-        mcp_tab.click()
-
-        # Start MCP server
-        start_button = driver.find_element(By.TEXT, "Start MCP Server")
-        start_button.click()
-
-        # Wait for server to start
-        status_indicator = WebDriverWait(driver, 15).until(
-            EC.text_to_be_present_in_element(
-                (By.CLASS_NAME, "server-status"), "Running"
-            )
-        )
-
-        # Verify connection info is displayed
-        connection_info = driver.find_element(By.CLASS_NAME, "connection-info")
-        assert "stdio" in connection_info.text.lower()
-```
-
-## ⚡ Performance Tests
-
-### Load Testing
-
-```python
-# python/tests/performance/test_load.py
-import pytest
-import asyncio
-import aiohttp
-import time
-from concurrent.futures import ThreadPoolExecutor
-
-class TestLoadPerformance:
-
-    @pytest.mark.asyncio
-    async def test_api_concurrent_requests(self):
-        """Test API performance under concurrent load."""
-        async def make_request(session, url):
-            async with session.get(url) as response:
-                return await response.json()
-
-        async with aiohttp.ClientSession() as session:
-            tasks = []
-            for _ in range(50):  # 50 concurrent requests
-                task = make_request(session, "http://localhost:8080/api/knowledge-items")
-                tasks.append(task)
-
-            start_time = time.time()
-            responses = await asyncio.gather(*tasks)
-            end_time = time.time()
-
-            # All requests should complete within 10 seconds
-            assert end_time - start_time < 10
-            # All responses should be successful
-            assert all("items" in response for response in responses)
-
-    def test_document_upload_performance(self):
-        """Test document upload performance."""
-        import requests
-
-        # Create a test document
-        test_content = "This is test content. " * 1000  # ~20KB
-        files = {"file": ("large_test.txt", test_content, "text/plain")}
-
-        start_time = time.time()
-        response = requests.post("http://localhost:8080/api/documents/upload", files=files)
-        end_time = time.time()
-
-        upload_time = end_time - start_time
-
-        assert response.status_code == 200
-        assert upload_time < 10.0  # Upload should complete within 10 seconds
-
-    @pytest.mark.asyncio
-    async def test_search_performance(self):
-        """Test search performance with multiple queries."""
-        queries = [
-            "machine learning",
-            "artificial intelligence", 
-            "data science",
-            "python programming",
-            "web development"
-        ]
-
-        async def search_query(session, query):
-            payload = {"query": query, "limit": 10}
-            async with session.post(
-                "http://localhost:8080/api/rag/query",
-                json=payload
-            ) as response:
-                return await response.json()
-
-        async with aiohttp.ClientSession() as session:
-            start_time = time.time()
-            
-            tasks = [search_query(session, query) for query in queries]
-            results = await asyncio.gather(*tasks)
-            
-            end_time = time.time()
-
-            # All searches should complete within 5 seconds
-            assert end_time - start_time < 5.0
-            # All searches should return results
-            assert all("results" in result for result in results)
-```
-
-## 🔍 Test Coverage & Reporting
-
-### Coverage Configuration
-
-```ini
-# python/.coveragerc
-[run]
-source = src
-omit = 
-    python/src/migrations/*
-    python/tests/*
-    python/src/config.py
-    */venv/*
-    */virtualenv/*
-
-[report]
-exclude_lines =
-    pragma: no cover
-    def __repr__
-    raise AssertionError
-    raise NotImplementedError
-    if __name__ == .__main__.:
-    class .*Protocol\):
-    @(abc\.)?abstractmethod
-
-[html]
-directory = htmlcov
-```
-
-### Generating Reports
+### Docker Testing
 
 ```bash
-# Navigate to python directory first
-cd python
+# Run frontend tests in Docker
+docker exec -it archon-frontend-1 npm run test:coverage
 
-# Generate coverage report
-pytest --cov=src --cov-report=html --cov-report=term
-
-# Generate XML report for CI/CD
-pytest --cov=src --cov-report=xml
-
-# Generate detailed coverage report
-coverage report --show-missing
+# Run backend tests in Docker
+docker exec -it archon-pyserver pytest --cov=src
 ```
 
-## 🚀 Continuous Integration
+## 📊 Coverage Goals & Current Status
 
-### GitHub Actions Workflow
+| Component | Target Coverage | Critical Path Coverage | Implementation Status |
+|-----------|----------------|----------------------|---------------------|
+| React Components | 80% | 90% | 🔴 15% (In Progress) |
+| Services | 85% | 95% | 🔴 25% (In Progress) |
+| Pages | 80% | 90% | 🟡 75% (Good Progress) |
+| Hooks | 90% | 95% | 🔴 0% (Not Started) |
+| Utils | 95% | 100% | 🔴 0% (Not Started) |
+| **Overall Frontend** | **80%** | **90%** | **🔴 15%** |
 
-```yaml
-# .github/workflows/test.yml
-name: Tests
+### Test Implementation Progress
 
-on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
+- **Total Test Files Planned**: 68
+- **Already Implemented**: 7 files ✅
+- **To Be Implemented**: 61 files 📝
+- **Total Test Cases**: ~465
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: [3.9, 3.10, 3.11]
+## 🔄 Test Execution Environments
 
-    services:
-      postgres:
-        image: postgres:13
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: test_db
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+### 1. Local Development
+- **Command Line**: Direct npm/pytest execution
+- **IDE Integration**: VS Code test runner support
+- **Watch Mode**: Automatic re-execution on file changes
 
-    steps:
-    - uses: actions/checkout@v3
+### 2. UI Test Runner (Settings Page)
+- **Visual Interface**: Click-to-run test execution
+- **Real-time Output**: Streaming test results
+- **Coverage Integration**: Automatic HTML report generation
+- **Test Results Modal**: Comprehensive health dashboard
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v3
-      with:
-        python-version: ${{ matrix.python-version }}
+### 3. Docker Environment
+- **Isolated Execution**: Consistent environment across machines
+- **Production-like**: Tests run in containerized environment
+- **CI/CD Ready**: Same environment as deployment
 
-    - name: Install dependencies
-      run: |
-        cd python
-        python -m pip install --upgrade pip
-        pip install -r requirements-test.txt
+### 4. Continuous Integration
+- **GitHub Actions**: Automated test execution on PRs
+- **Coverage Reporting**: Automatic coverage upload
+- **Quality Gates**: Failed tests block merges
 
-    - name: Run unit tests
-      run: |
-        cd python
-        pytest tests/unit/ --cov=src --cov-report=xml
+## 🛠️ WebSocket Testing Strategy
 
-    - name: Run integration tests
-      run: |
-        cd python
-        pytest tests/integration/ --cov=src --cov-append --cov-report=xml
-      env:
-        DATABASE_URL: postgresql://postgres:postgres@localhost/test_db
+WebSocket functionality is critical to Archon's real-time features. Our testing approach:
 
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./python/coverage.xml
-        flags: unittests
-        name: codecov-umbrella
+### **Safety First**
+- **Never create real WebSocket connections** in tests
+- **Always mock** the websocketService module
+- **Clean up subscriptions** in afterEach hooks
+- **Avoid function references** in useCallback dependencies
+
+### **Mock Implementation**
+```typescript
+// Enhanced WebSocket mocking
+vi.mock('@/services/websocketService', () => ({
+  websocketService: {
+    connect: vi.fn().mockResolvedValue(undefined),
+    disconnect: vi.fn(),
+    subscribe: vi.fn().mockReturnValue(vi.fn()),
+    send: vi.fn(),
+    getConnectionState: vi.fn().mockReturnValue('connected')
+  }
+}))
 ```
 
-## 🛠️ Testing Best Practices
+### **Testing Patterns**
+- Test connection establishment
+- Test message handling
+- Test reconnection logic
+- Test error scenarios
+- Test cleanup and disconnection
 
-### Test Organization
+## 🎯 Quality Assurance Checklist
 
-1. **Follow AAA Pattern**: Arrange, Act, Assert
-2. **Use descriptive test names**: `test_should_return_error_when_invalid_token_provided`
-3. **One assertion per test**: Focus on testing one behavior
-4. **Use fixtures for setup**: Avoid code duplication
-5. **Mock external dependencies**: Keep tests isolated
+### Before Committing Code
 
-### Test Data Management
+- [ ] All tests pass locally
+- [ ] Coverage meets minimum thresholds
+- [ ] No console errors in test output
+- [ ] WebSocket mocks are properly implemented
+- [ ] Test names are descriptive and clear
 
-```python
-# Use factories for test data
-class DocumentFactory:
-    @staticmethod
-    def create_sample_document(**kwargs):
-        defaults = {
-            "title": "Sample Document",
-            "content": "This is sample content for testing.",
-            "metadata": {"source": "test", "type": "text"}
-        }
-        defaults.update(kwargs)
-        return defaults
+### For New Features
 
-# Use parametrized tests for multiple scenarios
-@pytest.mark.parametrize("input_text,expected_length", [
-    ("short", 5),
-    ("medium length text", 18),
-    ("this is a much longer text for testing", 38)
-])
-def test_text_processing(input_text, expected_length):
-    result = process_text(input_text)
-    assert len(result) == expected_length
-```
+- [ ] Unit tests for core functionality
+- [ ] Integration tests for user workflows
+- [ ] Error scenario testing
+- [ ] Accessibility testing
+- [ ] Performance impact assessment
 
-### Performance Testing Guidelines
+### For Bug Fixes
 
-1. **Set realistic thresholds**: Based on production requirements
-2. **Test under load**: Simulate concurrent users
-3. **Monitor resource usage**: CPU, memory, database connections
-4. **Test edge cases**: Large files, long conversations
-5. **Automate performance tests**: Include in CI/CD pipeline
+- [ ] Regression test added
+- [ ] Root cause identified and tested
+- [ ] Edge cases covered
+- [ ] Documentation updated if needed
 
-## 🐛 Debugging Tests
+## 📚 Best Practices Summary
 
-### Common Issues
+1. **User-Centric Testing**: Test from the user's perspective, not implementation details
+2. **Test Isolation**: Each test should be independent and repeatable
+3. **Mock External Dependencies**: Keep tests fast and deterministic
+4. **Descriptive Test Names**: Clearly describe what is being tested
+5. **WebSocket Safety**: Always mock WebSocket connections in tests
+6. **Coverage Quality**: Focus on meaningful coverage, not just numbers
+7. **Regular Maintenance**: Update tests when requirements change
+8. **Documentation**: Keep test documentation current and accurate
 
-```bash
-# Navigate to python directory first
-cd python
+## 🔗 Related Documentation
 
-# Run tests with verbose output
-pytest -v
-
-# Run specific test with debugging
-pytest tests/unit/test_auth.py::test_create_access_token -v -s
-
-# Drop into debugger on failure
-pytest --pdb
-
-# Show local variables on failure
-pytest --tb=long
-```
-
-### Test Environment Setup
-
-```bash
-# Create isolated test environment
-python -m venv test_env
-source test_env/bin/activate
-cd python
-pip install -r requirements-test.txt
-
-# Run tests with environment variables
-TEST_DATABASE_URL=sqlite:///test.db pytest
-```
-
-## 🔧 Docker Testing
-
-### Running Tests in Docker
-
-```bash
-# Build and run tests in Docker
-docker-compose run --rm archon-pyserver pytest
-
-# Run specific test suite
-docker-compose run --rm archon-pyserver pytest tests/unit/
-
-# Run with coverage
-docker-compose run --rm archon-pyserver pytest --cov=src --cov-report=html
-```
-
-### Test Database Setup
-
-```yaml
-# docker-compose.test.yml
-version: '3.8'
-
-services:
-  test-db:
-    image: postgres:13
-    environment:
-      POSTGRES_DB: test_archon
-      POSTGRES_USER: test_user
-      POSTGRES_PASSWORD: test_password
-    ports:
-      - "5433:5432"
-
-  archon-pyserver-test:
-    build: ./python
-    depends_on:
-      - test-db
-    environment:
-      - DATABASE_URL=postgresql://test_user:test_password@test-db:5432/test_archon
-      - TESTING=true
-    command: pytest --cov=src --cov-report=xml
-    volumes:
-      - ./python/tests:/app/tests
-      - ./python/src:/app/src
-```
-
-## 🚀 Quick Start Guide
-
-### Running Backend Tests (Python)
-
-```bash
-# Navigate to Python directory
-cd python
-
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=src --cov-report=html
-
-# Run specific test category
-pytest -m unit
-pytest -m integration
-pytest -m mcp
-
-# Run in watch mode (requires pytest-watch)
-ptw
-```
-
-### Running Frontend Tests (React)
-
-```bash
-# Navigate to UI directory
-cd archon-ui-main
-
-# Run all tests
-npm test
-
-# Run with coverage
-npm run test:coverage
-
-# Run with UI
-npm run test:ui
-
-# Run in watch mode
-npm run test:watch
-```
-
-### Running Tests via Docker
-
-```bash
-# Run Python tests in Docker
-docker-compose run --rm archon-pyserver pytest
-
-# Run React tests in Docker
-docker-compose run --rm archon-ui npm test
-```
-
-## 📈 Coverage Goals
-
-| Component | Target Coverage | Critical Path Coverage |
-|-----------|----------------|----------------------|
-| Python Backend | 80% | 95% |
-| React Frontend | 80% | 90% |
-| MCP Tools | 90% | 100% |
-| API Endpoints | 85% | 95% |
-| Utilities | 95% | 100% |
-
-## 🔄 Continuous Integration
-
-Our CI pipeline automatically runs tests on every push and pull request:
-
-1. **Pre-commit Hooks**: Run linting and type checking
-2. **Unit Tests**: Fast feedback on component functionality
-3. **Integration Tests**: Verify component interactions
-4. **Coverage Reports**: Track and enforce coverage requirements
-5. **E2E Tests**: Validate critical user journeys
-
-## 🛠️ Testing Tools & Frameworks
-
-### Backend (Python)
-- **pytest**: Testing framework
-- **pytest-asyncio**: Async test support
-- **pytest-mock**: Mocking utilities
-- **httpx**: Async HTTP testing
-- **coverage.py**: Code coverage
-
-### Frontend (React)
-- **Vitest**: Test runner and framework
-- **React Testing Library**: Component testing
-- **MSW**: API mocking
-- **@testing-library/user-event**: User interaction simulation
-- **Playwright**: E2E testing
-
-## 📚 Best Practices
-
-1. **Write Tests First**: Follow TDD when implementing new features
-2. **Test Behavior, Not Implementation**: Focus on what the code does, not how
-3. **Keep Tests Simple**: Each test should verify one thing
-4. **Use Descriptive Names**: Test names should explain what is being tested
-5. **Mock External Dependencies**: Keep tests fast and deterministic
-6. **Regular Test Maintenance**: Update tests when requirements change
+- **[Vitest Testing Strategy](./testing-vitest-strategy)** - Detailed frontend testing patterns
+- **[Python Testing Strategy](./testing-python-strategy)** - Backend testing guide
+- **[UI Documentation](./ui)** - Component documentation and guidelines
+- **[WebSocket Documentation](./websockets)** - Real-time communication patterns
+- **[API Reference](./api-reference)** - Backend API testing endpoints
 
 ---
 
-**Next Steps:**
-- Deep dive into [Python Testing Strategy](./testing-python-strategy) for backend testing details
-- Explore [Vitest Testing Strategy](./testing-vitest-strategy) for frontend testing patterns
-- Learn about [Deployment](./deployment) for CI/CD setup
-- Check [API Reference](./api-reference) for endpoint documentation
+**Quick Links:**
+- 🚀 [Get Started with Testing](./testing-vitest-strategy#quick-start)
+- 📊 [View Test Coverage Reports](#coverage-goals--current-status)
+- 🎯 [UI Test Runner Guide](#ui-test-runner--results-dashboard)
+- 🔧 [Docker Testing Setup](#docker-testing)
