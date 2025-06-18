@@ -286,7 +286,42 @@ When adding a URL to the knowledge base through the UI, you'll see:
 - **Contextual Help**: Descriptive text for each level
 - **Detailed Tooltip**: Hover over the (i) icon for comprehensive guidance
 
-![Crawl Depth Control](/img/crawl-depth-control.png)
+```mermaid
+graph LR
+    subgraph "Crawl Depth Visualization"
+        A[🌐 Starting URL] -->|Level 1| A1[Single Page Only]
+        
+        A -->|Level 2| B[📄 Page Content]
+        B --> B1[🔗 Link 1]
+        B --> B2[🔗 Link 2]
+        B --> B3[🔗 Link 3]
+        
+        A -->|Level 3| C[📄 Page Content]
+        C --> C1[🔗 Link 1]
+        C1 --> C11[📑 Sub-link 1.1]
+        C1 --> C12[📑 Sub-link 1.2]
+        C --> C2[🔗 Link 2]
+        C2 --> C21[📑 Sub-link 2.1]
+        
+        A -->|Level 4-5| D[📄 Page Content]
+        D --> D1[🔗 Link 1]
+        D1 --> D11[📑 Sub-link 1.1]
+        D11 --> D111[📋 Deep link 1.1.1]
+        D11 --> D112[📋 Deep link 1.1.2]
+        
+        style A fill:#8b5cf6,stroke:#7c3aed,stroke-width:2px,color:#fff
+        style A1 fill:#3b82f6,stroke:#2563eb,stroke-width:2px,color:#fff
+        style B fill:#3b82f6,stroke:#2563eb,stroke-width:2px,color:#fff
+        style C fill:#10b981,stroke:#059669,stroke-width:2px,color:#fff
+        style D fill:#f59e0b,stroke:#d97706,stroke-width:2px,color:#fff
+    end
+```
+
+**UI Component Features:**
+- **Glass-morphism design** with multi-layer buttons
+- **Progressive selection** - all levels up to selected are highlighted
+- **Visual feedback** - Blue glow for selected, red glow for unselected
+- **Compact inline display** similar to star rating components
 
 </TabItem>
 <TabItem value="api" label="🔧 API Usage">

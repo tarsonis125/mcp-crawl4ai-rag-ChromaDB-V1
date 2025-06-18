@@ -277,3 +277,18 @@
     opacity: 0.8;
   }
 }
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px 10px rgba(59, 130, 246, 0.5),
+                0 0 40px 20px rgba(59, 130, 246, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 30px 15px rgba(59, 130, 246, 0.7),
+                0 0 60px 30px rgba(59, 130, 246, 0.4);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}

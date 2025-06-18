@@ -121,8 +121,14 @@ export const DisconnectScreen: React.FC = () => {
             style={{
               background: 'radial-gradient(circle, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.03) 50%, transparent 100%)',
               backdropFilter: 'blur(20px)',
-              border: '2px solid rgba(255,255,255,0.15)',
-              boxShadow: 'inset 0 0 40px rgba(255,255,255,0.08), 0 0 80px rgba(34, 211, 238, 0.3)',
+              border: '3px solid rgba(255,255,255,0.25)',
+              boxShadow: `
+                inset 0 0 40px rgba(255,255,255,0.1), 
+                0 0 80px rgba(34, 211, 238, 0.5),
+                0 0 120px rgba(168, 85, 247, 0.4),
+                0 0 160px rgba(34, 211, 238, 0.3),
+                0 0 200px rgba(168, 85, 247, 0.2)
+              `,
             }}
           />
           
@@ -140,7 +146,7 @@ export const DisconnectScreen: React.FC = () => {
             />
           </div>
           
-          {/* Server Disconnected Text - Glass style with red glow */}
+          {/* Disconnected Text - Glass style with red glow */}
           <div className="absolute -bottom-20 left-1/2 transform -translate-x-1/2">
             <div 
               className="px-8 py-4 rounded-full"
@@ -158,7 +164,7 @@ export const DisconnectScreen: React.FC = () => {
                   textShadow: '0 0 20px rgba(239, 68, 68, 0.8), 0 0 40px rgba(239, 68, 68, 0.6)',
                 }}
               >
-                SERVER DISCONNECTED
+                DISCONNECTED
               </span>
             </div>
           </div>

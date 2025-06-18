@@ -1045,9 +1045,9 @@ const AddKnowledgeModal = ({
     }
   };
 
-  return <div className="fixed inset-0 bg-gray-500/50 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
-      <Card className="w-full max-w-2xl relative before:content-[''] before:absolute before:top-0 before:left-0 before:w-full before:h-[1px] before:bg-green-500">
-        <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-6">
+  return <div className="fixed inset-0 bg-gray-500/50 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <Card className="w-full max-w-2xl relative before:content-[''] before:absolute before:top-0 before:left-0 before:w-full before:h-[1px] before:bg-green-500 p-8">
+        <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-8">
           Add Knowledge Source
         </h2>
         {/* Knowledge Type Selection */}
@@ -1185,7 +1185,7 @@ const AddKnowledgeModal = ({
         {/* Tags */}
         <div className="mb-6">
           <label className="block text-gray-600 dark:text-zinc-400 text-sm mb-2">
-            Tags
+            Tags (AI will add recommended tags if left blank)
           </label>
           <div className="flex flex-wrap gap-2 mb-2">
             {tags.map(tag => <Badge key={tag} color="purple" variant="outline">
