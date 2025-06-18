@@ -1,0 +1,79 @@
+# syntax=docker/dockerfile:1
+
+# Stage 1: Builder
+FROM python:3.12-alpine as builder
+
+# Install build dependencies
+RUN apk add --no-cache \
+    build-base \
+    libffi-dev \
+    openssl-dev \
+    postgresql-dev \
+    gcc \
+    musl-dev \
+    linux-headers
+
+WORKDIR /app
+
+# Install uv
+RUN pip install --no-cache-dir uv==0.5.11
+
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
+
+# Install dependencies with cache mount
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --all-extras
+
+# Copy source for any build steps
+COPY src/ ./src/
+
+# Run build steps
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv run crawl4ai-setup || echo "crawl4ai-setup not critical"
+
+# Test imports
+RUN uv run python -c "from src.main import app; print('✓ App imports successfully')"
+
+# Stage 2: Minimal runtime
+FROM python:3.12-alpine
+
+# Install only runtime dependencies
+RUN apk add --no-cache \
+    curl \
+    ca-certificates \
+    libpq \
+    && rm -rf /var/cache/apk/*
+
+# Create non-root user
+RUN addgroup -g 1001 -S appuser && \
+    adduser -S -u 1001 -G appuser appuser
+
+WORKDIR /app
+
+# Copy virtual environment
+COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
+
+# Copy application
+COPY --chown=appuser:appuser src/ ./src/
+COPY --chown=appuser:appuser startup.py ./
+
+# Environment setup
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app
+
+# Create directories
+RUN mkdir -p /app/logs /app/uploads && \
+    chown -R appuser:appuser /app
+
+USER appuser
+
+EXPOSE 8080 8051
+
+# Lightweight health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()" || exit 1
+
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]

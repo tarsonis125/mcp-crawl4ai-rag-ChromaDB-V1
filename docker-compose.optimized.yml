@@ -1,0 +1,121 @@
+version: '3.8'
+
+x-backend-common: &backend-common
+  build:
+    context: ./python
+    dockerfile: Dockerfile.optimized
+    args:
+      - BUILDKIT_INLINE_CACHE=1
+    cache_from:
+      - type=registry,ref=archon/backend:buildcache
+    cache_to:
+      - type=registry,ref=archon/backend:buildcache,mode=max
+  environment:
+    # Core Configuration
+    - SUPABASE_URL=${SUPABASE_URL}
+    - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+    - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    
+    # Logfire Monitoring
+    - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
+    - LOGFIRE_SERVICE_NAME=${LOGFIRE_SERVICE_NAME:-archon-mcp-server}
+    - LOGFIRE_PROJECT_NAME=${LOGFIRE_PROJECT_NAME:-archon}
+    - LOGFIRE_ENVIRONMENT=${LOGFIRE_ENVIRONMENT:-development}
+    
+    # Optional Configuration
+    - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    - MAX_UPLOAD_SIZE=${MAX_UPLOAD_SIZE:-50MB}
+  volumes:
+    - ./python/uploads:/app/uploads
+    - ./python/logs:/app/logs
+    # Optional: Mount Docker socket if needed for MCP operations
+    # - /var/run/docker.sock:/var/run/docker.sock:ro
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 40s
+  deploy:
+    resources:
+      limits:
+        cpus: '2.0'
+        memory: 2G
+      reservations:
+        cpus: '0.5'
+        memory: 512M
+
+services:
+  backend:
+    <<: *backend-common
+    container_name: archon-backend-optimized
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+      - "${MCP_PORT:-8051}:8051"
+    labels:
+      - "com.archon.service=backend"
+      - "com.archon.version=optimized"
+
+  # Alternative: Use Alpine version for even smaller image
+  backend-alpine:
+    <<: *backend-common
+    container_name: archon-backend-alpine
+    build:
+      context: ./python
+      dockerfile: Dockerfile.alpine
+    profiles:
+      - alpine
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+      - "${MCP_PORT:-8051}:8051"
+
+  frontend:
+    build:
+      context: ./archon-ui-main
+      dockerfile: Dockerfile
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    container_name: archon-frontend-optimized
+    ports:
+      - "${FRONTEND_PORT:-3737}:80"
+    environment:
+      - VITE_API_BASE_URL=http://localhost:${BACKEND_PORT:-8080}
+      - VITE_MCP_BASE_URL=http://localhost:${MCP_PORT:-8051}
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  # Optional: Build cache warmer for CI/CD
+  cache-warmer:
+    image: alpine
+    command: echo "Cache warmer completed"
+    profiles:
+      - ci
+    depends_on:
+      - backend
+      - frontend
+
+# Optional: Named volumes for better performance
+volumes:
+  uploads:
+    driver: local
+  logs:
+    driver: local
+
+# Networks with custom configuration
+networks:
+  default:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
