@@ -1,9 +1,16 @@
 import '@testing-library/jest-dom'
-import { vi } from 'vitest'
+import { cleanup } from '@testing-library/react'
+import { afterEach, vi } from 'vitest'
 import React from 'react'
 
 // Setup file for Vitest with React Testing Library
 // This file is automatically loaded before each test 
+
+// Clean up after each test - Following documented standards
+afterEach(() => {
+  cleanup()
+  vi.clearAllMocks()
+})
 
 // Mock scrollIntoView which is not available in jsdom
 Element.prototype.scrollIntoView = vi.fn();
@@ -158,15 +165,19 @@ vi.mock('@/services/EnhancedWebSocketService', () => {
   }
 })
 
-// Enhanced WebSocket service mock
+// Enhanced WebSocket service mock - Following documented standards
 vi.mock('@/services/websocketService', () => {
   const createMockWebSocketService = () => ({
     connect: vi.fn().mockResolvedValue(undefined),
     disconnect: vi.fn(),
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
+    subscribe: vi.fn().mockReturnValue(vi.fn()), // Returns unsubscribe function
     send: vi.fn(),
-    isConnected: vi.fn().mockReturnValue(true)
+    getConnectionState: vi.fn().mockReturnValue('connected'),
+    waitForConnection: vi.fn().mockResolvedValue(undefined),
+    isConnected: vi.fn().mockReturnValue(true),
+    reconnect: vi.fn().mockResolvedValue(undefined),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn()
   })
 
   const createMockTaskUpdateService = () => ({
@@ -176,9 +187,41 @@ vi.mock('@/services/websocketService', () => {
     isConnected: vi.fn().mockReturnValue(true)
   })
 
+  // Mock WebSocketService class that matches the documented pattern
+  class MockWebSocketService {
+    enhancedService = {
+      connect: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn(),
+      send: vi.fn().mockReturnValue(true),
+      isConnected: vi.fn().mockReturnValue(true),
+      waitForConnection: vi.fn().mockResolvedValue(undefined),
+      addMessageHandler: vi.fn(),
+      removeMessageHandler: vi.fn(),
+      addErrorHandler: vi.fn(),
+      removeErrorHandler: vi.fn(),
+      addStateChangeHandler: vi.fn(),
+      removeStateChangeHandler: vi.fn(),
+      state: 'CONNECTED'
+    }
+    
+    connect = vi.fn().mockResolvedValue(undefined)
+    disconnect = vi.fn()
+    subscribe = vi.fn().mockReturnValue(vi.fn())
+    send = vi.fn()
+    getConnectionState = vi.fn().mockReturnValue('connected')
+    waitForConnection = vi.fn().mockResolvedValue(undefined)
+    isConnected = vi.fn().mockReturnValue(true)
+    reconnect = vi.fn().mockResolvedValue(undefined)
+    addEventListener = vi.fn()
+    removeEventListener = vi.fn()
+  }
+
   return {
-    // Main service class
-    WebSocketService: vi.fn().mockImplementation(() => createMockWebSocketService()),
+    // Main service  
+    websocketService: createMockWebSocketService(),
+    
+    // Service class
+    WebSocketService: MockWebSocketService,
     
     // Singleton instances
     knowledgeWebSocket: createMockWebSocketService(),
@@ -264,19 +307,13 @@ vi.mock('@/contexts/ThemeContext', () => ({
   ThemeProvider: ({ children }: { children: React.ReactNode }) => children
 }))
 
-// Mock Settings Context
+// Mock Settings Context - Following actual interface
 vi.mock('@/contexts/SettingsContext', () => ({
   useSettings: () => ({
     projectsEnabled: true,
-    knowledgeRAGEnabled: true,
+    setProjectsEnabled: vi.fn(),
     loading: false,
-    toggleProjects: vi.fn(),
-    toggleKnowledgeRAG: vi.fn(),
-    saveUserPreferences: vi.fn(),
-    settings: {},
-    updateSetting: vi.fn(),
-    getSetting: vi.fn().mockReturnValue(''),
-    isLoading: false
+    refreshSettings: vi.fn().mockResolvedValue(undefined)
   }),
   SettingsProvider: ({ children }: { children: React.ReactNode }) => React.createElement(React.Fragment, null, children)
 }))
