@@ -26,7 +26,7 @@ pip-delete-this-directory.txt
 .gitignore
 .github/
 docs/
-tests/
+# tests/  # Keep tests for now as Dockerfile needs them
 *.md
 .env
 .env.*
