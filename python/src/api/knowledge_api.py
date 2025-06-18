@@ -121,12 +121,14 @@ class KnowledgeItemRequest(BaseModel):
     knowledge_type: str = 'technical'
     tags: List[str] = []
     update_frequency: int = 7
+    max_depth: int = 2  # Maximum crawl depth (1-5)
 
 class CrawlRequest(BaseModel):
     url: str
     knowledge_type: str = 'general'
     tags: List[str] = []
     update_frequency: int = 7
+    max_depth: int = 2  # Maximum crawl depth (1-5)
 
 class RagQueryRequest(BaseModel):
     query: str
@@ -696,7 +698,7 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         result = await smart_crawl_url_direct(
             ctx=ctx,
             url=str(request.url),
-            max_depth=2,
+            max_depth=request.max_depth,
             max_concurrent=5,
             chunk_size=5000
         )

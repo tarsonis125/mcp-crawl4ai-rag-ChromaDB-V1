@@ -6,6 +6,7 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { Badge } from '../components/ui/Badge';
+import { GlassCrawlDepthSelector } from '../components/ui/GlassCrawlDepthSelector';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import { useToast } from '../contexts/ToastContext';
 import { knowledgeBaseService, KnowledgeItem, KnowledgeItemMetadata } from '../services/knowledgeBaseService';
@@ -870,6 +871,8 @@ const AddKnowledgeModal = ({
   const [knowledgeType, setKnowledgeType] = useState<'technical' | 'business'>('technical');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const [crawlDepth, setCrawlDepth] = useState(2);
+  const [showDepthTooltip, setShowDepthTooltip] = useState(false);
   const { showToast } = useToast();
 
   // URL validation function that checks domain existence
@@ -963,7 +966,8 @@ const AddKnowledgeModal = ({
           url: formattedUrl,
           knowledge_type: knowledgeType,
           tags,
-          update_frequency: parseInt(updateFrequency)
+          update_frequency: parseInt(updateFrequency),
+          max_depth: crawlDepth
         });
         
         console.log('🔍 Crawl URL result:', result);
@@ -1136,6 +1140,32 @@ const AddKnowledgeModal = ({
             </p>
           </div>
         )}
+        {/* Crawl Depth - Only for URLs */}
+        {method === 'url' && (
+          <div className="mb-6">
+            <label className="block text-gray-600 dark:text-zinc-400 text-sm mb-4">
+              Crawl Depth
+              <button
+                type="button"
+                className="ml-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                onMouseEnter={() => setShowDepthTooltip(true)}
+                onMouseLeave={() => setShowDepthTooltip(false)}
+              >
+                <svg className="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </button>
+            </label>
+            
+            <GlassCrawlDepthSelector
+              value={crawlDepth}
+              onChange={setCrawlDepth}
+              showTooltip={showDepthTooltip}
+              onTooltipToggle={setShowDepthTooltip}
+            />
+          </div>
+        )}
+        
         {/* Update Frequency */}
         {method === 'url' && <div className="mb-6">
             <Select label="Update Frequency" value={updateFrequency} onChange={e => setUpdateFrequency(e.target.value)} options={[{
