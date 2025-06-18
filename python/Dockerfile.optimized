@@ -1,0 +1,77 @@
+# syntax=docker/dockerfile:1
+
+# Stage 1: Build Stage
+FROM python:3.12-slim as builder
+
+WORKDIR /app
+
+# Install uv in builder
+RUN pip install --no-cache-dir uv==0.5.11
+
+# Copy only dependency files first (cache optimization)
+COPY pyproject.toml uv.lock ./
+
+# Install dependencies with mount cache
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --all-extras
+
+# Copy source for any build steps
+COPY src/ ./src/
+
+# Run any build/setup steps
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv run crawl4ai-setup || echo "crawl4ai-setup not critical for build"
+
+# Test imports in builder to fail fast
+RUN uv run python -c "from src.main import app; print('✓ FastAPI app imports successfully')"
+
+# Stage 2: Docker CLI provider (if needed)
+FROM docker:24-cli as docker-cli
+
+# Stage 3: Runtime Stage  
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install only runtime system dependencies
+RUN apt-get update && apt-get install -y \
+    --no-install-recommends \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Docker CLI only if needed (comment out if not required)
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Copy virtual environment from builder
+COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
+
+# Copy application code
+COPY --chown=appuser:appuser src/ ./src/
+COPY --chown=appuser:appuser startup.py ./
+
+# Set Python path and environment variables
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app
+
+# Create necessary directories
+RUN mkdir -p /app/logs /app/uploads && \
+    chown -R appuser:appuser /app/logs /app/uploads
+
+# Switch to non-root user
+USER appuser
+
+# Expose ports
+EXPOSE 8080 8051
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Run application
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]
