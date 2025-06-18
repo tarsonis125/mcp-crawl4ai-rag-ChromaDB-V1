@@ -11,8 +11,9 @@ export default defineConfig(({ mode }: ConfigEnv): UserConfig => {
   const env = loadEnv(mode, process.cwd(), '');
   
   // Get host and port from environment variables or use defaults
-  const host = env.VITE_HOST || 'localhost';
-  const port = env.VITE_PORT || '8080';
+  // In Docker, we need to use the service name, not localhost
+  const host = 'archon-pyserver';  // Docker service name
+  const port = '8080';
   
   return {
     plugins: [
@@ -90,8 +91,7 @@ export default defineConfig(({ mode }: ConfigEnv): UserConfig => {
           target: `http://${host}:${port}`,
           changeOrigin: true,
           secure: false,
-          ws: true,
-          rewrite: (path: string) => path.replace(/^\/api/, '')
+          ws: true
         },
       },
     },
