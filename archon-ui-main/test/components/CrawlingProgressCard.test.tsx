@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { CrawlingProgressCard } from '@/components/CrawlingProgressCard'
+import { CrawlingProgressCard } from '@/components/knowledge-base/CrawlingProgressCard'
 
 // Mock dependencies
 vi.mock('@/services/websocketService', () => ({

@@ -540,6 +540,74 @@ async def get_knowledge_items(
             span.set_attribute("error", str(e))
             raise HTTPException(status_code=500, detail={'error': str(e)})
 
+@router.put("/knowledge-items/{source_id}")
+async def update_knowledge_item(source_id: str, updates: dict):
+    """Update a knowledge item's metadata."""
+    with logfire.span("api_update_knowledge_item") as span:
+        span.set_attribute("endpoint", f"/api/knowledge-items/{source_id}")
+        span.set_attribute("method", "PUT")
+        span.set_attribute("source_id", source_id)
+        
+        try:
+            logfire.info("Updating knowledge item", source_id=source_id, updates=updates)
+            
+            # Get Supabase client
+            supabase_client = get_supabase_client()
+            
+            # Prepare the update data
+            update_data = {}
+            
+            # Handle title updates
+            if 'title' in updates:
+                update_data['title'] = updates['title']
+            
+            # Handle description updates (stored in metadata)
+            if 'description' in updates:
+                # Get current metadata first
+                current_response = supabase_client.table("sources").select("metadata").eq("source_id", source_id).execute()
+                
+                if current_response.data:
+                    current_metadata = current_response.data[0].get('metadata', {})
+                    current_metadata['description'] = updates['description']
+                    update_data['metadata'] = current_metadata
+                else:
+                    # If no current metadata, create new
+                    update_data['metadata'] = {'description': updates['description']}
+            
+            # Handle other metadata updates
+            metadata_fields = ['knowledge_type', 'tags', 'status', 'update_frequency']
+            for field in metadata_fields:
+                if field in updates:
+                    if 'metadata' not in update_data:
+                        # Get current metadata first
+                        current_response = supabase_client.table("sources").select("metadata").eq("source_id", source_id).execute()
+                        current_metadata = current_response.data[0].get('metadata', {}) if current_response.data else {}
+                        update_data['metadata'] = current_metadata
+                    
+                    update_data['metadata'][field] = updates[field]
+            
+            # Perform the update
+            result = supabase_client.table("sources").update(update_data).eq("source_id", source_id).execute()
+            
+            if result.data:
+                logfire.info("Knowledge item updated successfully", source_id=source_id)
+                span.set_attribute("success", True)
+                
+                return {
+                    'success': True,
+                    'message': f'Successfully updated knowledge item {source_id}',
+                    'source_id': source_id
+                }
+            else:
+                logfire.error("Knowledge item not found", source_id=source_id)
+                span.set_attribute("success", False)
+                raise HTTPException(status_code=404, detail={'error': f'Knowledge item {source_id} not found'})
+                
+        except Exception as e:
+            logfire.error("Failed to update knowledge item", error=str(e), source_id=source_id)
+            span.set_attribute("error", str(e))
+            raise HTTPException(status_code=500, detail={'error': str(e)})
+
 @router.delete("/knowledge-items/{source_id}")
 async def delete_knowledge_item(source_id: str):
     """Delete a knowledge item from the database."""

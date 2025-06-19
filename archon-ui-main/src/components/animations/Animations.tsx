@@ -1,4 +1,4 @@
-import React, { Component } from 'react';
+import React from 'react';
 /**
  * ArchonLoadingSpinner - A loading animation component with neon trail effects
  *

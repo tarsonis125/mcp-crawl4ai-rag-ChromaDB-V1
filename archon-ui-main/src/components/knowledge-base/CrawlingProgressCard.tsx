@@ -17,11 +17,10 @@ import {
   Code,
   Zap
 } from 'lucide-react';
-import { Card } from './ui/Card';
-import { Button } from './ui/Button';
-import { Badge } from './ui/Badge';
-import { CrawlProgressData, WorkerProgress } from '../services/crawlProgressServiceV2';
-import { useTerminalScroll } from '../hooks/useTerminalScroll';
+import { Card } from '../ui/Card';
+import { Button } from '../ui/Button';
+import { CrawlProgressData } from '../../services/crawlProgressServiceV2';
+import { useTerminalScroll } from '../../hooks/useTerminalScroll';
 
 interface CrawlingProgressCardProps {
   progressData: CrawlProgressData;
@@ -43,9 +42,6 @@ interface ProgressStep {
 
 export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
   progressData,
-  onComplete,
-  onError,
-  onProgress,
   onRetry,
   onDismiss
 }) => {
@@ -165,7 +161,7 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
       : ['analyzing', 'crawling', 'processing', 'source_creation', 'document_storage', 'code_storage', 'finalization'];
     
     // Update step progress based on current status
-    steps.forEach((step, index) => {
+    steps.forEach((step) => {
       const stepIndex = stepOrder.indexOf(step.id);
       const currentStepIndex = stepOrder.indexOf(currentStatus);
       

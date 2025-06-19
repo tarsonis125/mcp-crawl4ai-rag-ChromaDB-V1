@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { CrawlingProgressCard } from '@/components/CrawlingProgressCard';
+import { CrawlingProgressCard } from '@/components/knowledge-base/CrawlingProgressCard';
 import { CrawlProgressData } from '@/services/crawlProgressServiceV2';
 
 // Mock WebSocket for testing
