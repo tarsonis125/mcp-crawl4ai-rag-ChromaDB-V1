@@ -24,6 +24,9 @@ from fastapi.middleware.cors import CORSMiddleware
 # Import Logfire configuration
 from .logfire_config import setup_logfire, api_logger
 
+# Import Socket.IO integration
+from .socketio_app import create_socketio_app, register_namespaces
+
 # Import modular API routers
 from .api.settings_api import router as settings_router
 from .api.mcp_api import router as mcp_router
@@ -165,6 +168,18 @@ async def lifespan(app: FastAPI):
         
         # Make crawling context available to modules
         app.state.crawling_context = crawling_context
+        
+        # Initialize Socket.IO services
+        try:
+            # Import API modules to register their Socket.IO handlers
+            from .api import agent_chat_api, knowledge_api, projects_api
+            api_logger.info("✅ Socket.IO handlers imported from API modules")
+            
+            # Register all namespaces
+            register_namespaces()
+            api_logger.info("✅ Socket.IO namespaces registered")
+        except Exception as e:
+            api_logger.warning(f"Could not initialize Socket.IO services: {e}")
         
         # Initialize prompt service
         try:
@@ -321,10 +336,17 @@ async def api_health_check():
     """API health check endpoint - alias for /health."""
     return await health_check()
 
+# Create Socket.IO app wrapper
+# This wraps the FastAPI app with Socket.IO functionality
+socket_app = create_socketio_app(app)
+
+# Export the socket_app for uvicorn to use
+# The socket_app still handles all FastAPI routes, but also adds Socket.IO support
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "main:app",
+        "main:socket_app",
         host="0.0.0.0",
         port=8080,
         reload=True,

@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
-import { CrawlProgressData } from '../../services/crawlProgressServiceV2';
+import { CrawlProgressData } from '../../services/crawlProgressService';
 import { useTerminalScroll } from '../../hooks/useTerminalScroll';
 
 interface CrawlingProgressCardProps {

@@ -11,6 +11,7 @@ This module handles all knowledge base operations including:
 
 import asyncio
 import json
+import os
 import secrets
 import uuid
 from datetime import datetime
@@ -49,6 +50,9 @@ import io
 
 # Create router
 router = APIRouter(prefix="/api", tags=["knowledge"])
+
+# Feature flag for Socket.IO migration
+USE_SOCKETIO_PROGRESS = os.getenv("USE_SOCKETIO_PROGRESS", "true").lower() == "true"
 
 # Get the global crawling context from main.py
 def get_crawling_context():
@@ -305,12 +309,9 @@ class CrawlProgressManager:
     
     async def _broadcast_progress(self, progress_id: str) -> None:
         """Broadcast progress update to all connected clients."""
-        if progress_id not in self.progress_websockets:
-            print(f"DEBUG: No WebSockets found for progress_id: {progress_id}")
-            return
-        
         progress_data = self.active_crawls.get(progress_id, {}).copy()
         progress_data['progressId'] = progress_id
+        progress_data['progress_id'] = progress_id  # Add both formats for compatibility
         
         # Convert ALL datetime objects to strings for JSON serialization
         for key, value in progress_data.items():
@@ -335,7 +336,17 @@ class CrawlProgressManager:
             "data": progress_data
         }
         
-        print(f"DEBUG: Broadcasting to {len(self.progress_websockets[progress_id])} WebSocket(s) for {progress_id}: {progress_data.get('status')} {progress_data.get('percentage')}%")
+        # Emit via Socket.IO
+        try:
+            event_type = 'progress_update' if progress_data.get('status') != 'completed' else 'progress_complete'
+            await sio.emit(event_type, progress_data, room=progress_id, namespace=NAMESPACE_CRAWL)
+            print(f"DEBUG: Emitted {event_type} via Socket.IO for {progress_id}")
+        except Exception as e:
+            print(f"DEBUG: Failed to emit via Socket.IO: {e}")
+        
+        # Keep legacy WebSocket support for now
+        if progress_id in self.progress_websockets:
+            print(f"DEBUG: Broadcasting to {len(self.progress_websockets[progress_id])} WebSocket(s) for {progress_id}: {progress_data.get('status')} {progress_data.get('percentage')}%")
         
         # Send to all connected WebSocket clients with improved error handling
         disconnected = []
@@ -360,8 +371,12 @@ class CrawlProgressManager:
         if successful_sends == 0 and len(self.progress_websockets.get(progress_id, [])) > 0:
             print(f"WARNING: All WebSocket connections failed for progress_id: {progress_id}")
 
-# Global progress manager
+# Global progress manager - now always uses Socket.IO under the hood
 progress_manager = CrawlProgressManager()
+if USE_SOCKETIO_PROGRESS:
+    logfire.info("Using Socket.IO for real-time progress updates")
+else:
+    logfire.info("Using legacy WebSocket mode (deprecated)")
 
 async def get_available_sources_direct() -> Dict[str, Any]:
     """Get all available sources from the sources table directly."""
@@ -1273,6 +1288,16 @@ async def websocket_knowledge_items(websocket: WebSocket):
 @router.websocket("/crawl-progress/{progress_id}")
 async def websocket_crawl_progress(websocket: WebSocket, progress_id: str):
     """WebSocket endpoint for tracking specific crawl progress."""
+    if USE_SOCKETIO_PROGRESS:
+        # Socket.IO is enabled, reject WebSocket connection with informative message
+        await websocket.accept()
+        await websocket.send_json({
+            "type": "error",
+            "message": "WebSocket endpoint deprecated. Please use Socket.IO connection on /crawl namespace."
+        })
+        await websocket.close()
+        return
+    
     try:
         print(f"DEBUG: WebSocket connecting for progress_id: {progress_id}")
         print(f"DEBUG: Active crawls: {list(progress_manager.active_crawls.keys())}")
@@ -1520,4 +1545,40 @@ def extract_text_from_docx(file_content: bytes) -> str:
         return '\n\n'.join(text_content)
         
     except Exception as e:
-        raise Exception(f"Failed to extract text from Word document: {str(e)}") 
+        raise Exception(f"Failed to extract text from Word document: {str(e)}")
+
+# Socket.IO Event Handlers for Crawl Progress
+from ..socketio_app import get_socketio_instance, NAMESPACE_CRAWL
+
+sio = get_socketio_instance()
+
+@sio.on('connect', namespace=NAMESPACE_CRAWL)
+async def on_crawl_connect(sid, environ):
+    """Handle Socket.IO connection for crawl progress."""
+    print(f"🔌 Crawl client connected: {sid}")
+    await sio.emit('connected', {'message': 'Connected to crawl progress'}, to=sid, namespace=NAMESPACE_CRAWL)
+
+@sio.on('disconnect', namespace=NAMESPACE_CRAWL)
+async def on_crawl_disconnect(sid):
+    """Handle Socket.IO disconnection."""
+    print(f"🔌 Crawl client disconnected: {sid}")
+
+@sio.on('subscribe', namespace=NAMESPACE_CRAWL)
+async def on_subscribe_progress(sid, data):
+    """Subscribe to crawl progress updates."""
+    progress_id = data.get('progress_id')
+    if not progress_id:
+        await sio.emit('error', {'message': 'progress_id required'}, to=sid, namespace=NAMESPACE_CRAWL)
+        return
+    
+    # Join the room for this progress ID
+    await sio.enter_room(sid, progress_id, namespace=NAMESPACE_CRAWL)
+    print(f"✅ Client {sid} subscribed to progress {progress_id}")
+
+@sio.on('unsubscribe', namespace=NAMESPACE_CRAWL)
+async def on_unsubscribe_progress(sid, data):
+    """Unsubscribe from crawl progress updates."""
+    progress_id = data.get('progress_id')
+    if progress_id:
+        await sio.leave_room(sid, progress_id, namespace=NAMESPACE_CRAWL)
+        print(f"🛑 Client {sid} unsubscribed from progress {progress_id}") 

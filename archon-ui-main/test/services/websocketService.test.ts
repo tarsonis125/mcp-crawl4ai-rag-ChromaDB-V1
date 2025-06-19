@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, test } from 'vitest'
 import type { Mock } from 'vitest'
 
 // Import after mocking WebSocket is set up in setup.ts
-import { WebSocketService, knowledgeWebSocket, crawlWebSocket, taskUpdateWebSocket } from '@/services/websocketService'
+import { WebSocketService, knowledgeWebSocket, crawlWebSocket, taskUpdateWebSocket } from '@/services/webSocketService'
 
 describe('WebSocketService', () => {
   let service: WebSocketService

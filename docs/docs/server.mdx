@@ -45,7 +45,7 @@ graph TB
         subgraph "🚀 Main Application Container"
             FastAPI["⚡ FastAPI Application<br/>Port 8080"]
             MCP["🔌 MCP Server<br/>Port 8051"]
-            WS["📡 WebSocket Manager"]
+            WS["📡 Socket.IO Server"]
             BG["⚙️ Background Tasks"]
         end
         
@@ -98,7 +98,7 @@ archon/
 │   │   ├── api/                 # 🎯 Modular API routers (6 modules)
 │   │   │   ├── __init__.py      # API module registration
 │   │   │   ├── knowledge_api.py # Knowledge & crawling endpoints (891 lines)
-│   │   │   ├── mcp_api.py       # MCP server control & WebSockets (705 lines)
+│   │   │   ├── mcp_api.py       # MCP server control & monitoring (705 lines)
 │   │   │   ├── settings_api.py  # Settings & credential management (345 lines)
 │   │   │   ├── projects_api.py  # Project & task management (528 lines)
 │   │   │   ├── agent_chat_api.py# AI agent chat interface (516 lines)
@@ -139,7 +139,7 @@ archon/
 ## 🔥 Logfire Integration & Real-Time Monitoring
 
 <Admonition type="tip" title="🎯 Why Logfire?">
-  Logfire by Pydantic provides **real-time debugging superpowers** for Archon. See every RAG query, MCP tool call, and WebSocket connection as it happens - perfect for debugging complex AI workflows!
+  Logfire by Pydantic provides **real-time debugging superpowers** for Archon. See every RAG query, MCP tool call, and Socket.IO connection as it happens - perfect for debugging complex AI workflows!
 </Admonition>
 
 Archon implements comprehensive monitoring and observability through **[Logfire](https://logfire.pydantic.dev/)** by Pydantic. This provides real-time debugging, performance monitoring, and detailed request tracing across all components.
@@ -156,7 +156,7 @@ Archon implements comprehensive monitoring and observability through **[Logfire]
         <ul>
           <li>**RAG Query Debugging**: Monitor embedding generation, vector searches, result ranking</li>
           <li>**MCP Server Performance**: Track tool execution times and connection health</li>
-          <li>**WebSocket Monitoring**: Real-time progress tracking and connection management</li>
+          <li>**Socket.IO Monitoring**: Real-time progress tracking with automatic reconnection</li>
         </ul>
       </div>
     </div>
@@ -347,77 +347,88 @@ class MCPServer:
 </TabItem>
 </Tabs>
 
-### 📡 WebSocket Progress Monitoring
+### 📡 Socket.IO Real-time Monitoring
 
-Monitor real-time WebSocket connections and progress updates:
+Monitor real-time Socket.IO connections and progress updates with improved reliability:
 
-```python title="websocket_manager.py"
+```python title="socketio_progress_manager.py"
 import logfire
 from src.config.logfire_config import logfire_logger
+from src.socketio_app import get_socketio_instance, NAMESPACE_CRAWL
 
-class WebSocketManager:
-    async def connect(self, websocket: WebSocket, progress_id: str = None):
-        """WebSocket connection with Logfire monitoring"""
+class CrawlProgressManagerSocketIO:
+    def __init__(self):
+        self.sio = get_socketio_instance()
+        self._setup_handlers()
+    
+    @self.sio.on('connect', namespace=NAMESPACE_CRAWL)
+    async def on_connect(self, sid, environ):
+        """Socket.IO connection with Logfire monitoring"""
         
-        with logfire_logger.span("websocket_connect") as span:
-            span.set_attribute("progress_id", progress_id or "general")
+        with logfire_logger.span("socketio_connect") as span:
+            span.set_attribute("session_id", sid)
+            span.set_attribute("namespace", NAMESPACE_CRAWL)
             
             try:
-                await websocket.accept()
-                
-                if progress_id:
-                    if progress_id not in self.progress_connections:
-                        self.progress_connections[progress_id] = []
-                    self.progress_connections[progress_id].append(websocket)
-                    
-                    span.set_attribute("connection_type", "progress_tracking")
-                    span.set_attribute("active_connections", len(self.progress_connections[progress_id]))
-                else:
-                    self.active_connections.append(websocket)
-                    span.set_attribute("connection_type", "general")
+                await self.sio.emit('connected', 
+                                   {'message': 'Connected to crawl progress'}, 
+                                   to=sid, namespace=NAMESPACE_CRAWL)
                 
                 span.set_attribute("success", True)
-                logfire_logger.info(f"WebSocket connected: {progress_id or 'general'}")
+                logfire_logger.info(f"Socket.IO client connected: {sid}")
                 
             except Exception as e:
                 span.set_attribute("success", False)
                 span.set_attribute("error", str(e))
-                logfire_logger.error(f"WebSocket connection failed: {e}")
+                logfire_logger.error(f"Socket.IO connection failed: {e}")
                 raise
     
-    async def broadcast_progress(self, progress_id: str, data: dict):
-        """Broadcast progress with monitoring"""
+    @self.sio.on('subscribe', namespace=NAMESPACE_CRAWL)
+    async def on_subscribe(self, sid, data):
+        """Subscribe to progress updates with room-based broadcasting"""
         
-        with logfire_logger.span("websocket_broadcast") as span:
+        with logfire_logger.span("socketio_subscribe") as span:
+            progress_id = data.get('progress_id')
+            span.set_attribute("progress_id", progress_id)
+            span.set_attribute("session_id", sid)
+            
+            # Join Socket.IO room for this progress ID
+            await self.sio.enter_room(sid, progress_id, namespace=NAMESPACE_CRAWL)
+            
+            # Get room size for monitoring
+            room_sessions = self.sio.manager.rooms.get(NAMESPACE_CRAWL, {}).get(progress_id, set())
+            span.set_attribute("room_size", len(room_sessions))
+            
+            logfire_logger.info(f"Client {sid} subscribed to progress {progress_id}")
+    
+    async def broadcast_progress(self, progress_id: str, data: dict):
+        """Broadcast progress using Socket.IO rooms"""
+        
+        with logfire_logger.span("socketio_broadcast") as span:
             span.set_attribute("progress_id", progress_id)
             span.set_attribute("data_type", data.get("type", "unknown"))
             span.set_attribute("progress_percentage", data.get("percentage", 0))
             
-            if progress_id not in self.progress_connections:
-                span.set_attribute("connections_found", 0)
-                return
+            # Socket.IO handles room broadcasting and connection management
+            event_type = 'progress_update' if data.get('status') != 'completed' else 'progress_complete'
             
-            connections = self.progress_connections[progress_id]
-            span.set_attribute("connections_found", len(connections))
-            
-            # Broadcast to all connections with error tracking
-            successful_sends = 0
-            failed_sends = 0
-            
-            for websocket in connections[:]:  # Copy list to avoid modification during iteration
-                try:
-                    await websocket.send_json({
-                        "type": "crawl_progress" if data.get('status') != 'completed' else "crawl_completed",
-                        "data": data
-                    })
-                    successful_sends += 1
-                except Exception as e:
-                    failed_sends += 1
-                    self.progress_connections[progress_id].remove(websocket)
-                    logfire_logger.warning(f"WebSocket send failed, removing connection: {e}")
-            
-            span.set_attribute("successful_sends", successful_sends)
-            span.set_attribute("failed_sends", failed_sends)
+            try:
+                await self.sio.emit(
+                    event_type,
+                    data,
+                    room=progress_id,
+                    namespace=NAMESPACE_CRAWL
+                )
+                
+                # Monitor room size
+                room_sessions = self.sio.manager.rooms.get(NAMESPACE_CRAWL, {}).get(progress_id, set())
+                span.set_attribute("broadcast_to", len(room_sessions))
+                span.set_attribute("success", True)
+                
+            except Exception as e:
+                span.set_attribute("success", False)
+                span.set_attribute("error", str(e))
+                logfire_logger.error(f"Socket.IO broadcast failed: {e}")
 ```
 
 ### 🔗 Logfire Dashboard Access
@@ -437,7 +448,7 @@ class WebSocketManager:
         <h4>📊 **Real-Time Spans**</h4>
       </div>
       <div className="card__body">
-        See every RAG query, MCP tool call, and WebSocket connection live
+        See every RAG query, MCP tool call, and Socket.IO connection live
       </div>
     </div>
   </div>
@@ -534,17 +545,17 @@ The main FastAPI application serves as the central API gateway, mounting modular
 | Router Module | Base Path | Endpoints | Purpose |
 |--------------|-----------|-----------|----------|
 | **`knowledge_api.py`** | `/api/knowledge-items`, `/api/documents` | Knowledge CRUD, crawling, upload | Core knowledge management |
-| **`mcp_api.py`** | `/api/mcp` | Server control, logs, WebSockets | MCP server management & real-time communication |
+| **`mcp_api.py`** | `/api/mcp` | Server control, logs, monitoring | MCP server management & real-time monitoring |
 | **`settings_api.py`** | `/api/settings` | Configuration, credentials | Application settings |
 | **`projects_api.py`** | `/api/projects`, `/api/tasks` | Project/task CRUD | Task management |
 
 ## ⚡ Threading & Concurrency Architecture
 
 <Admonition type="warning" title="🚨 Critical: Threading Best Practices">
-Archon's performance and stability heavily depend on proper threading patterns. Incorrect threading can cause WebSocket disconnections, API timeouts, and system instability.
+Archon's performance and stability heavily depend on proper threading patterns. With Socket.IO handling reconnections automatically, the focus shifts to preventing event loop blocking and maintaining responsive real-time communication.
 </Admonition>
 
-Archon implements sophisticated threading and concurrency patterns to handle high-performance AI workloads while maintaining real-time WebSocket connections and responsive UI interactions.
+Archon implements sophisticated threading and concurrency patterns to handle high-performance AI workloads while maintaining real-time Socket.IO connections and responsive UI interactions.
 
 ### 🧵 Backend Threading Patterns
 
@@ -574,7 +585,7 @@ Archon implements sophisticated threading and concurrency patterns to handle hig
 flowchart TB
     subgraph "🎯 Main Event Loop"
         FastAPI["🚀 FastAPI<br/>Async Request Handling"]
-        WS["📡 WebSocket Manager<br/>Real-time Updates"]
+        WS["📡 Socket.IO Manager<br/>Real-time Updates"]
     end
     
     subgraph "🔄 ThreadPoolExecutor"
@@ -627,10 +638,10 @@ async def process_documents_async(documents):
     return summaries
 ```
 
-**2. WebSocket-Safe Operations**
-```python title="✅ Correct: Non-blocking WebSocket patterns"
-async def websocket_safe_processing(websocket, data):
-    """Process data without blocking WebSocket connection"""
+**2. Socket.IO-Safe Operations**
+```python title="✅ Correct: Non-blocking Socket.IO patterns"
+async def socketio_safe_processing(sio, namespace, room, data):
+    """Process data without blocking Socket.IO event loop"""
     
     # Yield control frequently during processing
     for i, item in enumerate(data):
@@ -639,8 +650,10 @@ async def websocket_safe_processing(websocket, data):
         
         # Yield control every 10 items
         if i % 10 == 0:
-            await asyncio.sleep(0.1)  # Allow WebSocket heartbeat
-            await websocket.send_json({"progress": i/len(data)})
+            await asyncio.sleep(0.1)  # Allow Socket.IO event processing
+            await sio.emit('progress_update', 
+                          {"progress": i/len(data)}, 
+                          room=room, namespace=namespace)
     
     return results
 ```
@@ -720,13 +733,13 @@ async def bad_crawling():
     await asyncio.gather(*tasks)  # System overload!
 ```
 
-**4. WebSocket Blocking Patterns**
-```python title="❌ Wrong: Blocking WebSocket threads"
-async def bad_websocket_handler(websocket):
-    while True:
-        # Long-running operation without yielding
-        heavy_computation()  # Blocks WebSocket!
-        await websocket.send_text("done")
+**4. Socket.IO Blocking Patterns**
+```python title="❌ Wrong: Blocking Socket.IO event loop"
+@sio.on('process', namespace='/tasks')
+async def bad_socketio_handler(sid, data):
+    # Long-running operation without yielding
+    heavy_computation()  # Blocks Socket.IO event loop!
+    await sio.emit('done', room=sid, namespace='/tasks')
 ```
 
 </TabItem>

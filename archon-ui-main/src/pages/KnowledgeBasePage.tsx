@@ -10,10 +10,10 @@ import { GlassCrawlDepthSelector } from '../components/ui/GlassCrawlDepthSelecto
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import { useToast } from '../contexts/ToastContext';
 import { knowledgeBaseService, KnowledgeItem, KnowledgeItemMetadata } from '../services/knowledgeBaseService';
-import { knowledgeWebSocket } from '../services/websocketService';
+import { knowledgeWebSocket } from '../services/webSocketService';
 import { CrawlingProgressCard } from '../components/knowledge-base/CrawlingProgressCard';
-import { CrawlProgressData, crawlProgressServiceV2 as crawlProgressService } from '../services/crawlProgressServiceV2';
-import { WebSocketState } from '../services/EnhancedWebSocketService';
+import { CrawlProgressData, crawlProgressService } from '../services/crawlProgressService';
+import { WebSocketState } from '../services/webSocketService';
 import { KnowledgeTable } from '../components/knowledge-base/KnowledgeTable';
 import { KnowledgeItemCard } from '../components/knowledge-base/KnowledgeItemCard';
 import { GroupedKnowledgeItemCard } from '../components/knowledge-base/GroupedKnowledgeItemCard';
@@ -176,7 +176,7 @@ export const KnowledgeBasePage = () => {
         }
       };
       
-      knowledgeWebSocket.addEventListener('knowledge_items_update', handleKnowledgeUpdate);
+      knowledgeWebSocket.addMessageHandler('knowledge_items_update', handleKnowledgeUpdate);
       
       // Set fallback timeout - only execute if WebSocket hasn't connected and component is still mounted
       loadTimeoutRef.current = setTimeout(() => {
@@ -188,7 +188,7 @@ export const KnowledgeBasePage = () => {
       }, 2000); // Reduced from 3000ms to 2000ms for better UX
       
       return () => {
-        knowledgeWebSocket.removeEventListener('knowledge_items_update', handleKnowledgeUpdate);
+        knowledgeWebSocket.removeMessageHandler('knowledge_items_update', handleKnowledgeUpdate);
       };
     };
 
@@ -695,9 +695,9 @@ const AddKnowledgeModal = ({
           
           // Start progress tracking
           onStartCrawl((result as any).progressId, {
-            currentUrl: formattedUrl,
-            totalPages: 0,
-            processedPages: 0
+            status: 'initializing',
+            percentage: 0,
+            currentStep: 'Starting crawl'
           });
           
           console.log('✅ onStartCrawl called successfully');
@@ -729,8 +729,6 @@ const AddKnowledgeModal = ({
           // Start progress tracking for upload
           onStartCrawl(result.progressId, {
             currentUrl: `file://${selectedFile.name}`,
-            totalPages: 1,
-            processedPages: 0,
             percentage: 0,
             status: 'starting',
             logs: [`Starting upload of ${selectedFile.name}`],

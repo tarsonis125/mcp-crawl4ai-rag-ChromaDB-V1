@@ -43,5 +43,5 @@ EXPOSE 8080 8051
 RUN echo '#!/bin/bash\ncurl -f http://localhost:8080/api/mcp/status || exit 1' > /healthcheck.sh && \
     chmod +x /healthcheck.sh
 
-# Default command runs the API wrapper, but can be overridden
-CMD ["uv", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Default command runs the API wrapper with Socket.IO support, but can be overridden
+CMD ["uv", "run", "uvicorn", "src.main:socket_app", "--host", "0.0.0.0", "--port", "8080"]

@@ -17,7 +17,7 @@ import type { Task } from '../components/project-tasks/TaskTableView';
 import { ProjectCreationProgressCard } from '../components/ProjectCreationProgressCard';
 import { projectCreationProgressService } from '../services/projectCreationProgressService';
 import type { ProjectCreationProgressData } from '../services/projectCreationProgressService';
-import { projectListWebSocket, taskUpdateWebSocket } from '../services/websocketService';
+import { projectListWebSocket, taskUpdateWebSocket } from '../services/webSocketService';
 
 interface ProjectPageProps {
   className?: string;
@@ -154,7 +154,7 @@ export function ProjectPage({
         }
       };
       
-      projectListWebSocket.addEventListener('projects_update', handleProjectUpdate);
+      projectListWebSocket.addMessageHandler('projects_update', handleProjectUpdate);
       
       // Set fallback timeout - only execute if WebSocket hasn't connected and component is still mounted
       loadTimeoutRef = setTimeout(() => {
@@ -166,7 +166,7 @@ export function ProjectPage({
       }, 2000);
       
       return () => {
-        projectListWebSocket.removeEventListener('projects_update', handleProjectUpdate);
+        projectListWebSocket.removeMessageHandler('projects_update', handleProjectUpdate);
       };
     };
 

@@ -828,4 +828,78 @@ async def debug_token_usage():
         except Exception as e:
             logfire.error("Failed to get debug token usage", error=str(e))
             span.set_attribute("error", str(e))
-            raise HTTPException(status_code=500, detail=str(e)) 
+            raise HTTPException(status_code=500, detail=str(e))
+
+# Socket.IO Event Handlers
+from ..socketio_app import get_socketio_instance, NAMESPACE_CHAT
+
+sio = get_socketio_instance()
+
+@sio.on('connect', namespace=NAMESPACE_CHAT)
+async def on_chat_connect(sid, environ):
+    """Handle Socket.IO connection for chat."""
+    print(f"🔌 Chat client connected: {sid}")
+    await sio.emit('connected', {'message': 'Connected to chat'}, to=sid, namespace=NAMESPACE_CHAT)
+
+@sio.on('disconnect', namespace=NAMESPACE_CHAT)
+async def on_chat_disconnect(sid):
+    """Handle Socket.IO disconnection."""
+    print(f"🔌 Chat client disconnected: {sid}")
+    # Clean up any session data
+    for session_id, websockets in list(chat_manager.websockets.items()):
+        if sid in str(websockets):
+            await chat_manager.remove_websocket(session_id, None)
+
+@sio.on('join_session', namespace=NAMESPACE_CHAT)
+async def on_join_session(sid, data):
+    """Join a chat session room."""
+    session_id = data.get('session_id')
+    if not session_id:
+        await sio.emit('error', {'message': 'session_id required'}, to=sid, namespace=NAMESPACE_CHAT)
+        return
+    
+    # Validate session exists
+    if session_id not in chat_manager.sessions:
+        await sio.emit('error', {'message': 'Session not found'}, to=sid, namespace=NAMESPACE_CHAT)
+        return
+    
+    # Join the room for this session
+    await sio.enter_room(sid, session_id, namespace=NAMESPACE_CHAT)
+    
+    # Send confirmation
+    await sio.emit('session_joined', {
+        'session_id': session_id,
+        'status': 'connected'
+    }, to=sid, namespace=NAMESPACE_CHAT)
+    
+    print(f"✅ Client {sid} joined chat session {session_id}")
+
+@sio.on('message', namespace=NAMESPACE_CHAT)
+async def on_chat_message(sid, data):
+    """Handle incoming chat messages via Socket.IO."""
+    session_id = data.get('session_id')
+    message = data.get('message')
+    
+    if not session_id or not message:
+        await sio.emit('error', {'message': 'session_id and message required'}, to=sid, namespace=NAMESPACE_CHAT)
+        return
+    
+    # Process the message
+    try:
+        session = chat_manager.sessions.get(session_id)
+        if not session:
+            await sio.emit('error', {'message': 'Session not found'}, to=sid, namespace=NAMESPACE_CHAT)
+            return
+        
+        # Use existing chat processing logic
+        response = await chat_manager._process_message_async(message, session)
+        
+        # Emit response to the session room
+        await sio.emit('message', {
+            'content': response,
+            'sender': 'agent',
+            'timestamp': datetime.now().isoformat()
+        }, room=session_id, namespace=NAMESPACE_CHAT)
+        
+    except Exception as e:
+        await sio.emit('error', {'message': str(e)}, to=sid, namespace=NAMESPACE_CHAT) 

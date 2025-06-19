@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
-import { websocketService } from '@/services/websocketService'
+import { websocketService } from '@/services/webSocketService'
 
 // Mock dependencies
-vi.mock('@/services/websocketService', () => ({
+vi.mock('@/services/webSocketService', () => ({
   websocketService: {
     connect: vi.fn(),
     disconnect: vi.fn(),

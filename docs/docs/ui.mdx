@@ -73,7 +73,7 @@ src/
 │   ├── projectCreationProgressService.ts
 │   ├── projectService.ts
 │   ├── testService.ts
-│   └── websocketService.ts
+│   └── webSocketService.ts
 └── types/
     ├── knowledge.ts
     └── project.ts
@@ -304,23 +304,23 @@ Wraps pages with smooth fade/slide animations:
 </PageTransition>
 ```
 
-## 🔌 WebSocket Integration
+## 🔌 Socket.IO Integration
 
-All WebSocket connections in the frontend use the **EnhancedWebSocketService** for consistent behavior:
+All real-time connections in the frontend now use **Socket.IO** through the WebSocketService for improved reliability:
 
-### Key Services Using WebSockets
+### Key Services Using Socket.IO
 
 | Service | Purpose | Status |
 |---------|---------|--------|
-| `crawlProgressServiceV2` | Progress tracking for crawling | ✅ Migrated |
-| `websocketService` | General WebSocket management | ✅ Migrated |
-| `taskUpdateWebSocket` | Real-time task updates | ✅ Migrated |
-| `agentChatService` | Agent chat streaming | ✅ Migrated |
+| `crawlProgressService` | Progress tracking for crawling | ✅ Socket.IO |
+| `webSocketService` | Socket.IO client wrapper | ✅ Socket.IO |
+| `taskUpdateService` | Real-time task updates | ✅ Socket.IO |
+| `agentChatService` | Agent chat streaming | ✅ Socket.IO |
 
-### WebSocket Usage Pattern
+### Socket.IO Usage Pattern
 
 ```typescript
-import { createWebSocketService } from './services/EnhancedWebSocketService';
+import { createWebSocketService } from './services/webSocketService';
 
 // Create service
 const wsService = createWebSocketService({
@@ -328,7 +328,7 @@ const wsService = createWebSocketService({
   reconnectInterval: 1000
 });
 
-// Connect and handle messages
+// Connect to Socket.IO namespace (automatically mapped)
 await wsService.connect('/api/endpoint');
 
 wsService.addMessageHandler('message_type', (message) => {
@@ -478,7 +478,7 @@ CMD ["npm", "run", "preview"]
 ### WebSocket Best Practices
 
 **DO:**
-- ✅ Use EnhancedWebSocketService for all WebSocket connections
+- ✅ Use WebSocketService (Socket.IO) for all real-time connections
 - ✅ Clean up connections in useEffect return
 - ✅ Handle all connection states (connecting, connected, failed)
 - ✅ Use typed message handlers

@@ -13,7 +13,7 @@ import Admonition from '@theme/Admonition';
 ## Docker Architecture
 
 <Admonition type="info" title="Container Communication">
-All services run in Docker containers and communicate via the `app-network` bridge network using service names, not localhost.
+All services run in Docker containers and communicate via the `app-network` bridge network using service names, not localhost. Real-time features use Socket.IO for reliable WebSocket connections.
 </Admonition>
 
 ```mermaid
@@ -21,6 +21,7 @@ graph TB
     subgraph "Docker Network: app-network"
         subgraph "archon-pyserver"
             API[FastAPI<br/>:8080]
+            SIO[Socket.IO<br/>:8080]
             MCP[MCP Server<br/>:8051]
         end
         
@@ -48,11 +49,13 @@ graph TB
     IDE -->|8051| MCP
     
     Vite -->|proxy| API
+    Vite -.->|Socket.IO| SIO
     API --> Supabase
     API --> OpenAI
     MCP --> Supabase
     
     style API fill:#1a1a2e,stroke:#00d4ff,stroke-width:2px,color:#fff
+    style SIO fill:#1a1a2e,stroke:#4ecdc4,stroke-width:2px,color:#fff
     style MCP fill:#1a1a2e,stroke:#00d4ff,stroke-width:2px,color:#fff
     style Vite fill:#1a1a2e,stroke:#00d4ff,stroke-width:2px,color:#fff
 ```
@@ -80,11 +83,34 @@ SUPABASE_SERVICE_KEY=eyJ0eXAi...
 # Optional - Set via UI Settings page
 # OPENAI_API_KEY=sk-...
 # LOGFIRE_TOKEN=pylf_...
+
+# Socket.IO Configuration (all defaults work out of the box)
+# USE_SOCKETIO_PROGRESS=true  # Enable Socket.IO for real-time features
 ```
 
 <Admonition type="tip" title="API Keys via UI">
 You can set API keys through the Settings page in the UI instead of environment variables.
 </Admonition>
+
+### Socket.IO Configuration
+
+Archon uses Socket.IO for all real-time features. The default configuration works out of the box:
+
+```python
+# Backend Socket.IO settings (socketio_app.py)
+sio = socketio.AsyncServer(
+    async_mode='asgi',
+    cors_allowed_origins="*",  # Allow all origins for development
+    ping_timeout=60,
+    ping_interval=25
+)
+```
+
+**Key Features:**
+- **Automatic reconnection** with exponential backoff
+- **Namespace-based** organization for different features
+- **Room-based** broadcasting for targeted updates
+- **Built-in** heartbeat and connection monitoring
 
 ### 2. Database Setup
 
@@ -149,13 +175,31 @@ proxy: {
 ```
 
 </TabItem>
-<TabItem value="websocket" label="WebSocket Issues">
+<TabItem value="socketio" label="Socket.IO Configuration">
 
-**Problem**: WebSocket disconnects immediately
+**Problem**: Socket.IO connection issues
 
-**Solution**: Ensure WebSocket URLs match backend routes:
-- Agent Chat: `/api/agent-chat/sessions/{id}/ws`
-- Task Updates: `/api/projects/{id}/tasks/ws`
+**Solution**: Ensure proper proxy configuration in `vite.config.ts`:
+```typescript
+proxy: {
+  '/api': {
+    target: 'http://archon-pyserver:8080',
+    changeOrigin: true,
+    ws: true
+  },
+  '/socket.io': {
+    target: 'http://archon-pyserver:8080',
+    changeOrigin: true,
+    ws: true
+  }
+}
+```
+
+Socket.IO namespaces:
+- Chat: `/chat`
+- Crawl Progress: `/crawl`
+- Task Updates: `/tasks`
+- Project Creation: `/project`
 
 </TabItem>
 </Tabs>

@@ -4,12 +4,12 @@
  */
 
 import {
-  EnhancedWebSocketService,
+  WebSocketService,
   createWebSocketService,
   WebSocketState,
   WebSocketMessage,
   WebSocketConfig
-} from './EnhancedWebSocketService';
+} from './webSocketService';
 
 export interface ChatMessage {
   id: string;
@@ -35,7 +35,7 @@ interface ChatRequest {
 
 class AgentChatService {
   private baseUrl: string;
-  private wsConnections: Map<string, EnhancedWebSocketService> = new Map();
+  private wsConnections: Map<string, WebSocketService> = new Map();
   private messageHandlers: Map<string, (message: ChatMessage) => void> = new Map();
   private typingHandlers: Map<string, (isTyping: boolean) => void> = new Map();
   private streamHandlers: Map<string, (chunk: string) => void> = new Map();
@@ -284,7 +284,7 @@ class AgentChatService {
         case 'heartbeat':
           // Server heartbeat - respond with ping
           console.log('💓 Received heartbeat from server');
-          // EnhancedWebSocketService handles heartbeat automatically
+          // WebSocketService handles heartbeat automatically
           break;
           
         case 'pong':

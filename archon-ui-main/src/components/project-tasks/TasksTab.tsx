@@ -6,7 +6,7 @@ import { Button } from '../ui/Button';
 import { ArchonLoadingSpinner } from '../animations/Animations';
 import { Toggle } from '../ui/Toggle';
 import { projectService } from '../../services/projectService';
-import { taskUpdateWebSocket } from '../../services/websocketService';
+import { taskUpdateWebSocket } from '../../services/webSocketService';
 import type { CreateTaskRequest, UpdateTaskRequest, DatabaseTaskStatus } from '../../types/project';
 import { TaskTableView, Task } from './TaskTableView';
 import { TaskBoardView } from './TaskBoardView';
@@ -99,36 +99,49 @@ export const TasksTab = ({
 
     console.log('🔌 Setting up WebSocket connection for project:', projectId);
 
-    const connectWebSocket = () => {
-      taskUpdateWebSocket.connect(projectId, {
-        onConnectionEstablished: () => {
+    const connectWebSocket = async () => {
+      const endpoint = `/api/projects/${projectId}/tasks/ws`;
+      
+      // Clear any existing handlers first
+      taskUpdateWebSocket.disconnect();
+      
+      // Add connection state handler
+      taskUpdateWebSocket.addStateChangeHandler((state) => {
+        if (state === 'CONNECTED') {
           console.log('✅ Task updates WebSocket connected');
           setIsWebSocketConnected(true);
-        },
-        
-        onInitialTasks: (initialWebSocketTasks) => {
-          const uiTasks: Task[] = initialWebSocketTasks.map(mapDatabaseTaskToUITask);
-          setTasks(uiTasks);
-          onTasksChange(uiTasks);
-        },
-        
-        onTaskCreated: (newTask) => {
-          console.log('🆕 Real-time task created:', newTask);
-          const mappedTask = mapDatabaseTaskToUITask(newTask);
-          setTasks(prev => {
-            // Check if task already exists to prevent duplicates
-            if (prev.some(task => task.id === newTask.id)) {
-              console.log('Task already exists, skipping create');
-              return prev;
-            }
-            const updated = [...prev, mappedTask];
-            // Use setTimeout to avoid setState during render
-            setTimeout(() => onTasksChange(updated), 0);
-            return updated;
-          });
-        },
-        
-        onTaskUpdated: (updatedTask) => {
+        } else if (state === 'DISCONNECTED' || state === 'FAILED') {
+          setIsWebSocketConnected(false);
+        }
+      });
+      
+      // Add message handlers
+      taskUpdateWebSocket.addMessageHandler('initial_tasks', (message) => {
+        const initialWebSocketTasks = message.data || message;
+        const uiTasks: Task[] = initialWebSocketTasks.map(mapDatabaseTaskToUITask);
+        setTasks(uiTasks);
+        onTasksChange(uiTasks);
+      });
+      
+      taskUpdateWebSocket.addMessageHandler('task_created', (message) => {
+        const newTask = message.data || message;
+        console.log('🆕 Real-time task created:', newTask);
+        const mappedTask = mapDatabaseTaskToUITask(newTask);
+        setTasks(prev => {
+          // Check if task already exists to prevent duplicates
+          if (prev.some(task => task.id === newTask.id)) {
+            console.log('Task already exists, skipping create');
+            return prev;
+          }
+          const updated = [...prev, mappedTask];
+          // Use setTimeout to avoid setState during render
+          setTimeout(() => onTasksChange(updated), 0);
+          return updated;
+        });
+      });
+      
+      taskUpdateWebSocket.addMessageHandler('task_updated', (message) => {
+        const updatedTask = message.data || message;
           console.log('📝 Real-time task updated:', updatedTask);
           const mappedTask = mapDatabaseTaskToUITask(updatedTask);
           setTasks(prev => {
@@ -137,19 +150,20 @@ export const TasksTab = ({
             if (existingTask && JSON.stringify(existingTask) === JSON.stringify(mappedTask)) {
               console.log('No actual changes in task, skipping update');
               return prev;
-            }
-            
-            const updated = prev.map(task => 
-              task.id === updatedTask.id ? mappedTask : task
-            );
-            // Use setTimeout to avoid setState during render
-            setTimeout(() => onTasksChange(updated), 0);
-            return updated;
-          });
-        },
+          }
+          
+          const updated = prev.map(task => 
+            task.id === updatedTask.id ? mappedTask : task
+          );
+          // Use setTimeout to avoid setState during render
+          setTimeout(() => onTasksChange(updated), 0);
+          return updated;
+        });
+      });
 
-        // Handle bulk task updates from MCP DatabaseChangeDetector
-        onTasksChange: (updatedTasks) => {
+      // Handle bulk task updates from MCP DatabaseChangeDetector
+      taskUpdateWebSocket.addMessageHandler('tasks_change', (message) => {
+        const updatedTasks = message.data || message;
           setTasks(prev => {
             const updated = [...prev];
             
@@ -162,42 +176,47 @@ export const TasksTab = ({
               }
             });
             
-            // Use setTimeout to avoid setState during render
-            setTimeout(() => onTasksChange(updated), 0);
-            return updated;
-          });
-        },
-        
-        onTaskDeleted: (deletedTask) => {
+          // Use setTimeout to avoid setState during render
+          setTimeout(() => onTasksChange(updated), 0);
+          return updated;
+        });
+      });
+      
+      taskUpdateWebSocket.addMessageHandler('task_deleted', (message) => {
+        const deletedTask = message.data || message;
           console.log('🗑️ Real-time task deleted:', deletedTask);
           setTasks(prev => {
             const updated = prev.filter(task => task.id !== deletedTask.id);
             // Use setTimeout to avoid setState during render
-            setTimeout(() => onTasksChange(updated), 0);
-            return updated;
-          });
-        },
-        
-        onTaskArchived: (archivedTask) => {
+          setTimeout(() => onTasksChange(updated), 0);
+          return updated;
+        });
+      });
+      
+      taskUpdateWebSocket.addMessageHandler('task_archived', (message) => {
+        const archivedTask = message.data || message;
           console.log('📦 Real-time task archived:', archivedTask);
           setTasks(prev => {
             const updated = prev.filter(task => task.id !== archivedTask.id);
             // Use setTimeout to avoid setState during render
-            setTimeout(() => onTasksChange(updated), 0);
-            return updated;
-          });
-        },
-        
-        onError: (error) => {
-          console.error('❌ Task updates WebSocket error:', error);
-          setIsWebSocketConnected(false);
-        },
-        
-        onClose: (event) => {
-          console.log('🔌 Task updates WebSocket closed:', event);
-          setIsWebSocketConnected(false);
-        }
+          setTimeout(() => onTasksChange(updated), 0);
+          return updated;
+        });
       });
+      
+      // Add error handler
+      taskUpdateWebSocket.addErrorHandler((error) => {
+        console.error('❌ Task updates WebSocket error:', error);
+        setIsWebSocketConnected(false);
+      });
+      
+      // Connect to WebSocket
+      try {
+        await taskUpdateWebSocket.connect(endpoint);
+      } catch (error) {
+        console.error('Failed to connect to task updates WebSocket:', error);
+        setIsWebSocketConnected(false);
+      }
     };
 
     connectWebSocket();

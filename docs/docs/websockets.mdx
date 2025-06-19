@@ -1,6 +1,6 @@
 ---
-title: WebSockets
-description: Real-time communication patterns and implementation
+title: Real-time Communication (Socket.IO)
+description: Socket.IO implementation for reliable real-time communication
 sidebar_position: 9
 ---
 
@@ -8,59 +8,67 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import Admonition from '@theme/Admonition';
 
-# WebSockets
+# Real-time Communication with Socket.IO
 
 ## Overview
 
-Archon uses WebSockets for real-time communication between the frontend and backend. All WebSocket connections are managed through a centralized service that provides consistent error handling, automatic reconnection, state management, and **WebSocket-safe threading patterns** for long-running operations.
+Archon uses **Socket.IO** for real-time communication between the frontend and backend, replacing traditional WebSockets with a more robust solution. Socket.IO provides automatic reconnection, better connection management, namespace-based organization, and room-based broadcasting - all essential for reliable real-time features.
+
+<Admonition type="info" title="Migration from WebSockets">
+Archon has migrated from native WebSockets to Socket.IO for improved reliability and features. The legacy WebSocket endpoints are deprecated and will return an error message directing clients to use Socket.IO.
+</Admonition>
 
 ## Architecture
 
 ```mermaid
 graph LR
     subgraph Frontend
-        A[React App] --> B[EnhancedWebSocketService]
-        B --> C[WebSocket Connection]
-        B --> D[WebSocket Threading Utils]
-        D --> E[Parallel Processing]
-        D --> F[Rate Limiting]
+        A[React App] --> B[WebSocketService]
+        B --> C[Socket.IO Client]
+        C --> D[Auto Reconnection]
+        C --> E[Namespace Management]
     end
     
     subgraph Backend
-        C --> G[FastAPI WebSocket Endpoints]
-        G --> H[Real-time Handlers]
+        F[Socket.IO Server] --> G[Namespace Handlers]
+        G --> H[/crawl Namespace]
+        G --> I[/chat Namespace]
+        G --> J[/tasks Namespace]
+        F --> K[Room Broadcasting]
     end
+    
+    C -.->|Socket.IO Protocol| F
     
     style A fill:#1a1a2e,stroke:#00d4ff,stroke-width:2px,color:#fff
     style B fill:#1a1a2e,stroke:#00d4ff,stroke-width:2px,color:#fff
-    style D fill:#1a1a2e,stroke:#ff6b6b,stroke-width:2px,color:#fff
+    style C fill:#1a1a2e,stroke:#4ecdc4,stroke-width:2px,color:#fff
+    style F fill:#1a1a2e,stroke:#4ecdc4,stroke-width:2px,color:#fff
     style G fill:#1a1a2e,stroke:#00d4ff,stroke-width:2px,color:#fff
 ```
 
 ## Frontend Implementation
 
-### Core WebSocket Service
+### Core Socket.IO Service
 
-The `EnhancedWebSocketService` provides all WebSocket functionality with built-in threading safety:
+The `WebSocketService` now uses Socket.IO under the hood, providing all the benefits while maintaining a familiar API:
 
 <Tabs>
 <TabItem value="usage" label="Basic Usage">
 
 ```typescript
-import { createWebSocketService } from './services/EnhancedWebSocketService';
-import { knowledgeWebSocket } from './services/websocketService';
+import { createWebSocketService } from './services/webSocketService';
 
 // Create service instance
 const wsService = createWebSocketService({
   maxReconnectAttempts: 5,
   reconnectInterval: 1000,
-  enableHeartbeat: true
+  enableAutoReconnect: true
 });
 
-// Connect to endpoint
+// Connect to endpoint - automatically maps to Socket.IO namespace
 await wsService.connect('/api/agent-chat/sessions/123/ws');
 
-// Send messages
+// Send messages via Socket.IO events
 wsService.send({ type: 'message', content: 'Hello!' });
 
 // Handle incoming messages
@@ -70,25 +78,28 @@ wsService.addMessageHandler('message', (msg) => {
 ```
 
 </TabItem>
-<TabItem value="threading" label="WebSocket-Safe Threading">
+<TabItem value="crawl" label="Crawl Progress">
 
 ```typescript
-// ✅ CORRECT: WebSocket-safe parallel processing
-const results = await knowledgeWebSocket.processParallel(
-  urls,
-  async (url) => {
-    const response = await fetch(`/api/crawl`, {
-      method: 'POST',
-      body: JSON.stringify({ url }),
-      headers: { 'Content-Type': 'application/json' }
-    });
-    return response.json();
+import { crawlProgressService } from './services/crawlProgressService';
+
+// Stream crawl progress using Socket.IO
+await crawlProgressService.streamProgress(
+  progressId,
+  (data) => {
+    // Handle progress updates
+    console.log(`Progress: ${data.percentage}%`);
+    console.log(`Status: ${data.status}`);
+    
+    // Handle worker updates for parallel processing
+    if (data.workers) {
+      data.workers.forEach(worker => {
+        console.log(`Worker ${worker.worker_id}: ${worker.progress}%`);
+      });
+    }
   },
   {
-    maxConcurrency: 3,        // Max 3 concurrent requests
-    batchSize: 10,           // Process in batches of 10
-    progressUpdates: true,   // Send progress via WebSocket
-    taskName: 'url_crawling' // Name for progress tracking
+    autoReconnect: true  // Socket.IO handles this automatically
   }
 );
 ```
@@ -97,265 +108,261 @@ const results = await knowledgeWebSocket.processParallel(
 <TabItem value="patterns" label="React Patterns">
 
 ```typescript
-// Custom hook for WebSocket state
-function useWebSocket(endpoint: string) {
-  const [state, setState] = useState(WebSocketState.DISCONNECTED);
-  const wsRef = useRef<EnhancedWebSocketService>();
+// Custom hook for Socket.IO connection
+function useSocketIO(namespace: string) {
+  const [isConnected, setIsConnected] = useState(false);
+  const wsRef = useRef<WebSocketService>();
   
   useEffect(() => {
     const ws = createWebSocketService();
     wsRef.current = ws;
     
-    ws.addStateChangeHandler(setState);
-    ws.connect(endpoint);
+    ws.addStateChangeHandler((state) => {
+      setIsConnected(state === WebSocketState.CONNECTED);
+    });
+    
+    ws.connect(`/api/${namespace}`);
     
     return () => ws.disconnect();
-  }, [endpoint]);
+  }, [namespace]);
   
-  return { ws: wsRef.current, state };
+  return { ws: wsRef.current, isConnected };
 }
 ```
 
 </TabItem>
 </Tabs>
 
-### WebSocket States
+### Connection States
 
 ```typescript
 enum WebSocketState {
   CONNECTING = 'CONNECTING',
   CONNECTED = 'CONNECTED',
-  RECONNECTING = 'RECONNECTING',
+  RECONNECTING = 'RECONNECTING',  // Socket.IO handles this automatically
   DISCONNECTED = 'DISCONNECTED',
   FAILED = 'FAILED'
 }
 ```
 
-## WebSocket-Safe Threading Patterns
+## Socket.IO Features
 
-<Admonition type="danger" title="Critical: Prevent Event Loop Blocking">
-Long-running operations can block the JavaScript event loop, causing WebSocket disconnections. Always use the WebSocket-safe threading utilities for any processing that takes more than a few milliseconds.
-</Admonition>
+### Automatic Reconnection
 
-### Pattern 1: Parallel Processing
-
-**Use Case**: Crawling multiple URLs, processing documents, API calls
-
-<Tabs>
-<TabItem value="correct" label="✅ Correct Pattern">
+Socket.IO automatically handles reconnection with exponential backoff:
 
 ```typescript
-// This maintains WebSocket health during processing
-const results = await knowledgeWebSocket.processParallel(
-  items,
-  async (item) => await processItem(item),
-  {
-    maxConcurrency: 3,
-    batchSize: 10,
-    progressUpdates: true,
-    taskName: 'processing'
-  }
-);
+const socket = io(url, {
+  reconnection: true,
+  reconnectionAttempts: 10,
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000
+});
 ```
 
-</TabItem>
-<TabItem value="wrong" label="❌ Wrong Pattern">
+### Namespace-Based Organization
+
+Different features use different Socket.IO namespaces:
 
 ```typescript
-// ❌ This blocks WebSocket and causes disconnects
-for (const item of items) {
-  await processItem(item);  // Blocks event loop!
-}
+// Crawl progress namespace
+const crawlSocket = io('/crawl');
+
+// Chat namespace  
+const chatSocket = io('/chat');
+
+// Task updates namespace
+const taskSocket = io('/tasks');
 ```
 
-</TabItem>
-</Tabs>
+### Room-Based Broadcasting
 
-### Pattern 2: CPU-Intensive Tasks
-
-**Use Case**: AI processing, large data transformations
+Progress updates are broadcast to specific rooms:
 
 ```typescript
-const result = await knowledgeWebSocket.runCpuIntensiveTask(
-  async () => {
-    // Heavy processing that would normally block WebSocket
-    return await generateEmbeddings(largeDataset);
-  },
-  {
-    taskName: 'embedding_generation',
-    progressUpdates: true
-  }
-);
-```
+// Frontend: Subscribe to progress
+socket.emit('subscribe', { progress_id: 'abc123' });
 
-### Pattern 3: Rate-Limited Processing
-
-**Use Case**: API calls with rate limits, avoiding 429 errors
-
-```typescript
-import { WebSocketThreadingUtils } from './services/websocketService';
-
-const results = await WebSocketThreadingUtils.processWithRateLimit(
-  apiCalls,
-  async (call) => await makeAPICall(call),
-  {
-    rateLimit: 200,          // 200ms between requests
-    maxConcurrency: 2,       // Max 2 concurrent calls
-    websocket: knowledgeWebSocket,
-    taskName: 'api_processing'
-  }
-);
-```
-
-### Pattern 4: Background Workers
-
-**Use Case**: Continuous processing, job queues
-
-```typescript
-const worker = knowledgeWebSocket.createBackgroundWorker(
-  async (workItem) => await processWorkItem(workItem),
-  {
-    maxConcurrency: 3,
-    workerName: 'document_processor',
-    progressUpdates: true
-  }
-);
-
-// Add work to queue
-await worker.addWork(document1);
-await worker.addWork(document2);
-
-// Clean up when done
-worker.stop();
+// Backend: Broadcast to room
+await sio.emit('progress_update', data, room=progress_id);
 ```
 
 ## Backend Implementation
 
-### FastAPI WebSocket Endpoints
+### Socket.IO Server Setup
 
 <Tabs>
-<TabItem value="basic" label="Basic Handler">
+<TabItem value="setup" label="Server Setup">
 
 ```python
-@router.websocket("/ws/{client_id}")
-async def websocket_endpoint(websocket: WebSocket, client_id: str):
-    await websocket.accept()
-    try:
-        while True:
-            data = await websocket.receive_json()
-            # Process message
-            await websocket.send_json({
-                "type": "response",
-                "data": process_message(data)
-            })
-    except WebSocketDisconnect:
-        print(f"Client {client_id} disconnected")
+# socketio_app.py
+import socketio
+from fastapi import FastAPI
+
+# Create Socket.IO server
+sio = socketio.AsyncServer(
+    async_mode='asgi',
+    cors_allowed_origins="*",
+    ping_timeout=60,
+    ping_interval=25
+)
+
+def create_socketio_app(app: FastAPI):
+    """Wrap FastAPI with Socket.IO"""
+    return socketio.ASGIApp(sio, app)
+```
+
+</TabItem>
+<TabItem value="namespace" label="Namespace Handler">
+
+```python
+# Crawl namespace handler
+@sio.on('connect', namespace='/crawl')
+async def on_crawl_connect(sid, environ):
+    """Handle client connections to crawl namespace"""
+    print(f"Client {sid} connected to /crawl")
+    await sio.emit('connected', 
+                   {'message': 'Connected to crawl progress'}, 
+                   to=sid, namespace='/crawl')
+
+@sio.on('subscribe', namespace='/crawl')
+async def on_subscribe(sid, data):
+    """Subscribe to progress updates"""
+    progress_id = data.get('progress_id')
+    
+    # Join room for this progress ID
+    await sio.enter_room(sid, progress_id, namespace='/crawl')
+    
+    # Send current progress if available
+    if progress_id in active_crawls:
+        await sio.emit('progress_update', 
+                      active_crawls[progress_id], 
+                      to=sid, namespace='/crawl')
 ```
 
 </TabItem>
 <TabItem value="broadcast" label="Broadcasting">
 
 ```python
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: dict[str, WebSocket] = {}
+class CrawlProgressManagerSocketIO:
+    """Socket.IO-based progress manager"""
     
-    async def broadcast(self, message: dict):
-        """Send message to all connected clients"""
-        disconnected = []
-        for client_id, ws in self.active_connections.items():
-            try:
-                await ws.send_json(message)
-            except:
-                disconnected.append(client_id)
+    async def update_progress(self, progress_id: str, data: dict):
+        """Update progress and notify clients via Socket.IO"""
+        self.active_crawls[progress_id].update(data)
         
-        # Clean up disconnected clients
-        for client_id in disconnected:
-            del self.active_connections[client_id]
-```
-
-</TabItem>
-<TabItem value="progress" label="Progress Updates">
-
-```python
-async def long_running_operation_with_progress(websocket: WebSocket):
-    """Send progress updates during long operations"""
-    total_items = len(items_to_process)
+        # Broadcast to all clients in the room
+        await self.sio.emit(
+            'progress_update',
+            self._prepare_progress_data(progress_id),
+            room=progress_id,
+            namespace='/crawl'
+        )
     
-    for i, item in enumerate(items_to_process):
-        # Process item
-        result = await process_item(item)
-        
-        # Send progress update
-        await websocket.send_json({
-            "type": "processing_progress",
-            "completed": i + 1,
-            "total": total_items,
-            "progress_percent": round(((i + 1) / total_items) * 100)
-        })
-        
-        # Yield control to prevent blocking
-        await asyncio.sleep(0)
+    async def _broadcast_worker_progress(self, progress_id: str, 
+                                       worker_id: str, data: dict):
+        """Broadcast worker-specific progress"""
+        await self.sio.emit(
+            'worker_progress',
+            {
+                'progress_id': progress_id,
+                'worker_id': worker_id,
+                **data
+            },
+            room=progress_id,
+            namespace='/crawl'
+        )
 ```
 
 </TabItem>
 </Tabs>
 
+## Migration from WebSockets
+
+### Feature Flag
+
+The backend supports a feature flag for gradual migration:
+
+```python
+# Enable Socket.IO (default: true)
+USE_SOCKETIO_PROGRESS = os.getenv("USE_SOCKETIO_PROGRESS", "true").lower() == "true"
+
+if USE_SOCKETIO_PROGRESS:
+    from .crawl_progress_manager_socketio import progress_manager
+else:
+    # Legacy WebSocket implementation
+    progress_manager = CrawlProgressManager()
+```
+
+### Deprecated WebSocket Endpoint
+
+The legacy WebSocket endpoint now returns a deprecation message:
+
+```python
+@router.websocket("/crawl-progress/{progress_id}")
+async def websocket_crawl_progress(websocket: WebSocket, progress_id: str):
+    if USE_SOCKETIO_PROGRESS:
+        await websocket.accept()
+        await websocket.send_json({
+            "type": "error",
+            "message": "WebSocket endpoint deprecated. Please use Socket.IO connection on /crawl namespace."
+        })
+        await websocket.close()
+        return
+```
+
 ## Best Practices
 
-<Admonition type="tip" title="Connection Management">
-1. Always use the `EnhancedWebSocketService` for consistency
-2. Handle all WebSocket states in your UI
-3. Implement proper cleanup in React components
-4. Use heartbeat for connection health monitoring
-5. **Use WebSocket-safe threading for any long-running operations**
+<Admonition type="tip" title="Socket.IO Best Practices">
+1. **Use namespaces** to organize different features
+2. **Use rooms** for targeted broadcasting
+3. **Let Socket.IO handle reconnection** - don't implement custom logic
+4. **Send acknowledgments** for critical messages
+5. **Use event names** that clearly describe the action
 </Admonition>
 
-### Performance Guidelines
-
-<Admonition type="warning" title="Prevent WebSocket Blocking">
-**Never block the JavaScript event loop during WebSocket operations:**
-
-✅ **DO**: Use `processParallel`, `runCpuIntensiveTask`, or `createBackgroundWorker`  
-❌ **DON'T**: Use `for` loops, `Promise.all` without limits, or synchronous operations  
-✅ **DO**: Include `progressUpdates: true` for user feedback  
-❌ **DON'T**: Process more than 10 items concurrently without testing  
-</Admonition>
-
-### Concurrency Limits
+### Event Naming Conventions
 
 ```typescript
-// Recommended concurrency limits by operation type
-const concurrencyLimits = {
-  apiCalls: 3,           // External API calls
-  fileProcessing: 5,     // Local file operations  
-  databaseOps: 10,       // Database queries
-  aiProcessing: 2        // AI/LLM calls (expensive)
-};
+// Good event names
+socket.emit('progress_update', data);
+socket.emit('task_completed', data);
+socket.emit('worker_status', data);
+
+// Avoid generic names
+socket.emit('message', data);  // Too generic
+socket.emit('data', data);     // Unclear purpose
 ```
 
 ### Error Handling
 
 ```typescript
-wsService.addErrorHandler((error) => {
-  console.error('WebSocket error:', error);
-  // Show user-friendly error message
+// Socket.IO provides built-in error handling
+socket.on('connect_error', (error) => {
+  console.error('Connection error:', error);
   showToast('Connection error. Retrying...', 'error');
+});
+
+socket.on('reconnect_failed', () => {
+  console.error('Failed to reconnect after maximum attempts');
+  showToast('Connection lost. Please refresh the page.', 'error');
 });
 ```
 
 ### Memory Management
 
 <Admonition type="warning" title="Prevent Memory Leaks">
-Always clean up WebSocket connections and handlers in React cleanup functions:
+Always clean up Socket.IO listeners in React cleanup functions:
 
 ```typescript
 useEffect(() => {
-  const ws = createWebSocketService();
-  // ... setup
+  const socket = io('/namespace');
+  
+  socket.on('event', handler);
   
   return () => {
-    ws.disconnect();
+    socket.off('event', handler);
+    socket.disconnect();
   };
 }, []);
 ```
@@ -363,234 +370,201 @@ useEffect(() => {
 
 ## Common Patterns
 
-### Progress Tracking
+### Progress Tracking with Workers
 
 ```typescript
-// Real-time progress updates with WebSocket-safe processing
-useEffect(() => {
-  knowledgeWebSocket.addEventListener('message', (message) => {
-    const data = JSON.parse(message.data);
-    
-    switch (data.type) {
-      case 'processing_progress':
-        setProgress({
-          completed: data.completed,
-          total: data.total,
-          percent: data.progress_percent,
-          taskName: data.task_name
-        });
-        break;
-        
-      case 'batch_complete':
-        console.log(`Batch completed: ${data.completed}/${data.total}`);
-        break;
-        
-      case 'task_completed':
-        console.log(`Task finished: ${data.task_name}`);
-        setProgress(null);
-        break;
-    }
+// Handle parallel worker progress
+socket.on('progress_update', (data) => {
+  // Overall progress
+  setProgress({
+    percentage: data.percentage,
+    status: data.status,
+    logs: data.logs
   });
-}, []);
+  
+  // Worker-specific progress
+  if (data.workers) {
+    setWorkers(data.workers.map(worker => ({
+      id: worker.worker_id,
+      status: worker.status,
+      progress: worker.progress,
+      message: worker.message
+    })));
+  }
+});
 ```
 
-### Chat Applications
+### Real-time Chat
 
 ```typescript
-// Bidirectional chat
-wsService.addMessageHandler('message', (msg) => {
+// Join chat session
+socket.emit('join_session', { session_id });
+
+// Send message
+socket.emit('message', {
+  content: text,
+  timestamp: new Date().toISOString()
+});
+
+// Receive messages
+socket.on('message', (msg) => {
   addChatMessage(msg);
 });
 
-const sendMessage = (text: string) => {
-  wsService.send({
-    type: 'message',
-    content: text,
-    timestamp: new Date().toISOString()
-  });
+// Typing indicators
+socket.emit('typing', { is_typing: true });
+socket.on('typing', (data) => {
+  setTypingUsers(data.users);
+});
+```
+
+### Task Updates
+
+```typescript
+// Subscribe to task updates
+socket.emit('subscribe_tasks', { project_id });
+
+// Receive task updates
+socket.on('task_created', (task) => {
+  addTask(task);
+});
+
+socket.on('task_updated', (task) => {
+  updateTask(task.id, task);
+});
+
+socket.on('task_status_changed', (data) => {
+  updateTaskStatus(data.task_id, data.new_status);
+});
+```
+
+## Performance Monitoring
+
+```typescript
+// Monitor Socket.IO connection health
+const connectionMonitor = {
+  reconnectAttempts: 0,
+  lastDisconnect: null,
+  
+  init: (socket) => {
+    socket.on('reconnect_attempt', (attempt) => {
+      console.log(`Reconnect attempt ${attempt}`);
+      connectionMonitor.reconnectAttempts = attempt;
+    });
+    
+    socket.on('reconnect', () => {
+      console.log('Reconnected successfully');
+      connectionMonitor.reconnectAttempts = 0;
+    });
+    
+    socket.on('disconnect', (reason) => {
+      console.log(`Disconnected: ${reason}`);
+      connectionMonitor.lastDisconnect = new Date();
+    });
+  }
 };
 ```
 
-### Large-Scale Data Processing
+## Testing Socket.IO
+
+<Admonition type="info" title="Testing Strategy">
+Mock Socket.IO connections in tests:
 
 ```typescript
-async function processLargeDataset(items: any[]) {
-  // Use WebSocket-safe parallel processing
-  const results = await knowledgeWebSocket.processParallel(
-    items,
-    async (item) => {
-      // Process individual item
-      return await transformData(item);
-    },
-    {
-      maxConcurrency: 5,
-      batchSize: 20,
-      progressUpdates: true,
-      taskName: 'data_transformation'
+// Mock Socket.IO for testing
+vi.mock('socket.io-client', () => ({
+  io: vi.fn(() => ({
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    emit: vi.fn(),
+    on: vi.fn(),
+    off: vi.fn(),
+    connected: true
+  }))
+}));
+
+// Test example
+it('should handle progress updates', () => {
+  const mockSocket = io();
+  const onProgress = vi.fn();
+  
+  // Simulate progress update
+  mockSocket.on.mockImplementation((event, handler) => {
+    if (event === 'progress_update') {
+      handler({ percentage: 50, status: 'processing' });
     }
-  );
+  });
   
-  return results;
-}
+  expect(onProgress).toHaveBeenCalledWith({
+    percentage: 50,
+    status: 'processing'
+  });
+});
 ```
-
-## Migration Guide
-
-### From Blocking to Non-Blocking Patterns
-
-<Tabs>
-<TabItem value="before" label="❌ Before (Blocking)">
-
-```typescript
-// This causes WebSocket disconnects
-async function processItems(items: any[]) {
-  const results = [];
-  
-  for (const item of items) {
-    const result = await fetch(`/api/process`, {
-      method: 'POST',
-      body: JSON.stringify(item)
-    });
-    results.push(await result.json());
-  }
-  
-  return results;
-}
-```
-
-</TabItem>
-<TabItem value="after" label="✅ After (Non-Blocking)">
-
-```typescript
-// This maintains WebSocket health
-async function processItems(items: any[]) {
-  return await knowledgeWebSocket.processParallel(
-    items,
-    async (item) => {
-      const result = await fetch(`/api/process`, {
-        method: 'POST',
-        body: JSON.stringify(item)
-      });
-      return await result.json();
-    },
-    {
-      maxConcurrency: 3,
-      progressUpdates: true,
-      taskName: 'item_processing'
-    }
-  );
-}
-```
-
-</TabItem>
-</Tabs>
+</Admonition>
 
 ## Troubleshooting
 
 <Tabs>
 <TabItem value="connection" label="Connection Issues">
 
-**Problem**: WebSocket fails to connect
+**Problem**: Socket.IO fails to connect
+
 ```typescript
-// Check the endpoint URL
-console.log('Connecting to:', endpoint);
+// Check connection status
+console.log('Socket connected:', socket.connected);
+console.log('Socket ID:', socket.id);
 
-// Verify backend is running
-fetch('/health').then(res => {
-  console.log('Backend status:', res.ok);
+// Force reconnection
+socket.connect();
+
+// Check transport type
+socket.on('connect', () => {
+  console.log('Transport:', socket.io.engine.transport.name);
 });
-
-// Check browser console for errors
 ```
 
 </TabItem>
-<TabItem value="docker" label="Docker Networking">
+<TabItem value="docker" label="Docker Configuration">
 
-**Problem**: Connection refused in Docker
+**Problem**: Socket.IO connection fails in Docker
 
-In `vite.config.ts`, ensure proxy uses service names:
+Ensure the frontend proxy configuration includes WebSocket upgrade:
+
 ```typescript
+// vite.config.ts
 proxy: {
-  '/api': {
+  '/socket.io': {
     target: 'http://archon-pyserver:8080',
-    ws: true
+    ws: true,
+    changeOrigin: true
   }
 }
 ```
 
 </TabItem>
-<TabItem value="blocking" label="Event Loop Blocking">
+<TabItem value="events" label="Missing Events">
 
-**Problem**: WebSocket disconnects during processing
+**Problem**: Not receiving Socket.IO events
 
-**Symptoms**: 
-- Disconnect screen appears during operations
-- UI becomes unresponsive
-- WebSocket connection drops
-
-**Solution**: Use WebSocket-safe threading patterns:
 ```typescript
-// ❌ WRONG - blocks event loop
-for (const item of items) {
-  await processItem(item);
-}
+// Debug all incoming events
+socket.onAny((eventName, ...args) => {
+  console.log(`Received event: ${eventName}`, args);
+});
 
-// ✅ RIGHT - maintains WebSocket health
-await knowledgeWebSocket.processParallel(
-  items, 
-  processItem,
-  { maxConcurrency: 3 }
-);
+// Check if joined correct room/namespace
+socket.on('connect', () => {
+  console.log('Connected to namespace:', socket.nsp);
+});
 ```
 
 </TabItem>
 </Tabs>
 
-## Testing WebSockets
+## Additional Resources
 
-<Admonition type="info" title="Testing Strategy">
-Mock WebSocket connections in tests to avoid real network calls:
-
-```typescript
-// Mock WebSocket for testing
-vi.mock('./EnhancedWebSocketService', () => ({
-  createWebSocketService: () => ({
-    connect: vi.fn().mockResolvedValue(void 0),
-    send: vi.fn(),
-    disconnect: vi.fn(),
-    addMessageHandler: vi.fn(),
-    state: WebSocketState.CONNECTED,
-    // Mock threading methods
-    processParallel: vi.fn().mockResolvedValue([]),
-    runCpuIntensiveTask: vi.fn().mockResolvedValue({}),
-    createBackgroundWorker: vi.fn().mockReturnValue({
-      addWork: vi.fn().mockResolvedValue({}),
-      stop: vi.fn()
-    })
-  })
-}));
-```
-</Admonition>
-
-## Performance Monitoring
-
-```typescript
-// Monitor WebSocket health during operations
-const performanceMonitor = {
-  startTime: Date.now(),
-  
-  trackOperation: (name: string, duration: number) => {
-    console.log(`Operation ${name} took ${duration}ms`);
-    
-    if (duration > 5000) {
-      console.warn(`Slow operation detected: ${name}`);
-    }
-  },
-  
-  checkWebSocketHealth: () => {
-    if (!knowledgeWebSocket.isConnected()) {
-      console.error('WebSocket disconnected during operation');
-    }
-  }
-};
-```
+- [Socket.IO Documentation](https://socket.io/docs/v4/)
+- [Socket.IO Client API](https://socket.io/docs/v4/client-api/)
+- [Socket.IO Server API](https://socket.io/docs/v4/server-api/)
+- [python-socketio Documentation](https://python-socketio.readthedocs.io/)

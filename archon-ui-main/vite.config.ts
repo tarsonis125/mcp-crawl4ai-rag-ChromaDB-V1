@@ -283,6 +283,12 @@ export default defineConfig(({ mode }: ConfigEnv): UserConfig => {
           secure: false,
           ws: true
         },
+        // Socket.IO specific proxy configuration
+        '/socket.io': {
+          target: `http://${host}:${port}`,
+          changeOrigin: true,
+          ws: true
+        }
       },
     },
     define: {

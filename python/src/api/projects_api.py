@@ -195,14 +195,22 @@ class ProjectCreationProgressManager:
     
     async def _broadcast_progress(self, progress_id: str) -> None:
         """Broadcast progress update to all connected clients."""
-        if progress_id not in self.progress_websockets:
-            return
-        
         progress_data = self.active_creations.get(progress_id, {}).copy()
         progress_data['progressId'] = progress_id
         
         if 'start_time' in progress_data and hasattr(progress_data['start_time'], 'isoformat'):
             progress_data['start_time'] = progress_data['start_time'].isoformat()
+        
+        # Use Socket.IO for broadcasting
+        try:
+            from .project_socketio_handlers import emit_project_progress
+            await emit_project_progress(progress_id, progress_data)
+        except Exception as e:
+            logger.error(f"Error broadcasting project progress via Socket.IO: {e}")
+        
+        # Keep legacy WebSocket support for now
+        if progress_id not in self.progress_websockets:
+            return
         
         message = {
             "type": "project_progress",
@@ -293,6 +301,14 @@ class TaskUpdateManager:
             span.set_attribute("task_id", task_data.get("id"))
             span.set_attribute("target_session_id", target_session_id)
             
+            # Use Socket.IO for broadcasting
+            try:
+                from .project_socketio_handlers import emit_task_update
+                await emit_task_update(project_id, event_type, task_data)
+            except Exception as e:
+                logger.error(f"Error broadcasting task update via Socket.IO: {e}")
+            
+            # Keep legacy WebSocket support for now
             if project_id not in self.session_connections:
                 span.set_attribute("sessions", 0)
                 return
@@ -585,6 +601,19 @@ class ProjectListConnectionManager:
     
     async def broadcast_project_update(self):
         """Broadcast project list update to all connected clients."""
+        # Use Socket.IO for broadcasting
+        try:
+            from .project_socketio_handlers import emit_project_list_update
+            # Get the latest project list
+            supabase_client = get_supabase_client()
+            response = supabase_client.table("projects").select("*").order("created_at", desc=True).execute()
+            projects = response.data
+            # Emit update for all projects
+            await emit_project_list_update('updated', {'projects': projects})
+        except Exception as e:
+            logger.error(f"Error broadcasting project list via Socket.IO: {e}")
+        
+        # Keep legacy WebSocket support for now
         if not self.active_connections:
             return
         
@@ -1867,3 +1896,92 @@ async def mcp_update_task_status_with_websockets(task_id: str, status: str):
             span.set_attribute("success", False)
             span.set_attribute("error", str(e))
             raise HTTPException(status_code=500, detail=str(e))
+
+# Socket.IO Event Handlers
+from ..socketio_app import get_socketio_instance, NAMESPACE_TASKS, NAMESPACE_PROJECT
+
+sio = get_socketio_instance()
+
+# Task namespace handlers
+@sio.on('connect', namespace=NAMESPACE_TASKS)
+async def on_tasks_connect(sid, environ):
+    """Handle Socket.IO connection for tasks."""
+    print(f"🔌 Tasks client connected: {sid}")
+    await sio.emit('connected', {'message': 'Connected to tasks'}, to=sid, namespace=NAMESPACE_TASKS)
+
+@sio.on('disconnect', namespace=NAMESPACE_TASKS)
+async def on_tasks_disconnect(sid):
+    """Handle Socket.IO disconnection."""
+    print(f"🔌 Tasks client disconnected: {sid}")
+
+@sio.on('join_project', namespace=NAMESPACE_TASKS)
+async def on_join_project(sid, data):
+    """Join a project room for task updates."""
+    project_id = data.get('project_id')
+    if not project_id:
+        await sio.emit('error', {'message': 'project_id required'}, to=sid, namespace=NAMESPACE_TASKS)
+        return
+    
+    # Join the room for this project
+    await sio.enter_room(sid, project_id, namespace=NAMESPACE_TASKS)
+    print(f"✅ Client {sid} joined project {project_id} for task updates")
+    
+    # Send initial tasks
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table("tasks").select("*").eq("project_id", project_id).execute()
+        await sio.emit('initial_tasks', response.data, to=sid, namespace=NAMESPACE_TASKS)
+    except Exception as e:
+        await sio.emit('error', {'message': str(e)}, to=sid, namespace=NAMESPACE_TASKS)
+
+@sio.on('leave_project', namespace=NAMESPACE_TASKS)
+async def on_leave_project(sid, data):
+    """Leave a project room."""
+    project_id = data.get('project_id')
+    if project_id:
+        await sio.leave_room(sid, project_id, namespace=NAMESPACE_TASKS)
+        print(f"🛑 Client {sid} left project {project_id}")
+
+# Project namespace handlers
+@sio.on('connect', namespace=NAMESPACE_PROJECT)
+async def on_project_connect(sid, environ):
+    """Handle Socket.IO connection for projects."""
+    print(f"🔌 Project client connected: {sid}")
+    await sio.emit('connected', {'message': 'Connected to projects'}, to=sid, namespace=NAMESPACE_PROJECT)
+
+@sio.on('disconnect', namespace=NAMESPACE_PROJECT)
+async def on_project_disconnect(sid):
+    """Handle Socket.IO disconnection."""
+    print(f"🔌 Project client disconnected: {sid}")
+
+@sio.on('subscribe_progress', namespace=NAMESPACE_PROJECT)
+async def on_subscribe_project_progress(sid, data):
+    """Subscribe to project creation progress."""
+    progress_id = data.get('progress_id')
+    if not progress_id:
+        await sio.emit('error', {'message': 'progress_id required'}, to=sid, namespace=NAMESPACE_PROJECT)
+        return
+    
+    # Join the room for this progress ID
+    await sio.enter_room(sid, progress_id, namespace=NAMESPACE_PROJECT)
+    print(f"✅ Client {sid} subscribed to project progress {progress_id}")
+
+@sio.on('unsubscribe_progress', namespace=NAMESPACE_PROJECT)
+async def on_unsubscribe_project_progress(sid, data):
+    """Unsubscribe from project creation progress."""
+    progress_id = data.get('progress_id')
+    if progress_id:
+        await sio.leave_room(sid, progress_id, namespace=NAMESPACE_PROJECT)
+        print(f"🛑 Client {sid} unsubscribed from project progress {progress_id}")
+
+@sio.on('subscribe_projects', namespace=NAMESPACE_PROJECT)
+async def on_subscribe_projects(sid):
+    """Subscribe to project list updates."""
+    await sio.enter_room(sid, 'project_list', namespace=NAMESPACE_PROJECT)
+    print(f"✅ Client {sid} subscribed to project list updates")
+
+@sio.on('unsubscribe_projects', namespace=NAMESPACE_PROJECT)
+async def on_unsubscribe_projects(sid):
+    """Unsubscribe from project list updates."""
+    await sio.leave_room(sid, 'project_list', namespace=NAMESPACE_PROJECT)
+    print(f"🛑 Client {sid} unsubscribed from project list updates")

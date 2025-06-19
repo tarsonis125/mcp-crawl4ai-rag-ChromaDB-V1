@@ -8,8 +8,8 @@ import { Input } from '../ui/Input';
 import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
 import { Select } from '../ui/Select';
-import { CrawlProgressData, crawlProgressServiceV2 as crawlProgressService } from '../../services/crawlProgressServiceV2';
-import { WebSocketState } from '../../services/EnhancedWebSocketService';
+import { CrawlProgressData, crawlProgressService } from '../../services/crawlProgressService';
+import { WebSocketState } from '../../services/webSocketService';
 import { BlockNoteEditor } from './BlockNoteEditor';
 import { VersionHistoryModal } from './VersionHistoryModal';
 

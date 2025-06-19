@@ -1,4 +1,5 @@
 import type { Project } from '../types/project';
+import { createWebSocketService, WebSocketService, WebSocketState } from './webSocketService';
 
 export interface ProjectCreationProgressData {
   progressId: string;
@@ -21,92 +22,104 @@ interface StreamProgressOptions {
 type ProgressCallback = (data: ProjectCreationProgressData) => void;
 
 class ProjectCreationProgressService {
-  private baseUrl: string;
-  private wsUrl: string;
-
-  constructor() {
-    this.baseUrl = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080';
-    this.wsUrl = this.baseUrl.replace('http', 'ws');
-  }
-  private progressWebSocket: WebSocket | null = null;
-  private reconnectTimeout: NodeJS.Timeout | null = null;
+  private wsService: WebSocketService | null = null;
+  private currentProgressId: string | null = null;
+  private progressCallback: ProgressCallback | null = null;
   public isReconnecting = false;
 
   /**
-   * Stream project creation progress similar to how MCP logs and crawl progress work
+   * Stream project creation progress using Socket.IO
    */
-  streamProgress(
+  async streamProgress(
     progressId: string,
     onMessage: ProgressCallback,
     options: StreamProgressOptions = {}
-  ): WebSocket {
+  ): Promise<void> {
     const { autoReconnect = true, reconnectDelay = 5000 } = options;
 
     // Close existing connection if any
     this.disconnect();
 
-    const ws = new WebSocket(`${this.wsUrl}/api/project-creation-progress/${progressId}`);
-    this.progressWebSocket = ws;
+    this.currentProgressId = progressId;
+    this.progressCallback = onMessage;
 
-    ws.onopen = () => {
-      console.log(`🚀 Connected to project creation progress stream: ${progressId}`);
-      this.isReconnecting = false;
-    };
+    // Create new WebSocket service with Socket.IO
+    this.wsService = createWebSocketService({
+      maxReconnectAttempts: autoReconnect ? 10 : 0,
+      reconnectInterval: reconnectDelay,
+      enableAutoReconnect: autoReconnect
+    });
 
-    ws.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
+    // Set up state change handler
+    this.wsService.addStateChangeHandler((state) => {
+      if (state === WebSocketState.CONNECTED) {
+        console.log(`🚀 Connected to project creation progress stream: ${progressId}`);
+        this.isReconnecting = false;
         
-        // Ignore ping messages
-        if (message.type === 'ping') {
-          return;
-        }
-
-        // Handle progress messages
-        if (message.type === 'project_progress' || message.type === 'project_completed' || message.type === 'project_error') {
-          if (message.data) {
-            onMessage(message.data);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to parse project creation progress message:', error);
-      }
-    };
-
-    ws.onclose = () => {
-      console.log(`Project creation progress stream disconnected: ${progressId}`);
-      this.progressWebSocket = null;
-      
-      if (autoReconnect && !this.isReconnecting) {
+        // Subscribe to this specific progress ID
+        this.wsService!.send({
+          type: 'subscribe_progress',
+          data: { progress_id: progressId }
+        });
+      } else if (state === WebSocketState.RECONNECTING) {
         this.isReconnecting = true;
-        this.reconnectTimeout = setTimeout(() => {
-          this.isReconnecting = false;
-          this.streamProgress(progressId, onMessage, options);
-        }, reconnectDelay);
+      } else if (state === WebSocketState.DISCONNECTED || state === WebSocketState.FAILED) {
+        this.isReconnecting = false;
       }
-    };
+    });
 
-    ws.onerror = (error) => {
-      console.error('Project creation progress WebSocket error:', error);
-    };
+    // Set up message handlers
+    this.wsService.addMessageHandler('project_progress', (message) => {
+      if (message.data) {
+        onMessage(message.data);
+      }
+    });
 
-    return ws;
+    this.wsService.addMessageHandler('project_completed', (message) => {
+      if (message.data) {
+        onMessage(message.data);
+      }
+    });
+
+    this.wsService.addMessageHandler('project_error', (message) => {
+      if (message.data) {
+        onMessage(message.data);
+      }
+    });
+
+    // Set up error handler
+    this.wsService.addErrorHandler((error) => {
+      console.error('Project creation progress Socket.IO error:', error);
+    });
+
+    // Connect to the project namespace
+    try {
+      await this.wsService.connect(`/api/project-creation-progress/${progressId}`);
+    } catch (error) {
+      console.error('Failed to connect to project creation progress:', error);
+      throw error;
+    }
   }
 
   /**
    * Disconnect from progress stream
    */
   disconnect(): void {
-    if (this.progressWebSocket) {
-      this.progressWebSocket.close();
-      this.progressWebSocket = null;
+    if (this.wsService) {
+      // Unsubscribe if connected
+      if (this.currentProgressId && this.wsService.isConnected()) {
+        this.wsService.send({
+          type: 'unsubscribe_progress',
+          data: { progress_id: this.currentProgressId }
+        });
+      }
+      
+      this.wsService.disconnect();
+      this.wsService = null;
     }
     
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
-      this.reconnectTimeout = null;
-    }
-    
+    this.currentProgressId = null;
+    this.progressCallback = null;
     this.isReconnecting = false;
   }
 
@@ -114,7 +127,7 @@ class ProjectCreationProgressService {
    * Check if currently connected to a progress stream
    */
   isConnected(): boolean {
-    return this.progressWebSocket !== null && this.progressWebSocket.readyState === WebSocket.OPEN;
+    return this.wsService?.isConnected() ?? false;
   }
 
   // Backward compatibility methods - now just wrappers around streamProgress
