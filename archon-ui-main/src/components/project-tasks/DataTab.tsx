@@ -571,7 +571,10 @@ export const DataTab = ({ project }: DataTabProps) => {
         {showEditModal && editingNode && (
           <EditTableModal
             node={editingNode}
+            nodes={nodes}
+            edges={edges}
             onSave={saveNodeChanges}
+            onUpdateEdges={setEdges}
             onClose={() => {
               setShowEditModal(false);
               setEditingNode(null);
@@ -643,26 +646,78 @@ const DeleteConfirmModal = ({
   );
 };
 
+// Column interface for better type management
+interface ColumnDefinition {
+  name: string;
+  dataType: string;
+  columnType: 'regular' | 'pk' | 'fk';
+  referencedTable?: string;
+  referencedColumn?: string;
+}
+
 // Edit Table Modal Component
 const EditTableModal = ({ 
   node, 
+  nodes,
+  edges,
   onSave, 
+  onUpdateEdges,
   onClose 
 }: { 
   node: Node; 
+  nodes: Node[];
+  edges: Edge[];
   onSave: (node: Node) => void; 
+  onUpdateEdges: (edges: Edge[]) => void;
   onClose: () => void; 
 }) => {
   const [tableName, setTableName] = useState(node.data.label as string);
-  const [columns, setColumns] = useState<string[]>(node.data.columns as string[]);
+  const [columns, setColumns] = useState<ColumnDefinition[]>([]);
+
+  // Parse existing columns into structured format
+  useEffect(() => {
+    const parsedColumns = (node.data.columns as string[]).map((colStr: string) => {
+      const parts = colStr.split(' - ');
+      const nameAndType = parts[0];
+      const dataType = parts[1] || 'VARCHAR(255)';
+      
+      let columnType: 'regular' | 'pk' | 'fk' = 'regular';
+      let name = nameAndType;
+      let referencedTable = '';
+      let referencedColumn = '';
+      
+      if (nameAndType.includes('(PK)')) {
+        columnType = 'pk';
+        name = nameAndType.replace(' (PK)', '');
+      } else if (nameAndType.includes('(FK)')) {
+        columnType = 'fk';
+        name = nameAndType.replace(' (FK)', '');
+      }
+      
+      return {
+        name,
+        dataType,
+        columnType,
+        referencedTable,
+        referencedColumn
+      };
+    });
+    setColumns(parsedColumns);
+  }, [node.data.columns]);
 
   const addColumn = () => {
-    setColumns([...columns, 'newColumn - VARCHAR(255)']);
+    setColumns([...columns, {
+      name: 'newColumn',
+      dataType: 'VARCHAR(255)',
+      columnType: 'regular',
+      referencedTable: '',
+      referencedColumn: ''
+    }]);
   };
 
-  const updateColumn = (index: number, value: string) => {
+  const updateColumn = (index: number, field: keyof ColumnDefinition, value: string) => {
     const newColumns = [...columns];
-    newColumns[index] = value;
+    newColumns[index] = { ...newColumns[index], [field]: value };
     setColumns(newColumns);
   };
 
@@ -670,15 +725,80 @@ const EditTableModal = ({
     setColumns(columns.filter((_, i) => i !== index));
   };
 
+  // Get available tables for FK references (exclude current table)
+  const getAvailableTables = () => {
+    return nodes.filter(n => n.id !== node.id).map(n => ({
+      id: n.id,
+      label: n.data.label as string
+    }));
+  };
+
+  // Get available columns for a specific table
+  const getAvailableColumns = (tableId: string) => {
+    const targetNode = nodes.find(n => n.id === tableId);
+    if (!targetNode) return [];
+    
+    return (targetNode.data.columns as string[])
+      .filter(col => col.includes('(PK)')) // Only allow referencing primary keys
+      .map(col => {
+        const name = col.split(' - ')[0].replace(' (PK)', '');
+        return { name, label: name };
+      });
+  };
+
   const handleSave = () => {
+    // Convert columns back to string format
+    const columnStrings = columns.map(col => {
+      let name = col.name;
+      if (col.columnType === 'pk') {
+        name += ' (PK)';
+      } else if (col.columnType === 'fk') {
+        name += ' (FK)';
+      }
+      return `${name} - ${col.dataType}`;
+    });
+
     const updatedNode = {
       ...node,
       data: {
         ...node.data,
         label: tableName,
-        columns: columns
+        columns: columnStrings
       }
     };
+
+    // Create edges for FK relationships
+    const newEdges = [...edges];
+    
+    // Remove existing edges from this table
+    const filteredEdges = newEdges.filter(edge => edge.source !== node.id);
+    
+    // Add new edges for FK columns
+    columns.forEach(col => {
+      if (col.columnType === 'fk' && col.referencedTable && col.referencedColumn) {
+        const edgeId = `${col.referencedTable}-${node.id}`;
+        const newEdge = {
+          id: edgeId,
+          source: col.referencedTable,
+          target: node.id,
+          sourceHandle: `${nodes.find(n => n.id === col.referencedTable)?.data.label}-${col.referencedColumn}`,
+          targetHandle: `${tableName}-${col.name}`,
+          animated: true,
+          style: {
+            stroke: '#d946ef'
+          },
+          markerEnd: {
+            type: MarkerType.Arrow,
+            color: '#d946ef'
+          }
+        };
+        filteredEdges.push(newEdge);
+      }
+    });
+
+         // Update edges state
+     onUpdateEdges(filteredEdges);
+    
     onSave(updatedNode);
   };
 
@@ -726,20 +846,90 @@ const EditTableModal = ({
                 Add Column
               </button>
             </div>
+            
+            {/* Column Headers */}
+            <div className="grid grid-cols-12 items-center gap-2 mb-2 text-xs text-gray-400 font-medium">
+              <div className="col-span-3">Column Name</div>
+              <div className="col-span-2">Data Type</div>
+              <div className="col-span-2">Type</div>
+              <div className="col-span-4">References (FK only)</div>
+              <div className="col-span-1"></div>
+            </div>
+            
             <div className="space-y-2 max-h-60 overflow-y-auto">
               {columns.map((column, index) => (
-                <div key={index} className="flex items-center gap-2">
+                <div key={index} className="grid grid-cols-12 items-center gap-2">
+                  {/* Column Name */}
                   <input
                     type="text"
-                    value={column}
-                    onChange={(e) => updateColumn(index, e.target.value)}
-                    className="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:border-cyan-500 focus:outline-none text-sm"
+                    placeholder="Column name"
+                    value={column.name}
+                    onChange={(e) => updateColumn(index, 'name', e.target.value)}
+                    className="col-span-3 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:border-cyan-500 focus:outline-none text-sm"
                   />
+                  
+                  {/* Data Type */}
+                  <input
+                    type="text"
+                    placeholder="Data type"
+                    value={column.dataType}
+                    onChange={(e) => updateColumn(index, 'dataType', e.target.value)}
+                    className="col-span-2 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:border-cyan-500 focus:outline-none text-sm"
+                  />
+                  
+                  {/* Column Type */}
+                  <select
+                    value={column.columnType}
+                    onChange={(e) => updateColumn(index, 'columnType', e.target.value)}
+                    className="col-span-2 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:border-cyan-500 focus:outline-none text-sm"
+                  >
+                    <option value="regular">Regular</option>
+                    <option value="pk">Primary Key</option>
+                    <option value="fk">Foreign Key</option>
+                  </select>
+                  
+                  {/* FK Reference (only show for FK columns) */}
+                  {column.columnType === 'fk' && (
+                    <>
+                      <select
+                        value={column.referencedTable || ''}
+                        onChange={(e) => updateColumn(index, 'referencedTable', e.target.value)}
+                        className="col-span-2 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:border-cyan-500 focus:outline-none text-sm"
+                      >
+                        <option value="">Select table...</option>
+                        {getAvailableTables().map((table) => (
+                          <option key={table.id} value={table.id}>
+                            {table.label}
+                          </option>
+                        ))}
+                      </select>
+                      
+                      <select
+                        value={column.referencedColumn || ''}
+                        onChange={(e) => updateColumn(index, 'referencedColumn', e.target.value)}
+                        disabled={!column.referencedTable}
+                        className="col-span-2 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:border-cyan-500 focus:outline-none text-sm disabled:opacity-50"
+                      >
+                        <option value="">Select column...</option>
+                        {column.referencedTable && getAvailableColumns(column.referencedTable).map((col) => (
+                          <option key={col.name} value={col.name}>
+                            {col.label}
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  )}
+                  
+                  {/* Spacer for non-FK columns */}
+                  {column.columnType !== 'fk' && <div className="col-span-4"></div>}
+                  
+                  {/* Remove Button */}
                   <button
                     onClick={() => removeColumn(index)}
-                    className="p-2 text-red-400 hover:text-red-300 transition-colors"
+                    className="col-span-1 flex items-center justify-center p-1 text-red-400 hover:text-red-300 hover:bg-red-600/10 rounded transition-colors"
+                    title="Delete column"
                   >
-                    <X className="w-4 h-4" />
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               ))}

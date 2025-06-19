@@ -207,7 +207,8 @@ class MemoryAdaptiveDispatcher:
         process_func: Callable,
         mode: ProcessingMode = ProcessingMode.CPU_INTENSIVE,
         websocket: Optional[WebSocket] = None,
-        progress_callback: Optional[Callable] = None
+        progress_callback: Optional[Callable] = None,
+        enable_worker_tracking: bool = False
     ) -> List[Any]:
         """Process items with adaptive concurrency control"""
         
@@ -224,9 +225,36 @@ class MemoryAdaptiveDispatcher:
                           memory_percent=self.last_metrics.memory_percent,
                           cpu_percent=self.last_metrics.cpu_percent)
         
+        # Track active workers
+        active_workers = {}
+        worker_counter = 0
+        completed_count = 0
+        lock = asyncio.Lock()
+        
         async def process_single(item: Any, index: int) -> Any:
+            nonlocal worker_counter, completed_count
+            
+            # Assign worker ID
+            worker_id = None
+            async with lock:
+                for i in range(1, optimal_workers + 1):
+                    if i not in active_workers:
+                        worker_id = i
+                        active_workers[worker_id] = index
+                        break
+            
             async with semaphore:
                 try:
+                    # Report worker started
+                    if progress_callback and worker_id:
+                        await progress_callback({
+                            'type': 'worker_started',
+                            'worker_id': worker_id,
+                            'item_index': index,
+                            'total_items': len(items),
+                            'message': f"Worker {worker_id} processing item {index + 1}"
+                        })
+                    
                     # For CPU-intensive work, run in thread pool
                     if mode == ProcessingMode.CPU_INTENSIVE:
                         loop = asyncio.get_event_loop()
@@ -238,10 +266,22 @@ class MemoryAdaptiveDispatcher:
                         else:
                             result = process_func(item)
                     
-                    # Progress reporting
-                    progress = ((index + 1) / len(items)) * 100
+                    # Update completed count
+                    async with lock:
+                        completed_count += 1
+                        if worker_id in active_workers:
+                            del active_workers[worker_id]
+                    
+                    # Progress reporting with worker info
                     if progress_callback:
-                        await progress_callback(f"Processed {index + 1}/{len(items)}", progress)
+                        await progress_callback({
+                            'type': 'worker_completed',
+                            'worker_id': worker_id,
+                            'item_index': index,
+                            'completed_count': completed_count,
+                            'total_items': len(items),
+                            'message': f"Worker {worker_id} completed item {index + 1}"
+                        })
                     
                     # WebSocket health check
                     if websocket and mode == ProcessingMode.WEBSOCKET_SAFE:
@@ -251,6 +291,11 @@ class MemoryAdaptiveDispatcher:
                     return result
                     
                 except Exception as e:
+                    # Clean up worker on error
+                    async with lock:
+                        if worker_id and worker_id in active_workers:
+                            del active_workers[worker_id]
+                    
                     logfire_logger.error(f"Processing failed for item {index}",
                                        error=str(e),
                                        item_index=index)
@@ -466,7 +511,8 @@ class ThreadingService:
         process_func: Callable,
         mode: ProcessingMode = ProcessingMode.CPU_INTENSIVE,
         websocket: Optional[WebSocket] = None,
-        progress_callback: Optional[Callable] = None
+        progress_callback: Optional[Callable] = None,
+        enable_worker_tracking: bool = False
     ) -> List[Any]:
         """Process items in batches with optimal threading"""
         return await self.memory_dispatcher.process_with_adaptive_concurrency(
@@ -474,7 +520,8 @@ class ThreadingService:
             process_func=process_func,
             mode=mode,
             websocket=websocket,
-            progress_callback=progress_callback
+            progress_callback=progress_callback,
+            enable_worker_tracking=enable_worker_tracking
         )
     
     async def websocket_safe_process(

@@ -91,6 +91,34 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
         # Get progress callback if available
         progress_callback = getattr(ctx, 'progress_callback', None)
         
+        # Create a mock WebSocket that uses the progress callback
+        class MockWebSocket:
+            async def send_json(self, data):
+                """Convert WebSocket messages to progress callback calls"""
+                if progress_callback:
+                    msg_type = data.get('type', '')
+                    if msg_type == 'worker_progress':
+                        # Don't send worker progress through main callback, it's handled separately
+                        pass
+                    elif msg_type == 'document_storage_progress':
+                        await progress_callback(
+                            'document_storage',
+                            data.get('percentage', 0),
+                            data.get('message', ''),
+                            completed_batches=data.get('completed_batches', 0),
+                            total_batches=data.get('total_batches', 0)
+                        )
+                    else:
+                        # Generic progress
+                        await progress_callback(
+                            data.get('status', 'processing'),
+                            data.get('percentage', 0),
+                            data.get('message', '')
+                        )
+        
+        # Create mock websocket if we have a progress callback
+        websocket = MockWebSocket() if progress_callback else None
+        
         async def report_progress(status: str, percentage: int, message: str, **kwargs):
             """Helper to report progress if callback available"""
             if progress_callback:
@@ -258,18 +286,21 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
             await report_progress('document_storage', 0, f'Preparing to store {len(all_documents)} chunks...')
             
             # Import the function we need
-            from src.utils import add_documents_to_supabase
+            from src.utils import add_documents_to_supabase_parallel
             
             # We'll call the function but add progress reporting around it
-            # Since add_documents_to_supabase processes in batches, we can estimate progress
+            # Since add_documents_to_supabase_parallel processes in batches, we can estimate progress
             batch_size = 15
+            max_workers = int(os.getenv("CONTEXTUAL_EMBEDDINGS_MAX_WORKERS", "3"))
             total_batches = (len(all_documents) + batch_size - 1) // batch_size
             
             # Report that we're starting the storage
-            await report_progress('document_storage', 10, f'Storing {len(all_documents)} chunks in {total_batches} batches...')
+            await report_progress('document_storage', 10, f'Storing {len(all_documents)} chunks in {total_batches} batches with {max_workers} workers...')
             
-            # Call the storage function with progress callback
-            await add_documents_to_supabase(
+            # websocket is already created above as MockWebSocket
+            
+            # Call the parallel storage function with progress callback and websocket
+            await add_documents_to_supabase_parallel(
                 client=storage_service.supabase_client,
                 urls=urls,
                 chunk_numbers=chunk_numbers,
@@ -277,7 +308,9 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
                 metadatas=metadatas,
                 url_to_full_document=url_to_full_document,
                 batch_size=batch_size,
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
+                websocket=websocket,
+                max_workers=max_workers
             )
             
             await report_progress('document_storage', 100, f'Successfully stored {len(all_documents)} document chunks')

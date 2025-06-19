@@ -201,22 +201,23 @@ class CrawlingService:
             batch_start = i
             batch_end = min(i + batch_size, total_urls)
             
-            # Report batch start
-            progress_percentage = start_progress + int((processed / total_urls) * (end_progress - start_progress))
+            # Report batch start with smooth progress
+            progress_percentage = start_progress + int((i / total_urls) * (end_progress - start_progress))
             await report_progress(progress_percentage, f'Processing batch {batch_start+1}-{batch_end} of {total_urls} URLs...')
             
             # Crawl this batch
             batch_results = await self.crawler.arun_many(urls=batch_urls, config=crawl_config, dispatcher=dispatcher)
             
             # Process batch results
-            for result in batch_results:
+            for j, result in enumerate(batch_results):
                 processed += 1
                 if result.success and result.markdown:
                     successful_results.append({'url': result.url, 'markdown': result.markdown})
                 
-                # Report individual URL progress
+                # Report individual URL progress with smooth increments
                 progress_percentage = start_progress + int((processed / total_urls) * (end_progress - start_progress))
-                if processed % 10 == 0 or processed == total_urls:  # Report every 10 URLs or at the end
+                # Report more frequently for smoother progress
+                if processed % 5 == 0 or processed == total_urls:  # Report every 5 URLs or at the end
                     await report_progress(progress_percentage, f'Crawled {processed}/{total_urls} pages ({len(successful_results)} successful)')
         
         await report_progress(end_progress, f'Batch crawling completed: {len(successful_results)}/{total_urls} pages successful')

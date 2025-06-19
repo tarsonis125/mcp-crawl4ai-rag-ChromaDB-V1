@@ -20,7 +20,7 @@ import {
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
 import { Badge } from './ui/Badge';
-import { CrawlProgressData } from '../services/crawlProgressServiceV2';
+import { CrawlProgressData, WorkerProgress } from '../services/crawlProgressServiceV2';
 import { useTerminalScroll } from '../hooks/useTerminalScroll';
 
 interface CrawlingProgressCardProps {
@@ -323,7 +323,9 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
         };
       case 'document_storage':
         return {
-          text: 'Storing documents...',
+          text: progressData.completedBatches !== undefined && progressData.totalBatches 
+            ? `Document Storage: ${progressData.completedBatches}/${progressData.totalBatches} batches`
+            : 'Storing documents...',
           color: 'blue' as const,
           icon: <Database className="w-4 h-4" />
         };
@@ -420,50 +422,121 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
             className="overflow-hidden mb-4"
           >
             <div className="space-y-3 p-3 bg-gray-50 dark:bg-zinc-900/50 rounded-md">
-              {progressSteps.map((step) => (
-                <div key={step.id} className="flex items-center gap-3">
-                  <div className={`p-1.5 rounded-md ${getStepStatusColor(step.status)}`}>
-                    {step.status === 'active' ? (
-                      <motion.div
-                        animate={{ rotate: 360 }}
-                        transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-                      >
-                        {step.icon}
-                      </motion.div>
-                    ) : (
-                      step.icon
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        {step.label}
+              {/* Show worker progress for document storage */}
+              {progressData.status === 'document_storage' && progressData.workers && progressData.workers.length > 0 ? (
+                <>
+                  {/* Overall batch progress */}
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                        Document Storage: {progressData.completedBatches || 0}/{progressData.totalBatches || 0} batches
                       </span>
                       <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {Math.round(step.percentage)}%
+                        {Math.round(((progressData.completedBatches || 0) / (progressData.totalBatches || 1)) * 100)}%
                       </span>
                     </div>
-                    <div className="w-full bg-gray-200 dark:bg-zinc-700 rounded-full h-1.5">
+                    <div className="w-full bg-gray-200 dark:bg-zinc-700 rounded-full h-2">
                       <motion.div
-                        className={`h-1.5 rounded-full ${
-                          step.status === 'completed' ? 'bg-green-500' :
-                          step.status === 'active' ? 'bg-blue-500' :
-                          step.status === 'error' ? 'bg-pink-500' :
-                          'bg-gray-300 dark:bg-gray-600'
-                        }`}
+                        className="h-2 rounded-full bg-blue-500"
                         initial={{ width: 0 }}
-                        animate={{ width: `${step.percentage}%` }}
+                        animate={{ width: `${((progressData.completedBatches || 0) / (progressData.totalBatches || 1)) * 100}%` }}
                         transition={{ duration: 0.5, ease: 'easeOut' }}
                       />
                     </div>
-                    {step.message && (
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
-                        {step.message}
-                      </p>
-                    )}
                   </div>
-                </div>
-              ))}
+                  
+                  {/* Individual worker progress */}
+                  <div className="space-y-2 pl-4">
+                    {progressData.workers.map((worker) => (
+                      <div key={worker.worker_id} className="flex items-center gap-3">
+                        <div className={`p-1.5 rounded-md ${
+                          worker.status === 'processing' ? 'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' :
+                          worker.status === 'completed' ? 'bg-green-100 dark:bg-green-500/10 text-green-600 dark:text-green-400' :
+                          worker.status === 'error' ? 'bg-pink-100 dark:bg-pink-500/10 text-pink-600 dark:text-pink-400' :
+                          'bg-gray-100 dark:bg-gray-500/10 text-gray-600 dark:text-gray-400'
+                        }`}>
+                          <Cpu className="w-3 h-3" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                              Worker {worker.worker_id}
+                              {worker.batch_num && ` - Batch ${worker.batch_num}`}
+                            </span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              {Math.round(worker.progress)}%
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-200 dark:bg-zinc-700 rounded-full h-1">
+                            <motion.div
+                              className={`h-1 rounded-full ${
+                                worker.status === 'processing' ? 'bg-blue-500' :
+                                worker.status === 'completed' ? 'bg-green-500' :
+                                worker.status === 'error' ? 'bg-pink-500' :
+                                'bg-gray-300 dark:bg-gray-600'
+                              }`}
+                              initial={{ width: 0 }}
+                              animate={{ width: `${worker.progress}%` }}
+                              transition={{ duration: 0.5, ease: 'easeOut' }}
+                            />
+                          </div>
+                          {worker.message && (
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+                              {worker.message}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                /* Regular progress steps */
+                progressSteps.map((step) => (
+                  <div key={step.id} className="flex items-center gap-3">
+                    <div className={`p-1.5 rounded-md ${getStepStatusColor(step.status)}`}>
+                      {step.status === 'active' ? (
+                        <motion.div
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                        >
+                          {step.icon}
+                        </motion.div>
+                      ) : (
+                        step.icon
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          {step.label}
+                        </span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          {Math.round(step.percentage)}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 dark:bg-zinc-700 rounded-full h-1.5">
+                        <motion.div
+                          className={`h-1.5 rounded-full ${
+                            step.status === 'completed' ? 'bg-green-500' :
+                            step.status === 'active' ? 'bg-blue-500' :
+                            step.status === 'error' ? 'bg-pink-500' :
+                            'bg-gray-300 dark:bg-gray-600'
+                          }`}
+                          initial={{ width: 0 }}
+                          animate={{ width: `${step.percentage}%` }}
+                          transition={{ duration: 0.5, ease: 'easeOut' }}
+                        />
+                      </div>
+                      {step.message && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">
+                          {step.message}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </motion.div>
         )}

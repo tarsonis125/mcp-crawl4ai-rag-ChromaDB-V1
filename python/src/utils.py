@@ -398,7 +398,8 @@ async def add_documents_to_supabase(
     url_to_full_document: Dict[str, str],
     batch_size: int = 15,
     progress_callback: Optional[Any] = None,
-    websocket: Optional[WebSocket] = None
+    websocket: Optional[WebSocket] = None,
+    enable_parallel_batches: bool = True
 ) -> None:
     """
     Add documents to Supabase with threading optimizations and WebSocket safety.
@@ -602,6 +603,279 @@ async def add_documents_to_supabase(
         
         # Final completion
         await report_progress(f"Successfully stored all {len(contents)} documents", 100)
+        span.set_attribute("success", True)
+        span.set_attribute("total_processed", len(contents))
+
+
+async def add_documents_to_supabase_parallel(
+    client: Client, 
+    urls: List[str], 
+    chunk_numbers: List[int],
+    contents: List[str], 
+    metadatas: List[Dict[str, Any]],
+    url_to_full_document: Dict[str, str],
+    batch_size: int = 15,
+    progress_callback: Optional[Any] = None,
+    websocket: Optional[WebSocket] = None,
+    max_workers: int = 3
+) -> None:
+    """
+    Add documents to Supabase with parallel batch processing and worker tracking.
+    """
+    threading_service = get_utils_threading_service()
+    
+    with search_logger.span("add_documents_to_supabase_parallel",
+                           total_documents=len(contents),
+                           batch_size=batch_size,
+                           max_workers=max_workers) as span:
+        
+        # Get unique URLs to delete existing records
+        unique_urls = list(set(urls))
+        
+        # Delete existing records for these URLs
+        try:
+            if unique_urls:
+                await threading_service.run_io_bound(
+                    lambda: client.table("crawled_pages").delete().in_("url", unique_urls).execute()
+                )
+                search_logger.info(f"Deleted existing records for {len(unique_urls)} URLs")
+        except Exception as e:
+            search_logger.warning(f"Batch delete failed: {e}")
+        
+        # Check configuration
+        use_contextual_embeddings = os.getenv("USE_CONTEXTUAL_EMBEDDINGS", "false") == "true"
+        
+        # Create batches
+        total_batches = (len(contents) + batch_size - 1) // batch_size
+        batches = []
+        
+        for batch_num, i in enumerate(range(0, len(contents), batch_size), 1):
+            batch_end = min(i + batch_size, len(contents))
+            batch = {
+                'batch_num': batch_num,
+                'start_idx': i,
+                'end_idx': batch_end,
+                'urls': urls[i:batch_end],
+                'chunk_numbers': chunk_numbers[i:batch_end],
+                'contents': contents[i:batch_end],
+                'metadatas': metadatas[i:batch_end]
+            }
+            batches.append(batch)
+        
+        # Track worker progress
+        worker_progress = {}
+        completed_batches = 0
+        lock = asyncio.Lock()
+        
+        async def process_batch(batch_data: Dict[str, Any], worker_id: int) -> None:
+            nonlocal completed_batches
+            
+            batch_num = batch_data['batch_num']
+            batch_contents = batch_data['contents']
+            batch_urls = batch_data['urls']
+            batch_metadatas = batch_data['metadatas']
+            batch_chunk_numbers = batch_data['chunk_numbers']
+            
+            try:
+                # Report worker started
+                if websocket:
+                    await websocket.send_json({
+                        "type": "worker_progress",
+                        "worker_id": worker_id,
+                        "status": "processing",
+                        "batch_num": batch_num,
+                        "total_batches": total_batches,
+                        "completed_batches": completed_batches,
+                        "progress": 0,
+                        "message": f"Worker {worker_id} processing batch {batch_num}/{total_batches}"
+                    })
+                    await asyncio.sleep(0)  # Yield control after WebSocket send
+                
+                # Apply contextual embedding if enabled
+                if use_contextual_embeddings:
+                    # Report embedding progress
+                    if websocket:
+                        await websocket.send_json({
+                            "type": "worker_progress",
+                            "worker_id": worker_id,
+                            "batch_num": batch_num,
+                            "total_batches": total_batches,
+                            "completed_batches": completed_batches,
+                            "progress": 20,
+                            "message": f"Worker {worker_id}: Creating embeddings"
+                        })
+                        await asyncio.sleep(0)  # Yield control after WebSocket send
+                    
+                    process_args = []
+                    for j, content in enumerate(batch_contents):
+                        url = batch_urls[j]
+                        full_document = url_to_full_document.get(url, "")
+                        process_args.append((url, content, full_document))
+                    
+                    # Process contextual embeddings
+                    contextual_contents = []
+                    for args in process_args:
+                        result = await asyncio.get_event_loop().run_in_executor(
+                            None, process_chunk_with_context, args
+                        )
+                        if result and len(result) == 2:
+                            contextual_text, success = result
+                            contextual_contents.append(contextual_text if success else args[1])
+                        else:
+                            contextual_contents.append(args[1])
+                else:
+                    contextual_contents = batch_contents
+                
+                # Create embeddings
+                if websocket:
+                    await websocket.send_json({
+                        "type": "worker_progress",
+                        "worker_id": worker_id,
+                        "batch_num": batch_num,
+                        "total_batches": total_batches,
+                        "completed_batches": completed_batches,
+                        "progress": 50,
+                        "message": f"Worker {worker_id}: Creating embeddings"
+                    })
+                    await asyncio.sleep(0)  # Yield control after WebSocket send
+                
+                batch_embeddings = await create_embeddings_batch_async(contextual_contents, websocket=None)
+                
+                # Prepare batch data
+                batch_data = []
+                for j in range(len(contextual_contents)):
+                    parsed_url = urlparse(batch_urls[j])
+                    source_id = parsed_url.netloc or parsed_url.path
+                    
+                    data = {
+                        "url": batch_urls[j],
+                        "chunk_number": batch_chunk_numbers[j],
+                        "content": contextual_contents[j],
+                        "metadata": {
+                            "chunk_size": len(contextual_contents[j]),
+                            **batch_metadatas[j]
+                        },
+                        "source_id": source_id,
+                        "embedding": batch_embeddings[j]
+                    }
+                    batch_data.append(data)
+                
+                # Store in database
+                if websocket:
+                    await websocket.send_json({
+                        "type": "worker_progress",
+                        "worker_id": worker_id,
+                        "batch_num": batch_num,
+                        "total_batches": total_batches,
+                        "completed_batches": completed_batches,
+                        "progress": 80,
+                        "message": f"Worker {worker_id}: Storing in database"
+                    })
+                    await asyncio.sleep(0)  # Yield control after WebSocket send
+                
+                await threading_service.run_io_bound(
+                    lambda: client.table("crawled_pages").insert(batch_data).execute()
+                )
+                
+                # Update completed count
+                async with lock:
+                    completed_batches += 1
+                
+                # Report completion
+                if websocket:
+                    await websocket.send_json({
+                        "type": "worker_progress",
+                        "worker_id": worker_id,
+                        "batch_num": batch_num,
+                        "total_batches": total_batches,
+                        "completed_batches": completed_batches,
+                        "progress": 100,
+                        "message": f"Worker {worker_id} completed batch {batch_num}"
+                    })
+                    await asyncio.sleep(0)  # Yield control after WebSocket send
+                    
+                    # Send overall progress
+                    overall_progress = int((completed_batches / total_batches) * 100)
+                    await websocket.send_json({
+                        "type": "document_storage_progress",
+                        "percentage": overall_progress,
+                        "completed_batches": completed_batches,
+                        "total_batches": total_batches,
+                        "message": f"Document storage: {completed_batches}/{total_batches} batches completed"
+                    })
+                    await asyncio.sleep(0)  # Yield control after WebSocket send
+                
+            except Exception as e:
+                search_logger.error(f"Worker {worker_id} failed on batch {batch_num}: {e}")
+                if websocket:
+                    await websocket.send_json({
+                        "type": "worker_error",
+                        "worker_id": worker_id,
+                        "batch_num": batch_num,
+                        "error": str(e)
+                    })
+                    await asyncio.sleep(0)  # Yield control after WebSocket send
+        
+        # Create worker pool
+        semaphore = asyncio.Semaphore(max_workers)
+        worker_id_counter = 0
+        active_workers = {}
+        
+        async def worker_wrapper(batch: Dict[str, Any]) -> None:
+            nonlocal worker_id_counter
+            
+            async with semaphore:
+                # Assign worker ID
+                async with lock:
+                    for i in range(1, max_workers + 1):
+                        if i not in active_workers:
+                            worker_id = i
+                            active_workers[worker_id] = batch['batch_num']
+                            break
+                
+                try:
+                    await process_batch(batch, worker_id)
+                finally:
+                    # Release worker ID
+                    async with lock:
+                        if worker_id in active_workers:
+                            del active_workers[worker_id]
+        
+        # Create background tasks that don't block
+        background_tasks = set()
+        
+        # Track completion without blocking
+        tasks_completed = 0
+        tasks_total = len(batches)
+        completion_event = asyncio.Event()
+        
+        async def track_completion(task):
+            nonlocal tasks_completed
+            try:
+                await task
+            except Exception as e:
+                search_logger.error(f"Batch processing error: {e}")
+            finally:
+                async with lock:
+                    tasks_completed += 1
+                    if tasks_completed == tasks_total:
+                        completion_event.set()
+        
+        # Start all tasks without blocking
+        for batch in batches:
+            task = asyncio.create_task(worker_wrapper(batch))
+            tracking_task = asyncio.create_task(track_completion(task))
+            background_tasks.add(tracking_task)
+            # Remove reference when done to prevent memory leak
+            tracking_task.add_done_callback(background_tasks.discard)
+        
+        # Wait for all tasks to complete without blocking event loop
+        await completion_event.wait()
+        
+        # Final completion
+        if progress_callback and asyncio.iscoroutinefunction(progress_callback):
+            await progress_callback('document_storage', 100, f"Successfully stored all {len(contents)} documents")
+        
         span.set_attribute("success", True)
         span.set_attribute("total_processed", len(contents))
 

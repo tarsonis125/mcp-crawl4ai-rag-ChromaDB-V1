@@ -20,6 +20,14 @@ export interface ProgressStep {
   message?: string;
 }
 
+export interface WorkerProgress {
+  worker_id: number;
+  status: 'idle' | 'processing' | 'completed' | 'error';
+  progress: number;
+  batch_num?: number;
+  message?: string;
+}
+
 export interface CrawlProgressData {
   progressId: string;
   status: 'starting' | 'crawling' | 'analyzing' | 'sitemap' | 'text_file' | 'webpage' | 'processing' | 'storing' | 'completed' | 'error' | 'waiting' | 'reading' | 'extracting' | 'chunking' | 'creating_source' | 'summarizing' | 'source_creation' | 'document_storage' | 'code_storage' | 'finalization';
@@ -41,6 +49,10 @@ export interface CrawlProgressData {
   fileName?: string;
   fileType?: string;
   sourceId?: string;
+  // Multi-threaded progress fields
+  workers?: WorkerProgress[];
+  totalBatches?: number;
+  completedBatches?: number;
 }
 
 interface StreamProgressOptions {
@@ -51,7 +63,7 @@ interface StreamProgressOptions {
 
 type ProgressCallback = (data: CrawlProgressData) => void;
 type ConnectionStateCallback = (state: WebSocketState) => void;
-type ErrorCallback = (error: Error) => void;
+type ErrorCallback = (error: Error | Event) => void;
 
 interface ProgressHandler {
   progressId: string;
@@ -75,8 +87,7 @@ class CrawlProgressServiceV2 {
   ): Promise<void> {
     const {
       autoReconnect = true,
-      reconnectDelay = 5000,
-      connectionTimeout = 10000
+      reconnectDelay = 5000
     } = options;
 
     // Store the handler
@@ -166,6 +177,16 @@ class CrawlProgressServiceV2 {
       this.handleProgressMessage(message);
     });
 
+    // Handle worker progress messages
+    this.webSocketService.addMessageHandler('worker_progress', (message: WebSocketMessage) => {
+      this.handleWorkerProgress(message);
+    });
+
+    // Handle document storage progress messages
+    this.webSocketService.addMessageHandler('document_storage_progress', (message: WebSocketMessage) => {
+      this.handleProgressMessage(message);
+    });
+
     // Handle connection state changes
     this.webSocketService.addStateChangeHandler((state: WebSocketState) => {
       console.log(`📡 Crawl progress WebSocket state changed: ${state}`);
@@ -185,7 +206,7 @@ class CrawlProgressServiceV2 {
       // Notify all handlers about error
       this.progressHandlers.forEach(handler => {
         if (handler.onError) {
-          handler.onError(error instanceof Error ? error : new Error('WebSocket error'));
+          handler.onError(error);
         }
       });
     });
@@ -194,6 +215,12 @@ class CrawlProgressServiceV2 {
   private handleProgressMessage(message: WebSocketMessage): void {
     // Ignore heartbeat messages
     if (message.type === 'ping' || message.type === 'pong' || message.type === 'heartbeat') {
+      return;
+    }
+
+    // Handle worker-specific progress messages
+    if (message.type === 'worker_progress') {
+      this.handleWorkerProgress(message);
       return;
     }
 
@@ -207,6 +234,17 @@ class CrawlProgressServiceV2 {
     // Validate percentage
     if (typeof data.percentage !== 'number' || isNaN(data.percentage)) {
       data.percentage = 0;
+    }
+
+    // Handle document storage progress with batch info
+    if (message.type === 'document_storage_progress') {
+      data.status = 'document_storage';
+      if (message.data.completed_batches !== undefined) {
+        data.completedBatches = message.data.completed_batches;
+      }
+      if (message.data.total_batches !== undefined) {
+        data.totalBatches = message.data.total_batches;
+      }
     }
 
     // Find the handler for this progress ID
@@ -226,6 +264,66 @@ class CrawlProgressServiceV2 {
       this.cleanupProgress(data.progressId);
     }
   }
+
+  private handleWorkerProgress(message: WebSocketMessage): void {
+    const { worker_id, status, progress, batch_num, total_batches, completed_batches, message: workerMessage } = message.data;
+    
+    // Find the progress handler for the current progress
+    if (!this.currentProgressId) return;
+    
+    const handler = this.progressHandlers.get(this.currentProgressId);
+    if (!handler) return;
+
+    // Initialize worker states if needed
+    if (!this.workerStates) {
+      this.workerStates = new Map();
+    }
+
+    // Initialize current progress state if needed
+    if (!this.currentProgressState) {
+      this.currentProgressState = {
+        progressId: this.currentProgressId,
+        status: 'document_storage',
+        percentage: 0,
+        logs: [],
+        workers: [],
+        totalBatches: 0,
+        completedBatches: 0
+      };
+    }
+
+    // Update worker state
+    this.workerStates.set(worker_id, {
+      worker_id,
+      status: status === 'processing' ? 'processing' : 
+              progress === 100 ? 'completed' : 'idle',
+      progress: progress || 0,
+      batch_num,
+      message: workerMessage
+    });
+
+    // Update overall progress
+    if (total_batches !== undefined) {
+      this.currentProgressState.totalBatches = total_batches;
+    }
+    if (completed_batches !== undefined) {
+      this.currentProgressState.completedBatches = completed_batches;
+      this.currentProgressState.percentage = Math.round((completed_batches / (total_batches || 1)) * 100);
+    }
+
+    // Convert worker states to array
+    this.currentProgressState.workers = Array.from(this.workerStates.values());
+
+    // Send updated progress
+    handler.onMessage({
+      ...this.currentProgressState,
+      workers: this.currentProgressState.workers
+    });
+  }
+
+  private currentProgressState?: CrawlProgressData;
+
+  private workerStates?: Map<number, WorkerProgress>;
 
   /**
    * Wait for WebSocket connection to be established
@@ -291,6 +389,12 @@ class CrawlProgressServiceV2 {
       
       // Remove from handlers map
       this.progressHandlers.delete(progressId);
+    }
+    
+    // Clear worker states when progress is cleaned up
+    if (progressId === this.currentProgressId) {
+      this.workerStates?.clear();
+      this.currentProgressState = undefined;
     }
   }
 

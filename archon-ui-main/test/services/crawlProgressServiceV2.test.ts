@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, test } from 'vitest'
-import { crawlProgressService } from '@/services/crawlProgressService'
+import { crawlProgressServiceV2 as crawlProgressService } from '@/services/crawlProgressServiceV2'
 import { MockWebSocket } from '../setup'
-import type { CrawlProgressData, ProgressStep } from '@/services/crawlProgressService'
+import type { CrawlProgressData, ProgressStep } from '@/services/crawlProgressServiceV2'
 
 // Mock environment
 (import.meta as any).env = { VITE_API_URL: 'http://localhost:8080' }

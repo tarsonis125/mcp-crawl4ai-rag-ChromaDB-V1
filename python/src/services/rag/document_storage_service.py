@@ -26,6 +26,7 @@ from fastapi import WebSocket
 from ...utils import (
     get_supabase_client,
     add_documents_to_supabase,
+    add_documents_to_supabase_parallel,
     add_code_examples_to_supabase,
     update_source_info,
     extract_source_summary,
@@ -349,8 +350,11 @@ class DocumentStorageService:
                 
                 await report_progress("Source info updated, storing document chunks...", 70)
                 
-                # Add documentation chunks to Supabase using enhanced function
-                await add_documents_to_supabase(
+                # Get worker count from settings
+                max_workers = int(os.getenv("CONTEXTUAL_EMBEDDINGS_MAX_WORKERS", "3"))
+                
+                # Add documentation chunks to Supabase using parallel function
+                await add_documents_to_supabase_parallel(
                     client=self.supabase_client,
                     urls=urls,
                     chunk_numbers=chunk_numbers,
@@ -359,7 +363,8 @@ class DocumentStorageService:
                     url_to_full_document=url_to_full_document,
                     batch_size=15,
                     websocket=websocket,
-                    progress_callback=progress_callback
+                    progress_callback=progress_callback,
+                    max_workers=max_workers
                 )
                 
                 await report_progress("Document upload completed!", 100)
@@ -424,8 +429,11 @@ class DocumentStorageService:
                                total_documents=len(contents),
                                batch_size=batch_size) as span:
             
-            # Use the enhanced async function
-            await add_documents_to_supabase(
+            # Get worker count from settings
+            max_workers = int(os.getenv("CONTEXTUAL_EMBEDDINGS_MAX_WORKERS", "3"))
+            
+            # Use the parallel async function
+            await add_documents_to_supabase_parallel(
                 client=self.supabase_client,
                 urls=urls,
                 chunk_numbers=chunk_numbers,
@@ -434,7 +442,8 @@ class DocumentStorageService:
                 url_to_full_document=url_to_full_document,
                 batch_size=batch_size,
                 websocket=websocket,
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
+                max_workers=max_workers
             )
             
             span.set_attribute("success", True)
