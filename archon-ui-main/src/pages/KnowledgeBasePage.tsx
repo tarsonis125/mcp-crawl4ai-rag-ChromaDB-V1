@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { Search, Grid, Plus, Upload, Link as LinkIcon, Share2, Brain, Filter, BoxIcon, Trash2, List, RefreshCw, X, Globe, FileText, BookOpen, Code } from 'lucide-react';
+import { useEffect, useState, useRef } from 'react';
+import { Search, Grid, Plus, Upload, Link as LinkIcon, Brain, Filter, BoxIcon, Trash2, List, RefreshCw, X, Globe, FileText, BookOpen, Code, Copy, ChevronDown, Edit3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -88,6 +88,199 @@ const groupItemsByDomain = (items: KnowledgeItem[]): GroupedKnowledgeItem[] => {
   });
 };
 
+// Inline editable field component
+interface InlineEditableFieldProps {
+  value: string;
+  onSave: (value: string) => Promise<void>;
+  placeholder?: string;
+  multiline?: boolean;
+  className?: string;
+  truncateLines?: number;
+  displayClassName?: string;
+}
+
+const InlineEditableField = ({ 
+  value, 
+  onSave, 
+  placeholder, 
+  multiline = false, 
+  className = "", 
+  truncateLines = 1,
+  displayClassName = ""
+}: InlineEditableFieldProps) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(value);
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    setEditValue(value);
+  }, [value]);
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+
+  const handleSave = async () => {
+    if (editValue.trim() !== value.trim()) {
+      setSaving(true);
+      try {
+        await onSave(editValue.trim());
+      } catch (error) {
+        console.error('Failed to save:', error);
+        setEditValue(value); // Revert on error
+      } finally {
+        setSaving(false);
+      }
+    }
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setEditValue(value);
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !multiline) {
+      e.preventDefault();
+      handleSave();
+    } else if (e.key === 'Enter' && multiline && e.ctrlKey) {
+      e.preventDefault();
+      handleSave();
+    } else if (e.key === 'Escape') {
+      handleCancel();
+    }
+  };
+
+  if (isEditing) {
+    const Component = multiline ? 'textarea' : 'input';
+    return (
+      <div className="flex items-start gap-2">
+        <Component
+          ref={inputRef as any}
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onBlur={handleSave}
+          placeholder={placeholder}
+          className={`flex-1 bg-white/90 dark:bg-black/70 border border-cyan-300 dark:border-cyan-600 rounded px-2 py-1 text-sm focus:outline-none focus:border-cyan-500 resize-none ${className}`}
+          disabled={saving}
+          rows={multiline ? 3 : undefined}
+        />
+        {saving && (
+          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-cyan-500 mt-1"></div>
+        )}
+      </div>
+    );
+  }
+
+  // Determine truncation classes
+  const truncateClass = truncateLines === 1 ? 'line-clamp-1' : 
+                       truncateLines === 2 ? 'line-clamp-2' : 
+                       truncateLines === 3 ? 'line-clamp-3' : 
+                       `line-clamp-${truncateLines}`;
+
+  return (
+    <div 
+      className={`group cursor-pointer hover:bg-cyan-50/50 dark:hover:bg-cyan-900/20 rounded px-1 transition-colors ${className}`}
+      onClick={() => setIsEditing(true)}
+      title="Click to edit"
+    >
+      <div className="flex items-start gap-2">
+        <span className={`flex-1 ${truncateClass} ${displayClassName}`}>
+          {value || <span className="text-gray-400 dark:text-gray-600">{placeholder}</span>}
+        </span>
+        <Edit3 className="w-3 h-3 opacity-0 group-hover:opacity-60 transition-opacity mt-0.5 flex-shrink-0" />
+      </div>
+    </div>
+  );
+};
+
+// Neon glass selector component
+interface NeonGlassSelectorProps {
+  options: Array<{ id: string; label: string; status?: string }>;
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
+  placeholder: string;
+}
+
+const NeonGlassSelector = ({ options, selectedId, onSelect, placeholder }: NeonGlassSelectorProps) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedOption = options.find(opt => opt.id === selectedId);
+
+  const getStatusColor = (status?: string) => {
+    switch (status) {
+      case 'active': return 'bg-green-400';
+      case 'processing': return 'bg-blue-400';
+      case 'error': return 'bg-red-400';
+      default: return 'bg-gray-400';
+    }
+  };
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className={`
+          w-full flex items-center justify-between gap-2 px-3 py-2 
+          bg-white/10 dark:bg-black/20 backdrop-blur-md 
+          border border-cyan-400/50 rounded-lg
+          hover:border-cyan-400/80 hover:shadow-[0_0_15px_rgba(34,211,238,0.3)]
+          transition-all duration-300
+          ${isOpen ? 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]' : ''}
+        `}
+      >
+        <div className="flex items-center gap-2">
+          <div className={`w-2 h-2 rounded-full ${getStatusColor(selectedOption?.status)} shadow-[0_0_6px_currentColor] animate-pulse`} />
+          <span className="text-gray-800 dark:text-white font-medium text-sm">
+            {selectedOption?.label || placeholder}
+          </span>
+        </div>
+        <ChevronDown className={`w-4 h-4 text-cyan-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute top-full left-0 right-0 mt-1 z-50">
+          <div className="bg-white/95 dark:bg-black/95 backdrop-blur-md border border-cyan-400/50 rounded-lg shadow-lg overflow-hidden">
+            <button
+              onClick={() => {
+                onSelect(null);
+                setIsOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 hover:bg-cyan-50/50 dark:hover:bg-cyan-900/30 transition-colors"
+            >
+              <div className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_6px_currentColor]" />
+              <span className="text-gray-800 dark:text-white text-sm">{placeholder}</span>
+            </button>
+            {options.map((option) => (
+              <button
+                key={option.id}
+                onClick={() => {
+                  onSelect(option.id);
+                  setIsOpen(false);
+                }}
+                className={`
+                  w-full flex items-center gap-2 px-3 py-2 
+                  hover:bg-cyan-50/50 dark:hover:bg-cyan-900/30 
+                  transition-colors
+                  ${selectedId === option.id ? 'bg-cyan-100/50 dark:bg-cyan-900/50' : ''}
+                `}
+              >
+                <div className={`w-2 h-2 rounded-full ${getStatusColor(option.status)} shadow-[0_0_6px_currentColor] animate-pulse`} />
+                <span className="text-gray-800 dark:text-white text-sm">{option.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 interface GroupedKnowledgeItemCardProps {
   groupedItem: GroupedKnowledgeItem;
   onDelete: (sourceId: string) => void;
@@ -99,9 +292,12 @@ const GroupedKnowledgeItemCard = ({
 }: GroupedKnowledgeItemCardProps) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showTooltip, setShowTooltip] = useState(false);
+  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
+  const { showToast } = useToast();
 
   const isGrouped = groupedItem.items.length > 1;
   const firstItem = groupedItem.items[0];
+  const selectedItem = selectedSourceId ? groupedItem.items.find(item => item.id === selectedSourceId) : null;
   
   // Determine card properties based on the primary item
   const accentColor = firstItem.metadata.source_type === 'url' ? 'blue' : 'pink';
@@ -118,6 +314,29 @@ const GroupedKnowledgeItemCard = ({
     // Call the main delete handler with the group ID
     await onDelete(groupedItem.id);
     setShowDeleteConfirm(false);
+  };
+
+  // Handle updating individual source items
+  const handleUpdateItem = async (sourceId: string, field: 'title' | 'description', value: string) => {
+    try {
+      const updates: any = {};
+      if (field === 'title') {
+        // Note: Title updates might not be supported by backend, but we'll try
+        updates.title = value;
+      } else if (field === 'description') {
+        updates.description = value;
+      }
+      
+      await knowledgeBaseService.updateKnowledgeItem(sourceId, updates);
+      showToast('Item updated successfully', 'success');
+      
+      // Optionally reload data here if needed
+      // The parent component should handle reloading via WebSocket or manual refresh
+    } catch (error) {
+      console.error('Failed to update item:', error);
+      showToast('Failed to update item', 'error');
+      throw error; // Re-throw to trigger revert in InlineEditableField
+    }
   };
 
   // Get frequency display for the primary item
@@ -143,46 +362,106 @@ const GroupedKnowledgeItemCard = ({
     return sum + (item.metadata.word_count || 0);
   }, 0);
 
-  // Format word count with thousands separator
-  const formattedWordCount = totalWordCount.toLocaleString();
 
-  // Generate tooltip content for grouped items
-  const tooltipContent = isGrouped ? (
-    <div className="space-y-1">
-      <div className="font-medium text-white">Grouped Sources:</div>
-      {groupedItem.items.map((item, index) => (
-        <div key={item.id} className="text-sm text-gray-200">
-          {index + 1}. {item.source_id}
-        </div>
-      ))}
-    </div>
-  ) : null;
+
+
+
+  // Prepare selector options for grouped cards
+  const selectorOptions = isGrouped ? groupedItem.items.map(item => ({
+    id: item.id,
+    label: item.title || item.source_id,
+    status: item.metadata.status || 'active'
+  })) : [];
+
+  // Determine display item - either selected individual item or group summary
+  const displayItem = selectedItem || firstItem;
+  const showingGroupView = !selectedItem && isGrouped;
 
   return (
     <Card accentColor={accentColor} className="relative h-full flex flex-col">
       {/* Header section - fixed height */}
       <div className="flex items-center gap-2 mb-3">
         {/* Source type icon */}
-        {firstItem.metadata.source_type === 'url' ? <LinkIcon className="w-4 h-4 text-blue-500" /> : <Upload className="w-4 h-4 text-pink-500" />}
+        {displayItem.metadata.source_type === 'url' ? <LinkIcon className="w-4 h-4 text-blue-500" /> : <Upload className="w-4 h-4 text-pink-500" />}
         {/* Knowledge type icon */}
         <TypeIcon className={`w-4 h-4 ${typeIconColor}`} />
-        <h3 className="text-gray-800 dark:text-white font-medium flex-1 line-clamp-1">
-          {isGrouped ? groupedItem.domain : firstItem.title}
-        </h3>
-        <div className="flex items-center gap-1">
-          <button onClick={() => setShowDeleteConfirm(true)} className="p-1 text-gray-500 hover:text-red-500" title="Delete">
+        
+        {/* Title - editable when showing individual source, domain name when showing group */}
+        <div className="flex-1">
+          {showingGroupView ? (
+            <h3 className="text-gray-800 dark:text-white font-medium line-clamp-1">
+              {groupedItem.domain}
+            </h3>
+          ) : (
+            <InlineEditableField
+              value={displayItem.title}
+              onSave={(value) => handleUpdateItem(displayItem.source_id, 'title', value)}
+              placeholder="Enter title..."
+              className="text-gray-800 dark:text-white font-medium"
+            />
+          )}
+        </div>
+        
+        <div className="flex items-center gap-1.5">
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              const sourceIds = isGrouped 
+                ? groupedItem.items.map(item => item.source_id)
+                : [displayItem.source_id];
+              navigator.clipboard.writeText(JSON.stringify(sourceIds));
+              // Visual feedback
+              const button = e.currentTarget;
+              const originalHTML = button.innerHTML;
+              button.innerHTML = '<div class="flex items-center justify-center text-green-500"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></div>';
+              setTimeout(() => {
+                button.innerHTML = originalHTML;
+              }, 2000);
+            }} 
+            className="w-5 h-5 rounded-full flex items-center justify-center bg-gray-100/80 dark:bg-gray-500/20 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-500/30 hover:shadow-[0_0_10px_rgba(107,114,128,0.3)] transition-all duration-300" 
+            title={isGrouped ? "Copy Source IDs" : "Copy Source ID"}
+          >
+            <Copy className="w-3 h-3" />
+          </button>
+          <button 
+            onClick={() => setShowDeleteConfirm(true)} 
+            className="w-5 h-5 rounded-full flex items-center justify-center bg-red-100/80 dark:bg-red-500/20 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-500/30 hover:shadow-[0_0_10px_rgba(239,68,68,0.3)] transition-all duration-300" 
+            title="Delete"
+          >
             <Trash2 className="w-3 h-3" />
           </button>
         </div>
       </div>
+
+      {/* Neon Glass Selector - only show for grouped items */}
+      {isGrouped && (
+        <div className="mb-3">
+          <NeonGlassSelector
+            options={selectorOptions}
+            selectedId={selectedSourceId}
+            onSelect={setSelectedSourceId}
+            placeholder={`${groupedItem.domain} (${groupedItem.items.length} sources)`}
+          />
+        </div>
+      )}
       
-      {/* Description section - fixed height */}
-      <p className="text-gray-600 dark:text-zinc-400 text-sm mb-3 line-clamp-2 h-10">
-        {isGrouped 
-          ? `${groupedItem.items.length} sources from ${groupedItem.domain}` 
-          : (firstItem.metadata.description || 'No description available')
-        }
-      </p>
+      {/* Description section - 3 lines max */}
+      <div className="text-gray-600 dark:text-zinc-400 mb-3 min-h-[3rem]">
+        {showingGroupView ? (
+          <p className="text-xs line-clamp-3 leading-relaxed">
+            {`${groupedItem.items.length} sources from ${groupedItem.domain}`}
+          </p>
+        ) : (
+          <InlineEditableField
+            value={displayItem.metadata.description || ''}
+            onSave={(value) => handleUpdateItem(displayItem.source_id, 'description', value)}
+            placeholder="Add description..."
+            multiline={true}
+            truncateLines={3}
+            displayClassName="text-xs leading-relaxed"
+          />
+        )}
+      </div>
       
       {/* Tags section - fixed height for 2 rows */}
       <div className="mb-4 h-16 flex items-start">
@@ -312,7 +591,7 @@ export const KnowledgeBasePage = () => {
   const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>([]);
   const [progressItems, setProgressItems] = useState<CrawlProgressData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [totalItems, setTotalItems] = useState(0);
+  const [, setTotalItems] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [loadingStrategy, setLoadingStrategy] = useState<'websocket' | 'rest' | 'complete'>('websocket');
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
@@ -469,7 +748,6 @@ export const KnowledgeBasePage = () => {
 
   // Use our custom staggered entrance hook for the page header
   const {
-    isVisible: headerVisible,
     containerVariants: headerContainerVariants,
     itemVariants: headerItemVariants,
     titleVariants
@@ -477,7 +755,6 @@ export const KnowledgeBasePage = () => {
 
   // Separate staggered entrance for the content that will reanimate on view changes
   const {
-    isVisible: contentVisible,
     containerVariants: contentContainerVariants,
     itemVariants: contentItemVariants
   } = useStaggeredEntrance(filteredItems, 0.15, forceReanimate);
@@ -625,9 +902,10 @@ export const KnowledgeBasePage = () => {
       }
     };
     
-    const errorCallback = (error: Error) => {
+    const errorCallback = (error: Error | Event) => {
       console.error(`❌ WebSocket error for ${progressId}:`, error);
-      handleProgressError(`Connection error: ${error.message}`, progressId);
+      const errorMessage = error instanceof Error ? error.message : 'Connection error';
+      handleProgressError(`Connection error: ${errorMessage}`, progressId);
     };
     
     console.log(`🚀 Starting progress stream for ${progressId}`);
@@ -748,7 +1026,7 @@ export const KnowledgeBasePage = () => {
                   // List view - use individual items
                   filteredItems.length > 0 ? filteredItems.map(item => (
                     <motion.div key={item.id} variants={contentItemVariants}>
-                      <KnowledgeItemCard item={item} viewMode={viewMode} onDelete={handleDeleteItem} />
+                      <KnowledgeItemCard item={item} onDelete={handleDeleteItem} />
                     </motion.div>
                   )) : (progressItems.length === 0 && (
                     <motion.div variants={contentItemVariants} className="col-span-full py-10 text-center text-gray-500 dark:text-zinc-400">
@@ -775,16 +1053,15 @@ export const KnowledgeBasePage = () => {
 
 interface KnowledgeItemCardProps {
   item: KnowledgeItem;
-  viewMode: 'grid' | 'table';
   onDelete: (sourceId: string) => void;
 }
 
 const KnowledgeItemCard = ({
   item,
-  viewMode,
   onDelete
 }: KnowledgeItemCardProps) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const { showToast } = useToast();
 
   const statusColorMap = {
     active: 'green',
@@ -800,6 +1077,25 @@ const KnowledgeItemCard = ({
   const handleDelete = () => {
     onDelete(item.source_id);
     setShowDeleteConfirm(false);
+  };
+
+  // Handle updating item
+  const handleUpdateItem = async (field: 'title' | 'description', value: string) => {
+    try {
+      const updates: any = {};
+      if (field === 'title') {
+        updates.title = value;
+      } else if (field === 'description') {
+        updates.description = value;
+      }
+      
+      await knowledgeBaseService.updateKnowledgeItem(item.source_id, updates);
+      showToast('Item updated successfully', 'success');
+    } catch (error) {
+      console.error('Failed to update item:', error);
+      showToast('Failed to update item', 'error');
+      throw error; // Re-throw to trigger revert in InlineEditableField
+    }
   };
 
   // Get frequency display - based on update_frequency from database
@@ -827,20 +1123,53 @@ const KnowledgeItemCard = ({
         {item.metadata.source_type === 'url' ? <LinkIcon className="w-4 h-4 text-blue-500" /> : <Upload className="w-4 h-4 text-pink-500" />}
         {/* Knowledge type icon */}
         <TypeIcon className={`w-4 h-4 ${typeIconColor}`} />
-        <h3 className="text-gray-800 dark:text-white font-medium flex-1 line-clamp-1">
-          {item.title}
-        </h3>
-        <div className="flex items-center gap-1">
-          <button onClick={() => setShowDeleteConfirm(true)} className="p-1 text-gray-500 hover:text-red-500" title="Delete">
+        <div className="flex-1">
+          <InlineEditableField
+            value={item.title}
+            onSave={(value) => handleUpdateItem('title', value)}
+            placeholder="Enter title..."
+            className="text-gray-800 dark:text-white font-medium"
+          />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              navigator.clipboard.writeText(item.source_id);
+              // Visual feedback
+              const button = e.currentTarget;
+              const originalHTML = button.innerHTML;
+              button.innerHTML = '<div class="flex items-center justify-center text-green-500"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></div>';
+              setTimeout(() => {
+                button.innerHTML = originalHTML;
+              }, 2000);
+            }} 
+            className="w-5 h-5 rounded-full flex items-center justify-center bg-gray-100/80 dark:bg-gray-500/20 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-500/30 hover:shadow-[0_0_10px_rgba(107,114,128,0.3)] transition-all duration-300" 
+            title="Copy Source ID"
+          >
+            <Copy className="w-3 h-3" />
+          </button>
+          <button 
+            onClick={() => setShowDeleteConfirm(true)} 
+            className="w-5 h-5 rounded-full flex items-center justify-center bg-red-100/80 dark:bg-red-500/20 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-500/30 hover:shadow-[0_0_10px_rgba(239,68,68,0.3)] transition-all duration-300" 
+            title="Delete"
+          >
             <Trash2 className="w-3 h-3" />
           </button>
         </div>
       </div>
       
-      {/* Description section - fixed height */}
-      <p className="text-gray-600 dark:text-zinc-400 text-sm mb-3 line-clamp-2 h-10">
-        {item.metadata.description || 'No description available'}
-      </p>
+      {/* Description section - 3 lines max */}
+      <div className="text-gray-600 dark:text-zinc-400 mb-3 min-h-[3rem]">
+        <InlineEditableField
+          value={item.metadata.description || ''}
+          onSave={(value) => handleUpdateItem('description', value)}
+          placeholder="Add description..."
+          multiline={true}
+          truncateLines={3}
+          displayClassName="text-xs leading-relaxed"
+        />
+      </div>
       
       {/* Tags section - fixed height for 2 rows */}
       <div className="mb-4 h-16 flex items-start">
