@@ -369,11 +369,11 @@ class DatabaseChangeDetector:
     def __init__(self):
         self.last_check_times: Dict[str, datetime] = {}
         self.polling_tasks: Dict[str, asyncio.Task] = {}
-        self.check_interval = 15  # Increased from 5 to 15 seconds to reduce database load
+        self.check_interval = 2  # Reduced from 15 to 2 seconds for faster real-time updates
         self.websocket_connections: Dict[str, List[Dict[str, Any]]] = {}
         self.content_hashes: Dict[str, str] = {}  # Track content changes
         self.last_db_query_time = 0  # Add global rate limiting
-        self.min_query_interval = 2  # Minimum 2 seconds between any database queries
+        self.min_query_interval = 1  # Reduced from 2 to 1 second between queries
     
     def start_monitoring(self, project_id: str):
         """Start monitoring database changes for a project"""
