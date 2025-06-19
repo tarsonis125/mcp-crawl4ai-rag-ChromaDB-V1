@@ -21,7 +21,10 @@ import logging
 from enum import Enum
 
 from fastapi import WebSocket
-from ..logfire_config import logfire_logger
+from ..logfire_config import get_logger
+
+# Get logger for this module
+logfire_logger = get_logger("threading")
 
 class ProcessingMode(str, Enum):
     """Processing modes for different workload types"""

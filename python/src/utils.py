@@ -29,7 +29,7 @@ from fastapi import WebSocket
 from .logfire_config import search_logger
 
 # Import threading service for optimizations
-from .threading_service import (
+from .services.threading_service import (
     get_threading_service, 
     ProcessingMode, 
     ThreadingConfig, 
@@ -46,7 +46,7 @@ async def initialize_threading_service(
     """Initialize the global threading service for utilities"""
     global _threading_service
     if _threading_service is None:
-        from .threading_service import ThreadingService
+        from .services.threading_service import ThreadingService
         _threading_service = ThreadingService(threading_config, rate_limit_config)
         await _threading_service.start()
     return _threading_service
@@ -80,10 +80,10 @@ def get_openai_api_key_sync() -> Optional[str]:
 
 def get_supabase_client() -> Client:
     """
-    Get a Supabase client with optimized connection pooling for threading.
+    Get a Supabase client instance.
     
     Returns:
-        Supabase client instance with threading optimizations
+        Supabase client instance
     """
     url = os.getenv("SUPABASE_URL")
     key = os.getenv("SUPABASE_SERVICE_KEY")
@@ -92,30 +92,18 @@ def get_supabase_client() -> Client:
         raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in environment variables")
     
     try:
-        # Initialize with optimized settings for threading
-        client = create_client(
-            url, 
-            key,
-            options={
-                "pool_config": {
-                    "max_size": 20,      # Maximum connections
-                    "min_size": 5,       # Minimum connections  
-                    "max_overflow": 10,  # Extra connections when needed
-                    "pool_timeout": 30,  # Connection acquisition timeout
-                    "pool_recycle": 3600 # Recycle connections hourly
-                }
-            }
-        )
+        # Let Supabase handle connection pooling internally
+        client = create_client(url, key)
         
         # Extract project ID from URL for logging purposes only
         import re
         match = re.match(r'https://([^.]+)\.supabase\.co', url)
         if match:
             project_id = match.group(1)
-            search_logger.info(f"Supabase client initialized with threading optimizations", 
+            search_logger.info(f"Supabase client initialized", 
                              project_id=project_id)
         else:
-            search_logger.info("Supabase client initialized successfully with threading optimizations")
+            search_logger.info("Supabase client initialized successfully")
         
         return client
     except Exception as e:

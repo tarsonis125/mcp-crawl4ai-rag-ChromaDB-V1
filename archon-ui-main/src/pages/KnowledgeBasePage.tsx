@@ -488,6 +488,14 @@ export const KnowledgeBasePage = () => {
 
   const handleDeleteItem = async (sourceId: string) => {
     try {
+      // Prevent duplicate operations by checking if already in progress
+      if (loading) {
+        console.log('Delete already in progress, ignoring duplicate call');
+        return;
+      }
+      
+      setLoading(true); // Set loading state to prevent duplicates
+      
       // Check if this is a grouped item ID
       if (sourceId.startsWith('group_')) {
         // Find the grouped item and delete all its constituent items
@@ -507,10 +515,14 @@ export const KnowledgeBasePage = () => {
         const result = await knowledgeBaseService.deleteKnowledgeItem(sourceId);
         showToast((result as any).message || 'Item deleted', 'success');
       }
-      loadKnowledgeItems(); // Reload items
+      
+      // Reload items without triggering WebSocket race condition
+      await loadKnowledgeItems();
     } catch (error) {
       console.error('Failed to delete item:', error);
       showToast('Failed to delete item', 'error');
+    } finally {
+      setLoading(false); // Always reset loading state
     }
   };
 

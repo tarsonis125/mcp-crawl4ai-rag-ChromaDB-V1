@@ -23,7 +23,7 @@ from urllib.parse import urlparse
 
 from fastapi import WebSocket
 
-from src.utils import (
+from ...utils import (
     get_supabase_client,
     add_documents_to_supabase,
     add_code_examples_to_supabase,
@@ -32,8 +32,8 @@ from src.utils import (
     generate_code_example_summary,
     get_utils_threading_service
 )
-from src.threading_service import ProcessingMode
-from src.logfire_config import search_logger
+from ..threading_service import ProcessingMode
+from ...logfire_config import search_logger
 
 logger = logging.getLogger(__name__)
 
