@@ -1,5 +1,12 @@
 """
-Utility functions for the Crawl4AI MCP server.
+Utility functions for the Crawl4AI MCP server with optimized threading.
+
+Enhanced with:
+- ThreadPoolExecutor for CPU-intensive operations
+- Rate limiting for OpenAI API calls  
+- Memory adaptive processing
+- WebSocket-safe operations
+- Proper async/await patterns
 """
 import os
 import concurrent.futures
@@ -15,9 +22,41 @@ import logging
 import uuid
 from datetime import datetime
 import threading
+from contextlib import asynccontextmanager
+from fastapi import WebSocket
 
 # Import Logfire
 from .logfire_config import search_logger
+
+# Import threading service for optimizations
+from .threading_service import (
+    get_threading_service, 
+    ProcessingMode, 
+    ThreadingConfig, 
+    RateLimitConfig
+)
+
+# Global threading service instance for optimization
+_threading_service = None
+
+async def initialize_threading_service(
+    threading_config: Optional[ThreadingConfig] = None,
+    rate_limit_config: Optional[RateLimitConfig] = None
+):
+    """Initialize the global threading service for utilities"""
+    global _threading_service
+    if _threading_service is None:
+        from .threading_service import ThreadingService
+        _threading_service = ThreadingService(threading_config, rate_limit_config)
+        await _threading_service.start()
+    return _threading_service
+
+def get_utils_threading_service():
+    """Get the threading service instance (lazy initialization)"""
+    global _threading_service
+    if _threading_service is None:
+        _threading_service = get_threading_service()
+    return _threading_service
 
 # OpenAI client will be configured dynamically when needed
 
@@ -41,11 +80,10 @@ def get_openai_api_key_sync() -> Optional[str]:
 
 def get_supabase_client() -> Client:
     """
-    Get a Supabase client with the URL and key from environment variables.
-    Uses the standard Supabase client initialization.
+    Get a Supabase client with optimized connection pooling for threading.
     
     Returns:
-        Supabase client instance
+        Supabase client instance with threading optimizations
     """
     url = os.getenv("SUPABASE_URL")
     key = os.getenv("SUPABASE_SERVICE_KEY")
@@ -54,21 +92,34 @@ def get_supabase_client() -> Client:
         raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in environment variables")
     
     try:
-        # Initialize with standard Supabase client - no need for custom headers
-        client = create_client(url, key)
+        # Initialize with optimized settings for threading
+        client = create_client(
+            url, 
+            key,
+            options={
+                "pool_config": {
+                    "max_size": 20,      # Maximum connections
+                    "min_size": 5,       # Minimum connections  
+                    "max_overflow": 10,  # Extra connections when needed
+                    "pool_timeout": 30,  # Connection acquisition timeout
+                    "pool_recycle": 3600 # Recycle connections hourly
+                }
+            }
+        )
         
         # Extract project ID from URL for logging purposes only
         import re
         match = re.match(r'https://([^.]+)\.supabase\.co', url)
         if match:
             project_id = match.group(1)
-            print(f"Supabase client initialized for project: {project_id}")
+            search_logger.info(f"Supabase client initialized with threading optimizations", 
+                             project_id=project_id)
         else:
-            print("Supabase client initialized successfully")
+            search_logger.info("Supabase client initialized successfully with threading optimizations")
         
         return client
     except Exception as e:
-        logging.error(f"Error initializing Supabase client: {e}")
+        search_logger.error(f"Error initializing Supabase client: {e}")
         raise
 
 def create_embeddings_batch(texts: List[str]) -> List[List[float]]:
@@ -148,6 +199,124 @@ def create_embedding(text: str) -> List[float]:
     except Exception as e:
         print(f"Error creating embedding: {e}")
         # Return empty embedding if there's an error
+        return [0.0] * 1536
+
+@asynccontextmanager
+async def get_openai_client():
+    """
+    Get OpenAI client with rate limiting context manager.
+    
+    Usage:
+        async with get_openai_client() as client:
+            response = await client.embeddings.create(...)
+    """
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OpenAI API key not found in environment")
+    
+    client = openai.AsyncOpenAI(api_key=api_key)
+    
+    try:
+        yield client
+    finally:
+        # Cleanup if needed
+        pass
+
+async def create_embeddings_batch_async(
+    texts: List[str], 
+    websocket: Optional[WebSocket] = None,
+    progress_callback: Optional[Any] = None
+) -> List[List[float]]:
+    """
+    Create embeddings for multiple texts with threading optimizations.
+    
+    Args:
+        texts: List of texts to create embeddings for
+        websocket: Optional WebSocket for progress updates
+        progress_callback: Optional callback for progress reporting
+        
+    Returns:
+        List of embeddings (each embedding is a list of floats)
+    """
+    if not texts:
+        return []
+    
+    threading_service = get_utils_threading_service()
+    
+    with search_logger.span("create_embeddings_batch_async", 
+                           text_count=len(texts),
+                           total_chars=sum(len(t) for t in texts)) as span:
+        
+        try:
+            # Estimate token usage for rate limiting
+            estimated_tokens = sum(len(text.split()) for text in texts) * 1.3  # Rough estimate
+            
+            async with threading_service.rate_limited_operation(estimated_tokens):
+                async with get_openai_client() as client:
+                    # Split into smaller batches if needed
+                    batch_size = 20  # OpenAI's batch limit
+                    all_embeddings = []
+                    
+                    for i in range(0, len(texts), batch_size):
+                        batch = texts[i:i + batch_size]
+                        
+                        # Create embeddings for this batch
+                        response = await client.embeddings.create(
+                            model="text-embedding-3-small",
+                            input=batch
+                        )
+                        
+                        batch_embeddings = [item.embedding for item in response.data]
+                        all_embeddings.extend(batch_embeddings)
+                        
+                        # Progress reporting
+                        if progress_callback:
+                            progress = ((i + len(batch)) / len(texts)) * 100
+                            await progress_callback(
+                                f"Created embeddings for {i + len(batch)}/{len(texts)} texts",
+                                progress
+                            )
+                        
+                        # WebSocket progress update
+                        if websocket:
+                            await websocket.send_json({
+                                "type": "embedding_progress",
+                                "processed": i + len(batch),
+                                "total": len(texts),
+                                "percentage": progress
+                            })
+                        
+                        # Yield control for WebSocket health
+                        await asyncio.sleep(0.1)
+                    
+                    span.set_attribute("embeddings_created", len(all_embeddings))
+                    span.set_attribute("success", True)
+                    
+                    return all_embeddings
+                    
+        except Exception as e:
+            span.set_attribute("success", False)
+            span.set_attribute("error", str(e))
+            search_logger.error(f"Failed to create embeddings batch: {e}")
+            
+            # Return zero embeddings as fallback
+            return [[0.0] * 1536 for _ in texts]
+
+async def create_embedding_async(text: str) -> List[float]:
+    """
+    Create an embedding for a single text using async OpenAI API.
+    
+    Args:
+        text: Text to create an embedding for
+        
+    Returns:
+        List of floats representing the embedding
+    """
+    try:
+        embeddings = await create_embeddings_batch_async([text])
+        return embeddings[0] if embeddings else [0.0] * 1536
+    except Exception as e:
+        search_logger.error(f"Error creating single embedding: {e}")
         return [0.0] * 1536
 
 def generate_contextual_embedding(full_document: str, chunk: str) -> Tuple[str, bool]:
@@ -240,11 +409,11 @@ async def add_documents_to_supabase(
     metadatas: List[Dict[str, Any]],
     url_to_full_document: Dict[str, str],
     batch_size: int = 15,
-    progress_callback: Optional[Any] = None
+    progress_callback: Optional[Any] = None,
+    websocket: Optional[WebSocket] = None
 ) -> None:
     """
-    Add documents to the Supabase crawled_pages table in batches.
-    Deletes existing records with the same URLs before inserting to prevent duplicates.
+    Add documents to Supabase with threading optimizations and WebSocket safety.
     
     Args:
         client: Supabase client
@@ -255,198 +424,198 @@ async def add_documents_to_supabase(
         url_to_full_document: Dictionary mapping URLs to their full document content
         batch_size: Size of each batch for insertion
         progress_callback: Optional async callback function for progress reporting
+        websocket: Optional WebSocket for progress updates
     """
-    # Get unique URLs to delete existing records
-    unique_urls = list(set(urls))
+    threading_service = get_utils_threading_service()
     
-    # Delete existing records for these URLs in a single operation
-    try:
-        if unique_urls:
-            # Use the .in_() filter to delete all records with matching URLs
-            client.table("crawled_pages").delete().in_("url", unique_urls).execute()
-    except Exception as e:
-        print(f"Batch delete failed: {e}. Trying one-by-one deletion as fallback.")
-        # Fallback: delete records one by one
-        for url in unique_urls:
-            try:
-                client.table("crawled_pages").delete().eq("url", url).execute()
-            except Exception as inner_e:
-                print(f"Error deleting record for URL {url}: {inner_e}")
-                # Continue with the next URL even if one fails
-    
-    # Check if MODEL_CHOICE is set for contextual embeddings
-    use_contextual_embeddings = os.getenv("USE_CONTEXTUAL_EMBEDDINGS", "false") == "true"
-    # Increased back to 2 workers - should be safe with 5k context
-    max_workers = int(os.getenv("CONTEXTUAL_EMBEDDINGS_MAX_WORKERS", "2"))
-    print(f"\n\nUse contextual embeddings: {use_contextual_embeddings}")
-    print(f"Max workers for contextual embeddings: {max_workers}")
-    print(f"Total documents to process: {len(contents)}")
-    print(f"Batch size: {batch_size}\n\n")
-    
-    # Process in batches to avoid memory issues
-    total_batches = (len(contents) + batch_size - 1) // batch_size
-    
-    # Helper function to report progress
-    async def report_progress(message: str, percentage: int):
-        if progress_callback and asyncio.iscoroutinefunction(progress_callback):
-            await progress_callback('document_storage', percentage, message)
-        # Always print for debugging
-        print(f"Progress: {message} ({percentage}%)")
-    
-    for batch_num, i in enumerate(range(0, len(contents), batch_size), 1):
-        batch_end = min(i + batch_size, len(contents))
-        batch_progress_msg = f"Batch {batch_num}/{total_batches}: Processing items {i+1}-{batch_end} of {len(contents)}"
-        print(f"\n{batch_progress_msg}")
+    with search_logger.span("add_documents_to_supabase",
+                           total_documents=len(contents),
+                           batch_size=batch_size) as span:
         
-        # Calculate overall progress based on documents processed so far
-        # This gives smooth progress from 0-100% across all batches
-        # For first batch, start at 10% to avoid any reset issues
-        if i == 0:
-            overall_percentage = 10  # Start at 10% for first batch
-        else:
-            documents_processed_so_far = i
-            overall_percentage = int((documents_processed_so_far / len(contents)) * 100)
+        # Get unique URLs to delete existing records
+        unique_urls = list(set(urls))
         
-        await report_progress(batch_progress_msg, overall_percentage)
-        
-        # Get batch slices
-        batch_urls = urls[i:batch_end]
-        batch_chunk_numbers = chunk_numbers[i:batch_end]
-        batch_contents = contents[i:batch_end]
-        batch_metadatas = metadatas[i:batch_end]
-        
-        # Apply contextual embedding to each chunk if MODEL_CHOICE is set
-        if use_contextual_embeddings:
-            # Report that we're creating contextual embeddings
-            # Add small increment to show progress within batch
-            embedding_msg = f"Batch {batch_num}/{total_batches}: Creating contextual embeddings..."
-            embedding_percentage = overall_percentage + int((5 / 100) * (100 / total_batches))
-            await report_progress(embedding_msg, min(embedding_percentage, 99))
-            
-            # Prepare arguments for parallel processing
-            process_args = []
-            for j, content in enumerate(batch_contents):
-                url = batch_urls[j]
-                full_document = url_to_full_document.get(url, "")
-                process_args.append((url, content, full_document))
-            
-            # Estimate token usage for this batch
-            avg_chunk_size = sum(len(c) for c in batch_contents) // len(batch_contents)
-            estimated_tokens = (5000 + avg_chunk_size) * len(batch_contents) // 4  # Rough estimate: 1 token = 4 chars
-            print(f"Estimated tokens for this batch: ~{estimated_tokens:,} tokens")
-            
-            # Process in parallel using asyncio's run_in_executor to prevent blocking
-            contextual_contents = [None] * len(batch_contents)  # Pre-allocate with None
-            loop = asyncio.get_event_loop()
-            
-            # Create tasks for all chunks
-            tasks = []
-            for idx, arg in enumerate(process_args):
-                # Run the synchronous function in a thread pool to prevent blocking
-                task = loop.run_in_executor(None, process_chunk_with_context, arg)
-                tasks.append((idx, task))
-            
-            # Wait for all tasks to complete
-            for idx, task in tasks:
+        # Delete existing records for these URLs using thread pool
+        try:
+            if unique_urls:
+                await threading_service.run_io_bound(
+                    lambda: client.table("crawled_pages").delete().in_("url", unique_urls).execute()
+                )
+                search_logger.info(f"Deleted existing records for {len(unique_urls)} URLs")
+        except Exception as e:
+            search_logger.warning(f"Batch delete failed: {e}. Trying individual deletion.")
+            # Fallback: delete records one by one
+            for url in unique_urls:
                 try:
-                    result, success = await task
-                    contextual_contents[idx] = result  # Store in correct position!
-                    if success:
-                        batch_metadatas[idx]["contextual_embedding"] = True
-                except Exception as e:
-                    print(f"Error processing chunk {idx}: {e}")
-                    # Use original content as fallback
-                    contextual_contents[idx] = batch_contents[idx]
+                    await threading_service.run_io_bound(
+                        lambda u=url: client.table("crawled_pages").delete().eq("url", u).execute()
+                    )
+                except Exception as inner_e:
+                    search_logger.error(f"Error deleting record for URL {url}: {inner_e}")
+        
+        # Check configuration
+        use_contextual_embeddings = os.getenv("USE_CONTEXTUAL_EMBEDDINGS", "false") == "true"
+        max_workers = int(os.getenv("CONTEXTUAL_EMBEDDINGS_MAX_WORKERS", "2"))
+        
+        search_logger.info(f"Processing {len(contents)} documents",
+                          use_contextual_embeddings=use_contextual_embeddings,
+                          max_workers=max_workers,
+                          batch_size=batch_size)
+        
+        # Helper function to report progress
+        async def report_progress(message: str, percentage: int):
+            if progress_callback and asyncio.iscoroutinefunction(progress_callback):
+                await progress_callback('document_storage', percentage, message)
             
-            # Check for any None values and replace with original content
-            for idx, content in enumerate(contextual_contents):
-                if content is None:
-                    print(f"Warning: Missing result for chunk {idx}, using original content")
-                    contextual_contents[idx] = batch_contents[idx]
-        else:
-            # If not using contextual embeddings, use original contents
-            contextual_contents = batch_contents
-        
-        # Create embeddings for the entire batch at once
-        embeddings_msg = f"Batch {batch_num}/{total_batches}: Creating embeddings..."
-        embeddings_percentage = overall_percentage + int((10 / 100) * (100 / total_batches))
-        await report_progress(embeddings_msg, min(embeddings_percentage, 99))
-        # TODO: Pass cached API key to this function when called from context
-        batch_embeddings = create_embeddings_batch(contextual_contents)
-        
-        batch_data = []
-        for j in range(len(contextual_contents)):
-            # Extract metadata fields
-            chunk_size = len(contextual_contents[j])
+            if websocket:
+                await websocket.send_json({
+                    "type": "document_storage_progress",
+                    "message": message,
+                    "percentage": percentage
+                })
             
-            # Extract source_id from URL
-            parsed_url = urlparse(batch_urls[j])
-            source_id = parsed_url.netloc or parsed_url.path
+            search_logger.info(f"Progress: {message} ({percentage}%)")
+        
+        # Process in batches
+        total_batches = (len(contents) + batch_size - 1) // batch_size
+        
+        for batch_num, i in enumerate(range(0, len(contents), batch_size), 1):
+            batch_end = min(i + batch_size, len(contents))
+            batch_progress_msg = f"Batch {batch_num}/{total_batches}: Processing items {i+1}-{batch_end} of {len(contents)}"
             
-            # Prepare data for insertion
-            data = {
-                "url": batch_urls[j],
-                "chunk_number": batch_chunk_numbers[j],
-                "content": contextual_contents[j],  # Store original content
-                "metadata": {
-                    "chunk_size": chunk_size,
-                    **batch_metadatas[j]
-                },
-                "source_id": source_id,  # Add source_id field
-                "embedding": batch_embeddings[j]  # Use embedding from contextual content
-            }
+            # Calculate overall progress
+            if i == 0:
+                overall_percentage = 10
+            else:
+                overall_percentage = int((i / len(contents)) * 100)
             
-            batch_data.append(data)
-        
-        # Insert batch into Supabase with retry logic
-        storing_msg = f"Batch {batch_num}/{total_batches}: Storing in database..."
-        storing_percentage = overall_percentage + int((15 / 100) * (100 / total_batches))
-        await report_progress(storing_msg, min(storing_percentage, 99))
-        
-        max_retries = 3
-        retry_delay = 1.0  # Start with 1 second delay
-        
-        for retry in range(max_retries):
-            try:
-                client.table("crawled_pages").insert(batch_data).execute()
-                # Success - report completion of this batch
-                # Use consistent calculation based on documents processed
-                completion_percentage = int(batch_end / len(contents) * 100)
-                complete_msg = f"Batch {batch_num}/{total_batches}: Completed storing {len(batch_data)} chunks"
-                await report_progress(complete_msg, completion_percentage)
-                # Success - break out of retry loop
-                break
-            except Exception as e:
-                if retry < max_retries - 1:
-                    print(f"Error inserting batch into Supabase (attempt {retry + 1}/{max_retries}): {e}")
-                    print(f"Retrying in {retry_delay} seconds...")
-                    await asyncio.sleep(retry_delay)  # This function is async, so we can use await
-                    retry_delay *= 2  # Exponential backoff
-                else:
-                    # Final attempt failed
-                    print(f"Failed to insert batch after {max_retries} attempts: {e}")
-                    # Optionally, try inserting records one by one as a last resort
-                    print("Attempting to insert records individually...")
-                    successful_inserts = 0
-                    for record in batch_data:
-                        try:
-                            client.table("crawled_pages").insert(record).execute()
-                            successful_inserts += 1
-                        except Exception as individual_error:
-                            print(f"Failed to insert individual record for URL {record['url']}: {individual_error}")
+            await report_progress(batch_progress_msg, overall_percentage)
+            
+            # Get batch slices
+            batch_urls = urls[i:batch_end]
+            batch_chunk_numbers = chunk_numbers[i:batch_end]
+            batch_contents = contents[i:batch_end]
+            batch_metadatas = metadatas[i:batch_end]
+            
+            # Apply contextual embedding if enabled
+            if use_contextual_embeddings:
+                embedding_msg = f"Batch {batch_num}/{total_batches}: Creating contextual embeddings..."
+                embedding_percentage = overall_percentage + 5
+                await report_progress(embedding_msg, min(embedding_percentage, 99))
+                
+                # Prepare arguments for parallel processing
+                process_args = []
+                for j, content in enumerate(batch_contents):
+                    url = batch_urls[j]
+                    full_document = url_to_full_document.get(url, "")
+                    process_args.append((url, content, full_document))
+                
+                # Process with adaptive concurrency
+                async def process_contextual_chunk(args):
+                    url, content, full_document = args
+                    return await asyncio.get_event_loop().run_in_executor(
+                        None, process_chunk_with_context, args
+                    )
+                
+                contextual_results = await threading_service.batch_process(
+                    items=process_args,
+                    process_func=process_contextual_chunk,
+                    mode=ProcessingMode.CPU_INTENSIVE,
+                    websocket=websocket
+                )
+                
+                # Extract results
+                contextual_contents = []
+                for j, result in enumerate(contextual_results):
+                    if result and len(result) == 2:
+                        contextual_text, success = result
+                        if success:
+                            contextual_contents.append(contextual_text)
+                            batch_metadatas[j]["contextual_embedding"] = True
+                        else:
+                            contextual_contents.append(batch_contents[j])
+                    else:
+                        contextual_contents.append(batch_contents[j])
+            else:
+                contextual_contents = batch_contents
+            
+            # Create embeddings for the batch
+            embeddings_msg = f"Batch {batch_num}/{total_batches}: Creating embeddings..."
+            embeddings_percentage = overall_percentage + 10
+            await report_progress(embeddings_msg, min(embeddings_percentage, 99))
+            
+            batch_embeddings = await create_embeddings_batch_async(
+                contextual_contents, 
+                websocket=websocket
+            )
+            
+            # Prepare batch data
+            batch_data = []
+            for j in range(len(contextual_contents)):
+                # Extract source_id from URL
+                parsed_url = urlparse(batch_urls[j])
+                source_id = parsed_url.netloc or parsed_url.path
+                
+                data = {
+                    "url": batch_urls[j],
+                    "chunk_number": batch_chunk_numbers[j],
+                    "content": contextual_contents[j],
+                    "metadata": {
+                        "chunk_size": len(contextual_contents[j]),
+                        **batch_metadatas[j]
+                    },
+                    "source_id": source_id,
+                    "embedding": batch_embeddings[j]
+                }
+                batch_data.append(data)
+            
+            # Insert batch with retry logic using thread pool
+            storing_msg = f"Batch {batch_num}/{total_batches}: Storing in database..."
+            storing_percentage = overall_percentage + 15
+            await report_progress(storing_msg, min(storing_percentage, 99))
+            
+            max_retries = 3
+            retry_delay = 1.0
+            
+            for retry in range(max_retries):
+                try:
+                    await threading_service.run_io_bound(
+                        lambda: client.table("crawled_pages").insert(batch_data).execute()
+                    )
+                    completion_percentage = int(batch_end / len(contents) * 100)
+                    complete_msg = f"Batch {batch_num}/{total_batches}: Completed storing {len(batch_data)} chunks"
+                    await report_progress(complete_msg, completion_percentage)
+                    break
                     
-                    if successful_inserts > 0:
-                        print(f"Successfully inserted {successful_inserts}/{len(batch_data)} records individually")
+                except Exception as e:
+                    if retry < max_retries - 1:
+                        search_logger.warning(f"Error inserting batch (attempt {retry + 1}/{max_retries}): {e}")
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                    else:
+                        search_logger.error(f"Failed to insert batch after {max_retries} attempts: {e}")
+                        # Try individual inserts as last resort
+                        successful_inserts = 0
+                        for record in batch_data:
+                            try:
+                                await threading_service.run_io_bound(
+                                    lambda r=record: client.table("crawled_pages").insert(r).execute()
+                                )
+                                successful_inserts += 1
+                            except Exception as individual_error:
+                                search_logger.error(f"Failed individual insert for {record['url']}: {individual_error}")
+                        
+                        search_logger.info(f"Individual inserts: {successful_inserts}/{len(batch_data)} successful")
+            
+            # WebSocket-safe delay between batches
+            if i + batch_size < len(contents):
+                delay = 1.5 if use_contextual_embeddings else 0.5
+                await asyncio.sleep(delay)
         
-        # Add a delay between batches to prevent rate limiting
-        if i + batch_size < len(contents):
-            # Reduced delay - with 5k context we use much fewer tokens
-            delay = 1.5 if use_contextual_embeddings else 0.5
-            print(f"Waiting {delay} seconds before processing next batch...")
-            await asyncio.sleep(delay)  # This function is async, so we can use await
-    
-    # Report final completion
-    await report_progress(f"Successfully stored all {len(contents)} documents", 100)
+        # Final completion
+        await report_progress(f"Successfully stored all {len(contents)} documents", 100)
+        span.set_attribute("success", True)
+        span.set_attribute("total_processed", len(contents))
 
 def search_documents(
     client: Client,

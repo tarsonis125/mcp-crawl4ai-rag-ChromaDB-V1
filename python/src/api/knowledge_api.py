@@ -438,16 +438,21 @@ async def get_knowledge_items(
             for source in sources_data.get('sources', []):
                 # Use title and metadata from sources table
                 source_metadata = source.get('metadata', {})
+                source_id = source['source_id']
                 
-                # Get first page URL if available
+                # Get first page URL if available - simplified query
                 supabase_client = crawling_context.supabase_client or get_supabase_client()
-                pages_response = supabase_client.from_('crawled_pages')\
-                    .select('url')\
-                    .eq('source_id', source['source_id'])\
-                    .limit(1)\
-                    .execute()
-                
-                first_page = pages_response.data[0] if pages_response.data else {}
+                try:
+                    pages_response = supabase_client.from_('crawled_pages')\
+                        .select('url')\
+                        .eq('source_id', source_id)\
+                        .limit(1)\
+                        .execute()
+                    
+                    first_page = pages_response.data[0] if pages_response.data else {}
+                    first_page_url = first_page.get('url', f"source://{source_id}")
+                except:
+                    first_page_url = f"source://{source_id}"
                 
                 # Determine source type - if metadata has source_type='file', use it; otherwise check URL pattern
                 stored_source_type = source_metadata.get('source_type')
@@ -455,14 +460,26 @@ async def get_knowledge_items(
                     source_type = stored_source_type
                 else:
                     # Legacy fallback - check URL pattern
-                    first_page_url = first_page.get('url', f"source://{source['source_id']}")
                     source_type = 'file' if first_page_url.startswith('file://') else 'url'
                 
+                # Get code examples for this source - simplified query for now
+                code_examples = []
+                try:
+                    code_examples_response = supabase_client.from_('code_examples')\
+                        .select('id, summary, metadata')\
+                        .eq('source_id', source_id)\
+                        .execute()
+                    
+                    code_examples = code_examples_response.data if code_examples_response.data else []
+                except:
+                    code_examples = []
+                
                 item = {
-                    'id': source['source_id'],
+                    'id': source_id,
                     'title': source.get('title', source.get('summary', 'Untitled')),
-                    'url': first_page.get('url', f"source://{source['source_id']}"),
-                    'source_id': source['source_id'],
+                    'url': first_page_url,
+                    'source_id': source_id,
+                    'code_examples': code_examples,  # Include code examples data
                     'metadata': {
                         'knowledge_type': source_metadata.get('knowledge_type', 'technical'),
                         'tags': source_metadata.get('tags', []),
@@ -475,6 +492,7 @@ async def get_knowledge_items(
                         'file_name': source_metadata.get('file_name'),
                         'file_type': source_metadata.get('file_type'),
                         'update_frequency': source.get('update_frequency', 7),  # Include frequency from sources table
+                        'code_examples_count': len(code_examples),  # Add count for easy access
                         **source_metadata
                     },
                     'created_at': source.get('created_at'),

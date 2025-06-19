@@ -16,6 +16,15 @@ interface TestResult {
   error?: string;
 }
 
+interface CoverageData {
+  file: string;
+  statements: number;
+  branches: number;
+  functions: number;
+  lines: number;
+  uncoveredLines?: string;
+}
+
 interface TestExecutionState {
   execution?: TestExecution;
   logs: string[];
@@ -24,11 +33,30 @@ interface TestExecutionState {
   exitCode?: number;
   // Pretty mode data
   results: TestResult[];
-  summary?: {
+  // Separate summaries for files and tests
+  fileSummary?: {
     total: number;
     passed: number;
     failed: number;
     skipped: number;
+  };
+  testSummary?: {
+    total: number;
+    passed: number;
+    failed: number;
+    skipped: number;
+  };
+  errorCount?: number;
+  startTime?: string;
+  // Coverage data
+  coverage?: {
+    summary: {
+      statements: { value: number; total: number };
+      branches: { value: number; total: number };
+      functions: { value: number; total: number };
+      lines: { value: number; total: number };
+    };
+    files: CoverageData[];
   };
 }
 
@@ -149,27 +177,86 @@ export const TestStatus = () => {
     return null;
   };
 
-  const updateSummaryFromLogs = (logs: string[]) => {
-    // Extract summary from test output - default reporter format
+  const parseCoverageTable = (logs: string[]): CoverageData[] => {
+    const coverageData: CoverageData[] = [];
+    let inCoverageTable = false;
     
-    // Look for final summary lines
-    const summaryLines = logs.filter(log => 
-      log.includes('Test Files') || 
-      log.includes('Tests') ||
-      log.includes('Failed Tests')
-    );
+    for (const line of logs) {
+      // Start of coverage table
+      if (line.includes('File') && line.includes('% Stmts') && line.includes('% Branch')) {
+        inCoverageTable = true;
+        continue;
+      }
+      
+      // End of coverage table
+      if (inCoverageTable && (line.includes('---') || line.includes('===') || line.trim() === '')) {
+        continue;
+      }
+      
+      if (inCoverageTable && line.includes('All files')) {
+        inCoverageTable = false;
+        continue;
+      }
+      
+      // Parse coverage line
+      if (inCoverageTable) {
+        // Match lines like: "  api.ts           |     100 |    94.73 |     100 |     100 | 107,109"
+        const match = line.match(/^\s*(.+?)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*(.*)$/);
+        if (match) {
+          const [, file, stmts, branch, funcs, lines, uncovered] = match;
+          coverageData.push({
+            file: file.trim(),
+            statements: parseFloat(stmts),
+            branches: parseFloat(branch),
+            functions: parseFloat(funcs),
+            lines: parseFloat(lines),
+            uncoveredLines: uncovered.trim() || undefined
+          });
+        }
+      }
+    }
+    
+    return coverageData;
+  };
+  
+  const parseCoverageSummary = (logs: string[]): TestExecutionState['coverage']['summary'] | undefined => {
+    // Look for "Statements   : 37.17% ( 9466/25466 )"
+    for (const line of logs) {
+      if (line.includes('Statements') && line.includes('%')) {
+        const stmtMatch = line.match(/Statements\s*:\s*([\d.]+)%\s*\(\s*(\d+)\/(\d+)\s*\)/);
+        const branchLine = logs[logs.indexOf(line) + 1];
+        const funcLine = logs[logs.indexOf(line) + 2];
+        const linesLine = logs[logs.indexOf(line) + 3];
+        
+        if (stmtMatch && branchLine && funcLine && linesLine) {
+          const branchMatch = branchLine.match(/Branches\s*:\s*([\d.]+)%\s*\(\s*(\d+)\/(\d+)\s*\)/);
+          const funcMatch = funcLine.match(/Functions\s*:\s*([\d.]+)%\s*\(\s*(\d+)\/(\d+)\s*\)/);
+          const linesMatch = linesLine.match(/Lines\s*:\s*([\d.]+)%\s*\(\s*(\d+)\/(\d+)\s*\)/);
+          
+          if (branchMatch && funcMatch && linesMatch) {
+            return {
+              statements: { value: parseInt(stmtMatch[2]), total: parseInt(stmtMatch[3]) },
+              branches: { value: parseInt(branchMatch[2]), total: parseInt(branchMatch[3]) },
+              functions: { value: parseInt(funcMatch[2]), total: parseInt(funcMatch[3]) },
+              lines: { value: parseInt(linesMatch[2]), total: parseInt(linesMatch[3]) }
+            };
+          }
+        }
+      }
+    }
+    return undefined;
+  };
 
-    // First try to find the main summary line
-    for (const line of summaryLines) {
-      // Default reporter formats:
-      // "Test Files  1 passed (1)"
-      // "Test Files  3 failed | 4 passed (7)"
-      // "Test Files  1 failed | 2 passed | 1 skipped (4)"
+  const updateSummaryFromLogs = (logs: string[]) => {
+    const summaryData: Partial<TestExecutionState> = {};
+    
+    // Look for all summary lines
+    for (const line of logs) {
+      // Test Files summary
       const filesSummaryMatch = line.match(/Test Files\s+(?:(\d+)\s+failed\s*\|)?\s*(?:(\d+)\s+passed)?(?:\s*\|\s*(\d+)\s+skipped)?\s*\((\d+)\)/);
       if (filesSummaryMatch) {
         const [, failed, passed, skipped, total] = filesSummaryMatch;
-        console.log('[SUMMARY] Test Files:', { failed, passed, skipped, total });
-        return {
+        summaryData.fileSummary = {
           failed: parseInt(failed || '0'),
           passed: parseInt(passed || '0'),
           skipped: parseInt(skipped || '0'),
@@ -178,42 +265,59 @@ export const TestStatus = () => {
       }
 
       // Individual tests summary
-      // "Tests  399 failed | 599 passed | 1 skipped (999)"
-      // "Tests  10 passed (10)"
       const testsMatch = line.match(/Tests\s+(?:(\d+)\s+failed\s*\|)?\s*(?:(\d+)\s+passed)?(?:\s*\|\s*(\d+)\s+skipped)?\s*\((\d+)\)/);
       if (testsMatch) {
         const [, failed, passed, skipped, total] = testsMatch;
-        console.log('[SUMMARY] Tests:', { failed, passed, skipped, total });
-        return {
+        summaryData.testSummary = {
           failed: parseInt(failed || '0'),
           passed: parseInt(passed || '0'),
           skipped: parseInt(skipped || '0'),
           total: parseInt(total)
         };
       }
-    }
-
-    // Calculate from parsed file results as fallback
-    const results = logs.map(log => parseTestOutput(log)).filter(Boolean) as TestResult[];
-    if (results.length > 0) {
-      const summary = {
-        total: results.length,
-        passed: results.filter(r => r.status === 'passed').length,
-        failed: results.filter(r => r.status === 'failed').length,
-        skipped: results.filter(r => r.status === 'skipped').length
-      };
-      console.log('[SUMMARY] Calculated from results:', summary);
-      if (summary.total > 0) {
-        return summary;
+      
+      // Error count
+      const errorMatch = line.match(/Errors\s+(\d+)\s+errors?/);
+      if (errorMatch) {
+        summaryData.errorCount = parseInt(errorMatch[1]);
+      }
+      
+      // Start time
+      const startMatch = line.match(/Start at\s+(.+)/);
+      if (startMatch) {
+        summaryData.startTime = startMatch[1];
+      }
+      
+      // Duration
+      const durationMatch = line.match(/Duration\s+([\d.]+)s/);
+      if (durationMatch) {
+        summaryData.duration = parseFloat(durationMatch[1]);
       }
     }
-
-    return undefined;
+    
+    // Parse coverage data if test completed
+    if (summaryData.fileSummary || summaryData.testSummary) {
+      const coverageFiles = parseCoverageTable(logs);
+      const coverageSummary = parseCoverageSummary(logs);
+      
+      if (coverageSummary && coverageFiles.length > 0) {
+        summaryData.coverage = {
+          summary: coverageSummary,
+          files: coverageFiles
+        };
+      }
+    }
+    
+    return summaryData;
   };
 
   const handleStreamMessage = (testType: TestType, message: TestStreamMessage) => {
     updateTestState(testType, (prev) => {
+      // Keep only last 1000 logs to prevent memory issues
       const newLogs = [...prev.logs];
+      if (newLogs.length > 1000) {
+        newLogs.splice(0, newLogs.length - 1000);
+      }
       let newResults = [...prev.results];
 
       switch (message.type) {
@@ -224,10 +328,8 @@ export const TestStatus = () => {
           break;
         case 'output':
           if (message.message !== undefined) {
-            // Don't add empty lines to logs for cleaner output
-            if (message.message.trim() || message.message === '') {
-              newLogs.push(message.message);
-            }
+            // Add all output lines to show in terminal
+            newLogs.push(message.message);
             
             // Parse test results immediately as they come in
             const testResult = parseTestOutput(message.message);
@@ -246,14 +348,14 @@ export const TestStatus = () => {
                 message.message.includes('passed') ||
                 message.message.includes('failed')) {
               console.log('[SUMMARY CHECK]', message.message);
-              const summary = updateSummaryFromLogs([...newLogs]);
-              if (summary) {
-                console.log('[SUMMARY FOUND]', summary);
+              const summaryData = updateSummaryFromLogs([...newLogs]);
+              if (summaryData) {
+                console.log('[SUMMARY FOUND]', summaryData);
                 return {
                   ...prev,
                   logs: newLogs,
                   results: newResults,
-                  summary,
+                  ...summaryData,
                   isRunning: true // Still running until we get completed message
                 };
               }
@@ -263,14 +365,14 @@ export const TestStatus = () => {
           break;
         case 'completed':
           newLogs.push('> Test execution completed.');
-          const summary = updateSummaryFromLogs(newLogs);
+          const finalSummary = updateSummaryFromLogs(newLogs);
           return {
             ...prev,
             logs: newLogs,
             results: newResults,
-            summary,
+            ...finalSummary,
             isRunning: false,
-            duration: message.data?.duration,
+            duration: message.data?.duration || finalSummary.duration,
             exitCode: message.data?.exit_code
           };
         case 'error':
@@ -309,10 +411,14 @@ export const TestStatus = () => {
         ...prev,
         logs: [`> Starting ${testType === 'mcp' ? 'Python' : 'React UI'} tests...`],
         results: [],
-        summary: undefined,
+        fileSummary: undefined,
+        testSummary: undefined,
+        errorCount: undefined,
+        coverage: undefined,
         isRunning: true,
         duration: undefined,
-        exitCode: undefined
+        exitCode: undefined,
+        startTime: new Date().toISOString()
       }));
 
       if (testType === 'mcp') {
@@ -452,227 +558,168 @@ export const TestStatus = () => {
   };
 
   const formatLogLine = (log: string, index: number) => {
-    let textColor = 'text-gray-700 dark:text-gray-300';
-    if (log.includes('PASS') || log.includes('✓') || log.includes('passed')) textColor = 'text-green-600 dark:text-green-400';
-    if (log.includes('FAIL') || log.includes('✕') || log.includes('failed')) textColor = 'text-red-600 dark:text-red-400';
-    if (log.includes('Error:') || log.includes('ERROR')) textColor = 'text-red-600 dark:text-red-400';
-    if (log.includes('Warning:') || log.includes('WARN')) textColor = 'text-yellow-600 dark:text-yellow-400';
-    if (log.includes('Status:') || log.includes('Duration:') || log.includes('Execution ID:')) textColor = 'text-cyan-600 dark:text-cyan-400';
-    if (log.startsWith('>')) textColor = 'text-blue-600 dark:text-blue-400';
+    let textColor = 'text-gray-300';
+    
+    // Test results
+    if (log.includes('✓') || log.includes('passed')) textColor = 'text-green-400';
+    if (log.includes('×') || log.includes('❯') || log.includes('failed')) textColor = 'text-red-400';
+    if (log.includes('⚠') || log.includes('skipped')) textColor = 'text-yellow-400';
+    
+    // Errors and warnings
+    if (log.includes('Error:') || log.includes('ERROR') || log.includes('FAIL')) textColor = 'text-red-400';
+    if (log.includes('Warning:') || log.includes('WARN')) textColor = 'text-yellow-400';
+    
+    // Summary lines
+    if (log.includes('Test Files') || log.includes('Tests ') || log.includes('Duration') || log.includes('Start at')) textColor = 'text-cyan-400';
+    
+    // Status messages
+    if (log.startsWith('>')) textColor = 'text-blue-400';
+    
+    // Coverage table headers
+    if (log.includes('% Stmts') || log.includes('Coverage summary')) textColor = 'text-gray-400 font-bold';
 
     return (
-      <div key={index} className={`${textColor} py-0.5 whitespace-pre-wrap font-mono`}>
+      <div key={index} className={`${textColor} leading-relaxed`}>
         {log}
       </div>
     );
   };
 
-    const renderPrettyResults = (testState: TestExecutionState, testType: TestType) => {
-    const hasErrors = testState.logs.some(log => log.includes('Error:') || log.includes('ERROR'));
+    const renderCoverageBar = (percent: number, label: string) => {
+    const color = percent >= 80 ? 'bg-green-500' : percent >= 50 ? 'bg-yellow-500' : 'bg-red-500';
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-gray-400 w-20">{label}:</span>
+        <div className="flex-1 bg-gray-700 rounded-full h-2 overflow-hidden">
+          <div 
+            className={`${color} h-full transition-all duration-300`}
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+        <span className="text-xs text-gray-300 w-12 text-right">{percent.toFixed(1)}%</span>
+      </div>
+    );
+  };
+
+  const renderPrettyResults = (testState: TestExecutionState, testType: TestType) => {
+    const hasErrors = testState.errorCount && testState.errorCount > 0;
     const isErrorsExpanded = testType === 'mcp' ? mcpErrorsExpanded : uiErrorsExpanded;
     const setErrorsExpanded = testType === 'mcp' ? setMcpErrorsExpanded : setUiErrorsExpanded;
     
-    // Calculate percentages for pie chart
-    const total = testState.summary?.total || 0;
-    const passed = testState.summary?.passed || 0;
-    const failed = testState.summary?.failed || 0;
-    const skipped = testState.summary?.skipped || 0;
+    // Use test summary for the main display
+    const summary = testState.testSummary || testState.fileSummary;
+    const total = summary?.total || 0;
+    const passed = summary?.passed || 0;
+    const failed = summary?.failed || 0;
+    const skipped = summary?.skipped || 0;
     const passPercent = total > 0 ? Math.round((passed / total) * 100) : 0;
     const failPercent = total > 0 ? Math.round((failed / total) * 100) : 0;
     const skipPercent = total > 0 ? Math.round((skipped / total) * 100) : 0;
     
-    // Get the progress info from logs
-    const progressLines = testState.logs.filter(log => {
-      return log.includes('.') || log.includes('F') || log.includes('!') || log.includes('⚠') ||
-             log.includes('⏳ Running') || log.includes('✓') || log.includes('✕') || 
-             log.includes('Test Files') || log.includes('Tests ');
-    });
+    // Calculate current progress during execution
+    const currentFileCount = testState.results.length;
+    const totalFiles = testState.fileSummary?.total || 74; // Use known total or fallback
     
-    // Show real-time progress from verbose reporter
-    const runningTests = testState.logs.filter(log => log.includes('⏳ Running')).slice(-3); // Show last 3 running files
-    const recentResults = testState.logs.filter(log => 
-      (log.trim().startsWith('✓') || log.trim().startsWith('✕') || log.trim().startsWith('⚠')) &&
-      !log.includes('Test Files')
-    ).slice(-10); // Show last 10 test results
-    
-    // Calculate available height for test results (when errors not expanded, use full height)
-    const summaryHeight = testState.summary ? 100 : 0; // Increased for progress bar and pie chart
-    const runningHeight = testState.isRunning && runningTests.length > 0 ? 36 + (runningTests.length * 20) : 0; // Height for running indicator
+    // Calculate available height for terminal
+    const summaryHeight = (testState.fileSummary || testState.testSummary || testState.coverage) && !testState.isRunning ? 300 : 0;
+    const progressHeight = testState.isRunning ? 80 : 0; // Height for progress bar
     const errorHeaderHeight = hasErrors ? 32 : 0; // 32px for error header
-    const availableHeight = isErrorsExpanded ? 0 : (256 - summaryHeight - runningHeight - errorHeaderHeight - 16); // When errors expanded, hide test results
+    const availableHeight = isErrorsExpanded ? 0 : (256 - summaryHeight - progressHeight - errorHeaderHeight - 16); // Terminal height
 
     return (
       <div className="h-full flex flex-col relative">
-        {/* Summary with Progress */}
-        {testState.summary && (
-          <div className="mb-3 space-y-2">
-            {/* Progress Bar */}
-            <div className="p-2 bg-gray-800 rounded-md">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-gray-400">Progress</span>
-                <span className="text-xs text-gray-400">
-                  {passed + failed + skipped} / {total} tests
-                </span>
-              </div>
-              <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
-                <div className="h-full flex">
-                  <div 
-                    className="bg-green-500 transition-all duration-300"
-                    style={{ width: `${passPercent}%` }}
-                  />
-                  <div 
-                    className="bg-red-500 transition-all duration-300"
-                    style={{ width: `${failPercent}%` }}
-                  />
-                  <div 
-                    className="bg-yellow-500 transition-all duration-300"
-                    style={{ width: `${skipPercent}%` }}
-                  />
+        {/* Test Summary - Show after completion */}
+        {(testState.fileSummary || testState.testSummary) && !testState.isRunning && (
+          <div className="mb-3 bg-gray-800 rounded-lg p-3">
+            <div className="font-mono text-xs space-y-1">
+              {/* Test Files Summary */}
+              {testState.fileSummary && (
+                <div className="text-gray-300">
+                  <span className="text-gray-400">Test Files  </span>
+                  {testState.fileSummary.failed > 0 && (
+                    <span className="text-red-400">{testState.fileSummary.failed} failed | </span>
+                  )}
+                  <span className="text-green-400">{testState.fileSummary.passed} passed </span>
+                  {testState.fileSummary.skipped > 0 && (
+                    <span className="text-yellow-400">| {testState.fileSummary.skipped} skipped </span>
+                  )}
+                  <span className="text-gray-400">({testState.fileSummary.total})</span>
                 </div>
+              )}
+              
+              {/* Individual Tests Summary */}
+              {testState.testSummary && (
+                <div className="text-gray-300">
+                  <span className="text-gray-400">     Tests  </span>
+                  {testState.testSummary.failed > 0 && (
+                    <span className="text-red-400">{testState.testSummary.failed} failed | </span>
+                  )}
+                  <span className="text-green-400">{testState.testSummary.passed} passed </span>
+                  {testState.testSummary.skipped > 0 && (
+                    <span className="text-yellow-400">| {testState.testSummary.skipped} skipped </span>
+                  )}
+                  <span className="text-gray-400">({testState.testSummary.total})</span>
+                </div>
+              )}
+              
+              {/* Error Count */}
+              {testState.errorCount !== undefined && testState.errorCount > 0 && (
+                <div className="text-gray-300">
+                  <span className="text-gray-400">    Errors  </span>
+                  <span className="text-orange-400">{testState.errorCount} errors</span>
+                </div>
+              )}
+              
+              {/* Time Info */}
+              {testState.startTime && (
+                <div className="text-gray-300">
+                  <span className="text-gray-400">  Start at  </span>
+                  <span>{testState.startTime}</span>
+                </div>
+              )}
+              
+              {/* Duration */}
+              {testState.duration && (
+                <div className="text-gray-300">
+                  <span className="text-gray-400">  Duration  </span>
+                  <span>{testState.duration.toFixed(2)}s</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Running Progress - Simple */}
+        {testState.isRunning && (
+          <div className="bg-gray-800 rounded-lg p-3 mb-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-orange-500" />
+                <span className="text-sm font-medium text-gray-300">Running tests...</span>
               </div>
+              <span className="text-xs text-gray-400">
+                {currentFileCount} / {totalFiles} files
+              </span>
             </div>
             
-            {/* Stats with Mini Pie Chart */}
-            <div className="flex items-center gap-4 p-2 bg-gray-800 rounded-md">
-              {/* Mini Pie Chart SVG */}
-              <div className="relative w-12 h-12">
-                <svg viewBox="0 0 36 36" className="w-12 h-12">
-                  {/* Background circle */}
-                  <circle cx="18" cy="18" r="16" fill="none" stroke="#374151" strokeWidth="2" />
-                  
-                  {/* Pie slices */}
-                  {passPercent > 0 && (
-                    <circle
-                      cx="18" cy="18" r="16"
-                      fill="none"
-                      stroke="#10b981"
-                      strokeWidth="2"
-                      strokeDasharray={`${passPercent} 100`}
-                      strokeDashoffset="25"
-                      transform="rotate(-90 18 18)"
-                    />
-                  )}
-                  {failPercent > 0 && (
-                    <circle
-                      cx="18" cy="18" r="16"
-                      fill="none"
-                      stroke="#ef4444"
-                      strokeWidth="2"
-                      strokeDasharray={`${failPercent} 100`}
-                      strokeDashoffset={25 - passPercent}
-                      transform="rotate(-90 18 18)"
-                    />
-                  )}
-                  {skipPercent > 0 && (
-                    <circle
-                      cx="18" cy="18" r="16"
-                      fill="none"
-                      stroke="#eab308"
-                      strokeWidth="2"
-                      strokeDasharray={`${skipPercent} 100`}
-                      strokeDashoffset={25 - passPercent - failPercent}
-                      transform="rotate(-90 18 18)"
-                    />
-                  )}
-                </svg>
-                <PieChart className="absolute inset-0 m-auto w-5 h-5 text-gray-500" />
-              </div>
-              
-              {/* Stats */}
-              <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <div className="text-xs">
-                  <span className="text-gray-400">Total: </span>
-                  <span className="text-white font-medium">{testState.summary.total}</span>
-                </div>
-                <div className="text-xs">
-                  <span className="text-gray-400">Passed: </span>
-                  <span className="text-green-400 font-medium">{testState.summary.passed} ({passPercent}%)</span>
-                </div>
-                <div className="text-xs">
-                  <span className="text-gray-400">Failed: </span>
-                  <span className="text-red-400 font-medium">{testState.summary.failed} ({failPercent}%)</span>
-                </div>
-                {testState.summary.skipped > 0 && (
-                  <div className="text-xs">
-                    <span className="text-gray-400">Skipped: </span>
-                    <span className="text-yellow-400 font-medium">{testState.summary.skipped} ({skipPercent}%)</span>
-                  </div>
-                )}
-              </div>
+            {/* Progress bar */}
+            <div className="w-full bg-gray-700 rounded-full h-2">
+              <div 
+                className="bg-orange-500 h-full rounded-full transition-all duration-300"
+                style={{ width: `${(currentFileCount / totalFiles) * 100}%` }}
+              />
             </div>
           </div>
         )}
 
-        {/* Running indicator with currently running tests */}
-        {testState.isRunning && runningTests.length > 0 && (
-          <div className="p-2 bg-gray-800 rounded-md mb-3 flex-shrink-0">
-            <div className="flex items-center gap-2 mb-2">
-              <RefreshCw className="w-3 h-3 animate-spin text-orange-500" />
-              <span className="text-gray-300 text-xs font-medium">Running tests...</span>
-            </div>
-            {runningTests.map((test, index) => (
-              <div key={index} className="text-xs text-gray-400 ml-5 font-mono">
-                {test.replace('⏳ Running ', '')}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Test results - show real-time updates when running */}
+        {/* Terminal output - show all logs */}
         {!isErrorsExpanded && (
           <div 
             ref={testType === 'mcp' ? mcpTerminalRef : uiTerminalRef}
-            className="flex-1 overflow-y-auto" 
+            className="flex-1 overflow-y-auto bg-gray-900 p-2 rounded font-mono text-xs" 
             style={{ maxHeight: `${availableHeight}px` }}
           >
-            {/* Show recent test results during run */}
-            {testState.isRunning && recentResults.length > 0 && (
-              <div className="mb-2">
-                {recentResults.map((result, index) => {
-                  const isPassed = result.includes('✓');
-                  const isFailed = result.includes('✕');
-                  const isSkipped = result.includes('⚠');
-                  
-                  return (
-                    <div key={index} className="flex items-center gap-2 py-1 text-xs">
-                      {isPassed && <CheckCircle className="w-3 h-3 text-green-500 flex-shrink-0" />}
-                      {isFailed && <XCircle className="w-3 h-3 text-red-500 flex-shrink-0" />}
-                      {isSkipped && <Square className="w-3 h-3 text-yellow-500 flex-shrink-0" />}
-                      
-                      <span className={`flex-1 font-mono text-xs truncate ${
-                        isPassed ? 'text-green-600 dark:text-green-400' :
-                        isFailed ? 'text-red-600 dark:text-red-400' :
-                        'text-yellow-600 dark:text-yellow-400'
-                      }`}>
-                        {result.trim()}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            
-            {/* Show final results */}
-            {!testState.isRunning && testState.results.length > 0 && (
-              <>
-                {testState.results.map((result, index) => (
-                  <div key={index} className="flex items-center gap-2 py-1 text-xs">
-                    {result.status === 'running' && <RefreshCw className="w-3 h-3 animate-spin text-orange-500 flex-shrink-0" />}
-                    {result.status === 'passed' && <CheckCircle className="w-3 h-3 text-green-500 flex-shrink-0" />}
-                    {result.status === 'failed' && <XCircle className="w-3 h-3 text-red-500 flex-shrink-0" />}
-                    {result.status === 'skipped' && <Square className="w-3 h-3 text-yellow-500 flex-shrink-0" />}
-                    
-                    <span className="flex-1 text-gray-700 dark:text-gray-300 font-mono text-xs truncate">{result.name}</span>
-                    
-                    {result.duration && (
-                      <span className="text-xs text-gray-500 flex-shrink-0">
-                        {result.duration.toFixed(2)}s
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </>
-            )}
+            {testState.logs.map((log, index) => formatLogLine(log, index))}
           </div>
         )}
 
@@ -691,7 +738,7 @@ export const TestStatus = () => {
               <div className="flex items-center gap-2">
                 <XCircle className="w-3 h-3 text-red-600 dark:text-red-400" />
                 <h4 className="text-xs font-medium text-red-600 dark:text-red-400">
-                  Errors ({testState.logs.filter(log => log.includes('Error:') || log.includes('ERROR')).length})
+                  Errors ({testState.errorCount || 0})
                 </h4>
               </div>
               <div className={`transform transition-transform duration-300 ease-in-out ${isErrorsExpanded ? 'rotate-180' : ''}`}>

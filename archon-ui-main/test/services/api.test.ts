@@ -38,6 +38,14 @@ describe('API Service', () => {
   })
 
   describe('retry utility', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+    
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+    
     it('should retry on failure and eventually succeed', async () => {
       let attempts = 0
       const fn = vi.fn(async () => {
@@ -46,7 +54,9 @@ describe('API Service', () => {
         return 'success'
       })
       
-      const result = await retry(fn, 3, 10)
+      const promise = retry(fn, 3, 10)
+      await vi.runAllTimersAsync()
+      const result = await promise
       
       expect(result).toBe('success')
       expect(fn).toHaveBeenCalledTimes(3)
@@ -57,7 +67,10 @@ describe('API Service', () => {
         throw new Error('fail')
       })
       
-      await expect(retry(fn, 2, 10)).rejects.toThrow('fail')
+      const promise = retry(fn, 2, 10)
+      await vi.runAllTimersAsync()
+      
+      await expect(promise).rejects.toThrow('fail')
       expect(fn).toHaveBeenCalledTimes(2)
     })
 
@@ -460,6 +473,14 @@ describe('API Service', () => {
   })
 
   describe('Error Scenarios', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
     test.each([
       { fn: startMCPServer, name: 'startMCPServer' },
       { fn: stopMCPServer, name: 'stopMCPServer' },
@@ -476,7 +497,12 @@ describe('API Service', () => {
           json: async () => ({ success: true })
         })
 
-      const result = await fn()
+      const promise = fn()
+      
+      // Fast-forward through all retry delays
+      await vi.runAllTimersAsync()
+      
+      const result = await promise
 
       expect(mockFetch).toHaveBeenCalledTimes(3)
       expect(result).toBeTruthy()

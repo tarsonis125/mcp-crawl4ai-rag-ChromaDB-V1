@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Search, Grid, Plus, Upload, Link as LinkIcon, Share2, Brain, Filter, BoxIcon, Trash2, List, RefreshCw, X, Globe, FileText, BookOpen } from 'lucide-react';
+import { Search, Grid, Plus, Upload, Link as LinkIcon, Share2, Brain, Filter, BoxIcon, Trash2, List, RefreshCw, X, Globe, FileText, BookOpen, Code } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -228,6 +228,39 @@ const GroupedKnowledgeItemCard = ({
               )}
             </div>
           )}
+
+          {/* Code Examples Badge - Pink with Code icon */}
+          {(() => {
+            const totalCodeExamples = groupedItem.items.reduce((sum, item) => {
+              return sum + (item.code_examples?.length || 0);
+            }, 0);
+            
+            return totalCodeExamples > 0 ? (
+              <div className="relative group">
+                <div className="flex items-center gap-1 px-2 py-1 bg-pink-500/20 border border-pink-500/40 rounded-full backdrop-blur-sm shadow-[0_0_15px_rgba(236,72,153,0.3)] hover:shadow-[0_0_20px_rgba(236,72,153,0.5)] transition-all duration-300 cursor-help">
+                  <Code className="w-3 h-3 text-pink-400" />
+                  <span className="text-xs text-pink-400 font-medium">{totalCodeExamples}</span>
+                </div>
+                
+                {/* Code Examples Tooltip */}
+                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 z-50">
+                  <div className="bg-black dark:bg-zinc-800 text-white text-xs px-3 py-2 rounded-lg shadow-lg whitespace-nowrap max-w-xs">
+                    <div className="font-medium text-pink-300 mb-1">Code Examples:</div>
+                    <div className="text-gray-300 space-y-0.5 max-h-32 overflow-y-auto">
+                      {groupedItem.items.map((item, itemIndex) => 
+                        item.code_examples?.map((example: any, exampleIndex: number) => (
+                          <div key={`${itemIndex}-${exampleIndex}`}>
+                            {itemIndex + 1}.{exampleIndex + 1} {example.metadata?.title || example.summary?.substring(0, 30) + '...' || 'Code Example'}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-black dark:border-t-zinc-800"></div>
+                  </div>
+                </div>
+              </div>
+            ) : null;
+          })()}
 
           {/* Page count - orange neon container like Active button */}
           <div className="relative group">

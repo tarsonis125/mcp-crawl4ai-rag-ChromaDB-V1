@@ -1,4 +1,3 @@
-
 /**
  * Knowledge Base service for managing documentation sources
  */
@@ -30,6 +29,7 @@ export interface KnowledgeItem {
   metadata: KnowledgeItemMetadata
   created_at: string
   updated_at: string
+  code_examples?: any[] // Code examples from backend
 }
 
 export interface KnowledgeItemsResponse {

@@ -78,12 +78,9 @@ export function TestResultsModal({ isOpen, onClose }: TestResultsModalProps) {
       const testResponse = await fetchWithRetry('/test-results/test-results.json')
       console.log('[TEST RESULTS MODAL] Test results response:', testResponse?.status, testResponse?.statusText)
       
-      if (testResponse) {
+      if (testResponse && testResponse.ok) {
         try {
-          const testText = await testResponse.text()
-          console.log('[TEST RESULTS MODAL] Raw response length:', testText.length)
-          
-          const testData = JSON.parse(testText)
+          const testData = await testResponse.json()
           console.log('[TEST RESULTS MODAL] Test data loaded:', testData)
         
           // Parse vitest results format - handle both full format and simplified format
@@ -134,10 +131,9 @@ export function TestResultsModal({ isOpen, onClose }: TestResultsModalProps) {
       const coverageResponse = await fetchWithRetry('/test-results/coverage/coverage-summary.json')
       console.log('[TEST RESULTS MODAL] Coverage response:', coverageResponse?.status, coverageResponse?.statusText)
       
-      if (coverageResponse) {
+      if (coverageResponse && coverageResponse.ok) {
         try {
-          const coverageText = await coverageResponse.text()
-          const coverageData = JSON.parse(coverageText)
+          const coverageData = await coverageResponse.json()
           console.log('[TEST RESULTS MODAL] Coverage data loaded:', coverageData)
           setCoverage(coverageData)
         } catch (parseError) {
