@@ -3,11 +3,17 @@ FROM node:18-alpine
 
 WORKDIR /app
 
+# Install system dependencies needed for some npm packages
+RUN apk add --no-cache python3 make g++ git
+
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies including dev dependencies for testing
+RUN npm ci
+
+# Create coverage directory with proper permissions
+RUN mkdir -p /app/coverage && chmod 777 /app/coverage
 
 # Copy source code
 COPY . .

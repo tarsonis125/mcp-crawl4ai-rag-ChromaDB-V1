@@ -11,9 +11,9 @@ export default defineConfig({
     setupFiles: './test/setup.ts',
     include: ['test/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     exclude: ['node_modules', 'dist', '.git', '.cache'],
-    reporters: ['basic', 'json'],
+    reporters: ['dot', 'json'],
     outputFile: { 
-      json: './coverage/test-results.json' 
+      json: './public/test-results/test-results.json' 
     },
     coverage: {
       provider: 'v8',
@@ -25,7 +25,9 @@ export default defineConfig({
         'json-summary',
         'lcov'
       ],
-      reportsDirectory: './coverage',
+      reportsDirectory: './public/test-results/coverage',
+      clean: false, // Don't clean the directory as it may be in use
+      reportOnFailure: true, // Generate coverage reports even when tests fail
       exclude: [
         'node_modules/',
         'test/',

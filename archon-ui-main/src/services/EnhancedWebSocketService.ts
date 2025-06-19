@@ -274,7 +274,7 @@ export class EnhancedWebSocketService {
       if (timeSinceLastMessage > this.config.messageTimeout && this.isConnected()) {
         console.warn(`⚠️ No messages received for ${timeSinceLastMessage}ms, connection may be stale`);
         // Force reconnection
-        this.ws?.close(1006, 'Message timeout');
+        this.ws?.close(4000, 'Message timeout');
       } else if (this.isConnected()) {
         // Schedule next check
         this.messageTimeout = setTimeout(checkMessageTimeout, this.config.messageTimeout);

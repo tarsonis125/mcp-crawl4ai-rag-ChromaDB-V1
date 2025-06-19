@@ -17,7 +17,7 @@ import type { Task } from '../components/project-tasks/TaskTableView';
 import { ProjectCreationProgressCard } from '../components/ProjectCreationProgressCard';
 import { projectCreationProgressService } from '../services/projectCreationProgressService';
 import type { ProjectCreationProgressData } from '../services/projectCreationProgressService';
-import { projectListWebSocket } from '../services/websocketService';
+import { projectListWebSocket, taskUpdateWebSocket } from '../services/websocketService';
 
 interface ProjectPageProps {
   className?: string;
@@ -198,12 +198,85 @@ export function ProjectPage({
     };
   }, []); // Only run once on mount
 
+  // Load task counts for all projects
+  const loadTaskCountsForAllProjects = useCallback(async (projectIds: string[]) => {
+    try {
+      const counts: Record<string, { todo: number; doing: number; done: number }> = {};
+      
+      for (const projectId of projectIds) {
+        try {
+          const tasksData = await projectService.getTasksByProject(projectId);
+          const todos = tasksData.filter(t => t.uiStatus === 'backlog').length;
+          const doing = tasksData.filter(t => t.uiStatus === 'in-progress' || t.uiStatus === 'review').length;
+          const done = tasksData.filter(t => t.uiStatus === 'complete').length;
+          
+          counts[projectId] = { todo: todos, doing, done };
+        } catch (error) {
+          console.error(`Failed to load tasks for project ${projectId}:`, error);
+          counts[projectId] = { todo: 0, doing: 0, done: 0 };
+        }
+      }
+      
+      setProjectTaskCounts(counts);
+    } catch (error) {
+      console.error('Failed to load task counts:', error);
+    }
+  }, []);
+
   // Load tasks when project is selected
   useEffect(() => {
     if (selectedProject) {
       loadTasksForProject(selectedProject.id);
     }
   }, [selectedProject]);
+
+  // Set up WebSocket for real-time task count updates for selected project
+  useEffect(() => {
+    if (!selectedProject) return;
+
+    console.log('🔌 Setting up WebSocket for project task updates:', selectedProject.id);
+    
+    const connectWebSocket = async () => {
+      try {
+        await taskUpdateWebSocket.connect(selectedProject.id, {
+          onTaskCreated: () => {
+            console.log('✅ Task created - refreshing counts for all projects');
+            const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
+            loadTaskCountsForAllProjects(projectIds);
+          },
+          onTaskUpdated: () => {
+            console.log('✅ Task updated - refreshing counts for all projects');
+            const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
+            loadTaskCountsForAllProjects(projectIds);
+          },
+          onTaskDeleted: () => {
+            console.log('✅ Task deleted - refreshing counts for all projects');
+            const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
+            loadTaskCountsForAllProjects(projectIds);
+          },
+          onTaskArchived: () => {
+            console.log('✅ Task archived - refreshing counts for all projects');
+            const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
+            loadTaskCountsForAllProjects(projectIds);
+          },
+          onTasksChange: () => {
+            console.log('✅ Tasks changed via MCP - refreshing counts for all projects');
+            const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
+            loadTaskCountsForAllProjects(projectIds);
+          }
+        });
+      } catch (error) {
+        console.error('Failed to connect task WebSocket:', error);
+      }
+    };
+
+    connectWebSocket();
+
+    return () => {
+      console.log('🔌 Disconnecting task WebSocket');
+      taskUpdateWebSocket.disconnect();
+    };
+  }, [selectedProject?.id, loadTaskCountsForAllProjects, projects]);
 
   const loadProjects = async () => {
     try {
@@ -283,31 +356,6 @@ export function ProjectPage({
       setTasksError(error instanceof Error ? error.message : 'Failed to load tasks');
     } finally {
       setIsLoadingTasks(false);
-    }
-  };
-
-  // Load task counts for all projects
-  const loadTaskCountsForAllProjects = async (projectIds: string[]) => {
-    try {
-      const counts: Record<string, { todo: number; doing: number; done: number }> = {};
-      
-      for (const projectId of projectIds) {
-        try {
-          const tasksData = await projectService.getTasksByProject(projectId);
-          const todos = tasksData.filter(t => t.uiStatus === 'backlog').length;
-          const doing = tasksData.filter(t => t.uiStatus === 'in-progress' || t.uiStatus === 'review').length;
-          const done = tasksData.filter(t => t.uiStatus === 'complete').length;
-          
-          counts[projectId] = { todo: todos, doing, done };
-        } catch (error) {
-          console.error(`Failed to load tasks for project ${projectId}:`, error);
-          counts[projectId] = { todo: 0, doing: 0, done: 0 };
-        }
-      }
-      
-      setProjectTaskCounts(counts);
-    } catch (error) {
-      console.error('Failed to load task counts:', error);
     }
   };
 
@@ -698,7 +746,11 @@ export function ProjectPage({
                   
                   <div className="relative z-10">
                     <div className="h-14 flex items-center justify-center mb-4 px-2">
-                      <h3 className="text-gray-800 dark:text-white font-medium text-center leading-tight line-clamp-2">
+                      <h3 className={`font-medium text-center leading-tight line-clamp-2 transition-all duration-300 ${
+                        selectedProject?.id === project.id 
+                          ? 'text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]' 
+                          : 'text-gray-600 dark:text-gray-500'
+                      }`}>
                         {project.title}
                       </h3>
                     </div>
@@ -713,11 +765,11 @@ export function ProjectPage({
                             : 'bg-white/30 dark:bg-zinc-900/30 border-gray-300/50 dark:border-gray-700/50'
                         }`}>
                           <div className="flex flex-col items-center justify-center px-2 min-w-[40px]">
-                            <ListTodo className={`w-4 h-4 ${selectedProject?.id === project.id ? 'text-pink-600 dark:text-pink-400' : 'text-gray-500 dark:text-gray-500'}`} />
-                            <span className={`text-[8px] font-medium ${selectedProject?.id === project.id ? 'text-pink-600 dark:text-pink-400' : 'text-gray-500 dark:text-gray-500'}`}>ToDo</span>
+                            <ListTodo className={`w-4 h-4 ${selectedProject?.id === project.id ? 'text-pink-600 dark:text-pink-400' : 'text-gray-500 dark:text-gray-600'}`} />
+                            <span className={`text-[8px] font-medium ${selectedProject?.id === project.id ? 'text-pink-600 dark:text-pink-400' : 'text-gray-500 dark:text-gray-600'}`}>ToDo</span>
                           </div>
                           <div className={`flex-1 flex items-center justify-center border-l ${selectedProject?.id === project.id ? 'border-pink-300 dark:border-pink-500/30' : 'border-gray-300/50 dark:border-gray-700/50'}`}>
-                            <span className={`text-lg font-bold ${selectedProject?.id === project.id ? 'text-pink-600 dark:text-pink-400' : 'text-gray-600 dark:text-gray-400'}`}>{projectTaskCounts[project.id]?.todo || 0}</span>
+                            <span className={`text-lg font-bold ${selectedProject?.id === project.id ? 'text-pink-600 dark:text-pink-400' : 'text-gray-500 dark:text-gray-600'}`}>{projectTaskCounts[project.id]?.todo || 0}</span>
                           </div>
                         </div>
                       </div>
@@ -731,11 +783,11 @@ export function ProjectPage({
                             : 'bg-white/30 dark:bg-zinc-900/30 border-gray-300/50 dark:border-gray-700/50'
                         }`}>
                           <div className="flex flex-col items-center justify-center px-2 min-w-[40px]">
-                            <Activity className={`w-4 h-4 ${selectedProject?.id === project.id ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-500'}`} />
-                            <span className={`text-[8px] font-medium ${selectedProject?.id === project.id ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-500'}`}>Doing</span>
+                            <Activity className={`w-4 h-4 ${selectedProject?.id === project.id ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-600'}`} />
+                            <span className={`text-[8px] font-medium ${selectedProject?.id === project.id ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-600'}`}>Doing</span>
                           </div>
                           <div className={`flex-1 flex items-center justify-center border-l ${selectedProject?.id === project.id ? 'border-blue-300 dark:border-blue-500/30' : 'border-gray-300/50 dark:border-gray-700/50'}`}>
-                            <span className={`text-lg font-bold ${selectedProject?.id === project.id ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'}`}>{projectTaskCounts[project.id]?.doing || 0}</span>
+                            <span className={`text-lg font-bold ${selectedProject?.id === project.id ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-600'}`}>{projectTaskCounts[project.id]?.doing || 0}</span>
                           </div>
                         </div>
                       </div>
@@ -749,11 +801,11 @@ export function ProjectPage({
                             : 'bg-white/30 dark:bg-zinc-900/30 border-gray-300/50 dark:border-gray-700/50'
                         }`}>
                           <div className="flex flex-col items-center justify-center px-2 min-w-[40px]">
-                            <CheckCircle2 className={`w-4 h-4 ${selectedProject?.id === project.id ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-500'}`} />
-                            <span className={`text-[8px] font-medium ${selectedProject?.id === project.id ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-500'}`}>Done</span>
+                            <CheckCircle2 className={`w-4 h-4 ${selectedProject?.id === project.id ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-600'}`} />
+                            <span className={`text-[8px] font-medium ${selectedProject?.id === project.id ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-600'}`}>Done</span>
                           </div>
                           <div className={`flex-1 flex items-center justify-center border-l ${selectedProject?.id === project.id ? 'border-green-300 dark:border-green-500/30' : 'border-gray-300/50 dark:border-gray-700/50'}`}>
-                            <span className={`text-lg font-bold ${selectedProject?.id === project.id ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-400'}`}>{projectTaskCounts[project.id]?.done || 0}</span>
+                            <span className={`text-lg font-bold ${selectedProject?.id === project.id ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-600'}`}>{projectTaskCounts[project.id]?.done || 0}</span>
                           </div>
                         </div>
                       </div>
@@ -834,7 +886,16 @@ export function ProjectPage({
                         </div>
                       </div>
                     ) : (
-                      <TasksTab initialTasks={tasks} onTasksChange={setTasks} projectId={selectedProject.id} />
+                      <TasksTab 
+                        initialTasks={tasks} 
+                        onTasksChange={(updatedTasks) => {
+                          setTasks(updatedTasks);
+                          // Refresh task counts for all projects when tasks change
+                          const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
+                          loadTaskCountsForAllProjects(projectIds);
+                        }} 
+                        projectId={selectedProject.id} 
+                      />
                     )}
                   </TabsContent>
                 )}

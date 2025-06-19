@@ -3,6 +3,8 @@ import path from "path";
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import { exec } from 'child_process';
+import { readFile } from 'fs/promises';
+import { existsSync, mkdirSync } from 'fs';
 import type { ConfigEnv, UserConfig } from 'vite';
 
 // https://vitejs.dev/config/
@@ -22,6 +24,27 @@ export default defineConfig(({ mode }: ConfigEnv): UserConfig => {
       {
         name: 'test-runner',
         configureServer(server) {
+          // Serve coverage directory statically
+          server.middlewares.use(async (req, res, next) => {
+            if (req.url?.startsWith('/coverage/')) {
+              const filePath = path.join(process.cwd(), req.url);
+              console.log('[VITE] Serving coverage file:', filePath);
+              try {
+                const data = await readFile(filePath);
+                const contentType = req.url.endsWith('.json') ? 'application/json' : 
+                                  req.url.endsWith('.html') ? 'text/html' : 'text/plain';
+                res.setHeader('Content-Type', contentType);
+                res.end(data);
+              } catch (err) {
+                console.log('[VITE] Coverage file not found:', filePath);
+                res.statusCode = 404;
+                res.end('Not found');
+              }
+            } else {
+              next();
+            }
+          });
+          
           // Test execution endpoint (basic tests)
           server.middlewares.use('/api/run-tests', (req: any, res: any) => {
             if (req.method !== 'POST') {
@@ -44,16 +67,27 @@ export default defineConfig(({ mode }: ConfigEnv): UserConfig => {
             });
 
             testProcess.stdout?.on('data', (data) => {
-              const lines = data.toString().split('\n').filter((line: string) => line.trim());
+              const text = data.toString();
+              // Split by newlines but preserve empty lines for better formatting
+              const lines = text.split('\n');
+              
               lines.forEach((line: string) => {
+                // Send all lines including empty ones for proper formatting
                 res.write(`data: ${JSON.stringify({ type: 'output', message: line, timestamp: new Date().toISOString() })}\n\n`);
               });
+              
+              // Flush the response to ensure immediate delivery
+              if (res.flushHeaders) {
+                res.flushHeaders();
+              }
             });
 
             testProcess.stderr?.on('data', (data) => {
               const lines = data.toString().split('\n').filter((line: string) => line.trim());
               lines.forEach((line: string) => {
-                res.write(`data: ${JSON.stringify({ type: 'output', message: line, timestamp: new Date().toISOString() })}\n\n`);
+                // Strip ANSI escape codes
+                const cleanLine = line.replace(/\x1b\[[0-9;]*m/g, '');
+                res.write(`data: ${JSON.stringify({ type: 'output', message: cleanLine, timestamp: new Date().toISOString() })}\n\n`);
               });
             });
 
@@ -98,22 +132,50 @@ export default defineConfig(({ mode }: ConfigEnv): UserConfig => {
               'Access-Control-Allow-Headers': 'Content-Type',
             });
 
-            // Run vitest with coverage using the proper script (which includes JSON reporter)
-            const testProcess = exec('npm run test:coverage', {
-              cwd: process.cwd()
+            // Run vitest with coverage using the proper script (now includes both default and JSON reporters)
+            // Add CI=true to get cleaner output without HTML dumps
+            // Override the reporter to use verbose for better streaming output
+            // When running in Docker, we need to ensure the test results directory exists
+            const testResultsDir = path.join(process.cwd(), 'public', 'test-results');
+            if (!existsSync(testResultsDir)) {
+              mkdirSync(testResultsDir, { recursive: true });
+            }
+            
+            const testProcess = exec('npm run test:coverage:stream', {
+              cwd: process.cwd(),
+              env: { 
+                ...process.env, 
+                FORCE_COLOR: '1', 
+                CI: 'true',
+                NODE_ENV: 'test' 
+              } // Enable color output and CI mode for cleaner output
             });
 
             testProcess.stdout?.on('data', (data) => {
-              const lines = data.toString().split('\n').filter((line: string) => line.trim());
+              const text = data.toString();
+              // Split by newlines but preserve empty lines for better formatting
+              const lines = text.split('\n');
+              
               lines.forEach((line: string) => {
-                res.write(`data: ${JSON.stringify({ type: 'output', message: line, timestamp: new Date().toISOString() })}\n\n`);
+                // Strip ANSI escape codes to get clean text
+                const cleanLine = line.replace(/\x1b\[[0-9;]*m/g, '');
+                
+                // Send all lines for verbose reporter output
+                res.write(`data: ${JSON.stringify({ type: 'output', message: cleanLine, timestamp: new Date().toISOString() })}\n\n`);
               });
+              
+              // Flush the response to ensure immediate delivery
+              if (res.flushHeaders) {
+                res.flushHeaders();
+              }
             });
 
             testProcess.stderr?.on('data', (data) => {
               const lines = data.toString().split('\n').filter((line: string) => line.trim());
               lines.forEach((line: string) => {
-                res.write(`data: ${JSON.stringify({ type: 'output', message: line, timestamp: new Date().toISOString() })}\n\n`);
+                // Strip ANSI escape codes
+                const cleanLine = line.replace(/\x1b\[[0-9;]*m/g, '');
+                res.write(`data: ${JSON.stringify({ type: 'output', message: cleanLine, timestamp: new Date().toISOString() })}\n\n`);
               });
             });
 

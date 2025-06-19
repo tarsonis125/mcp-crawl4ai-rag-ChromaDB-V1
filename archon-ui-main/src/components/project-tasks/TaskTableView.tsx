@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useDrag, useDrop } from 'react-dnd';
 import { Check, Trash2, Edit, Tag, User, Bot, Clipboard, Save, Plus, Network } from 'lucide-react';
 import { Toggle } from '../ui/Toggle';
@@ -63,6 +63,8 @@ const getOrderTextColor = (order: number) => {
   if (order <= 10) return 'text-blue-500 dark:text-blue-400'; // blue text
   return 'text-emerald-500 dark:text-emerald-400'; // green text
 };
+
+
 
 // Helper function to reorder tasks properly
 const reorderTasks = (tasks: Task[], fromIndex: number, toIndex: number): Task[] => {
@@ -197,6 +199,7 @@ interface DraggableTaskRowProps {
   tasksInStatus: Task[];
   isSubtask?: boolean;
   indentLevel?: number;
+  style?: React.CSSProperties;
 }
 
 const DraggableTaskRow = ({ 
@@ -209,7 +212,8 @@ const DraggableTaskRow = ({
   onTaskUpdate,
   tasksInStatus,
   isSubtask = false,
-  indentLevel = 0
+  indentLevel = 0,
+  style
 }: DraggableTaskRowProps) => {
   const [editingField, setEditingField] = useState<string | null>(null);
   const [isHovering, setIsHovering] = useState(false);
@@ -284,6 +288,7 @@ const DraggableTaskRow = ({
         ${isHovering ? 'transform translate-y-1 shadow-md' : ''}
       `}
       onMouseLeave={() => setIsHovering(false)}
+      style={style}
     >
       <td className="p-3">
         <div className="flex items-center justify-center">
@@ -577,6 +582,79 @@ export const TaskTableView = ({
 
   const { showToast } = useToast();
 
+  // Refs for scroll fade effect
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
+  const [scrollOpacities, setScrollOpacities] = useState<Map<string, number>>(new Map());
+
+  // Calculate opacity based on row position
+  const calculateOpacity = (rowElement: HTMLElement, containerElement: HTMLElement) => {
+    const containerRect = containerElement.getBoundingClientRect();
+    const rowRect = rowElement.getBoundingClientRect();
+    
+    // Calculate the row's position relative to the container
+    const rowCenter = rowRect.top + rowRect.height / 2;
+    const containerCenter = containerRect.top + containerRect.height / 2;
+    const containerHeight = containerRect.height;
+    
+    // Distance from center (0 at center, 1 at edges)
+    const distanceFromCenter = Math.abs(rowCenter - containerCenter) / (containerHeight / 2);
+    
+    // Create a smooth fade effect
+    // Rows at the top 40% of viewport get full opacity
+    // Rows fade out smoothly towards the bottom
+    const relativePosition = (rowRect.top - containerRect.top) / containerHeight;
+    
+    if (relativePosition < 0) {
+      return 1; // Full opacity for rows above viewport
+    } else if (relativePosition < 0.4) {
+      return 1; // Full opacity for top 40%
+    } else if (relativePosition > 0.9) {
+      return 0.15; // Very faded at bottom (slightly more visible)
+    } else {
+      // Smooth transition from 1 to 0.15
+      const fadeRange = 0.9 - 0.4; // 0.5
+      const fadePosition = (relativePosition - 0.4) / fadeRange;
+      return 1 - (fadePosition * 0.85); // Fade from 1 to 0.15
+    }
+  };
+
+  // Update opacities on scroll
+  const updateOpacities = useCallback(() => {
+    if (!tableContainerRef.current || !tableRef.current) return;
+    
+    const container = tableContainerRef.current;
+    const rows = tableRef.current.querySelectorAll('tbody tr');
+    const newOpacities = new Map<string, number>();
+    
+    rows.forEach((row, index) => {
+      const opacity = calculateOpacity(row as HTMLElement, container);
+      newOpacities.set(`row-${index}`, opacity);
+    });
+    
+    setScrollOpacities(newOpacities);
+  }, []);
+
+  // Set up scroll listener
+  useEffect(() => {
+    const container = tableContainerRef.current;
+    if (!container) return;
+    
+    // Initial opacity calculation
+    updateOpacities();
+    
+    // Update on scroll
+    container.addEventListener('scroll', updateOpacities);
+    
+    // Also update on window resize
+    window.addEventListener('resize', updateOpacities);
+    
+    return () => {
+      container.removeEventListener('scroll', updateOpacities);
+      window.removeEventListener('resize', updateOpacities);
+    };
+  }, [updateOpacities, tasks]); // Re-calculate when tasks change
+
   // Handle task deletion (opens confirmation modal)
   const handleDeleteTask = useCallback((task: Task) => {
     setTaskToDelete(task);
@@ -694,7 +772,7 @@ export const TaskTableView = ({
   };
 
   return (
-    <div className="overflow-x-auto">
+    <div className="relative">
       {/* Status Filter */}
       <div className="mb-4 flex gap-2 flex-wrap py-2 items-center justify-between">
         <div className="flex gap-2 flex-wrap">
@@ -772,64 +850,73 @@ export const TaskTableView = ({
         )}
       </div>
 
-      <table className="w-full border-collapse table-fixed">
-        <colgroup>
-          <col className="w-16" />
-          <col className="w-auto" />
-          <col className="w-24" />
-          <col className="w-28" />
-          <col className="w-32" />
-          <col className="w-40" />
-        </colgroup>
-        <thead>
-          <tr className="bg-white/80 dark:bg-black/80 backdrop-blur-sm sticky top-0 z-10">
-            <th className="text-left p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
-              <div className="flex items-center gap-2">
-                <span className={getHeaderColor('secondary')}>Order</span>
-                <span className={`w-1 h-1 rounded-full ${getHeaderGlow('secondary')}`}></span>
-              </div>
-              {/* Header divider with glow matching board view */}
-              <div className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[1px] bg-purple-500/30 shadow-[0_0_10px_2px_rgba(168,85,247,0.2)]`}></div>
-            </th>
-            <th className="text-left p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
-              <div className="flex items-center gap-2">
-                <span className={getHeaderColor('primary')}>Task</span>
-                <span className={`w-1 h-1 rounded-full ${getHeaderGlow('primary')}`}></span>
-              </div>
-              <div className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[1px] bg-cyan-500/30 shadow-[0_0_10px_2px_rgba(34,211,238,0.2)]`}></div>
-            </th>
-            <th className="text-left p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
-              <div className="flex items-center gap-2">
-                <span className={getHeaderColor('secondary')}>Status</span>
-                <span className={`w-1 h-1 rounded-full ${getHeaderGlow('secondary')}`}></span>
-              </div>
-              <div className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[1px] bg-purple-500/30 shadow-[0_0_10px_2px_rgba(168,85,247,0.2)]`}></div>
-            </th>
-            <th className="text-left p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
-              <div className="flex items-center gap-2">
-                <span className={getHeaderColor('secondary')}>Feature</span>
-                <span className={`w-1 h-1 rounded-full ${getHeaderGlow('secondary')}`}></span>
-              </div>
-              <div className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[1px] bg-purple-500/30 shadow-[0_0_10px_2px_rgba(168,85,247,0.2)]`}></div>
-            </th>
-            <th className="text-left p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
-              <div className="flex items-center gap-2">
-                <span className={getHeaderColor('primary')}>Assignee</span>
-                <span className={`w-1 h-1 rounded-full ${getHeaderGlow('primary')}`}></span>
-              </div>
-              <div className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[1px] bg-cyan-500/30 shadow-[0_0_10px_2px_rgba(34,211,238,0.2)]`}></div>
-            </th>
-            <th className="text-center p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
-              <div className="flex items-center justify-center gap-2">
-                <span className={getHeaderColor('primary')}>Actions</span>
-                <span className={`w-1 h-1 rounded-full ${getHeaderGlow('primary')}`}></span>
-              </div>
-              <div className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[1px] bg-cyan-500/30 shadow-[0_0_10px_2px_rgba(34,211,238,0.2)]`}></div>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {filteredTasks.map((task, index) => (
+      {/* Scrollable table container */}
+      <div 
+        ref={tableContainerRef}
+        className="overflow-x-auto overflow-y-auto max-h-[600px] relative"
+        style={{
+          maskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 40%, rgba(0,0,0,0.5) 70%, rgba(0,0,0,0.1) 90%, rgba(0,0,0,0) 100%)',
+          WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 40%, rgba(0,0,0,0.5) 70%, rgba(0,0,0,0.1) 90%, rgba(0,0,0,0) 100%)'
+        }}
+      >
+        <table ref={tableRef} className="w-full border-collapse table-fixed">
+          <colgroup>
+            <col className="w-16" />
+            <col className="w-auto" />
+            <col className="w-24" />
+            <col className="w-28" />
+            <col className="w-32" />
+            <col className="w-40" />
+          </colgroup>
+          <thead>
+            <tr className="bg-white/80 dark:bg-black/80 backdrop-blur-sm sticky top-0 z-10">
+              <th className="text-left p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
+                <div className="flex items-center gap-2">
+                  <span className={getHeaderColor('secondary')}>Order</span>
+                  <span className={`w-1 h-1 rounded-full ${getHeaderGlow('secondary')}`}></span>
+                </div>
+                {/* Header divider with glow matching board view */}
+                <div className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[1px] bg-purple-500/30 shadow-[0_0_10px_2px_rgba(168,85,247,0.2)]`}></div>
+              </th>
+              <th className="text-left p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
+                <div className="flex items-center gap-2">
+                  <span className={getHeaderColor('primary')}>Task</span>
+                  <span className={`w-1 h-1 rounded-full ${getHeaderGlow('primary')}`}></span>
+                </div>
+                <div className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[1px] bg-cyan-500/30 shadow-[0_0_10px_2px_rgba(34,211,238,0.2)]`}></div>
+              </th>
+              <th className="text-left p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
+                <div className="flex items-center gap-2">
+                  <span className={getHeaderColor('secondary')}>Status</span>
+                  <span className={`w-1 h-1 rounded-full ${getHeaderGlow('secondary')}`}></span>
+                </div>
+                <div className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[1px] bg-purple-500/30 shadow-[0_0_10px_2px_rgba(168,85,247,0.2)]`}></div>
+              </th>
+              <th className="text-left p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
+                <div className="flex items-center gap-2">
+                  <span className={getHeaderColor('secondary')}>Feature</span>
+                  <span className={`w-1 h-1 rounded-full ${getHeaderGlow('secondary')}`}></span>
+                </div>
+                <div className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[1px] bg-purple-500/30 shadow-[0_0_10px_2px_rgba(168,85,247,0.2)]`}></div>
+              </th>
+              <th className="text-left p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
+                <div className="flex items-center gap-2">
+                  <span className={getHeaderColor('primary')}>Assignee</span>
+                  <span className={`w-1 h-1 rounded-full ${getHeaderGlow('primary')}`}></span>
+                </div>
+                <div className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[1px] bg-cyan-500/30 shadow-[0_0_10px_2px_rgba(34,211,238,0.2)]`}></div>
+              </th>
+              <th className="text-center p-3 font-mono border-b border-gray-300 dark:border-gray-800 relative">
+                <div className="flex items-center justify-center gap-2">
+                  <span className={getHeaderColor('primary')}>Actions</span>
+                  <span className={`w-1 h-1 rounded-full ${getHeaderGlow('primary')}`}></span>
+                </div>
+                <div className={`absolute bottom-0 left-[15%] right-[15%] w-[70%] mx-auto h-[1px] bg-cyan-500/30 shadow-[0_0_10px_2px_rgba(34,211,238,0.2)]`}></div>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredTasks.map((task, index) => (
               <DraggableTaskRow
                 key={task.id}
                 task={task}
@@ -839,15 +926,28 @@ export const TaskTableView = ({
                 onTaskDelete={handleDeleteTask}
                 onTaskReorder={onTaskReorder}
                 onTaskUpdate={onTaskUpdate}
-                tasksInStatus={filteredTasks}
+                tasksInStatus={getTasksByStatus(task.status)}
                 isSubtask={task.isSubtask}
                 indentLevel={task.indentLevel}
+                style={{ 
+                  opacity: scrollOpacities.get(`row-${index}`) || 1,
+                  transition: 'opacity 0.2s ease-out'
+                }}
               />
             ))}
-          {/* Add Task Row */}
-          <AddTaskRow onTaskCreate={onTaskCreate} tasks={tasks} statusFilter={statusFilter} />
-        </tbody>
-      </table>
+            {/* Add Task Row - only show if create permission exists */}
+            {onTaskCreate && (
+              <AddTaskRow
+                onTaskCreate={onTaskCreate}
+                tasks={tasks}
+                statusFilter={statusFilter}
+              />
+            )}
+          </tbody>
+        </table>
+        {/* Spacer to allow scrolling last rows to top */}
+        <div style={{ height: '70vh' }} aria-hidden="true" />
+      </div>
 
       {/* Delete Confirmation Modal for Tasks */}
       {showDeleteConfirm && taskToDelete && (

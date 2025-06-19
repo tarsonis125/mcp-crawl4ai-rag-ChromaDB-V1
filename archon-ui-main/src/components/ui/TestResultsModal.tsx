@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { X, BarChart, AlertCircle, CheckCircle, XCircle, Activity, RefreshCw, ExternalLink, TestTube, Target } from 'lucide-react'
+import { X, BarChart, AlertCircle, CheckCircle, XCircle, Activity, RefreshCw, ExternalLink, TestTube, Target, ChevronDown } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 interface TestResults {
@@ -17,6 +17,10 @@ interface TestResults {
     failed: number
     skipped: number
     duration: number
+    failedTests?: Array<{
+      name: string
+      error?: string
+    }>
   }>
 }
 
@@ -39,48 +43,111 @@ export function TestResultsModal({ isOpen, onClose }: TestResultsModalProps) {
   const [coverage, setCoverage] = useState<CoverageSummary | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [expandedSuites, setExpandedSuites] = useState<Set<number>>(new Set())
 
   const fetchResults = async () => {
     setLoading(true)
     setError(null)
     
-    try {
-      // Fetch test results JSON
-      const testResponse = await fetch('/coverage/test-results.json')
-      if (testResponse.ok) {
-        const testData = await testResponse.json()
-        
-        // Parse vitest results format
-        const results: TestResults = {
-          summary: {
-            total: testData.numTotalTests || 0,
-            passed: testData.numPassedTests || 0,
-            failed: testData.numFailedTests || 0,
-            skipped: testData.numSkippedTests || 0,
-            duration: testData.testResults?.reduce((acc: number, suite: any) => 
-              acc + (suite.perfStats?.end - suite.perfStats?.start || 0), 0) || 0
-          },
-          suites: testData.testResults?.map((suite: any) => ({
-            name: suite.name?.replace(process.cwd(), '') || 'Unknown',
-            tests: suite.numTotalTests || 0,
-            passed: suite.numPassedTests || 0,
-            failed: suite.numFailedTests || 0,
-            skipped: suite.numSkippedTests || 0,
-            duration: (suite.perfStats?.end - suite.perfStats?.start) || 0
-          })) || []
+    console.log('[TEST RESULTS MODAL] Fetching test results...')
+    
+    // Add retry logic for file reading
+    const fetchWithRetry = async (url: string, retries = 3): Promise<Response | null> => {
+      for (let i = 0; i < retries; i++) {
+        try {
+          const response = await fetch(url)
+          if (response.ok) {
+            const text = await response.text()
+            if (text && text.trim().length > 0) {
+              return response
+            }
+          }
+          // Wait a bit before retrying
+          if (i < retries - 1) {
+            await new Promise(resolve => setTimeout(resolve, 500))
+          }
+        } catch (err) {
+          console.log(`[TEST RESULTS MODAL] Attempt ${i + 1} failed for ${url}:`, err)
         }
-        setTestResults(results)
+      }
+      return null
+    }
+    
+    try {
+      // Fetch test results JSON with retry
+      const testResponse = await fetchWithRetry('/test-results/test-results.json')
+      console.log('[TEST RESULTS MODAL] Test results response:', testResponse?.status, testResponse?.statusText)
+      
+      if (testResponse) {
+        try {
+          const testText = await testResponse.text()
+          console.log('[TEST RESULTS MODAL] Raw response length:', testText.length)
+          
+          const testData = JSON.parse(testText)
+          console.log('[TEST RESULTS MODAL] Test data loaded:', testData)
+        
+          // Parse vitest results format - handle both full format and simplified format
+          const results: TestResults = {
+            summary: {
+              total: testData.numTotalTests || 0,
+              passed: testData.numPassedTests || 0,
+              failed: testData.numFailedTests || 0,
+              skipped: testData.numSkippedTests || testData.numPendingTests || 0,
+              duration: testData.testResults?.reduce((acc: number, suite: any) => {
+                const duration = suite.perfStats ? 
+                  (suite.perfStats.end - suite.perfStats.start) : 
+                  (suite.endTime - suite.startTime) || 0
+                return acc + duration
+              }, 0) || 0
+            },
+            suites: testData.testResults?.map((suite: any) => {
+              const suiteName = suite.name?.replace(process.cwd(), '') || 
+                               suite.displayName || 
+                               suite.testFilePath || 
+                               'Unknown'
+              
+              return {
+                name: suiteName,
+                tests: suite.numTotalTests || suite.assertionResults?.length || 0,
+                passed: suite.numPassedTests || suite.assertionResults?.filter((t: any) => t.status === 'passed').length || 0,
+                failed: suite.numFailedTests || suite.assertionResults?.filter((t: any) => t.status === 'failed').length || 0,
+                skipped: suite.numSkippedTests || suite.numPendingTests || suite.assertionResults?.filter((t: any) => t.status === 'skipped' || t.status === 'pending').length || 0,
+                duration: suite.perfStats ? 
+                  (suite.perfStats.end - suite.perfStats.start) : 
+                  (suite.endTime - suite.startTime) || 0,
+                failedTests: (suite.assertionResults || suite.testResults)?.filter((test: any) => test.status === 'failed')
+                  .map((test: any) => ({
+                    name: test.title || test.fullTitle || test.ancestorTitles?.join(' > ') || 'Unknown test',
+                    error: test.failureMessages?.[0] || test.error?.message || test.message || 'No error message'
+                  })) || []
+              }
+            }) || []
+          }
+          setTestResults(results)
+        } catch (parseError) {
+          console.error('[TEST RESULTS MODAL] JSON parse error:', parseError)
+          // Don't throw, just log and continue to coverage
+        }
       }
 
-      // Fetch coverage data
-      const coverageResponse = await fetch('/coverage/coverage-summary.json')
-      if (coverageResponse.ok) {
-        const coverageData = await coverageResponse.json()
-        setCoverage(coverageData)
+      // Fetch coverage data with retry
+      const coverageResponse = await fetchWithRetry('/test-results/coverage/coverage-summary.json')
+      console.log('[TEST RESULTS MODAL] Coverage response:', coverageResponse?.status, coverageResponse?.statusText)
+      
+      if (coverageResponse) {
+        try {
+          const coverageText = await coverageResponse.text()
+          const coverageData = JSON.parse(coverageText)
+          console.log('[TEST RESULTS MODAL] Coverage data loaded:', coverageData)
+          setCoverage(coverageData)
+        } catch (parseError) {
+          console.error('[TEST RESULTS MODAL] Coverage parse error:', parseError)
+        }
       }
 
-      if (!testResponse.ok && !coverageResponse.ok) {
-        throw new Error('No test results or coverage data available')
+      if (!testResponse && !coverageResponse) {
+        console.log('[TEST RESULTS MODAL] No data available - both requests failed')
+        throw new Error('No test results or coverage data available. Please run tests first.')
       }
 
     } catch (err) {
@@ -94,7 +161,12 @@ export function TestResultsModal({ isOpen, onClose }: TestResultsModalProps) {
 
   useEffect(() => {
     if (isOpen) {
-      fetchResults()
+      // Add a longer delay to ensure files are fully written
+      const timer = setTimeout(() => {
+        fetchResults()
+      }, 1000)
+      
+      return () => clearTimeout(timer)
     }
   }, [isOpen])
 
@@ -254,25 +326,81 @@ export function TestResultsModal({ isOpen, onClose }: TestResultsModalProps) {
                       </div>
 
                       {/* Test Suites */}
-                      <div className="space-y-2 max-h-40 overflow-y-auto">
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
                         {testResults.suites.map((suite, index) => (
-                          <div key={index} className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 rounded border text-sm">
-                            <div className="flex items-center gap-2">
-                              {suite.failed > 0 ? (
-                                <XCircle className="w-4 h-4 text-red-500" />
-                              ) : (
-                                <CheckCircle className="w-4 h-4 text-green-500" />
+                          <div key={index} className="bg-white dark:bg-gray-800 rounded border">
+                            <div 
+                              className="flex items-center justify-between p-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                              onClick={() => {
+                                if (suite.failed > 0) {
+                                  const newExpanded = new Set(expandedSuites)
+                                  if (newExpanded.has(index)) {
+                                    newExpanded.delete(index)
+                                  } else {
+                                    newExpanded.add(index)
+                                  }
+                                  setExpandedSuites(newExpanded)
+                                }
+                              }}
+                            >
+                              <div className="flex items-center gap-2">
+                                {suite.failed > 0 ? (
+                                  <XCircle className="w-4 h-4 text-red-500" />
+                                ) : (
+                                  <CheckCircle className="w-4 h-4 text-green-500" />
+                                )}
+                                <span className="font-mono text-xs truncate max-w-[200px]" title={suite.name}>
+                                  {suite.name.split('/').pop()}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 text-xs">
+                                <span className="text-green-600">{suite.passed}</span>
+                                <span className="text-gray-400">/</span>
+                                <span className="text-red-600">{suite.failed}</span>
+                                <span className="text-gray-500">({formatDuration(suite.duration)})</span>
+                                {suite.failed > 0 && (
+                                  <motion.div
+                                    animate={{ rotate: expandedSuites.has(index) ? 180 : 0 }}
+                                    transition={{ duration: 0.2 }}
+                                  >
+                                    <ChevronDown className="w-3 h-3 text-gray-400" />
+                                  </motion.div>
+                                )}
+                              </div>
+                            </div>
+                            
+                            {/* Expandable failed tests */}
+                            <AnimatePresence>
+                              {expandedSuites.has(index) && suite.failedTests && suite.failedTests.length > 0 && (
+                                <motion.div
+                                  initial={{ height: 0, opacity: 0 }}
+                                  animate={{ height: 'auto', opacity: 1 }}
+                                  exit={{ height: 0, opacity: 0 }}
+                                  transition={{ duration: 0.2 }}
+                                  className="border-t border-gray-200 dark:border-gray-700 overflow-hidden"
+                                >
+                                  <div className="p-2 space-y-2 bg-red-50 dark:bg-red-900/10">
+                                    {suite.failedTests.map((test, testIndex) => (
+                                      <div key={testIndex} className="space-y-1">
+                                        <div className="flex items-start gap-2">
+                                          <XCircle className="w-3 h-3 text-red-500 mt-0.5 flex-shrink-0" />
+                                          <div className="flex-1">
+                                            <p className="text-xs font-medium text-red-700 dark:text-red-400">
+                                              {test.name}
+                                            </p>
+                                            {test.error && (
+                                              <pre className="mt-1 text-xs text-red-600 dark:text-red-500 whitespace-pre-wrap font-mono bg-red-100 dark:bg-red-900/20 p-2 rounded">
+                                                {test.error}
+                                              </pre>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </motion.div>
                               )}
-                              <span className="font-mono text-xs truncate max-w-[200px]" title={suite.name}>
-                                {suite.name.split('/').pop()}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2 text-xs">
-                              <span className="text-green-600">{suite.passed}</span>
-                              <span className="text-gray-400">/</span>
-                              <span className="text-red-600">{suite.failed}</span>
-                              <span className="text-gray-500">({formatDuration(suite.duration)})</span>
-                            </div>
+                            </AnimatePresence>
                           </div>
                         ))}
                       </div>

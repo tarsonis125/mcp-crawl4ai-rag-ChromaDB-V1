@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Terminal, RefreshCw, Play, Square, Clock, CheckCircle, XCircle, FileText, ChevronUp, ChevronDown, BarChart } from 'lucide-react';
+import { Terminal, RefreshCw, Play, Square, Clock, CheckCircle, XCircle, FileText, ChevronUp, ChevronDown, BarChart, PieChart } from 'lucide-react';
 // Card component not used but preserved for future use
 // import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -103,69 +103,108 @@ export const TestStatus = () => {
   };
 
   const parseTestOutput = (log: string): TestResult | null => {
-    // Parse Python test output (pytest format)
-    if (log.includes('::') && (log.includes('PASSED') || log.includes('FAILED') || log.includes('SKIPPED'))) {
-      const parts = log.split('::');
-      if (parts.length >= 2) {
-        const name = parts[parts.length - 1].split(' ')[0];
-        const status = log.includes('PASSED') ? 'passed' : 
-                     log.includes('FAILED') ? 'failed' : 'skipped';
-        
-        // Extract duration if present
-        const durationMatch = log.match(/\[([\d.]+)s\]/);
-        const duration = durationMatch ? parseFloat(durationMatch[1]) : undefined;
-        
-        return { name, status, duration };
+    // Handle default reporter output - look for test file results
+    // Default reporter shows: " ✓ src/App.test.tsx (3 tests | 1 skipped) 10ms"
+    // Or failing: " ❯ test/example.test.ts (5 tests | 2 failed) 123ms"
+    // Or all pass: " ✓ test/utils.test.ts (10 tests) 50ms"
+    
+    // Match test file lines with pass/fail/skip status
+    const fileMatch = log.match(/^\s*(✓|❯|⚠|×)\s+(.+?\.(?:ts|tsx|js|jsx))\s+\((\d+)\s+tests?(?:\s*\|\s*(\d+)\s+(failed|skipped))?\)\s*(\d+(\.\d+)?)\s*m?s?/);
+    if (fileMatch) {
+      const [, symbol, filename, totalTests, count, type, duration] = fileMatch;
+      let status: 'passed' | 'failed' | 'skipped' = 'passed';
+      
+      if (symbol === '❯' || symbol === '×' || type === 'failed') {
+        status = 'failed';
+      } else if (symbol === '⚠' || type === 'skipped') {
+        status = 'skipped';
+      }
+      
+      console.log('[PARSE SUCCESS] Test file:', { filename, status, totalTests, failedCount: count });
+      return { 
+        name: filename, 
+        status,
+        duration: duration ? parseFloat(duration) / 1000 : undefined
+      };
+    }
+    
+    // Handle "FAIL" lines that show failed test details
+    // Example: " FAIL  test/example.test.ts > test suite > test name"
+    if (log.trim().startsWith('FAIL ')) {
+      const failMatch = log.match(/FAIL\s+(.+?)\s+>\s+(.+)/);
+      if (failMatch) {
+        const [, file, testPath] = failMatch;
+        console.log('[PARSE] Failed test:', file, testPath);
+        // Don't create a result for individual test failures, just log
+        return null;
       }
     }
-
-    // Parse React test output (vitest format)
-    if (log.includes('✓') || log.includes('✕') || log.includes('○')) {
-      const testNameMatch = log.match(/[✓✕○]\s+(.+?)(?:\s+\([\d.]+s\))?$/);
-      if (testNameMatch) {
-        const name = testNameMatch[1];
-        const status = log.includes('✓') ? 'passed' : 
-                     log.includes('✕') ? 'failed' : 'skipped';
-        
-        const durationMatch = log.match(/\(([\d.]+)s\)/);
-        const duration = durationMatch ? parseFloat(durationMatch[1]) : undefined;
-        
-        return { name, status, duration };
-      }
+    
+    // Handle running state
+    if (log.includes('RUN ') && log.includes('v')) {
+      console.log('[PARSE] Test run starting');
+      return null;
     }
-
+    
     return null;
   };
 
   const updateSummaryFromLogs = (logs: string[]) => {
-    // Extract summary from test output
-    const summaryLine = logs.find(log => 
-      log.includes('passed') && log.includes('failed') || 
+    // Extract summary from test output - default reporter format
+    
+    // Look for final summary lines
+    const summaryLines = logs.filter(log => 
       log.includes('Test Files') || 
-      log.includes('Tests ')
+      log.includes('Tests') ||
+      log.includes('Failed Tests')
     );
 
-    if (summaryLine) {
-      // Python format: "10 failed | 37 passed (47)"
-      const pythonMatch = summaryLine.match(/(\d+)\s+failed\s+\|\s+(\d+)\s+passed\s+\((\d+)\)/);
-      if (pythonMatch) {
+    // First try to find the main summary line
+    for (const line of summaryLines) {
+      // Default reporter formats:
+      // "Test Files  1 passed (1)"
+      // "Test Files  3 failed | 4 passed (7)"
+      // "Test Files  1 failed | 2 passed | 1 skipped (4)"
+      const filesSummaryMatch = line.match(/Test Files\s+(?:(\d+)\s+failed\s*\|)?\s*(?:(\d+)\s+passed)?(?:\s*\|\s*(\d+)\s+skipped)?\s*\((\d+)\)/);
+      if (filesSummaryMatch) {
+        const [, failed, passed, skipped, total] = filesSummaryMatch;
+        console.log('[SUMMARY] Test Files:', { failed, passed, skipped, total });
         return {
-          failed: parseInt(pythonMatch[1]),
-          passed: parseInt(pythonMatch[2]),
-          total: parseInt(pythonMatch[3]),
-          skipped: 0
+          failed: parseInt(failed || '0'),
+          passed: parseInt(passed || '0'),
+          skipped: parseInt(skipped || '0'),
+          total: parseInt(total)
         };
       }
 
-      // React format: "Test Files  3 failed | 4 passed (7)"
-      const reactMatch = summaryLine.match(/Test Files\s+(\d+)\s+failed\s+\|\s+(\d+)\s+passed\s+\((\d+)\)/);
-      if (reactMatch) {
+      // Individual tests summary
+      // "Tests  399 failed | 599 passed | 1 skipped (999)"
+      // "Tests  10 passed (10)"
+      const testsMatch = line.match(/Tests\s+(?:(\d+)\s+failed\s*\|)?\s*(?:(\d+)\s+passed)?(?:\s*\|\s*(\d+)\s+skipped)?\s*\((\d+)\)/);
+      if (testsMatch) {
+        const [, failed, passed, skipped, total] = testsMatch;
+        console.log('[SUMMARY] Tests:', { failed, passed, skipped, total });
         return {
-          failed: parseInt(reactMatch[1]),
-          passed: parseInt(reactMatch[2]),
-          total: parseInt(reactMatch[3]),
-          skipped: 0
+          failed: parseInt(failed || '0'),
+          passed: parseInt(passed || '0'),
+          skipped: parseInt(skipped || '0'),
+          total: parseInt(total)
         };
+      }
+    }
+
+    // Calculate from parsed file results as fallback
+    const results = logs.map(log => parseTestOutput(log)).filter(Boolean) as TestResult[];
+    if (results.length > 0) {
+      const summary = {
+        total: results.length,
+        passed: results.filter(r => r.status === 'passed').length,
+        failed: results.filter(r => r.status === 'failed').length,
+        skipped: results.filter(r => r.status === 'skipped').length
+      };
+      console.log('[SUMMARY] Calculated from results:', summary);
+      if (summary.total > 0) {
+        return summary;
       }
     }
 
@@ -184,20 +223,42 @@ export const TestStatus = () => {
           }
           break;
         case 'output':
-          if (message.message) {
-            newLogs.push(message.message);
+          if (message.message !== undefined) {
+            // Don't add empty lines to logs for cleaner output
+            if (message.message.trim() || message.message === '') {
+              newLogs.push(message.message);
+            }
             
-            // Parse test results for pretty mode
+            // Parse test results immediately as they come in
             const testResult = parseTestOutput(message.message);
             if (testResult) {
-              // Update existing result or add new one
-              const existingIndex = newResults.findIndex(r => r.name === testResult.name);
-              if (existingIndex >= 0) {
-                newResults[existingIndex] = testResult;
-              } else {
+              console.log('[PARSED] Test result:', testResult);
+              // Only add file-level results, not individual tests
+              if (testResult.name.endsWith('.ts') || testResult.name.endsWith('.tsx') || 
+                  testResult.name.endsWith('.js') || testResult.name.endsWith('.jsx')) {
                 newResults.push(testResult);
               }
             }
+            
+            // Look for summary lines
+            if (message.message.includes('Test Files') || 
+                message.message.includes('Tests ') ||
+                message.message.includes('passed') ||
+                message.message.includes('failed')) {
+              console.log('[SUMMARY CHECK]', message.message);
+              const summary = updateSummaryFromLogs([...newLogs]);
+              if (summary) {
+                console.log('[SUMMARY FOUND]', summary);
+                return {
+                  ...prev,
+                  logs: newLogs,
+                  results: newResults,
+                  summary,
+                  isRunning: true // Still running until we get completed message
+                };
+              }
+            }
+            
           }
           break;
         case 'completed':
@@ -235,7 +296,8 @@ export const TestStatus = () => {
       return {
         ...prev,
         logs: newLogs,
-        results: newResults
+        results: newResults,
+        isRunning: true
       };
     });
   };
@@ -410,69 +472,207 @@ export const TestStatus = () => {
     const isErrorsExpanded = testType === 'mcp' ? mcpErrorsExpanded : uiErrorsExpanded;
     const setErrorsExpanded = testType === 'mcp' ? setMcpErrorsExpanded : setUiErrorsExpanded;
     
+    // Calculate percentages for pie chart
+    const total = testState.summary?.total || 0;
+    const passed = testState.summary?.passed || 0;
+    const failed = testState.summary?.failed || 0;
+    const skipped = testState.summary?.skipped || 0;
+    const passPercent = total > 0 ? Math.round((passed / total) * 100) : 0;
+    const failPercent = total > 0 ? Math.round((failed / total) * 100) : 0;
+    const skipPercent = total > 0 ? Math.round((skipped / total) * 100) : 0;
+    
+    // Get the progress info from logs
+    const progressLines = testState.logs.filter(log => {
+      return log.includes('.') || log.includes('F') || log.includes('!') || log.includes('⚠') ||
+             log.includes('⏳ Running') || log.includes('✓') || log.includes('✕') || 
+             log.includes('Test Files') || log.includes('Tests ');
+    });
+    
+    // Show real-time progress from verbose reporter
+    const runningTests = testState.logs.filter(log => log.includes('⏳ Running')).slice(-3); // Show last 3 running files
+    const recentResults = testState.logs.filter(log => 
+      (log.trim().startsWith('✓') || log.trim().startsWith('✕') || log.trim().startsWith('⚠')) &&
+      !log.includes('Test Files')
+    ).slice(-10); // Show last 10 test results
+    
     // Calculate available height for test results (when errors not expanded, use full height)
-    const summaryHeight = testState.summary ? 44 : 0; // 44px for summary bar
-    const runningHeight = (testState.isRunning && testState.results.length === 0) ? 36 : 0; // 36px for running indicator
+    const summaryHeight = testState.summary ? 100 : 0; // Increased for progress bar and pie chart
+    const runningHeight = testState.isRunning && runningTests.length > 0 ? 36 + (runningTests.length * 20) : 0; // Height for running indicator
     const errorHeaderHeight = hasErrors ? 32 : 0; // 32px for error header
     const availableHeight = isErrorsExpanded ? 0 : (256 - summaryHeight - runningHeight - errorHeaderHeight - 16); // When errors expanded, hide test results
 
     return (
       <div className="h-full flex flex-col relative">
-        {/* Summary */}
+        {/* Summary with Progress */}
         {testState.summary && (
-          <div className="flex items-center gap-4 mb-3 p-2 bg-gray-800 rounded-md flex-shrink-0">
-            <div className="text-xs">
-              <span className="text-gray-400">Total: </span>
-              <span className="text-white font-medium">{testState.summary.total}</span>
-            </div>
-            <div className="text-xs">
-              <span className="text-gray-400">Passed: </span>
-              <span className="text-green-400 font-medium">{testState.summary.passed}</span>
-            </div>
-            <div className="text-xs">
-              <span className="text-gray-400">Failed: </span>
-              <span className="text-red-400 font-medium">{testState.summary.failed}</span>
-            </div>
-            {testState.summary.skipped > 0 && (
-              <div className="text-xs">
-                <span className="text-gray-400">Skipped: </span>
-                <span className="text-yellow-400 font-medium">{testState.summary.skipped}</span>
+          <div className="mb-3 space-y-2">
+            {/* Progress Bar */}
+            <div className="p-2 bg-gray-800 rounded-md">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-400">Progress</span>
+                <span className="text-xs text-gray-400">
+                  {passed + failed + skipped} / {total} tests
+                </span>
               </div>
-            )}
+              <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+                <div className="h-full flex">
+                  <div 
+                    className="bg-green-500 transition-all duration-300"
+                    style={{ width: `${passPercent}%` }}
+                  />
+                  <div 
+                    className="bg-red-500 transition-all duration-300"
+                    style={{ width: `${failPercent}%` }}
+                  />
+                  <div 
+                    className="bg-yellow-500 transition-all duration-300"
+                    style={{ width: `${skipPercent}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+            
+            {/* Stats with Mini Pie Chart */}
+            <div className="flex items-center gap-4 p-2 bg-gray-800 rounded-md">
+              {/* Mini Pie Chart SVG */}
+              <div className="relative w-12 h-12">
+                <svg viewBox="0 0 36 36" className="w-12 h-12">
+                  {/* Background circle */}
+                  <circle cx="18" cy="18" r="16" fill="none" stroke="#374151" strokeWidth="2" />
+                  
+                  {/* Pie slices */}
+                  {passPercent > 0 && (
+                    <circle
+                      cx="18" cy="18" r="16"
+                      fill="none"
+                      stroke="#10b981"
+                      strokeWidth="2"
+                      strokeDasharray={`${passPercent} 100`}
+                      strokeDashoffset="25"
+                      transform="rotate(-90 18 18)"
+                    />
+                  )}
+                  {failPercent > 0 && (
+                    <circle
+                      cx="18" cy="18" r="16"
+                      fill="none"
+                      stroke="#ef4444"
+                      strokeWidth="2"
+                      strokeDasharray={`${failPercent} 100`}
+                      strokeDashoffset={25 - passPercent}
+                      transform="rotate(-90 18 18)"
+                    />
+                  )}
+                  {skipPercent > 0 && (
+                    <circle
+                      cx="18" cy="18" r="16"
+                      fill="none"
+                      stroke="#eab308"
+                      strokeWidth="2"
+                      strokeDasharray={`${skipPercent} 100`}
+                      strokeDashoffset={25 - passPercent - failPercent}
+                      transform="rotate(-90 18 18)"
+                    />
+                  )}
+                </svg>
+                <PieChart className="absolute inset-0 m-auto w-5 h-5 text-gray-500" />
+              </div>
+              
+              {/* Stats */}
+              <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="text-xs">
+                  <span className="text-gray-400">Total: </span>
+                  <span className="text-white font-medium">{testState.summary.total}</span>
+                </div>
+                <div className="text-xs">
+                  <span className="text-gray-400">Passed: </span>
+                  <span className="text-green-400 font-medium">{testState.summary.passed} ({passPercent}%)</span>
+                </div>
+                <div className="text-xs">
+                  <span className="text-gray-400">Failed: </span>
+                  <span className="text-red-400 font-medium">{testState.summary.failed} ({failPercent}%)</span>
+                </div>
+                {testState.summary.skipped > 0 && (
+                  <div className="text-xs">
+                    <span className="text-gray-400">Skipped: </span>
+                    <span className="text-yellow-400 font-medium">{testState.summary.skipped} ({skipPercent}%)</span>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Running indicator */}
-        {testState.isRunning && testState.results.length === 0 && (
-          <div className="flex items-center gap-2 p-2 bg-gray-800 rounded-md mb-3 flex-shrink-0">
-            <RefreshCw className="w-3 h-3 animate-spin text-orange-500" />
-            <span className="text-gray-300 text-xs">Starting tests...</span>
+        {/* Running indicator with currently running tests */}
+        {testState.isRunning && runningTests.length > 0 && (
+          <div className="p-2 bg-gray-800 rounded-md mb-3 flex-shrink-0">
+            <div className="flex items-center gap-2 mb-2">
+              <RefreshCw className="w-3 h-3 animate-spin text-orange-500" />
+              <span className="text-gray-300 text-xs font-medium">Running tests...</span>
+            </div>
+            {runningTests.map((test, index) => (
+              <div key={index} className="text-xs text-gray-400 ml-5 font-mono">
+                {test.replace('⏳ Running ', '')}
+              </div>
+            ))}
           </div>
         )}
 
-        {/* Test results - hidden when errors expanded */}
+        {/* Test results - show real-time updates when running */}
         {!isErrorsExpanded && (
           <div 
             ref={testType === 'mcp' ? mcpTerminalRef : uiTerminalRef}
             className="flex-1 overflow-y-auto" 
             style={{ maxHeight: `${availableHeight}px` }}
           >
-            {testState.results.map((result, index) => (
-              <div key={index} className="flex items-center gap-2 py-1 text-xs">
-                {result.status === 'running' && <RefreshCw className="w-3 h-3 animate-spin text-orange-500 flex-shrink-0" />}
-                {result.status === 'passed' && <CheckCircle className="w-3 h-3 text-green-500 flex-shrink-0" />}
-                {result.status === 'failed' && <XCircle className="w-3 h-3 text-red-500 flex-shrink-0" />}
-                {result.status === 'skipped' && <Square className="w-3 h-3 text-yellow-500 flex-shrink-0" />}
-                
-                <span className="flex-1 text-gray-700 dark:text-gray-300 font-mono text-xs truncate">{result.name}</span>
-                
-                {result.duration && (
-                  <span className="text-xs text-gray-500 flex-shrink-0">
-                    {result.duration.toFixed(2)}s
-                  </span>
-                )}
+            {/* Show recent test results during run */}
+            {testState.isRunning && recentResults.length > 0 && (
+              <div className="mb-2">
+                {recentResults.map((result, index) => {
+                  const isPassed = result.includes('✓');
+                  const isFailed = result.includes('✕');
+                  const isSkipped = result.includes('⚠');
+                  
+                  return (
+                    <div key={index} className="flex items-center gap-2 py-1 text-xs">
+                      {isPassed && <CheckCircle className="w-3 h-3 text-green-500 flex-shrink-0" />}
+                      {isFailed && <XCircle className="w-3 h-3 text-red-500 flex-shrink-0" />}
+                      {isSkipped && <Square className="w-3 h-3 text-yellow-500 flex-shrink-0" />}
+                      
+                      <span className={`flex-1 font-mono text-xs truncate ${
+                        isPassed ? 'text-green-600 dark:text-green-400' :
+                        isFailed ? 'text-red-600 dark:text-red-400' :
+                        'text-yellow-600 dark:text-yellow-400'
+                      }`}>
+                        {result.trim()}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
-            ))}
+            )}
+            
+            {/* Show final results */}
+            {!testState.isRunning && testState.results.length > 0 && (
+              <>
+                {testState.results.map((result, index) => (
+                  <div key={index} className="flex items-center gap-2 py-1 text-xs">
+                    {result.status === 'running' && <RefreshCw className="w-3 h-3 animate-spin text-orange-500 flex-shrink-0" />}
+                    {result.status === 'passed' && <CheckCircle className="w-3 h-3 text-green-500 flex-shrink-0" />}
+                    {result.status === 'failed' && <XCircle className="w-3 h-3 text-red-500 flex-shrink-0" />}
+                    {result.status === 'skipped' && <Square className="w-3 h-3 text-yellow-500 flex-shrink-0" />}
+                    
+                    <span className="flex-1 text-gray-700 dark:text-gray-300 font-mono text-xs truncate">{result.name}</span>
+                    
+                    {result.duration && (
+                      <span className="text-xs text-gray-500 flex-shrink-0">
+                        {result.duration.toFixed(2)}s
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         )}
 

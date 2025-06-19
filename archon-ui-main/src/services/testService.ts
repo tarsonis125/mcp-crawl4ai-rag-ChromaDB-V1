@@ -246,8 +246,8 @@ class TestService {
     try {
       // Check for both test results and coverage data
       const [testResponse, coverageResponse] = await Promise.all([
-        fetch('/coverage/test-results.json'),
-        fetch('/coverage/coverage-summary.json')
+        fetch('/test-results/test-results.json'),
+        fetch('/test-results/coverage/coverage-summary.json')
       ]);
       
       // At least one file should exist for results to be available
