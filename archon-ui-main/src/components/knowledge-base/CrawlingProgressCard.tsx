@@ -177,9 +177,31 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
         step.status = 'completed';
         step.percentage = 100;
       } else if (step.id === currentStatus) {
-        // This is the active step - use the reported percentage directly
+        // This is the active step
         step.status = 'active';
-        step.percentage = currentPercentage;
+        // Calculate phase-specific percentage based on overall progress
+        // Each phase has a range in the overall progress:
+        // analyzing: 0-5%, crawling: 5-25%, processing: 25-35%, 
+        // source_creation: 35-45%, document_storage: 45-90%, 
+        // code_storage: 90-99%, finalization: 99-100%
+        const phaseRanges = {
+          'analyzing': { start: 0, end: 5 },
+          'crawling': { start: 5, end: 25 },
+          'processing': { start: 25, end: 35 },
+          'source_creation': { start: 35, end: 45 },
+          'document_storage': { start: 45, end: 90 },
+          'code_storage': { start: 90, end: 99 },
+          'finalization': { start: 99, end: 100 }
+        };
+        
+        const range = phaseRanges[step.id as keyof typeof phaseRanges];
+        if (range && currentPercentage >= range.start) {
+          // Calculate percentage within this phase
+          const phaseProgress = ((currentPercentage - range.start) / (range.end - range.start)) * 100;
+          step.percentage = Math.min(Math.round(phaseProgress), 100);
+        } else {
+          step.percentage = currentPercentage;
+        }
       } else if (stepIndex < currentStepIndex) {
         // Previous steps are completed
         step.status = 'completed';
@@ -233,7 +255,11 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
                 step.message = 'Creating source records...';
                 break;
               case 'document_storage':
-                step.message = 'Saving to database...';
+                if (progressData.completedBatches !== undefined && progressData.totalBatches) {
+                  step.message = `Batch ${progressData.completedBatches}/${progressData.totalBatches} - Saving to database...`;
+                } else {
+                  step.message = 'Saving to database...';
+                }
                 break;
               case 'code_storage':
                 step.message = 'Extracting code blocks...';
@@ -413,6 +439,25 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
         </div>
       )}
 
+      {/* Show parallel workers info when available */}
+      {progressData.parallelWorkers && progressData.parallelWorkers > 1 && 
+       progressData.status === 'document_storage' && 
+       progressData.status !== 'completed' && progressData.status !== 'error' && (
+        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-md">
+          <div className="flex items-center gap-2">
+            <Cpu className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <span className="text-sm font-medium text-blue-700 dark:text-blue-400">
+              Processing with {progressData.parallelWorkers} parallel workers
+            </span>
+          </div>
+          {progressData.totalJobs && (
+            <div className="mt-1 text-xs text-blue-600 dark:text-blue-400/80">
+              Total batches to process: {progressData.totalJobs}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Detailed Progress Toggle */}
       {progressData.status !== 'completed' && progressData.status !== 'error' && (
         <div className="mb-4">
@@ -438,83 +483,10 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
             className="overflow-hidden mb-4"
           >
             <div className="space-y-3 p-3 bg-gray-50 dark:bg-zinc-900/50 rounded-md">
-              {/* Show worker progress whenever workers are present */}
-              {progressData.workers && progressData.workers.length > 0 ? (
-                <>
-                  {/* Overall job progress */}
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                        {progressData.totalJobs ? 
-                          `Total Jobs: ${Math.round(progressData.percentage)}% complete (${progressData.totalJobs} jobs)` :
-                          progressData.totalBatches ?
-                            `Document Storage: ${progressData.completedBatches || 0}/${progressData.totalBatches || 0} batches` :
-                            `Overall Progress: ${Math.round(progressData.percentage)}%`
-                        }
-                      </span>
-                      <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {progressData.parallelWorkers ? `${progressData.parallelWorkers} parallel workers` : ''}
-                      </span>
-                    </div>
-                    <div className="w-full bg-gray-200 dark:bg-zinc-700 rounded-full h-2">
-                      <motion.div
-                        className="h-2 rounded-full bg-blue-500"
-                        initial={{ width: 0 }}
-                        animate={{ width: `${progressData.percentage}%` }}
-                        transition={{ duration: 0.5, ease: 'easeOut' }}
-                      />
-                    </div>
-                  </div>
-                  
-                  {/* Individual worker progress */}
-                  <div className="space-y-2 pl-4">
-                    {progressData.workers.map((worker) => (
-                      <div key={worker.worker_id} className="flex items-center gap-3">
-                        <div className={`p-1.5 rounded-md ${
-                          worker.status === 'processing' ? 'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' :
-                          worker.status === 'completed' ? 'bg-green-100 dark:bg-green-500/10 text-green-600 dark:text-green-400' :
-                          worker.status === 'error' ? 'bg-pink-100 dark:bg-pink-500/10 text-pink-600 dark:text-pink-400' :
-                          'bg-gray-100 dark:bg-gray-500/10 text-gray-600 dark:text-gray-400'
-                        }`}>
-                          <Cpu className="w-3 h-3" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
-                              Worker {worker.worker_id}
-                              {worker.batch_num && ` - Batch ${worker.batch_num}`}
-                            </span>
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                              {Math.round(worker.progress)}%
-                            </span>
-                          </div>
-                          <div className="w-full bg-gray-200 dark:bg-zinc-700 rounded-full h-1">
-                            <motion.div
-                              className={`h-1 rounded-full ${
-                                worker.status === 'processing' ? 'bg-blue-500' :
-                                worker.status === 'completed' ? 'bg-green-500' :
-                                worker.status === 'error' ? 'bg-pink-500' :
-                                'bg-gray-300 dark:bg-gray-600'
-                              }`}
-                              initial={{ width: 0 }}
-                              animate={{ width: `${worker.progress}%` }}
-                              transition={{ duration: 0.5, ease: 'easeOut' }}
-                            />
-                          </div>
-                          {worker.message && (
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
-                              {worker.message}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                /* Regular progress steps */
-                progressSteps.map((step) => (
-                  <div key={step.id} className="flex items-center gap-3">
+              {/* Always show progress steps */}
+              {progressSteps.map((step) => (
+                <div key={step.id}>
+                  <div className="flex items-center gap-3">
                     <div className={`p-1.5 rounded-md ${getStepStatusColor(step.status)}`}>
                       {step.status === 'active' ? (
                         <motion.div
@@ -556,31 +528,78 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
                       )}
                     </div>
                   </div>
-                ))
-              )}
+                  
+                  {/* Show worker progress under document_storage step if it's active and has workers */}
+                  {step.id === 'document_storage' && (step.status === 'active' || progressData.status === 'document_storage') && 
+                   progressData.workers && progressData.workers.length > 0 && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="mt-3 ml-8 space-y-2 border-l-2 border-gray-200 dark:border-zinc-700 pl-4"
+                    >
+                      {/* Parallel workers info */}
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                          {progressData.parallelWorkers} parallel workers
+                        </span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          {progressData.completedBatches || 0}/{progressData.totalJobs || progressData.totalBatches || 0} batches
+                        </span>
+                      </div>
+                      
+                      {/* Individual worker progress */}
+                      {progressData.workers.map((worker) => (
+                        <div key={worker.worker_id} className="flex items-center gap-2">
+                          <div className={`p-1 rounded ${
+                            worker.status === 'processing' ? 'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' :
+                            worker.status === 'completed' ? 'bg-green-100 dark:bg-green-500/10 text-green-600 dark:text-green-400' :
+                            worker.status === 'error' ? 'bg-pink-100 dark:bg-pink-500/10 text-pink-600 dark:text-pink-400' :
+                            'bg-gray-100 dark:bg-gray-500/10 text-gray-600 dark:text-gray-400'
+                          }`}>
+                            <Cpu className="w-2.5 h-2.5" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-0.5">
+                              <span className="text-xs text-gray-600 dark:text-gray-400">
+                                Worker {worker.worker_id}
+                                {worker.batch_num && ` - Batch ${worker.batch_num}`}
+                              </span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                {Math.round(worker.progress)}%
+                              </span>
+                            </div>
+                            <div className="w-full bg-gray-200 dark:bg-zinc-700 rounded-full h-1">
+                              <motion.div
+                                className={`h-1 rounded-full ${
+                                  worker.status === 'processing' ? 'bg-blue-400' :
+                                  worker.status === 'completed' ? 'bg-green-400' :
+                                  worker.status === 'error' ? 'bg-pink-400' :
+                                  'bg-gray-300 dark:bg-gray-600'
+                                }`}
+                                initial={{ width: 0 }}
+                                animate={{ width: `${worker.progress}%` }}
+                                transition={{ duration: 0.5, ease: 'easeOut' }}
+                              />
+                            </div>
+                            {worker.message && (
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+                                {worker.message}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </motion.div>
+                  )}
+                </div>
+              ))}
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Show parallel workers info if available and no detailed worker progress */}
-      {progressData.parallelWorkers && progressData.parallelWorkers > 1 && 
-       (!progressData.workers || progressData.workers.length === 0) && 
-       progressData.status !== 'completed' && progressData.status !== 'error' && (
-        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-md">
-          <div className="flex items-center gap-2">
-            <Cpu className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-            <span className="text-sm font-medium text-blue-700 dark:text-blue-400">
-              Processing with {progressData.parallelWorkers} parallel workers
-            </span>
-          </div>
-          {progressData.totalJobs && (
-            <div className="mt-1 text-xs text-blue-600 dark:text-blue-400/80">
-              Total jobs to process: {progressData.totalJobs}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Progress Details */}
       <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
