@@ -391,7 +391,27 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
 
       </div>
 
-
+      {/* Main Progress Bar */}
+      {progressData.status !== 'completed' && progressData.status !== 'error' && (
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+              Overall Progress
+            </span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              {Math.round(progressData.percentage)}%
+            </span>
+          </div>
+          <div className="w-full bg-gray-200 dark:bg-zinc-700 rounded-full h-2">
+            <motion.div
+              className="h-2 rounded-full bg-gradient-to-r from-blue-500 to-blue-600"
+              initial={{ width: 0 }}
+              animate={{ width: `${progressData.percentage}%` }}
+              transition={{ duration: 0.5, ease: 'easeOut' }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Detailed Progress Toggle */}
       {progressData.status !== 'completed' && progressData.status !== 'error' && (
@@ -418,24 +438,29 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
             className="overflow-hidden mb-4"
           >
             <div className="space-y-3 p-3 bg-gray-50 dark:bg-zinc-900/50 rounded-md">
-              {/* Show worker progress for document storage */}
-              {progressData.status === 'document_storage' && progressData.workers && progressData.workers.length > 0 ? (
+              {/* Show worker progress whenever workers are present */}
+              {progressData.workers && progressData.workers.length > 0 ? (
                 <>
-                  {/* Overall batch progress */}
+                  {/* Overall job progress */}
                   <div className="mb-4">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                        Document Storage: {progressData.completedBatches || 0}/{progressData.totalBatches || 0} batches
+                        {progressData.totalJobs ? 
+                          `Total Jobs: ${Math.round(progressData.percentage)}% complete (${progressData.totalJobs} jobs)` :
+                          progressData.totalBatches ?
+                            `Document Storage: ${progressData.completedBatches || 0}/${progressData.totalBatches || 0} batches` :
+                            `Overall Progress: ${Math.round(progressData.percentage)}%`
+                        }
                       </span>
                       <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {Math.round(((progressData.completedBatches || 0) / (progressData.totalBatches || 1)) * 100)}%
+                        {progressData.parallelWorkers ? `${progressData.parallelWorkers} parallel workers` : ''}
                       </span>
                     </div>
                     <div className="w-full bg-gray-200 dark:bg-zinc-700 rounded-full h-2">
                       <motion.div
                         className="h-2 rounded-full bg-blue-500"
                         initial={{ width: 0 }}
-                        animate={{ width: `${((progressData.completedBatches || 0) / (progressData.totalBatches || 1)) * 100}%` }}
+                        animate={{ width: `${progressData.percentage}%` }}
                         transition={{ duration: 0.5, ease: 'easeOut' }}
                       />
                     </div>
@@ -537,6 +562,25 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Show parallel workers info if available and no detailed worker progress */}
+      {progressData.parallelWorkers && progressData.parallelWorkers > 1 && 
+       (!progressData.workers || progressData.workers.length === 0) && 
+       progressData.status !== 'completed' && progressData.status !== 'error' && (
+        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-md">
+          <div className="flex items-center gap-2">
+            <Cpu className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <span className="text-sm font-medium text-blue-700 dark:text-blue-400">
+              Processing with {progressData.parallelWorkers} parallel workers
+            </span>
+          </div>
+          {progressData.totalJobs && (
+            <div className="mt-1 text-xs text-blue-600 dark:text-blue-400/80">
+              Total jobs to process: {progressData.totalJobs}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Progress Details */}
       <div className="grid grid-cols-2 gap-4 mb-4 text-sm">

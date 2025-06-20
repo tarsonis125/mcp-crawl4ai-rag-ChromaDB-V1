@@ -55,12 +55,7 @@ class ProjectCreationProgressService {
       if (state === WebSocketState.CONNECTED) {
         console.log(`🚀 Connected to project creation progress stream: ${progressId}`);
         this.isReconnecting = false;
-        
-        // Subscribe to this specific progress ID
-        this.wsService!.send({
-          type: 'subscribe_progress',
-          data: { progress_id: progressId }
-        });
+        // Note: subscribe_progress is now automatically emitted by webSocketService on connect
       } else if (state === WebSocketState.RECONNECTING) {
         this.isReconnecting = true;
       } else if (state === WebSocketState.DISCONNECTED || state === WebSocketState.FAILED) {

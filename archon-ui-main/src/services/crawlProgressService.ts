@@ -16,6 +16,7 @@ export interface WorkerProgress {
   pages_crawled: number;
   total_pages: number;
   message?: string;
+  batch_num?: number;
 }
 
 export interface CrawlProgressData {
@@ -24,14 +25,25 @@ export interface CrawlProgressData {
   percentage: number;
   currentStep?: string;
   logs?: string[];
+  log?: string;
   workers?: WorkerProgress[];
   error?: string;
   completed?: boolean;
   // Additional properties for document upload and crawling
   uploadType?: 'document' | 'crawl';
   fileName?: string;
+  fileType?: string;
   currentUrl?: string;
   chunksStored?: number;
+  processedPages?: number;
+  totalPages?: number;
+  wordCount?: number;
+  duration?: string;
+  sourceId?: string;
+  completedBatches?: number;
+  totalBatches?: number;
+  totalJobs?: number;
+  parallelWorkers?: number;
 }
 
 export interface ProgressStep {
@@ -77,17 +89,32 @@ class CrawlProgressService {
 
       // Add message handlers
       this.wsService.addMessageHandler('progress_update', (message) => {
-        onMessage(message.data || message);
+        const data = message.data || message;
+        console.log('Progress update:', data);
+        onMessage(data);
+      });
+
+      this.wsService.addMessageHandler('worker_progress', (message) => {
+        const data = message.data || message;
+        console.log('Worker progress:', data);
+        // Worker progress is handled within the main progress data
+        onMessage(data);
       });
 
       this.wsService.addMessageHandler('progress_complete', (message) => {
-        onMessage(message.data || message);
+        const data = message.data || message;
         console.log(`Progress completed for ${progressId}`);
+        onMessage({ ...data, completed: true });
       });
 
       this.wsService.addMessageHandler('error', (message) => {
         console.error(`Progress error for ${progressId}:`, message);
-        onMessage({ error: message.data?.message || 'Unknown error' });
+        onMessage({ 
+          progressId,
+          status: 'error',
+          error: message.data?.message || message.error || 'Unknown error',
+          percentage: 0
+        });
       });
 
       // Subscribe to the progress

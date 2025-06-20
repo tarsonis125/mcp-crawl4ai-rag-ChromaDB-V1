@@ -6,6 +6,8 @@ import type { ProjectCreationProgressData } from '@/services/projectCreationProg
 // Mock environment
 (import.meta as any).env = { VITE_API_BASE_URL: 'http://localhost:8080' }
 
+// Note: These tests use MockWebSocket for testing but the actual implementation uses Socket.IO
+
 describe('projectCreationProgressService', () => {
   const wsUrl = 'ws://localhost:8080'
   let consoleLog: ReturnType<typeof vi.spyOn>

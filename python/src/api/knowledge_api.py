@@ -347,29 +347,29 @@ class CrawlProgressManager:
         # Keep legacy WebSocket support for now
         if progress_id in self.progress_websockets:
             print(f"DEBUG: Broadcasting to {len(self.progress_websockets[progress_id])} WebSocket(s) for {progress_id}: {progress_data.get('status')} {progress_data.get('percentage')}%")
-        
-        # Send to all connected WebSocket clients with improved error handling
-        disconnected = []
-        successful_sends = 0
-        
-        for websocket in self.progress_websockets[progress_id]:
-            try:
-                await websocket.send_json(message)
-                successful_sends += 1
-                print(f"DEBUG: Successfully sent progress update to WebSocket")
-            except Exception as e:
-                print(f"DEBUG: Failed to send to WebSocket: {e}")
-                disconnected.append(websocket)
-        
-        # Clean up disconnected WebSockets
-        for ws in disconnected:
-            self.remove_websocket(progress_id, ws)
-        
-        print(f"DEBUG: Broadcast completed: {successful_sends} successful, {len(disconnected)} failed")
-        
-        # If all WebSockets failed, log warning
-        if successful_sends == 0 and len(self.progress_websockets.get(progress_id, [])) > 0:
-            print(f"WARNING: All WebSocket connections failed for progress_id: {progress_id}")
+            
+            # Send to all connected WebSocket clients with improved error handling
+            disconnected = []
+            successful_sends = 0
+            
+            for websocket in self.progress_websockets[progress_id]:
+                try:
+                    await websocket.send_json(message)
+                    successful_sends += 1
+                    print(f"DEBUG: Successfully sent progress update to WebSocket")
+                except Exception as e:
+                    print(f"DEBUG: Failed to send to WebSocket: {e}")
+                    disconnected.append(websocket)
+            
+            # Clean up disconnected WebSockets
+            for ws in disconnected:
+                self.remove_websocket(progress_id, ws)
+            
+            print(f"DEBUG: Broadcast completed: {successful_sends} successful, {len(disconnected)} failed")
+            
+            # If all WebSockets failed, log warning
+            if successful_sends == 0 and len(self.progress_websockets.get(progress_id, [])) > 0:
+                print(f"WARNING: All WebSocket connections failed for progress_id: {progress_id}")
 
 # Global progress manager - now always uses Socket.IO under the hood
 progress_manager = CrawlProgressManager()

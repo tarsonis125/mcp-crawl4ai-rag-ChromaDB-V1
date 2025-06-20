@@ -131,10 +131,20 @@ export class WebSocketService {
     const projectMatch = endpoint.match(/projects\/([^\/]+)/);
     const projectId = projectMatch ? projectMatch[1] : '';
     
+    // Extract progress ID for crawl progress
+    const progressMatch = endpoint.match(/crawl-progress\/([^\/]+)/);
+    const progressId = progressMatch ? progressMatch[1] : '';
+    
+    // Extract progress ID for project creation progress
+    const projectProgressMatch = endpoint.match(/project-creation-progress\/([^\/]+)/);
+    const projectProgressId = projectProgressMatch ? projectProgressMatch[1] : '';
+    
     // Map endpoints to Socket.IO namespaces
     let namespace = '/';
     if (endpoint.includes('/agent-chat/')) {
       namespace = '/chat';
+    } else if (endpoint.includes('/crawl-progress/')) {
+      namespace = '/crawl';
     } else if (endpoint.includes('/crawl/')) {
       namespace = '/crawl';
     } else if (endpoint.includes('/projects/') && endpoint.includes('/tasks/')) {
@@ -145,7 +155,7 @@ export class WebSocketService {
       namespace = '/project';
     }
     
-    return { namespace, sessionId: sessionId || projectId };
+    return { namespace, sessionId: sessionId || projectId || progressId || projectProgressId };
   }
 
   private async establishConnection(): Promise<void> {
@@ -188,6 +198,11 @@ export class WebSocketService {
       // Emit session join event for chat namespace
       if (this.namespace === '/chat' && this.sessionId) {
         this.socket!.emit('join_session', { session_id: this.sessionId });
+      }
+      
+      // Emit subscribe_progress event for project namespace
+      if (this.namespace === '/project' && this.sessionId) {
+        this.socket!.emit('subscribe_progress', { progress_id: this.sessionId });
       }
       
       // Resolve connection promise

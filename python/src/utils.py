@@ -678,31 +678,53 @@ async def add_documents_to_supabase_parallel(
             
             try:
                 # Report worker started
+                worker_data = {
+                    "worker_id": str(worker_id),
+                    "status": "processing",
+                    "batch_num": batch_num,
+                    "total_batches": total_batches,
+                    "completed_batches": completed_batches,
+                    "progress": 0,
+                    "message": f"Worker {worker_id} processing batch {batch_num}/{total_batches}",
+                    "pages_crawled": 0,
+                    "total_pages": batch_size
+                }
+                
+                # Update worker progress tracking
+                async with lock:
+                    worker_progress[str(worker_id)] = worker_data
+                
                 if websocket:
+                    # Send both worker progress and aggregated progress with workers
                     await websocket.send_json({
-                        "type": "worker_progress",
-                        "worker_id": worker_id,
-                        "status": "processing",
-                        "batch_num": batch_num,
-                        "total_batches": total_batches,
+                        "type": "document_storage_progress",
+                        "percentage": int((completed_batches / total_batches) * 100),
                         "completed_batches": completed_batches,
-                        "progress": 0,
-                        "message": f"Worker {worker_id} processing batch {batch_num}/{total_batches}"
+                        "total_batches": total_batches,
+                        "workers": list(worker_progress.values()),
+                        "parallelWorkers": max_workers,
+                        "totalJobs": total_batches,
+                        "message": f"Document storage: {completed_batches}/{total_batches} batches completed"
                     })
                     await asyncio.sleep(0)  # Yield control after WebSocket send
                 
                 # Apply contextual embedding if enabled
                 if use_contextual_embeddings:
                     # Report embedding progress
+                    async with lock:
+                        worker_progress[str(worker_id)]["progress"] = 20
+                        worker_progress[str(worker_id)]["message"] = f"Worker {worker_id}: Creating embeddings"
+                    
                     if websocket:
                         await websocket.send_json({
-                            "type": "worker_progress",
-                            "worker_id": worker_id,
-                            "batch_num": batch_num,
-                            "total_batches": total_batches,
+                            "type": "document_storage_progress",
+                            "percentage": int((completed_batches / total_batches) * 100),
                             "completed_batches": completed_batches,
-                            "progress": 20,
-                            "message": f"Worker {worker_id}: Creating embeddings"
+                            "total_batches": total_batches,
+                            "workers": list(worker_progress.values()),
+                            "parallelWorkers": max_workers,
+                            "totalJobs": total_batches,
+                            "message": f"Document storage: {completed_batches}/{total_batches} batches completed"
                         })
                         await asyncio.sleep(0)  # Yield control after WebSocket send
                     
@@ -727,15 +749,20 @@ async def add_documents_to_supabase_parallel(
                     contextual_contents = batch_contents
                 
                 # Create embeddings
+                async with lock:
+                    worker_progress[str(worker_id)]["progress"] = 50
+                    worker_progress[str(worker_id)]["message"] = f"Worker {worker_id}: Creating embeddings"
+                
                 if websocket:
                     await websocket.send_json({
-                        "type": "worker_progress",
-                        "worker_id": worker_id,
-                        "batch_num": batch_num,
-                        "total_batches": total_batches,
+                        "type": "document_storage_progress",
+                        "percentage": int((completed_batches / total_batches) * 100),
                         "completed_batches": completed_batches,
-                        "progress": 50,
-                        "message": f"Worker {worker_id}: Creating embeddings"
+                        "total_batches": total_batches,
+                        "workers": list(worker_progress.values()),
+                        "parallelWorkers": max_workers,
+                        "totalJobs": total_batches,
+                        "message": f"Document storage: {completed_batches}/{total_batches} batches completed"
                     })
                     await asyncio.sleep(0)  # Yield control after WebSocket send
                 
@@ -761,15 +788,20 @@ async def add_documents_to_supabase_parallel(
                     batch_data.append(data)
                 
                 # Store in database
+                async with lock:
+                    worker_progress[str(worker_id)]["progress"] = 80
+                    worker_progress[str(worker_id)]["message"] = f"Worker {worker_id}: Storing in database"
+                
                 if websocket:
                     await websocket.send_json({
-                        "type": "worker_progress",
-                        "worker_id": worker_id,
-                        "batch_num": batch_num,
-                        "total_batches": total_batches,
+                        "type": "document_storage_progress",
+                        "percentage": int((completed_batches / total_batches) * 100),
                         "completed_batches": completed_batches,
-                        "progress": 80,
-                        "message": f"Worker {worker_id}: Storing in database"
+                        "total_batches": total_batches,
+                        "workers": list(worker_progress.values()),
+                        "parallelWorkers": max_workers,
+                        "totalJobs": total_batches,
+                        "message": f"Document storage: {completed_batches}/{total_batches} batches completed"
                     })
                     await asyncio.sleep(0)  # Yield control after WebSocket send
                 
@@ -782,37 +814,51 @@ async def add_documents_to_supabase_parallel(
                     completed_batches += 1
                 
                 # Report completion
+                async with lock:
+                    worker_progress[str(worker_id)]["progress"] = 100
+                    worker_progress[str(worker_id)]["status"] = "completed"
+                    worker_progress[str(worker_id)]["message"] = f"Worker {worker_id} completed batch {batch_num}"
+                
                 if websocket:
-                    await websocket.send_json({
-                        "type": "worker_progress",
-                        "worker_id": worker_id,
-                        "batch_num": batch_num,
-                        "total_batches": total_batches,
-                        "completed_batches": completed_batches,
-                        "progress": 100,
-                        "message": f"Worker {worker_id} completed batch {batch_num}"
-                    })
-                    await asyncio.sleep(0)  # Yield control after WebSocket send
-                    
-                    # Send overall progress
+                    # Send overall progress with updated worker info
                     overall_progress = int((completed_batches / total_batches) * 100)
                     await websocket.send_json({
                         "type": "document_storage_progress",
                         "percentage": overall_progress,
                         "completed_batches": completed_batches,
                         "total_batches": total_batches,
+                        "workers": list(worker_progress.values()),
+                        "parallelWorkers": max_workers,
+                        "totalJobs": total_batches,
                         "message": f"Document storage: {completed_batches}/{total_batches} batches completed"
                     })
                     await asyncio.sleep(0)  # Yield control after WebSocket send
                 
             except Exception as e:
                 search_logger.error(f"Worker {worker_id} failed on batch {batch_num}: {e}")
+                
+                # Update worker status to error
+                async with lock:
+                    worker_progress[str(worker_id)]["status"] = "error"
+                    worker_progress[str(worker_id)]["error"] = str(e)
+                    worker_progress[str(worker_id)]["message"] = f"Worker {worker_id} failed: {str(e)[:100]}"
+                
                 if websocket:
+                    # Send comprehensive error update with all worker data
                     await websocket.send_json({
-                        "type": "worker_error",
-                        "worker_id": worker_id,
-                        "batch_num": batch_num,
-                        "error": str(e)
+                        "type": "document_storage_progress",
+                        "percentage": int((completed_batches / total_batches) * 100),
+                        "completed_batches": completed_batches,
+                        "total_batches": total_batches,
+                        "workers": list(worker_progress.values()),
+                        "parallelWorkers": max_workers,
+                        "totalJobs": total_batches,
+                        "message": f"Document storage: {completed_batches}/{total_batches} batches completed (worker {worker_id} failed)",
+                        "worker_error": {
+                            "worker_id": worker_id,
+                            "batch_num": batch_num,
+                            "error": str(e)
+                        }
                     })
                     await asyncio.sleep(0)  # Yield control after WebSocket send
         

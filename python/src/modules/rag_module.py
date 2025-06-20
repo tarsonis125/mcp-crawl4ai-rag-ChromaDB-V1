@@ -101,12 +101,16 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
                         # Don't send worker progress through main callback, it's handled separately
                         pass
                     elif msg_type == 'document_storage_progress':
+                        # Pass the worker data through the progress callback
                         await progress_callback(
                             'document_storage',
                             data.get('percentage', 0),
                             data.get('message', ''),
                             completed_batches=data.get('completed_batches', 0),
-                            total_batches=data.get('total_batches', 0)
+                            total_batches=data.get('total_batches', 0),
+                            workers=data.get('workers', []),
+                            parallelWorkers=data.get('parallelWorkers', 0),
+                            totalJobs=data.get('totalJobs', 0)
                         )
                     else:
                         # Generic progress
@@ -267,7 +271,8 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
             source_word_counts[source_id] += word_count
         
         # Create source records FIRST
-        await report_progress('source_creation', 0, f'Creating source records for {len(source_content_map)} sources...')
+        # Source creation phase: 35-45% of overall progress
+        await report_progress('source_creation', 35, f'Creating source records for {len(source_content_map)} sources...')
         
         for i, (source_id, content) in enumerate(source_content_map.items()):
             word_count = source_word_counts.get(source_id, 0)
@@ -278,12 +283,15 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
                 source_id, content, word_count, "technical", [], update_frequency
             )
             
-            progress_pct = int((i + 1) / len(source_content_map) * 100)
-            await report_progress('source_creation', progress_pct, f'Created source {i+1}/{len(source_content_map)}: {source_id}')
+            # Scale progress from 0-100% to 35-45%
+            phase_progress = int((i + 1) / len(source_content_map) * 100)
+            overall_progress = 35 + int(phase_progress * 0.1)  # 0.1 = 10% range / 100%
+            await report_progress('source_creation', overall_progress, f'Created source {i+1}/{len(source_content_map)}: {source_id}')
         
         # Store documents with detailed progress reporting
         try:
-            await report_progress('document_storage', 0, f'Preparing to store {len(all_documents)} chunks...')
+            # Document storage phase: 45-90% of overall progress
+            await report_progress('document_storage', 45, f'Preparing to store {len(all_documents)} chunks...')
             
             # Import the function we need
             from src.utils import add_documents_to_supabase_parallel
@@ -295,11 +303,17 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
             total_batches = (len(all_documents) + batch_size - 1) // batch_size
             
             # Report that we're starting the storage
-            await report_progress('document_storage', 10, f'Storing {len(all_documents)} chunks in {total_batches} batches with {max_workers} workers...')
+            await report_progress('document_storage', 47, f'Storing {len(all_documents)} chunks in {total_batches} batches with {max_workers} workers...')
+            
+            # Create a scaled progress callback for document storage
+            async def scaled_document_storage_callback(status: str, percentage: int, message: str, **kwargs):
+                # Scale the percentage from document storage (0-100) to overall progress (45-90)
+                scaled_percentage = 45 + int((percentage / 100.0) * 45)  # 45% range
+                await report_progress(status, scaled_percentage, message, **kwargs)
             
             # websocket is already created above as MockWebSocket
             
-            # Call the parallel storage function with progress callback and websocket
+            # Call the parallel storage function with scaled progress callback and websocket
             await add_documents_to_supabase_parallel(
                 client=storage_service.supabase_client,
                 urls=urls,
@@ -308,12 +322,12 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
                 metadatas=metadatas,
                 url_to_full_document=url_to_full_document,
                 batch_size=batch_size,
-                progress_callback=progress_callback,
+                progress_callback=scaled_document_storage_callback,
                 websocket=websocket,
                 max_workers=max_workers
             )
             
-            await report_progress('document_storage', 100, f'Successfully stored {len(all_documents)} document chunks')
+            await report_progress('document_storage', 90, f'Successfully stored {len(all_documents)} document chunks')
         except Exception as e:
             error_msg = f"Failed to store documents: {str(e)}"
             await report_progress('error', 0, error_msg)
@@ -324,7 +338,8 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
         # Process and store code examples as a separate step
         code_examples_stored = 0
         if all_code_examples and get_bool_setting("USE_AGENTIC_RAG", False):
-            await report_progress('code_storage', 0, f'Processing {len(all_code_examples)} code examples...')
+            # Code storage phase: 90-99% of overall progress
+            await report_progress('code_storage', 90, f'Processing {len(all_code_examples)} code examples...')
             
             # Generate summaries for code examples with progress
             for i, example in enumerate(all_code_examples):
@@ -333,18 +348,20 @@ async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurre
                 
                 # Report progress every 5 examples or at the end
                 if (i + 1) % 5 == 0 or i == len(all_code_examples) - 1:
-                    progress_pct = int((i + 1) / len(all_code_examples) * 70)  # 0-70% for processing
-                    await report_progress('code_storage', progress_pct, f'Processed {i+1}/{len(all_code_examples)} code summaries')
+                    # Scale progress from 0-70% to 90-96%
+                    phase_progress = int((i + 1) / len(all_code_examples) * 70)
+                    overall_progress = 90 + int(phase_progress * 0.086)  # 0.086 = 6% range / 70%
+                    await report_progress('code_storage', overall_progress, f'Processed {i+1}/{len(all_code_examples)} code summaries')
             
             # Now store the code examples
-            await report_progress('code_storage', 70, f'Storing {len(all_code_examples)} code examples in database...')
+            await report_progress('code_storage', 96, f'Storing {len(all_code_examples)} code examples in database...')
             
             success, result = storage_service.store_code_examples(all_code_examples)
             if success:
                 code_examples_stored = result.get("code_examples_stored", 0)
-                await report_progress('code_storage', 100, f'Successfully stored {code_examples_stored} code examples')
+                await report_progress('code_storage', 99, f'Successfully stored {code_examples_stored} code examples')
             else:
-                await report_progress('code_storage', 100, f'Failed to store code examples: {result.get("error", "Unknown error")}')
+                await report_progress('code_storage', 99, f'Failed to store code examples: {result.get("error", "Unknown error")}')
         
         # Finalization
         await report_progress('finalization', 100, f'Successfully crawled {len(results)} pages with {chunks_stored} chunks stored')

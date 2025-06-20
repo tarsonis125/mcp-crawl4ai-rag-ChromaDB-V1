@@ -203,8 +203,15 @@ class ProjectCreationProgressManager:
         
         # Use Socket.IO for broadcasting
         try:
-            from .project_socketio_handlers import emit_project_progress
-            await emit_project_progress(progress_id, progress_data)
+            # Emit progress updates via Socket.IO
+            event_type = 'project_progress'
+            if progress_data.get('status') == 'completed':
+                event_type = 'project_completed'
+            elif progress_data.get('status') == 'error':
+                event_type = 'project_error'
+                
+            await sio.emit(event_type, progress_data, room=progress_id, namespace=NAMESPACE_PROJECT)
+            print(f"📤 Emitted {event_type} for progress {progress_id}")
         except Exception as e:
             logger.error(f"Error broadcasting project progress via Socket.IO: {e}")
         
@@ -303,8 +310,8 @@ class TaskUpdateManager:
             
             # Use Socket.IO for broadcasting
             try:
-                from .project_socketio_handlers import emit_task_update
-                await emit_task_update(project_id, event_type, task_data)
+                await sio.emit(event_type, task_data, room=project_id, namespace=NAMESPACE_TASKS)
+                print(f"📤 Emitted {event_type} for project {project_id}")
             except Exception as e:
                 logger.error(f"Error broadcasting task update via Socket.IO: {e}")
             
