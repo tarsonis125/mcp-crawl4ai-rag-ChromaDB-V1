@@ -46,7 +46,7 @@ The Model Context Protocol (MCP) is an open standard that enables AI application
         <ul>
           <li>Connect to any MCP server using Streamable HTTP (SSE) transport</li>
           <li>Interactive tool testing with real-time results</li>
-          <li>WebSocket real-time updates for collaborative workflows</li>
+          <li>Socket.IO real-time updates for collaborative workflows</li>
           <li>Simple configuration - just provide the SSE endpoint URL</li>
         </ul>
         <a href="/mcp-client" className="button button--primary">
@@ -83,13 +83,13 @@ graph TB
         Cursor["💻 Cursor IDE<br/>connects via stdio"]
         Windsurf["🏄 Windsurf IDE<br/>connects via stdio"]
         Claude["🧠 Claude Desktop<br/>connects via stdio"]
-        Other["🔧 Other MCP Clients<br/>connects via SSE/WebSocket"]
+        Other["🔧 Other MCP Clients<br/>connects via SSE"]
     end
     
     subgraph "🏰 Archon Instance"
         subgraph "🔌 Universal MCP Client (Port 3737)"
             ClientUI["🎨 Client UI<br/>Tool Testing & Management"]
-            ClientWS["📡 WebSocket Real-time Updates"]
+            ClientWS["📡 Socket.IO Real-time Updates"]
         end
         
         subgraph "🛠️ Archon MCP Server (Port 8051)"
@@ -117,7 +117,7 @@ graph TB
     Cursor -.->|JSON-RPC<br/>stdio| MCPCore
     Windsurf -.->|JSON-RPC<br/>stdio| MCPCore
     Claude -.->|JSON-RPC<br/>stdio| MCPCore
-    Other -.->|SSE/WebSocket| MCPCore
+    Other -.->|SSE| MCPCore
     
     %% Archon's Universal Client to external servers
     ClientUI -.->|JSON-RPC<br/>Various Transports| ExtMCP1
@@ -199,7 +199,7 @@ Connect to any MCP server from Archon's UI:
 1. Open Archon UI → Navigate to MCP Client tab
 2. Add MCP servers (Brave Search, GitHub, Filesystem, etc.)
 3. Test tools interactively with real-time results
-4. Monitor all connections with WebSocket updates
+4. Monitor all connections with Socket.IO updates
 
 **Connect to Popular MCP Servers:**
 - **Brave Search**: Web search capabilities
@@ -310,7 +310,7 @@ Connect to any MCP server from Archon's UI:
       <div className="card__body">
         <ul>
           <li>🔐 **Encrypted credential storage** in Supabase</li>
-          <li>🌐 **Multi-transport support** (stdio, SSE, WebSocket)</li>
+          <li>🌐 **Multi-transport support** (stdio, SSE)</li>
           <li>🔄 **Real-time synchronization** across clients</li>
           <li>📈 **Horizontal scaling** ready</li>
           <li>🎯 **Rate limiting** and abuse protection</li>

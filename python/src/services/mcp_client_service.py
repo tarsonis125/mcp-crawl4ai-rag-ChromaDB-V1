@@ -740,11 +740,16 @@ async def stop_mcp_client_service():
 
 def get_archon_config() -> MCPClientConfig:
     """Get Archon MCP client configuration (SSE-only)"""
+    # Use service discovery to get the correct MCP URL
+    from ..config.service_discovery import ServiceDiscovery
+    discovery = ServiceDiscovery()
+    mcp_url = discovery.get_service_url("mcp")
+    
     return MCPClientConfig(
         name="Archon (Default)",
         transport_type=TransportType.SSE,
         connection_config={
-            "url": "http://localhost:8051/sse"
+            "url": f"{mcp_url}/sse"
         },
         auto_connect=True,
         health_check_interval=30,

@@ -54,6 +54,13 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Set up logging configuration to reduce noise
+import uvicorn.logging
+
+# Override uvicorn's access log format to be less verbose
+uvicorn_logger = logging.getLogger("uvicorn.access")
+uvicorn_logger.setLevel(logging.WARNING)  # Only log warnings and errors, not every request
+
 # Mock context classes that the knowledge API expects
 @dataclass
 class MockRequestContext:
@@ -273,6 +280,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add middleware to skip logging for health checks
+@app.middleware("http")
+async def skip_health_check_logs(request, call_next):
+    # Skip logging for health check endpoints
+    if request.url.path in ["/health", "/api/health"]:
+        # Temporarily suppress the log
+        import logging
+        logger = logging.getLogger("uvicorn.access")
+        old_level = logger.level
+        logger.setLevel(logging.ERROR)
+        response = await call_next(request)
+        logger.setLevel(old_level)
+        return response
+    return await call_next(request)
 
 # Include API routers
 app.include_router(settings_router)

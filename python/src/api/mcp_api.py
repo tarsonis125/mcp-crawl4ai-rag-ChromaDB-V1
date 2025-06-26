@@ -692,7 +692,7 @@ async def mcp_health():
         span.set_attribute("endpoint", "/api/mcp/health")
         span.set_attribute("method", "GET")
         
-        api_logger.info("MCP health check requested")
+        # Removed health check logging to reduce console noise
         result = {"status": "healthy", "service": "mcp"}
         span.set_attribute("status", "healthy")
         

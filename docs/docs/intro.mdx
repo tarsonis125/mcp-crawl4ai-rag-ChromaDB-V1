@@ -101,7 +101,7 @@ Ready to get started? Follow our comprehensive setup guide:
 | **[Configuration](./configuration)** | Environment variables, database setup, and service configuration |
 | **[MCP Integration](./mcp-overview)** | Connect AI clients like Cursor, Windsurf, Claude Desktop |
 | **[API Reference](./api-reference)** | Complete REST API documentation with examples |
-| **[WebSocket Communication](./websockets)** | Real-time updates, progress tracking, and troubleshooting |
+| **[Socket.IO Communication](./websockets)** | Real-time updates, progress tracking, and troubleshooting |
 | **[RAG Strategies](./rag)** | Configure advanced retrieval strategies for optimal performance |
 | **[Task Management](./tasks)** | Organize projects and tasks with AI agent integration |
 | **[Web Interface](./ui)** | Comprehensive guide to the React frontend |
@@ -137,11 +137,12 @@ graph TB
         Claude(Claude Desktop)
     end
     
-        subgraph "Archon Stack"
-        UI["React Frontend<br/>Port 3737"]
-        API["FastAPI Backend<br/>Port 8080"]
-        MCP["MCP Server<br/>Port 8051"]
-        Docs["Documentation<br/>Port 3838"]
+    subgraph "Archon Microservices"
+        UI["Frontend Service<br/>archon-frontend<br/>Port 3737"]
+        API["API Service<br/>archon-api<br/>Port 8080"]
+        MCP["MCP Service<br/>archon-mcp<br/>Port 8051"]
+        Agents["Agents Service<br/>archon-agents<br/>Port 8052"]
+        Docs["Documentation<br/>archon-docs<br/>Port 3838"]
     end
 
     subgraph "External Services"
@@ -155,8 +156,10 @@ graph TB
     
     UI --> API
     MCP --> API
+    API --> Agents
     API --> Supabase
-    API --> OpenAI
+    Agents --> OpenAI
+    MCP --> Supabase
 ```
 
 ## 🔮 Real-Time Features
@@ -164,12 +167,12 @@ graph TB
 Archon implements comprehensive real-time communication:
 
 - **🔄 Live Progress Tracking**: Real-time updates during crawling operations
-- **📡 Server Log Streaming**: WebSocket-based log streaming from MCP server to UI
-- **🎯 Progress Callbacks**: Business logic reports progress via callbacks to WebSocket broadcasts
+- **📡 Server Log Streaming**: Socket.IO-based log streaming from MCP server to UI
+- **🎯 Progress Callbacks**: Business logic reports progress via callbacks to Socket.IO broadcasts
 - **🔗 Auto-Reconnection**: Robust connection handling with automatic reconnect on failures
 - **📱 Responsive UI Updates**: Instant feedback without polling or page refreshes
 
-📋 **[Complete WebSocket Guide](./server#websocket-communication)** - Implementation patterns and best practices
+📋 **[Complete Socket.IO Guide](./server#socket-io-communication)** - Implementation patterns and best practices
 
 ## 🎯 Next Steps
 

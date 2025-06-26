@@ -141,7 +141,7 @@ Archon UI provides a comprehensive dashboard for managing your AI's knowledge ba
 - **📊 MCP Dashboard**: Monitor and control the MCP server
 - **⚙️ Settings Management**: Configure credentials and RAG strategies
 - **📚 Knowledge Management**: Browse, search, and organize knowledge items
-- **📈 Real-time Updates**: WebSocket-based live updates across the UI
+- **📈 Real-time Updates**: Socket.IO-based live updates across the UI
 
 ## 🏗️ Architecture
 
@@ -171,7 +171,7 @@ Browse and manage your knowledge items with multiple view modes.
 
 **Features:**
 - Grid and table view modes
-- Real-time updates via WebSocket
+- Real-time updates via Socket.IO
 - Type-based filtering (technical/business)
 - Domain-based grouping for URLs
 - Tag tooltips for overflow
@@ -189,7 +189,7 @@ Project dashboard with task management and documentation tabs.
 **Features:**
 - Hierarchical tasks
 - GitHub repository links
-- WebSocket project progress
+- Socket.IO project progress
 
 ### 3. Settings (`/settings`)
 
@@ -233,7 +233,7 @@ Central control panel for the MCP server.
 **Features:**
 - Dual transport support (SSE/stdio)
 - Real-time status polling (5-second intervals)
-- WebSocket-based log streaming
+- Socket.IO-based log streaming
 - Copy-to-clipboard configuration
 - Tool parameter validation
 
@@ -247,7 +247,7 @@ Browse and manage your knowledge items.
 
 **Features:**
 - Pagination support
-- Real-time updates via WebSocket
+- Real-time updates via Socket.IO
 - Type-based filtering (technical/business)
 - Metadata display
 
@@ -362,7 +362,7 @@ Handles all MCP server communication:
 - `startServer()`: Start the MCP server
 - `stopServer()`: Stop the MCP server
 - `getStatus()`: Get current server status
-- `streamLogs()`: WebSocket log streaming
+- `streamLogs()`: Socket.IO log streaming
 - `getAvailableTools()`: Fetch MCP tools
 
 ### api
@@ -434,7 +434,7 @@ Vite provides instant HMR for:
 ### Integration Tests
 - Page-level testing
 - API integration tests
-- WebSocket testing
+- Socket.IO testing
 
 ## 📦 Build & Deployment
 
@@ -475,7 +475,7 @@ CMD ["npm", "run", "preview"]
 
 ## ✅ Frontend Development Standards
 
-### WebSocket Best Practices
+### Socket.IO Best Practices
 
 **DO:**
 - ✅ Use WebSocketService (Socket.IO) for all real-time connections
@@ -484,7 +484,7 @@ CMD ["npm", "run", "preview"]
 - ✅ Use typed message handlers
 
 **DON'T:**
-- ❌ Create direct WebSocket instances with `new WebSocket()`
+- ❌ Create direct WebSocket instances with `new WebSocket()` or native Socket.IO clients
 - ❌ Include unstable functions in useCallback dependencies
 - ❌ Forget to handle reconnection scenarios
 - ❌ Create multiple connections to the same endpoint
@@ -511,7 +511,7 @@ const handleUpdate = useCallback(() => {
 
 ```typescript
 // ✅ CORRECT: One place handles completion
-const handleWebSocketMessage = (message) => {
+const handleSocketMessage = (message) => {
   if (message.type === 'completed') {
     showToast('Operation completed', 'success');
     refreshData();
@@ -519,7 +519,7 @@ const handleWebSocketMessage = (message) => {
 };
 
 // ❌ WRONG: Multiple handlers for same event
-// In WebSocket handler:
+// In Socket.IO handler:
 showToast('Operation completed', 'success');
 // In API callback:
 showToast('Operation completed', 'success');

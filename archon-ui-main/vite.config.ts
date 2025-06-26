@@ -14,7 +14,7 @@ export default defineConfig(({ mode }: ConfigEnv): UserConfig => {
   
   // Get host and port from environment variables or use defaults
   // In Docker, we need to use the service name, not localhost
-  const host = 'archon-pyserver';  // Docker service name
+  const host = 'archon-api';  // Docker service name
   const port = '8080';
   
   return {

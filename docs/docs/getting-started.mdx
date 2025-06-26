@@ -28,7 +28,7 @@ import Admonition from '@theme/Admonition';
 ---
 <Admonition type="tip" icon="🎯" title="What You'll Build">
 By the end of this guide, you'll have a **fully operational Archon system** with:
-- ✅ **25 MCP tools** enabled and working
+- ✅ **14 MCP tools** enabled and working
 - 🧠 **RAG system** for intelligent knowledge retrieval
 - 🌐 **Archon UI** Command Center for knowledge, projects, and tasks
 - 🔥 **Real-time Logfire monitoring** and debugging
@@ -113,7 +113,7 @@ Create a new [Supabase project](https://supabase.com/dashboard), then follow the
 ### 4. Start Archon
 
 ```bash
-docker-compose up --build -d
+docker compose up --build -d
 ```
 
 ### 5. Access & Configure
@@ -131,24 +131,25 @@ docker-compose up --build -d
 4. Get connection details for your AI client
 
 <Admonition type="success" icon="🎉" title="You're Ready!">
-Your Archon system is now running with **25 MCP tools** available. Your AI agents can now access your knowledge base!
+Your Archon system is now running with **14 MCP tools** available. Your AI agents can now access your knowledge base!
 </Admonition>
 
 ## 🛠️ What's Included
 
-When you run `docker-compose up -d`, you get:
+When you run `docker compose up -d`, you get:
 
-### Core Services
+### Microservices Architecture
 - **Frontend** (Port 3737): React dashboard for managing knowledge and tasks
-- **Backend API** (Port 8080): FastAPI server with RAG capabilities
-- **MCP Server** (Port 8051): Model Context Protocol server for AI clients
+- **API Service** (Port 8080): FastAPI server with Socket.IO for real-time features
+- **MCP Service** (Port 8051): Model Context Protocol server for AI clients
+- **Agents Service** (Port 8052): AI processing service for document analysis
 - **Documentation** (Port 3838): Complete Docusaurus documentation site
 
 ### Key Features  
 - **Smart Web Crawling**: Automatically detects sitemaps, text files, or webpages
 - **Document Processing**: Upload PDFs, Word docs, markdown, and text files
 - **AI Integration**: Connect any MCP-compatible client (Cursor, Windsurf, etc.)
-- **Real-time Updates**: WebSocket-based live progress tracking
+- **Real-time Updates**: Socket.IO-based live progress tracking
 - **Task Management**: Organize projects and tasks with AI agent integration
 
 ### Architecture Overview
@@ -173,11 +174,12 @@ When you run `docker-compose up -d`, you get:
   }
 }}%%
 graph TB
-    subgraph "🚀 Docker Compose Stack"
-        Frontend["🌐 Frontend Container<br/>React + Nginx<br/>Port 3737"]
-        Backend["⚡ Backend Container<br/>FastAPI + Python<br/>Port 8080"]
-        MCP["🔧 MCP Server<br/>Python + Logfire<br/>Port 8051"]
-        Docs["📚 Documentation<br/>Docusaurus<br/>Port 3838"]
+    subgraph "🚀 Docker Microservices Stack"
+        Frontend["🌐 Frontend Container<br/>React + Vite<br/>archon-frontend<br/>Port 3737"]
+        API["⚡ API Container<br/>FastAPI + Socket.IO<br/>archon-api<br/>Port 8080"]
+        MCP["🔧 MCP Server<br/>14 MCP Tools<br/>archon-mcp<br/>Port 8051"]
+        Agents["🤖 Agents Service<br/>AI Processing<br/>archon-agents<br/>Port 8052"]
+        Docs["📚 Documentation<br/>Docusaurus<br/>archon-docs<br/>Port 3838"]
     end
 
     subgraph "☁️ External Services"
@@ -186,13 +188,16 @@ graph TB
         Logfire["🔥 Logfire<br/>Real-time Monitoring"]
     end
 
-    Frontend --> Backend
-    Backend --> MCP
-    Backend --> Supabase
-    Backend --> OpenAI
+    Frontend --> API
+    API --> MCP
+    API --> Agents
+    API --> Supabase
+    API --> OpenAI
     MCP --> Logfire
-    Backend --> Logfire
+    API --> Logfire
+    Agents --> Logfire
     MCP --> Supabase
+    Agents --> Supabase
 ```
 
 ## ⚡ Quick Test
@@ -223,7 +228,7 @@ To connect Cursor to your Archon MCP server, add this configuration:
         "-e", "TRANSPORT=stdio",
         "-e", "HOST=localhost", 
         "-e", "PORT=8051",
-        "archon-pyserver",
+        "archon-mcp",
         "python", "src/mcp_server.py"
       ]
     }
@@ -262,7 +267,7 @@ Check the **[MCP Overview](./mcp-overview)** for specific connection instruction
 **Pro Tips:**
 - Start with well-structured documentation sites
 - Use sitemap URLs when available (e.g., `sitemap.xml`)
-- Monitor crawl progress via WebSocket updates
+- Monitor crawl progress via Socket.IO updates
 
 </TabItem>
 <TabItem value="upload" label="📄 Document Upload">
@@ -322,14 +327,16 @@ This documentation is organized for different use cases:
 ```bash
 # Check Docker status
 docker --version
-docker-compose --version
+docker compose version
 
 # Rebuild containers
-docker-compose down
-docker-compose up --build -d
+docker compose down
+docker compose up --build -d
 
 # Check container logs
-docker-compose logs backend
+docker compose logs archon-api
+docker compose logs archon-mcp
+docker compose logs archon-agents
 ```
 
 </details>
@@ -339,13 +346,16 @@ docker-compose logs backend
 
 ```bash
 # Verify environment variables
-docker-compose exec backend env | grep -E "(SUPABASE|OPENAI)"
+docker compose exec archon-api env | grep -E "(SUPABASE|OPENAI)"
 
 # Check MCP server health
-curl http://localhost:8051/health
+curl http://localhost:8051/sse
 
 # Check API health
 curl http://localhost:8080/health
+
+# Check Agents service health
+curl http://localhost:8052/health
 ```
 
 </details>

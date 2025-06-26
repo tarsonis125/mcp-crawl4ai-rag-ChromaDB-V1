@@ -1,0 +1,77 @@
+# FastAPI + Socket.IO Service
+# Multi-stage build for smaller image size
+
+# Build stage
+FROM python:3.12-slim AS builder
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for faster dependency installation
+RUN pip install --no-cache-dir uv
+
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
+
+# Install dependencies
+RUN uv sync --all-extras
+
+# Copy application files
+COPY src/ src/
+
+# Compile Python files for faster startup
+RUN python -m compileall src/
+
+# Runtime stage - using slim image for simplicity (distroless can be added later)
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install runtime dependencies including Playwright requirements
+RUN apt-get update && apt-get install -y \
+    wget \
+    ca-certificates \
+    fonts-liberation \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libatspi2.0-0 \
+    libcups2 \
+    libdbus-1-3 \
+    libdrm2 \
+    libgbm1 \
+    libgtk-3-0 \
+    libnspr4 \
+    libnss3 \
+    libwayland-client0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxkbcommon0 \
+    libxrandr2 \
+    xdg-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy virtual environment from builder
+COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app/src /app/src
+
+# Set environment variables
+ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONPATH="/app/src:$PYTHONPATH"
+ENV PYTHONUNBUFFERED=1
+
+# Install Playwright browsers
+RUN playwright install chromium
+
+# Expose port
+EXPOSE 8080
+
+# Run the FastAPI application with Socket.IO
+CMD ["python", "-m", "uvicorn", "src.main:socket_app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]

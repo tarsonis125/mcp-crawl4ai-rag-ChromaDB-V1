@@ -73,7 +73,7 @@ SUPABASE_SERVICE_KEY=your-service-key-here
 
 2. **Restart Python Server**:
    ```bash
-   docker-compose restart archon-pyserver
+   docker-compose restart archon-api
    ```
 
 3. **Enable Projects Feature**:
@@ -148,7 +148,7 @@ Add this configuration to your Cursor settings:
         "-e", "TRANSPORT=stdio",
         "-e", "HOST=localhost", 
         "-e", "PORT=8051",
-        "archon-pyserver",
+        "archon-api",
         "python", "src/mcp_server.py"
       ]
     }
@@ -189,7 +189,7 @@ For development with hot reload:
 
 ```bash
 # Backend (with auto-reload)
-docker-compose up archon-pyserver --build
+docker-compose up archon-api --build
 
 # Frontend (with hot reload) 
 cd archon-ui-main && npm run dev

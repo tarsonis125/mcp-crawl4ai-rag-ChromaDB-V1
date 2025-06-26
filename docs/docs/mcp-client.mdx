@@ -41,7 +41,7 @@ The Universal MCP Client enables connection and interaction with any MCP (Model 
           <li>Real-time tool execution with live results</li>
           <li>Parameter validation and type checking</li>
           <li>Interactive UI for tool testing and exploration</li>
-          <li>WebSocket updates for real-time collaboration</li>
+          <li>Socket.IO updates for real-time collaboration</li>
         </ul>
       </div>
     </div>
@@ -285,7 +285,7 @@ To convert demo clients to real connections:
 
 ### Real-time Updates
 
-The MCP Client interface includes WebSocket integration for real-time updates:
+The MCP Client interface includes Socket.IO integration for real-time updates:
 
 - **Connection Status**: Live connection state changes
 - **Tool Availability**: Real-time tool discovery updates  
@@ -300,7 +300,7 @@ The MCP Client interface includes WebSocket integration for real-time updates:
 **View client connection details:**
 
 ```javascript title="Browser Developer Tools"
-// Check WebSocket connections
+// Check Socket.IO connections
 console.log(window.mcpClientConnections);
 
 // View tool execution logs
@@ -317,10 +317,10 @@ console.log(window.mcpClientErrors);
 
 ```bash
 # View MCP client service logs
-docker logs archon-pyserver | grep "mcp_client"
+docker logs archon-api | grep "mcp_client"
 
 # Debug specific client connections
-docker exec archon-pyserver python -c "
+docker exec archon-api python -c "
 from src.services.mcp_client_service import MCPClientService
 service = MCPClientService()
 print('Active connections:', service.list_connections())
@@ -392,10 +392,10 @@ Archon's MCP client automatically handles reconnection following the MCP specifi
 
 ```bash
 # View reconnection attempts in logs
-docker logs archon-pyserver | grep "reconnect"
+docker logs archon-api | grep "reconnect"
 
 # Check current reconnection status
-docker exec archon-pyserver python -c "
+docker exec archon-api python -c "
 from src.services.mcp_client_service import get_mcp_client_service
 service = get_mcp_client_service()
 for client_id, info in service.clients.items():

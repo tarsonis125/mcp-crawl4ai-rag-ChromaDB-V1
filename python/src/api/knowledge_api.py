@@ -810,14 +810,14 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         if isinstance(result, str):
             result = json.loads(result)
         
-        # Final completion update (the MCP function should have sent this, but ensure it happens)
+        # Final completion update - the MCP function handles all phases including embeddings
         if result.get('success'):
             completion_data = {
                 'chunksStored': result.get('chunks_stored', 0),
                 'wordCount': result.get('total_word_count', 0),
-                'log': 'Crawling completed successfully'
+                'log': 'All processing completed successfully (crawling, embeddings, and storage)'
             }
-            print(f"🚀 CRAWL: Completing crawl for progress_id: {progress_id}")
+            print(f"🚀 CRAWL: All phases complete for progress_id: {progress_id}")
             await progress_manager.complete_crawl(progress_id, completion_data)
         else:
             print(f"🚀 CRAWL: Error in crawl for progress_id: {progress_id}")
@@ -1396,7 +1396,7 @@ async def knowledge_health():
         span.set_attribute("endpoint", "/api/health")
         span.set_attribute("method", "GET")
         
-        logfire.info("Knowledge health check requested")
+        # Removed health check logging to reduce console noise
         result = {
             "status": "healthy",
             "service": "knowledge-api",

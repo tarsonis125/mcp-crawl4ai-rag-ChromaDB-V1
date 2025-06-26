@@ -480,7 +480,7 @@ describe('mcpClientService', () => {
             name: 'Archon',
             transport_type: 'docker',
             connection_config: {
-              container: 'archon-pyserver',
+              container: 'archon-api',
               command: ['python', '/app/src/main.py'],
               working_dir: '/app'
             },

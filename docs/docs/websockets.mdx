@@ -535,7 +535,7 @@ Ensure the frontend proxy configuration includes WebSocket upgrade:
 // vite.config.ts
 proxy: {
   '/socket.io': {
-    target: 'http://archon-pyserver:8080',
+    target: 'http://archon-api:8080',
     ws: true,
     changeOrigin: true
   }

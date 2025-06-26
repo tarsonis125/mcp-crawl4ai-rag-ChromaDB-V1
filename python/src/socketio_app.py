@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 sio = socketio.AsyncServer(
     async_mode='asgi',
     cors_allowed_origins="*",  # TODO: Configure for production with specific origins
-    logger=True,
-    engineio_logger=True,
+    logger=False,  # Disable verbose Socket.IO logging
+    engineio_logger=False,  # Disable verbose Engine.IO logging
     # Performance settings
     max_http_buffer_size=1000000,  # 1MB
     ping_timeout=60,
@@ -78,7 +78,7 @@ def create_socketio_app(app: FastAPI) -> socketio.ASGIApp:
     async def ping(sid):
         """Handle ping messages for connection health checks."""
         await sio.emit('pong', to=sid)
-        logger.debug(f"Ping/Pong with client: {sid}")
+        # Removed debug logging to reduce console noise
     
     # Create and return the Socket.IO ASGI app
     # IMPORTANT: other_asgi_app parameter ensures non-Socket.IO requests are forwarded to FastAPI

@@ -64,9 +64,11 @@ graph LR
     end
     
     subgraph "Docker Containers"
-        Frontend[frontend<br/>React UI]
-        Backend[archon-pyserver<br/>FastAPI + MCP]
-        Docs[docs<br/>Documentation]
+        Frontend[archon-frontend<br/>React UI]
+        API[archon-api<br/>FastAPI + Socket.IO]
+        MCP[archon-mcp<br/>MCP Server]
+        Agents[archon-agents<br/>AI Processing]
+        Docs[archon-docs<br/>Documentation]
     end
     
     subgraph "Cloud Services"
@@ -75,13 +77,18 @@ graph LR
     end
     
     Browser --> Frontend
-    IDE --> Backend
-    Frontend --> Backend
-    Backend --> Supabase
-    Backend --> OpenAI
+    IDE --> MCP
+    Frontend --> API
+    API --> MCP
+    API --> Agents
+    API --> Supabase
+    Agents --> OpenAI
+    MCP --> Supabase
     
     style Frontend fill:#1a1a2e,stroke:#00d4ff,stroke-width:2px,color:#fff
-    style Backend fill:#1a1a2e,stroke:#00d4ff,stroke-width:2px,color:#fff
+    style API fill:#1a1a2e,stroke:#00d4ff,stroke-width:2px,color:#fff
+    style MCP fill:#1a1a2e,stroke:#00d4ff,stroke-width:2px,color:#fff
+    style Agents fill:#1a1a2e,stroke:#ff6b6b,stroke-width:2px,color:#fff
     style Supabase fill:#16213e,stroke:#00ff88,stroke-width:2px,color:#fff
 ```
 
@@ -101,7 +108,7 @@ docker-compose down
 docker-compose logs -f
 
 # Restart a service
-docker-compose restart frontend
+docker-compose restart archon-frontend
 ```
 
 </TabItem>
@@ -111,8 +118,10 @@ docker-compose restart frontend
 # Check container status
 docker ps
 
-# View backend logs
-docker logs archon-pyserver
+# View service logs
+docker logs archon-api
+docker logs archon-mcp
+docker logs archon-agents
 
 # Rebuild after changes
 docker-compose build
@@ -140,11 +149,9 @@ For production deployments, consider:
 
 ```yaml
 # docker-compose.prod.yml
-version: '3.8'
-
 services:
-  backend:
-    image: your-registry/archon-backend:latest
+  archon-api:
+    image: your-registry/archon-api:latest
     environment:
       - ENVIRONMENT=production
       - LOG_LEVEL=WARNING
@@ -155,7 +162,29 @@ services:
           cpus: '2.0'
           memory: 2G
 
-  frontend:
+  archon-mcp:
+    image: your-registry/archon-mcp:latest
+    environment:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=WARNING
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+  archon-agents:
+    image: your-registry/archon-agents:latest
+    environment:
+      - ENVIRONMENT=production
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+
+  archon-frontend:
     image: your-registry/archon-frontend:latest
     deploy:
       replicas: 2
@@ -193,10 +222,17 @@ pg_dump -h your-db-host -U postgres -d postgres > backup.sql
 curl http://localhost:8080/health
 
 # Check all services
-for port in 3737 8080 8051; do
-  echo "Checking port $port..."
-  curl -s http://localhost:$port/health || echo "No health endpoint"
-done
+echo "Frontend: http://localhost:3737"
+curl -s http://localhost:3737 > /dev/null && echo "✓ Running" || echo "✗ Not running"
+
+echo "API: http://localhost:8080/health"
+curl -s http://localhost:8080/health | jq '.status' || echo "✗ Not running"
+
+echo "MCP: http://localhost:8051/sse"
+curl -s http://localhost:8051/sse > /dev/null && echo "✓ Running" || echo "✗ Not running"
+
+echo "Agents: http://localhost:8052/health"
+curl -s http://localhost:8052/health | jq '.status' || echo "✗ Not running"
 ```
 
 ### Container Resources

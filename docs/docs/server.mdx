@@ -12,14 +12,14 @@ import Admonition from '@theme/Admonition';
 <div className="hero hero--primary">
   <div className="container">
     <h2 className="hero__subtitle">
-      Archon's backend: **FastAPI + Docker + Logfire** = Complete observability for your AI knowledge engine
+      Archon's backend: **Microservices + Docker + Logfire** = Complete observability for your AI knowledge engine
     </h2>
   </div>
 </div>
 
-Archon's backend is built on a modern, scalable architecture using FastAPI, Docker containers, and microservices patterns with **comprehensive Logfire monitoring and observability**. This guide provides in-depth coverage of the server components, Logfire integration, real-time debugging capabilities, and deployment strategies.
+Archon's backend is built on a modern, scalable architecture using FastAPI microservices, Docker containers, and comprehensive **Logfire monitoring and observability**. This guide provides in-depth coverage of the server components, microservices architecture, Logfire integration, real-time debugging capabilities, and deployment strategies.
 
-## 🎯 Architecture Overview
+## 🎯 Microservices Architecture Overview
 
 ```mermaid
 %%{init:{
@@ -41,16 +41,26 @@ Archon's backend is built on a modern, scalable architecture using FastAPI, Dock
   }
 }}%%
 graph TB
-    subgraph "🐳 Docker Container Environment"
-        subgraph "🚀 Main Application Container"
+    subgraph "🐳 Docker Microservices Environment"
+        subgraph "🚀 API Service (archon-api)"
             FastAPI["⚡ FastAPI Application<br/>Port 8080"]
-            MCP["🔌 MCP Server<br/>Port 8051"]
-            WS["📡 Socket.IO Server"]
-            BG["⚙️ Background Tasks"]
+            WS["📡 Socket.IO Server<br/>Port 8080"]
         end
         
-        subgraph "🌐 Frontend Container"
+        subgraph "🔌 MCP Service (archon-mcp)"
+            MCP["🤖 MCP Server<br/>Port 8051<br/>14 AI Tools"]
+        end
+        
+        subgraph "⚙️ Agents Service (archon-agents)"
+            Agents["🧠 AI Processing<br/>Port 8052<br/>Document & Task Agents"]
+        end
+        
+        subgraph "🌐 Frontend (archon-frontend)"
             React["⚛️ React + Vite<br/>Port 3737"]
+        end
+        
+        subgraph "📚 Docs (archon-docs)"
+            Docs["📖 Docusaurus<br/>Port 3838"]
         end
     end
     
@@ -60,25 +70,73 @@ graph TB
         Logfire["🔥 Logfire<br/>Real-time Monitoring & Debugging"]
     end
     
-    subgraph "💾 File System"
-        Uploads["📁 Document Uploads<br/>/app/uploads"]
-        Logs["📋 Application Logs<br/>/app/logs"]
-        Config["⚙️ Configuration<br/>.env"]
-    end
-    
     React --> FastAPI
+    React -.->|Socket.IO| WS
+    FastAPI --> Agents
     FastAPI --> MCP
-    FastAPI --> WS
-    FastAPI --> BG
+    MCP --> Supabase
+    MCP --> FastAPI
+    Agents --> Supabase
+    Agents --> OpenAI
     FastAPI --> Supabase
     FastAPI --> OpenAI
     FastAPI --> Logfire
-    FastAPI --> Uploads
-    FastAPI --> Logs
-    FastAPI --> Config
     MCP --> Logfire
-    BG --> Logfire
+    Agents --> Logfire
 ```
+
+### 🎯 Service Breakdown
+
+<div className="row">
+  <div className="col col--4">
+    <div className="card">
+      <div className="card__header">
+        <h4>⚡ **API Service**</h4>
+      </div>
+      <div className="card__body">
+        <ul>
+          <li>FastAPI application</li>
+          <li>Socket.IO real-time events</li>
+          <li>REST API endpoints</li>
+          <li>Authentication & settings</li>
+          <li>Port: **8080**</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div className="col col--4">
+    <div className="card">
+      <div className="card__header">
+        <h4>🔌 **MCP Service**</h4>
+      </div>
+      <div className="card__body">
+        <ul>
+          <li>AI agent connections</li>
+          <li>14 MCP tools</li>
+          <li>RAG operations</li>
+          <li>Task management</li>
+          <li>Port: **8051**</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div className="col col--4">
+    <div className="card">
+      <div className="card__header">
+        <h4>⚙️ **Agents Service**</h4>
+      </div>
+      <div className="card__body">
+        <ul>
+          <li>AI processing</li>
+          <li>Document analysis</li>
+          <li>Task execution</li>
+          <li>CPU-intensive work</li>
+          <li>Port: **8052**</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
 
 ## 📁 Project Structure
 
@@ -87,47 +145,54 @@ graph TB
 
 ```
 archon/
-├── python/                      # Python backend application
+├── python/                      # Python backend microservices
 │   ├── src/                     # Main application source
-│   │   ├── main.py              # FastAPI application entry point (246 lines)
-│   │   ├── mcp_server.py        # MCP server implementation (396 lines)
-│   │   ├── config.py            # Configuration management (118 lines)
-│   │   ├── credential_service.py# API key and settings management (310 lines)
-│   │   ├── utils.py             # Utility functions (1063 lines)
-│   │   ├── logfire_config.py    # 🔥 Logfire monitoring setup (147 lines)
+│   │   ├── main.py              # FastAPI application entry point
+│   │   ├── socketio_app.py      # Socket.IO configuration
+│   │   ├── mcp_server.py        # MCP server implementation
+│   │   ├── config.py            # Configuration management
+│   │   ├── credential_service.py# API key and settings management
+│   │   ├── utils.py             # Utility functions
+│   │   ├── logfire_config.py    # 🔥 Logfire monitoring setup
 │   │   ├── api/                 # 🎯 Modular API routers (6 modules)
-│   │   │   ├── __init__.py      # API module registration
-│   │   │   ├── knowledge_api.py # Knowledge & crawling endpoints (891 lines)
-│   │   │   ├── mcp_api.py       # MCP server control & monitoring (705 lines)
-│   │   │   ├── settings_api.py  # Settings & credential management (345 lines)
-│   │   │   ├── projects_api.py  # Project & task management (528 lines)
-│   │   │   ├── agent_chat_api.py# AI agent chat interface (516 lines)
-│   │   │   └── tests_api.py     # Test execution with streaming (525 lines)
-│   │   ├── agents/              # 🤖 PydanticAI-powered agents (3 agents)
-│   │   │   ├── __init__.py      # Agent module exports
-│   │   │   ├── base_agent.py    # Base agent class (157 lines)
-│   │   │   └── document_agent.py    # Documentation processing agent (766 lines)
+│   │   │   ├── knowledge_api.py # Knowledge & crawling endpoints
+│   │   │   ├── mcp_api.py       # MCP server control & monitoring
+│   │   │   ├── settings_api.py  # Settings & credential management
+│   │   │   ├── projects_api.py  # Project & task management
+│   │   │   ├── agent_chat_api.py# AI agent chat interface
+│   │   │   └── tests_api.py     # Test execution with streaming
+│   │   ├── agents/              # 🤖 AI agent microservice
+│   │   │   ├── server.py        # Agents service FastAPI app
+│   │   │   ├── base_agent.py    # Base agent class
+│   │   │   ├── document_agent.py# Documentation processing agent
+│   │   │   └── rag_agent.py     # RAG operations agent
+│   │   ├── config/              # 🔧 Service configuration
+│   │   │   ├── __init__.py      # Config module init
+│   │   │   └── service_discovery.py # Inter-service communication
 │   │   ├── modules/             # 📦 MCP tool modules (14 total tools)
-│   │   │   ├── __init__.py      # Module initialization
-│   │   │   ├── models.py        # Pydantic data models (208 lines)
-│   │   │   ├── rag_module.py    # RAG functionality (7 MCP tools, 1225 lines)
-│   │   │   └── project_module.py# Project & task management (5 MCP tools, refactored)
-│   │   ├── original_crawl4aiMCP/# Legacy crawling implementation
-│   │   └── __init__.py          # Package initialization
-│   ├── tests/                   # Backend test suite
-│   ├── Dockerfile               # Python server container configuration
-│   ├── requirements.txt         # Python dependencies
-│   ├── startup.py               # Application startup script
-│   └── pyproject.toml           # Python project configuration
+│   │   │   ├── models.py        # Pydantic data models
+│   │   │   ├── rag_module.py    # RAG functionality (7 MCP tools)
+│   │   │   └── project_module.py# Project & task management (7 MCP tools)
+│   │   ├── services/            # 🔧 Service layer
+│   │   │   ├── mcp_client_service.py    # MCP client management
+│   │   │   ├── mcp_session_manager.py   # Session handling
+│   │   │   ├── prompt_service.py        # Prompt management
+│   │   │   ├── projects/                # Project services
+│   │   │   └── rag/                     # RAG services
+│   │   └── models/              # 📊 Data models
+│   ├── Dockerfile.api           # API service container
+│   ├── Dockerfile.mcp           # MCP service container
+│   ├── Dockerfile.agents        # Agents service container
+│   ├── pyproject.toml           # Python project configuration
+│   └── uv.lock                  # Dependency lock file
 ├── archon-ui-main/              # React frontend application
 │   ├── src/                     # Frontend source code
 │   │   ├── components/          # React components
 │   │   ├── pages/               # Page components
 │   │   ├── services/            # API service layer
-│   │   ├── types/               # TypeScript type definitions
-│   │   ├── hooks/               # Custom React hooks
-│   │   ├── contexts/            # React context providers
-│   │   └── lib/                 # Utility libraries
+│   │   └── types/               # TypeScript definitions
+│   ├── Dockerfile               # Frontend container
+│   └── vite.config.ts           # Vite configuration
 ├── docs/                        # Docusaurus documentation
 ├── migration/                   # Database migration scripts
 ├── docker-compose.yml           # Container orchestration
@@ -139,10 +204,10 @@ archon/
 ## 🔥 Logfire Integration & Real-Time Monitoring
 
 <Admonition type="tip" title="🎯 Why Logfire?">
-  Logfire by Pydantic provides **real-time debugging superpowers** for Archon. See every RAG query, MCP tool call, and Socket.IO connection as it happens - perfect for debugging complex AI workflows!
+  Logfire by Pydantic provides **real-time debugging superpowers** for Archon. See every RAG query, MCP tool call, and Socket.IO connection as it happens - perfect for debugging complex AI workflows across all microservices!
 </Admonition>
 
-Archon implements comprehensive monitoring and observability through **[Logfire](https://logfire.pydantic.dev/)** by Pydantic. This provides real-time debugging, performance monitoring, and detailed request tracing across all components.
+Archon implements comprehensive monitoring and observability through **[Logfire](https://logfire.pydantic.dev/)** by Pydantic. This provides real-time debugging, performance monitoring, and detailed request tracing across all microservices.
 
 ### 🎯 Key Monitoring Features
 
@@ -157,6 +222,7 @@ Archon implements comprehensive monitoring and observability through **[Logfire]
           <li>**RAG Query Debugging**: Monitor embedding generation, vector searches, result ranking</li>
           <li>**MCP Server Performance**: Track tool execution times and connection health</li>
           <li>**Socket.IO Monitoring**: Real-time progress tracking with automatic reconnection</li>
+          <li>**Cross-Service Tracing**: Follow requests across API, MCP, and Agents services</li>
         </ul>
       </div>
     </div>
@@ -171,6 +237,7 @@ Archon implements comprehensive monitoring and observability through **[Logfire]
           <li>**FastAPI Request Tracing**: Complete request lifecycle with timing</li>
           <li>**AI Agent Interactions**: Monitor all MCP tool calls from Cursor, Windsurf, Claude</li>
           <li>**Performance Metrics**: Database query times, embedding generation, API response times</li>
+          <li>**Service Health**: Monitor each microservice independently</li>
         </ul>
       </div>
     </div>
@@ -498,676 +565,401 @@ class CrawlProgressManagerSocketIO:
   <div className="col col--4">
     <div className="card">
       <div className="card__header">
-        <h4>💻 **Client Identification**</h4>
+        <h4>🔗 **Service Maps**</h4>
       </div>
       <div className="card__body">
-        Track which AI client (Cursor, Windsurf, Claude) made requests
+        Visualize microservice communication patterns
       </div>
     </div>
   </div>
 </div>
 
-## 🚀 FastAPI Application Architecture
+## 🏗️ API Service Architecture
 
-The main FastAPI application serves as the central API gateway, mounting modular routers and coordinating between different services. The application follows a clean separation of concerns with dedicated routers for each functional area.
+The API service (`archon-api`) is the main entry point for the application:
 
-### 🎯 Modular Architecture Benefits
+### Key Components
 
-<div className="row">
-  <div className="col col--3">
-    <div className="text--center">
-      <h4>🔧 **Maintainability**</h4>
-      <p>Each router handles a specific domain</p>
-    </div>
-  </div>
-  <div className="col col--3">
-    <div className="text--center">
-      <h4>🧪 **Testability**</h4>
-      <p>Individual routers tested in isolation</p>
-    </div>
-  </div>
-  <div className="col col--3">
-    <div className="text--center">
-      <h4>📈 **Scalability**</h4>
-      <p>Routers can become microservices</p>
-    </div>
-  </div>
-  <div className="col col--3">
-    <div className="text--center">
-      <h4>🔒 **Security**</h4>
-      <p>Fine-grained access control per router</p>
-    </div>
-  </div>
-</div>
+1. **FastAPI Application** (`main.py`)
+   - REST API endpoints
+   - Request validation
+   - Authentication middleware
+   - CORS configuration
 
-### 📚 Router Organization
+2. **Socket.IO Integration** (`socketio_app.py`)
+   - Real-time event handling
+   - Progress updates
+   - Chat functionality
+   - Connection management
 
-| Router Module | Base Path | Endpoints | Purpose |
-|--------------|-----------|-----------|----------|
-| **`knowledge_api.py`** | `/api/knowledge-items`, `/api/documents` | Knowledge CRUD, crawling, upload | Core knowledge management |
-| **`mcp_api.py`** | `/api/mcp` | Server control, logs, monitoring | MCP server management & real-time monitoring |
-| **`settings_api.py`** | `/api/settings` | Configuration, credentials | Application settings |
-| **`projects_api.py`** | `/api/projects`, `/api/tasks` | Project/task CRUD | Task management |
+3. **Service Communication**
+   - Communicates with MCP service for AI tools
+   - Delegates heavy processing to Agents service
+   - Direct database access for CRUD operations
 
-## ⚡ Threading & Concurrency Architecture
+### API Routers
 
-<Admonition type="warning" title="🚨 Critical: Threading Best Practices">
-Archon's performance and stability heavily depend on proper threading patterns. With Socket.IO handling reconnections automatically, the focus shifts to preventing event loop blocking and maintaining responsive real-time communication.
-</Admonition>
-
-Archon implements sophisticated threading and concurrency patterns to handle high-performance AI workloads while maintaining real-time Socket.IO connections and responsive UI interactions.
-
-### 🧵 Backend Threading Patterns
-
-```mermaid
-%%{init:{
-  'theme':'base',
-  'themeVariables': {
-    'primaryColor':'#1f2937',
-    'primaryTextColor':'#ffffff',
-    'primaryBorderColor':'#8b5cf6',
-    'lineColor':'#a855f7',
-    'textColor':'#ffffff',
-    'fontFamily':'Inter',
-    'fontSize':'14px',
-    'background':'#000000',
-    'mainBkg':'#1f2937',
-    'secondBkg':'#111827',
-    'borderColor':'#8b5cf6',
-    'actorBkg':'#1f2937',
-    'actorBorder':'#8b5cf6',
-    'actorTextColor':'#ffffff',
-    'activationBkgColor':'#111827',
-    'activationBorderColor':'#a855f7',
-    'sequenceNumberColor':'#a855f7'
-  }
-}}%%
-flowchart TB
-    subgraph "🎯 Main Event Loop"
-        FastAPI["🚀 FastAPI<br/>Async Request Handling"]
-        WS["📡 Socket.IO Manager<br/>Real-time Updates"]
-    end
-    
-    subgraph "🔄 ThreadPoolExecutor"
-        CPUTasks["🧠 CPU-Intensive Tasks<br/>AI Summaries, Embeddings"]
-        FileIO["📁 File Operations<br/>Document Processing"]
-        NetworkIO["🌐 External API Calls<br/>Rate-Limited Requests"]
-    end
-    
-    subgraph "⚙️ Background Tasks"
-        Crawling["🕷️ Web Crawling<br/>Adaptive Concurrency"]
-        Progress["📊 Progress Tracking<br/>Real-time Updates"]
-        Cleanup["🧹 Resource Cleanup<br/>Periodic Maintenance"]
-    end
-    
-    subgraph "💾 Database Pool"
-        Supabase["🗄️ Supabase Connection Pool<br/>Optimized for Vector Operations"]
-    end
-    
-    FastAPI --> CPUTasks
-    FastAPI --> FileIO
-    FastAPI --> NetworkIO
-    WS --> Progress
-    CPUTasks --> Supabase
-    FileIO --> Supabase
-    NetworkIO --> Supabase
-    Crawling --> Progress
-    Progress --> WS
-```
-
-### 🎯 Critical Threading Rules
-
-<Tabs>
-<TabItem value="dos" label="✅ DO - Best Practices" default>
-
-**1. CPU-Intensive Operations**
-```python title="✅ Correct: Use ThreadPoolExecutor for CPU work"
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-
-# CPU-intensive work in thread pool
-async def process_documents_async(documents):
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        # AI summary generation (CPU-intensive)
-        summary_tasks = [
-            asyncio.get_event_loop().run_in_executor(
-                executor, generate_ai_summary, doc
-            ) for doc in documents
-        ]
-        summaries = await asyncio.gather(*summary_tasks)
-    return summaries
-```
-
-**2. Socket.IO-Safe Operations**
-```python title="✅ Correct: Non-blocking Socket.IO patterns"
-async def socketio_safe_processing(sio, namespace, room, data):
-    """Process data without blocking Socket.IO event loop"""
-    
-    # Yield control frequently during processing
-    for i, item in enumerate(data):
-        # Process item
-        result = await process_item_async(item)
-        
-        # Yield control every 10 items
-        if i % 10 == 0:
-            await asyncio.sleep(0.1)  # Allow Socket.IO event processing
-            await sio.emit('progress_update', 
-                          {"progress": i/len(data)}, 
-                          room=room, namespace=namespace)
-    
-    return results
-```
-
-**3. Rate-Limited API Calls**
-```python title="✅ Correct: Smart rate limiting with backoff"
-import asyncio
-from tenacity import retry, stop_after_attempt, wait_exponential
-
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=4, max=10)
-)
-async def rate_limited_openai_call(text):
-    """OpenAI API call with exponential backoff"""
-    async with asyncio.Semaphore(2):  # Max 2 concurrent calls
-        return await openai.Embedding.acreate(
-            input=text,
-            model="text-embedding-3-small"
-        )
-```
-
-**4. Database Connection Pooling**
-```python title="✅ Correct: Proper connection management"
-# Supabase client with optimized connection pool
-supabase = create_client(
-    url=SUPABASE_URL,
-    key=SUPABASE_KEY,
-    options=ClientOptions(
-        postgrest_client_timeout=30,
-        storage_client_timeout=30,
-        schema="public",
-        auto_refresh_token=True,
-        persist_session=True,
-        # Connection pool optimization
-        pool_config={
-            "max_size": 20,      # Maximum connections
-            "min_size": 5,       # Minimum connections
-            "max_overflow": 10,  # Extra connections when needed
-            "pool_timeout": 30,  # Connection acquisition timeout
-            "pool_recycle": 3600 # Recycle connections hourly
-        }
-    )
-)
-```
-
-</TabItem>
-<TabItem value="donts" label="❌ DON'T - Common Mistakes">
-
-**1. Blocking Operations in Main Thread**
-```python title="❌ Wrong: Blocking main event loop"
-# This blocks the entire server!
-def slow_cpu_work():
-    time.sleep(5)  # Blocks everything!
-    return process_heavy_computation()
-
-# FastAPI endpoint - WRONG
-@app.post("/process")
-async def bad_endpoint():
-    result = slow_cpu_work()  # Blocks all other requests!
-    return result
-```
-
-**2. Synchronous Database Calls**
-```python title="❌ Wrong: Sync DB calls in async context"
-async def bad_database_pattern():
-    # This blocks the event loop!
-    result = supabase.table("documents").select("*").execute()
-    return result
-```
-
-**3. Uncontrolled Concurrent Operations**
-```python title="❌ Wrong: No concurrency limits"
-async def bad_crawling():
-    # This could spawn 1000+ simultaneous requests!
-    tasks = [fetch_url(url) for url in large_url_list]
-    await asyncio.gather(*tasks)  # System overload!
-```
-
-**4. Socket.IO Blocking Patterns**
-```python title="❌ Wrong: Blocking Socket.IO event loop"
-@sio.on('process', namespace='/tasks')
-async def bad_socketio_handler(sid, data):
-    # Long-running operation without yielding
-    heavy_computation()  # Blocks Socket.IO event loop!
-    await sio.emit('done', room=sid, namespace='/tasks')
-```
-
-</TabItem>
-</Tabs>
-
-### 🏗️ Proven Backend Threading Architecture
-
-<Admonition type="success" title="🎯 Battle-Tested Patterns">
-These patterns are derived from the original `crawl4ai_mcp.py` implementation that successfully handles high-volume document processing without threading issues.
-</Admonition>
-
-**1. MemoryAdaptiveDispatcher Pattern**
-```python title="Advanced: Memory-aware concurrency control"
-class MemoryAdaptiveDispatcher:
-    """Dynamically adjusts concurrency based on system resources"""
-    
-    def __init__(self, base_workers=2, max_workers=8):
-        self.base_workers = base_workers
-        self.max_workers = max_workers
-        self.current_workers = base_workers
-    
-    async def adaptive_process(self, items, process_func):
-        """Process items with dynamic worker adjustment"""
-        
-        # Monitor memory usage
-        memory_percent = psutil.virtual_memory().percent
-        
-        if memory_percent < 70:
-            workers = min(self.max_workers, self.current_workers + 1)
-        elif memory_percent > 85:
-            workers = max(self.base_workers, self.current_workers - 1)
-        else:
-            workers = self.current_workers
-        
-        self.current_workers = workers
-        
-        # Process with adaptive workers
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            tasks = [
-                asyncio.get_event_loop().run_in_executor(
-                    executor, process_func, item
-                ) for item in items
-            ]
-            return await asyncio.gather(*tasks)
-```
-
-**2. Batch Processing with Progress**
-```python title="Proven: Smooth progress reporting"
-async def batch_process_with_progress(
-    items: List, 
-    batch_size: int = 15,
-    websocket: WebSocket = None
-):
-    """Process items in batches with WebSocket progress updates"""
-    
-    total_items = len(items)
-    processed = 0
-    
-    for batch_start in range(0, total_items, batch_size):
-        batch = items[batch_start:batch_start + batch_size]
-        
-        # Process batch with controlled concurrency
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            batch_tasks = [
-                asyncio.get_event_loop().run_in_executor(
-                    executor, process_single_item, item
-                ) for item in batch
-            ]
-            
-            # Process with progress updates
-            batch_results = []
-            for completed_task in asyncio.as_completed(batch_tasks):
-                result = await completed_task
-                batch_results.append(result)
-                processed += 1
-                
-                # Smooth progress updates
-                progress_percent = (processed / total_items) * 100
-                if websocket:
-                    await websocket.send_json({
-                        "type": "progress",
-                        "percentage": progress_percent,
-                        "processed": processed,
-                        "total": total_items,
-                        "batch": f"Batch {batch_start//batch_size + 1}"
-                    })
-                
-                # Yield control for WebSocket health
-                await asyncio.sleep(0.1)
-    
-    return all_results
-```
-
-### 🌐 Frontend Threading Considerations
-
-<Admonition type="info" title="🔄 WebSocket Connection Health">
-Frontend threading patterns directly impact WebSocket connection stability. Follow these patterns to prevent disconnections.
-</Admonition>
-
-**WebSocket-Safe React Patterns**
-```typescript title="✅ Correct: WebSocket-safe useCallback patterns"
-// ✅ GOOD: Only include primitive values in dependencies
-const handleTaskUpdate = useCallback(async (taskId: string, updates: TaskUpdate) => {
-  try {
-    // Call API service (don't include in dependencies!)
-    await projectService.updateTask(taskId, updates);
-    
-    // Show success (don't include showToast in dependencies!)
-    showToast("Task updated successfully", "success");
-    
-  } catch (error) {
-    showToast("Failed to update task", "error");
-  }
-}, [taskId]); // Only primitive values!
-
-// ❌ BAD: Including functions causes constant re-renders
-const badCallback = useCallback(async () => {
-  await apiService.doSomething();
-  showToast("Done", "success");
-}, [apiService, showToast]); // Causes WebSocket instability!
-```
-
-### 📊 Performance Monitoring & Optimization
-
-**Real-Time Performance Metrics**
-```python title="Performance monitoring with Logfire"
-import time
-import psutil
-from src.config.logfire_config import logfire_logger
-
-async def monitor_system_performance():
-    """Monitor and log system performance metrics"""
-    
-    while True:
-        with logfire_logger.span("system_performance") as span:
-            # CPU and Memory metrics
-            cpu_percent = psutil.cpu_percent(interval=1)
-            memory = psutil.virtual_memory()
-            
-            # Active connections
-            active_websockets = len(websocket_manager.active_connections)
-            
-            # Database pool status
-            db_pool_size = get_db_pool_size()
-            
-            span.set_attribute("cpu_percent", cpu_percent)
-            span.set_attribute("memory_percent", memory.percent)
-            span.set_attribute("memory_available_gb", memory.available / (1024**3))
-            span.set_attribute("active_websockets", active_websockets)
-            span.set_attribute("db_pool_size", db_pool_size)
-            
-            # Alert on high resource usage
-            if cpu_percent > 80 or memory.percent > 85:
-                logfire_logger.warning(
-                    "High resource usage detected",
-                    cpu=cpu_percent,
-                    memory=memory.percent
-                )
-        
-        await asyncio.sleep(30)  # Monitor every 30 seconds
-```
-
-### 🔧 Production Deployment Considerations
-
-<Tabs>
-<TabItem value="scaling" label="📈 Horizontal Scaling">
-
-**Multi-Instance Deployment**
-```yaml title="docker-compose.production.yml"
-version: '3.8'
-
-services:
-  backend-1:
-    build: .
-    ports:
-      - "8080:8080"
-      - "8051:8051"
-    environment:
-      - INSTANCE_ID=backend-1
-      - MAX_WORKERS=4
-      - DB_POOL_SIZE=10
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 4G
-        reservations:
-          cpus: '1.0'
-          memory: 2G
-
-  backend-2:
-    build: .
-    ports:
-      - "8081:8080"
-      - "8052:8051"
-    environment:
-      - INSTANCE_ID=backend-2
-      - MAX_WORKERS=4
-      - DB_POOL_SIZE=10
-
-  load-balancer:
-    image: nginx:alpine
-    ports:
-      - "80:80"
-    depends_on:
-      - backend-1
-      - backend-2
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
-```
-
-</TabItem>
-<TabItem value="optimization" label="⚡ Performance Tuning">
-
-**Production Configuration**
-```python title="Optimized production settings"
-# FastAPI configuration for production
-app = FastAPI(
-    title="Archon Knowledge Engine",
-    docs_url="/docs" if DEBUG else None,  # Disable docs in production
-    redoc_url=None,
-    
-    # Performance optimizations
-    generate_unique_id_function=lambda route: f"{route.tags[0]}-{route.name}",
-    swagger_ui_parameters={"displayRequestDuration": True},
-    
-    # Resource limits
-    max_request_size=50 * 1024 * 1024,  # 50MB max request
-    timeout=300,  # 5 minute timeout for long operations
+```python
+# API module registration in main.py
+from src.api import (
+    knowledge_api,
+    mcp_api,
+    settings_api,
+    projects_api,
+    agent_chat_api,
+    tests_api
 )
 
-# Uvicorn production settings
-if __name__ == "__main__":
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8080,
-        workers=4,  # Number of worker processes
-        loop="uvloop",  # Use faster event loop
-        http="httptools",  # Use faster HTTP parser
-        access_log=False,  # Disable access logs for performance
-        
-        # Production SSL configuration
-        ssl_keyfile="/path/to/ssl/key.pem",
-        ssl_certfile="/path/to/ssl/cert.pem",
-        
-        # Resource limits
-        limit_concurrency=1000,  # Max concurrent connections
-        limit_max_requests=10000,  # Restart worker after N requests
-        timeout_keep_alive=2,
-        timeout_graceful_shutdown=30,
-    )
+app.include_router(knowledge_api.router, prefix="/api")
+app.include_router(mcp_api.router, prefix="/api/mcp")
+app.include_router(settings_api.router, prefix="/api")
+app.include_router(projects_api.router, prefix="/api")
+app.include_router(agent_chat_api.router, prefix="/api")
+app.include_router(tests_api.router, prefix="/api")
 ```
 
-</TabItem>
-<TabItem value="monitoring" label="📊 Production Monitoring">
+## 🤖 MCP Service Architecture
 
-**Comprehensive Monitoring Setup**
-```python title="Production monitoring configuration"
-# Enhanced Logfire configuration for production
-def setup_production_monitoring():
-    """Configure comprehensive production monitoring"""
-    
-    logfire.configure(
-        service_name="archon-production",
-        token=os.getenv("LOGFIRE_TOKEN"),
-        
-        # Production settings
-        send_to_logfire=True,
-        console=False,
-        
-        # Sampling for high-volume production
-        sampling_rate=0.1,  # Sample 10% of requests
-        
-        # Performance optimization
-        max_attributes=100,
-        max_events=1000,
-        max_links=100,
-        
-        # Resource limits
-        resource_attributes={
-            "service.name": "archon-knowledge-engine",
-            "service.version": get_app_version(),
-            "deployment.environment": "production",
-            "container.id": get_container_id(),
-        }
-    )
-    
-    # Set up alerting for critical issues
-    setup_production_alerts()
+The MCP service (`archon-mcp`) provides AI agent connectivity:
 
-def setup_production_alerts():
-    """Configure alerting for production issues"""
-    
-    # Monitor critical metrics
-    @logfire.instrument()
-    async def check_system_health():
-        health_metrics = {
-            "websocket_connections": len(websocket_manager.active_connections),
-            "db_pool_active": get_active_db_connections(),
-            "memory_usage": psutil.virtual_memory().percent,
-            "cpu_usage": psutil.cpu_percent(),
-            "disk_usage": psutil.disk_usage('/').percent
-        }
-        
-        # Alert on critical thresholds
-        for metric, value in health_metrics.items():
-            if should_alert(metric, value):
-                logfire_logger.error(
-                    f"Critical threshold exceeded: {metric}",
-                    metric=metric,
-                    value=value,
-                    threshold=get_threshold(metric)
-                )
-        
-        return health_metrics
-```
+### Features
 
-</TabItem>
-</Tabs>
+1. **14 MCP Tools**
+   - 7 RAG tools (search, crawl, store, etc.)
+   - 7 Project/Task tools (create, update, list, etc.)
 
-## 🔧 Configuration Management
+2. **Transport Protocols**
+   - SSE (Server-Sent Events) for Cursor/Windsurf
+   - stdio for Claude Desktop
+   - WebSocket support (experimental)
 
-### 🌍 Environment Variables
+3. **Service Integration**
+   - Connects to API service for data
+   - Direct Supabase access for RAG operations
+   - Logfire monitoring for all tool calls
 
-<Admonition type="warning" title="⚠️ Logfire Token Required">
-  While not technically required, **LOGFIRE_TOKEN** is highly recommended for production deployments. It provides invaluable debugging insights for AI workflows.
-</Admonition>
+## ⚙️ Agents Service Architecture
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `SUPABASE_URL` | ✅ | - | Supabase project URL |
-| `SUPABASE_SERVICE_KEY` | ✅ | - | Supabase service role key |
-| `OPENAI_API_KEY` | ⚠️ | - | OpenAI API key (can be set via UI) |
-| `LOGFIRE_TOKEN` | ⚠️ | - | **Logfire monitoring token (highly recommended)** |
-| `LOGFIRE_SERVICE_NAME` | ❌ | archon-mcp-server | Logfire service identifier |
-| `LOGFIRE_PROJECT_NAME` | ❌ | archon | Logfire project name |
-| `FRONTEND_PORT` | ❌ | 3737 | Frontend application port |
-| `BACKEND_PORT` | ❌ | 8080 | Backend API port |
-| `MCP_PORT` | ❌ | 8051 | MCP server port |
-| `LOG_LEVEL` | ❌ | INFO | Application log level |
-| `ENABLE_CORS` | ❌ | true | Enable CORS middleware |
-| `MAX_UPLOAD_SIZE` | ❌ | 50MB | Maximum file upload size |
+The Agents service (`archon-agents`) handles CPU-intensive AI processing:
 
-## 🐳 Docker Configuration
+### Components
 
-### 📋 Docker Compose Setup
+1. **Document Agent**
+   - Document analysis
+   - Content extraction
+   - Metadata generation
+
+2. **RAG Agent**
+   - Embedding generation
+   - Similarity search
+   - Result ranking
+
+3. **Task Agent**
+   - Task execution
+   - Workflow processing
+   - Status updates
+
+## 🐳 Docker Deployment
+
+### Microservices Configuration
 
 <Tabs>
 <TabItem value="docker-compose" label="🐳 docker-compose.yml">
 
 ```yaml title="docker-compose.yml"
-version: '3.8'
-
 services:
-  backend:
-    build: .
+  # API Service (FastAPI + Socket.IO)
+  archon-api:
+    build:
+      context: ./python
+      dockerfile: Dockerfile.api
+    container_name: archon-api
     ports:
-      - "${BACKEND_PORT:-8080}:8080"
-      - "${MCP_PORT:-8051}:8051"
+      - "8080:8080"
     environment:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
-      - LOGFIRE_SERVICE_NAME=${LOGFIRE_SERVICE_NAME:-archon-mcp-server}
-      - LOGFIRE_PROJECT_NAME=${LOGFIRE_PROJECT_NAME:-archon}
+      - SERVICE_DISCOVERY_MODE=docker_compose
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
-      - ./uploads:/app/uploads
-      - ./logs:/app/logs
-    restart: unless-stopped
+      - ./python/src:/app/src:ro
+    networks:
+      - app-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
 
+  # MCP Server Service
+  archon-mcp:
+    build:
+      context: ./python
+      dockerfile: Dockerfile.mcp
+    container_name: archon-mcp
+    ports:
+      - "8051:8051"
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
+      - SERVICE_DISCOVERY_MODE=docker_compose
+      - TRANSPORT=sse
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./python/src:/app/src:ro
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.connect(('localhost', 8051)); s.close()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # AI Agents Service
+  archon-agents:
+    build:
+      context: ./python
+      dockerfile: Dockerfile.agents
+    container_name: archon-agents
+    ports:
+      - "8052:8052"
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
+      - SERVICE_DISCOVERY_MODE=docker_compose
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./python/src:/app/src:ro
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8052/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend
   frontend:
     build: ./archon-ui-main
+    container_name: archon-frontend
     ports:
-      - "${FRONTEND_PORT:-3737}:3737"
+      - "3737:5173"
     environment:
-      - REACT_APP_API_URL=http://localhost:${BACKEND_PORT:-8080}
+      - VITE_API_URL=http://localhost:8080
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5173"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - ./archon-ui-main/src:/app/src
+      - ./archon-ui-main/public:/app/public
     depends_on:
-      - backend
-    restart: unless-stopped
+      - archon-api
+
+  # Documentation
+  docs:
+    build:
+      context: ./docs
+      dockerfile: Dockerfile
+    container_name: archon-docs
+    ports:
+      - "3838:80"
+    networks:
+      - app-network
+    depends_on:
+      - archon-api
+      - frontend
+
+networks:
+  app-network:
+    driver: bridge
 ```
 
 </TabItem>
-<TabItem value="dockerfile" label="🐳 Dockerfile">
+<TabItem value="dockerfiles" label="🐳 Dockerfiles">
 
-```dockerfile title="Dockerfile"
-FROM python:3.11-slim
+#### API Service Dockerfile
 
-# Set working directory
+```dockerfile title="Dockerfile.api"
+# Multi-stage build for smaller image size
+FROM python:3.12-slim AS builder
+
 WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
     git \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install uv for faster dependency installation
+RUN pip install --no-cache-dir uv
 
-# Copy application code
-COPY src/ ./src/
-COPY startup.py .
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
 
-# Create directories for uploads and logs
-RUN mkdir -p /app/uploads /app/logs
+# Install dependencies
+RUN uv sync --all-extras
 
-# Expose ports
-EXPOSE 8080 8051
+# Copy application files
+COPY src/ src/
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+# Compile Python files for faster startup
+RUN python -m compileall src/
 
-# Start application
-CMD ["python", "startup.py"]
+# Runtime stage
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Copy virtual environment from builder
+COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app/src /app/src
+
+# Set environment variables
+ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONPATH="/app/src:$PYTHONPATH"
+ENV PYTHONUNBUFFERED=1
+
+# Expose port
+EXPOSE 8080
+
+# Run the FastAPI application with Socket.IO
+CMD ["python", "-m", "uvicorn", "src.main:socket_app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
 ```
 
 </TabItem>
 </Tabs>
+
+### Service Discovery
+
+Archon includes automatic service discovery for seamless inter-service communication:
+
+```python title="src/config/service_discovery.py"
+import os
+from typing import Dict, Optional
+
+class ServiceDiscovery:
+    """Service discovery for microservices communication"""
+    
+    def __init__(self):
+        self.mode = os.getenv("SERVICE_DISCOVERY_MODE", "local")
+        self.services = self._configure_services()
+    
+    def _configure_services(self) -> Dict[str, str]:
+        """Configure service URLs based on environment"""
+        if self.mode == "docker_compose":
+            return {
+                "api": "http://archon-api:8080",
+                "mcp": "http://archon-mcp:8051",
+                "agents": "http://archon-agents:8052"
+            }
+        else:  # local development
+            return {
+                "api": "http://localhost:8080",
+                "mcp": "http://localhost:8051", 
+                "agents": "http://localhost:8052"
+            }
+    
+    def get_service_url(self, service: str) -> str:
+        """Get URL for a specific service"""
+        return self.services.get(service, "")
+
+# Global instance
+discovery = ServiceDiscovery()
+```
+
+### Scaling Services
+
+Each microservice can be scaled independently:
+
+```bash
+# Scale the Agents service for more processing power
+docker compose up -d --scale archon-agents=3
+
+# Scale the API service for more concurrent requests
+docker compose up -d --scale archon-api=2
+
+# MCP typically doesn't need scaling as it's connection-based
+```
+
+## 🚀 Quick Start
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/archon/archon.git
+   cd archon
+   ```
+
+2. **Set up environment variables**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your credentials
+   ```
+
+3. **Start all services**
+   ```bash
+   docker compose up -d
+   ```
+
+4. **Verify services are running**
+   ```bash
+   docker compose ps
+   # All services should show as "healthy"
+   ```
+
+5. **Access the application**
+   - Web UI: http://localhost:3737
+   - API Docs: http://localhost:8080/docs
+   - MCP Connection: http://localhost:8051/sse
+   - Agents API: http://localhost:8052/docs
+
+## 📈 Performance Optimization
+
+### Service-Specific Optimizations
+
+1. **API Service**
+   - Connection pooling for database
+   - Request caching with Redis
+   - Async request handling
+
+2. **MCP Service**
+   - Tool execution timeout management
+   - Connection recycling
+   - Memory-efficient streaming
+
+3. **Agents Service**
+   - Worker process pooling
+   - GPU acceleration support
+   - Batch processing for embeddings
+
+### Monitoring Best Practices
+
+1. **Set up alerts** in Logfire for:
+   - High error rates
+   - Slow response times
+   - Service health issues
+
+2. **Regular performance reviews**:
+   - Analyze Logfire dashboards weekly
+   - Identify bottlenecks
+   - Plan scaling strategies
+
+3. **Resource monitoring**:
+   - CPU/Memory usage per service
+   - Network traffic patterns
+   - Database connection pools
 
 ---
 

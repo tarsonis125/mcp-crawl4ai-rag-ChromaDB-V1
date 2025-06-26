@@ -373,6 +373,83 @@ Please give a short succinct context to situate this chunk within the overall do
             print(f"Error generating contextual embedding: {e}. Using original chunk instead.")
         return chunk, False
 
+def generate_contextual_embeddings_batch(full_documents: List[str], chunks: List[str]) -> List[Tuple[str, bool]]:
+    """
+    Generate contextual information for multiple chunks in a single API call to avoid rate limiting.
+    
+    Args:
+        full_documents: List of complete document texts
+        chunks: List of specific chunks to generate context for
+        
+    Returns:
+        List of tuples containing:
+        - The contextual text that situates the chunk within the document
+        - Boolean indicating if contextual embedding was performed
+    """
+    # Get API key directly from environment
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        print("Error: No OpenAI API key found in environment")
+        return [(chunk, False) for chunk in chunks]
+    
+    # Create OpenAI client
+    client = openai.OpenAI(api_key=api_key)
+    model_choice = os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
+    
+    try:
+        # Build batch prompt
+        batch_prompt = "Process the following chunks and provide contextual information for each:\n\n"
+        
+        for i, (doc, chunk) in enumerate(zip(full_documents, chunks)):
+            batch_prompt += f"CHUNK {i+1}:\n"
+            batch_prompt += f"<document>\n{doc[:5000]}\n</document>\n"
+            batch_prompt += f"<chunk>\n{chunk}\n</chunk>\n\n"
+        
+        batch_prompt += "For each chunk, provide a short succinct context to situate it within the overall document for improving search retrieval. Format your response as:\nCHUNK 1: [context]\nCHUNK 2: [context]\netc."
+        
+        # Make single API call for all chunks
+        response = client.chat.completions.create(
+            model=model_choice,
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that generates contextual information for document chunks."},
+                {"role": "user", "content": batch_prompt}
+            ],
+            temperature=0
+        )
+        
+        # Parse response
+        response_text = response.choices[0].message.content
+        results = []
+        
+        # Extract contexts from response
+        lines = response_text.strip().split('\n')
+        chunk_contexts = {}
+        
+        for line in lines:
+            if line.strip().startswith("CHUNK"):
+                parts = line.split(":", 1)
+                if len(parts) == 2:
+                    chunk_num = int(parts[0].strip().split()[1]) - 1
+                    context = parts[1].strip()
+                    chunk_contexts[chunk_num] = context
+        
+        # Build results
+        for i, chunk in enumerate(chunks):
+            if i in chunk_contexts:
+                contextual_text = chunk_contexts[i] + "\n\n" + chunk
+                results.append((contextual_text, True))
+            else:
+                results.append((chunk, False))
+        
+        return results
+        
+    except Exception as e:
+        if "rate_limit_exceeded" in str(e) or "429" in str(e):
+            print(f"RATE LIMIT HIT in batch contextual embedding: {e}")
+        else:
+            print(f"Error in batch contextual embedding: {e}")
+        return [(chunk, False) for chunk in chunks]
+
 def process_chunk_with_context(args):
     """
     Process a single chunk with contextual embedding.
@@ -728,23 +805,31 @@ async def add_documents_to_supabase_parallel(
                         })
                         await asyncio.sleep(0)  # Yield control after WebSocket send
                     
-                    process_args = []
+                    # Prepare batch data for contextual embeddings
+                    full_documents = []
                     for j, content in enumerate(batch_contents):
                         url = batch_urls[j]
                         full_document = url_to_full_document.get(url, "")
-                        process_args.append((url, content, full_document))
+                        full_documents.append(full_document)
                     
-                    # Process contextual embeddings
+                    # Process contextual embeddings in batch
+                    contextual_batch_size = int(os.getenv("CONTEXTUAL_EMBEDDINGS_BATCH_SIZE", "5"))
                     contextual_contents = []
-                    for args in process_args:
-                        result = await asyncio.get_event_loop().run_in_executor(
-                            None, process_chunk_with_context, args
+                    
+                    # Process in smaller sub-batches to avoid token limits
+                    for sub_batch_start in range(0, len(batch_contents), contextual_batch_size):
+                        sub_batch_end = min(sub_batch_start + contextual_batch_size, len(batch_contents))
+                        sub_batch_chunks = batch_contents[sub_batch_start:sub_batch_end]
+                        sub_batch_docs = full_documents[sub_batch_start:sub_batch_end]
+                        
+                        # Process sub-batch
+                        sub_results = await asyncio.get_event_loop().run_in_executor(
+                            None, generate_contextual_embeddings_batch, sub_batch_docs, sub_batch_chunks
                         )
-                        if result and len(result) == 2:
-                            contextual_text, success = result
-                            contextual_contents.append(contextual_text if success else args[1])
-                        else:
-                            contextual_contents.append(args[1])
+                        
+                        # Add results
+                        for (contextual_text, success), original_chunk in zip(sub_results, sub_batch_chunks):
+                            contextual_contents.append(contextual_text if success else original_chunk)
                 else:
                     contextual_contents = batch_contents
                 

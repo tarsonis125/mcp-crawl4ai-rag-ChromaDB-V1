@@ -22,7 +22,7 @@ graph TB
     subgraph "Backend Testing (Python)"
         PyUnit["Unit Tests<br/>⚡ pytest + mocks<br/>Services, Utils, Models"]
         PyInt["Integration Tests<br/>🔗 FastAPI TestClient<br/>API Endpoints, Database"]
-        PyE2E["E2E Tests<br/>🔍 Full Workflows<br/>MCP Tools, WebSockets"]
+        PyE2E["E2E Tests<br/>🔍 Full Workflows<br/>MCP Tools, Socket.IO"]
     end
 
     subgraph "Frontend Testing (React)"
@@ -70,7 +70,7 @@ Archon includes a built-in test runner with comprehensive reporting accessible f
 
 ### **Key Capabilities**
 - **On-Demand Execution**: Run Python and React test suites without command line
-- **Streaming Output**: Real-time test results via WebSockets
+- **Streaming Output**: Real-time test results via Socket.IO
 - **Visual Feedback**: Color-coded status indicators and progress bars
 - **Coverage Integration**: Automatic HTML coverage report generation
 - **Test History**: Previous test run tracking
@@ -198,8 +198,8 @@ vi.mock('lucide-react', () => ({
   // ... 170+ icon mocks
 }))
 
-// Enhanced WebSocket mocking with lifecycle simulation
-export class MockWebSocket {
+// Enhanced Socket.IO mocking with lifecycle simulation
+export class MockSocketIO {
   static CONNECTING = 0
   static OPEN = 1
   static CLOSING = 2
@@ -209,7 +209,7 @@ export class MockWebSocket {
     this.url = url
     // Simulate connection opening asynchronously
     setTimeout(() => {
-      this.readyState = MockWebSocket.OPEN
+      this.readyState = MockSocketIO.OPEN
       if (this.onopen) {
         this.onopen(new Event('open'))
       }
@@ -218,14 +218,14 @@ export class MockWebSocket {
 
   send = vi.fn()
   close = vi.fn(() => {
-    this.readyState = MockWebSocket.CLOSED
+    this.readyState = MockSocketIO.CLOSED
     if (this.onclose) {
       this.onclose(new CloseEvent('close'))
     }
   })
 }
 
-// Enhanced WebSocket service mock
+// Enhanced Socket.IO service mock
 vi.mock('@/services/websocketService', () => ({
   websocketService: {
     connect: vi.fn().mockResolvedValue(undefined),
@@ -289,7 +289,7 @@ pytest -m "mcp"
 docker exec -it archon-frontend-1 npm run test:coverage
 
 # Run backend tests in Docker
-docker exec -it archon-pyserver pytest --cov=src
+docker exec -it archon-api pytest --cov=src
 ```
 
 ## 📊 Coverage Goals & Current Status
@@ -333,19 +333,19 @@ docker exec -it archon-pyserver pytest --cov=src
 - **Coverage Reporting**: Automatic coverage upload
 - **Quality Gates**: Failed tests block merges
 
-## 🛠️ WebSocket Testing Strategy
+## 🛠️ Socket.IO Testing Strategy
 
-WebSocket functionality is critical to Archon's real-time features. Our testing approach:
+Socket.IO functionality is critical to Archon's real-time features. Our testing approach:
 
 ### **Safety First**
-- **Never create real WebSocket connections** in tests
+- **Never create real Socket.IO connections** in tests
 - **Always mock** the websocketService module
 - **Clean up subscriptions** in afterEach hooks
 - **Avoid function references** in useCallback dependencies
 
 ### **Mock Implementation**
 ```typescript
-// Enhanced WebSocket mocking
+// Enhanced Socket.IO mocking
 vi.mock('@/services/websocketService', () => ({
   websocketService: {
     connect: vi.fn().mockResolvedValue(undefined),
@@ -371,7 +371,7 @@ vi.mock('@/services/websocketService', () => ({
 - [ ] All tests pass locally
 - [ ] Coverage meets minimum thresholds
 - [ ] No console errors in test output
-- [ ] WebSocket mocks are properly implemented
+- [ ] Socket.IO mocks are properly implemented
 - [ ] Test names are descriptive and clear
 
 ### For New Features
@@ -395,7 +395,7 @@ vi.mock('@/services/websocketService', () => ({
 2. **Test Isolation**: Each test should be independent and repeatable
 3. **Mock External Dependencies**: Keep tests fast and deterministic
 4. **Descriptive Test Names**: Clearly describe what is being tested
-5. **WebSocket Safety**: Always mock WebSocket connections in tests
+5. **Socket.IO Safety**: Always mock Socket.IO connections in tests
 6. **Coverage Quality**: Focus on meaningful coverage, not just numbers
 7. **Regular Maintenance**: Update tests when requirements change
 8. **Documentation**: Keep test documentation current and accurate
@@ -405,7 +405,7 @@ vi.mock('@/services/websocketService', () => ({
 - **[Vitest Testing Strategy](./testing-vitest-strategy)** - Detailed frontend testing patterns
 - **[Python Testing Strategy](./testing-python-strategy)** - Backend testing guide
 - **[UI Documentation](./ui)** - Component documentation and guidelines
-- **[WebSocket Documentation](./websockets)** - Real-time communication patterns
+- **[Socket.IO Documentation](./websockets)** - Real-time communication patterns
 - **[API Reference](./api-reference)** - Backend API testing endpoints
 
 ---

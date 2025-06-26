@@ -16,7 +16,7 @@ Our frontend testing follows these core principles:
 3. **TypeScript Safety**: Leverage TypeScript for type-safe tests
 4. **Fast Feedback**: Vitest's speed enables rapid test-driven development
 5. **Meaningful Coverage**: Focus on critical user paths over coverage numbers
-6. **WebSocket Safety**: Never create real WebSocket connections in tests
+6. **Socket.IO Safety**: Never create real Socket.IO connections in tests
 
 ## 📁 Current Project Structure
 
@@ -192,15 +192,15 @@ vi.mock('lucide-react', () => ({
   // ... and 164+ more icon mocks for complete coverage
 }))
 
-// Enhanced WebSocket mocking with lifecycle simulation
-export class MockWebSocket {
+// Enhanced Socket.IO mocking with lifecycle simulation
+export class MockSocketIO {
   static CONNECTING = 0
   static OPEN = 1
   static CLOSING = 2
   static CLOSED = 3
 
   url: string
-  readyState: number = MockWebSocket.CONNECTING
+  readyState: number = MockSocketIO.CONNECTING
   onopen: ((event: Event) => void) | null = null
   onclose: ((event: CloseEvent) => void) | null = null
   onmessage: ((event: MessageEvent) => void) | null = null
@@ -210,7 +210,7 @@ export class MockWebSocket {
     this.url = url
     // Simulate connection opening asynchronously
     setTimeout(() => {
-      this.readyState = MockWebSocket.OPEN
+      this.readyState = MockSocketIO.OPEN
       if (this.onopen) {
         this.onopen(new Event('open'))
       }
@@ -219,7 +219,7 @@ export class MockWebSocket {
 
   send = vi.fn()
   close = vi.fn(() => {
-    this.readyState = MockWebSocket.CLOSED
+    this.readyState = MockSocketIO.CLOSED
     if (this.onclose) {
       this.onclose(new CloseEvent('close'))
     }
@@ -230,8 +230,8 @@ export class MockWebSocket {
   dispatchEvent = vi.fn()
 }
 
-// Replace global WebSocket with mock
-global.WebSocket = MockWebSocket as any
+// Replace global Socket.IO with mock
+global.io = () => new MockSocketIO('') as any
 
 // Enhanced WebSocket service mock
 vi.mock('@/services/websocketService', () => ({
@@ -695,7 +695,7 @@ const TestResultsModal = () => {
 }
 ```
 
-## 🛠️ WebSocket Testing Best Practices
+## 🛠️ Socket.IO Testing Best Practices
 
 ### ⚠️ Critical Safety Rules
 
