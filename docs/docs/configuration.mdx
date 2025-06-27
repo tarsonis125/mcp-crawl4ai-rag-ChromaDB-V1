@@ -19,7 +19,7 @@ Archon uses a microservices architecture with three separate services. All servi
 ```mermaid
 graph TB
     subgraph "Docker Network: app-network"
-        subgraph "archon-api"
+        subgraph "Archon-Server"
             API[FastAPI<br/>:8080]
             SIO[Socket.IO<br/>:8080]
         end
@@ -77,7 +77,7 @@ graph TB
 | Service | Container Name | Container Port | Host Port | Purpose |
 |---------|----------------|----------------|-----------|---------|
 | Frontend | archon-frontend | 5173 | 3737 | React UI |
-| API | archon-api | 8080 | 8080 | FastAPI + Socket.IO |
+| Server | Archon-Server | 8080 | 8080 | FastAPI + Socket.IO |
 | MCP Server | archon-mcp | 8051 | 8051 | AI Agent connections |
 | AI Agents | archon-agents | 8052 | 8052 | AI processing service |
 | Documentation | archon-docs | 80 | 3838 | This documentation |
@@ -166,7 +166,7 @@ docker compose logs -f
 
 <Admonition type="warning" title="Important">
 Inside Docker containers, services communicate using container names, not `localhost`:
-- Frontend → API: `http://archon-api:8080`
+- Frontend → Server: `http://Archon-Server:8080`
 - API → MCP: `http://archon-mcp:8051`
 - API → Agents: `http://archon-agents:8052`
 - Never use `localhost` in container-to-container communication
@@ -183,7 +183,7 @@ Inside Docker containers, services communicate using container names, not `local
 ```typescript
 proxy: {
   '/api': {
-    target: 'http://archon-api:8080',
+    target: 'http://Archon-Server:8080',
     ws: true
   }
 }
@@ -198,12 +198,12 @@ proxy: {
 ```typescript
 proxy: {
   '/api': {
-    target: 'http://archon-api:8080',
+    target: 'http://Archon-Server:8080',
     changeOrigin: true,
     ws: true
   },
   '/socket.io': {
-    target: 'http://archon-api:8080',
+    target: 'http://Archon-Server:8080',
     changeOrigin: true,
     ws: true
   }
@@ -241,14 +241,14 @@ curl http://localhost:3737
 
 ```bash
 # Restart a specific service
-docker compose restart archon-api
+docker compose restart archon-server
 
 # Rebuild after code changes
-docker compose build archon-api
-docker compose up -d archon-api
+docker compose build archon-server
+docker compose up -d archon-server
 
 # View real-time logs for a service
-docker compose logs -f archon-api
+docker compose logs -f archon-server
 
 # View all service logs
 docker compose logs -f
@@ -263,7 +263,7 @@ from src.config.service_discovery import discovery
 
 # Automatically detects environment
 api_url = discovery.get_service_url("api")
-# Docker: http://archon-api:8080
+# Docker: http://Archon-Server:8080
 # Local: http://localhost:8080
 ```
 

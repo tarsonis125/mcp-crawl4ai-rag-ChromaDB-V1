@@ -58,6 +58,12 @@ SUPABASE_SERVICE_KEY=your-service-key-here
    ```bash
    docker-compose up --build -d
    ```
+   
+   This starts the core microservices:
+   - **Archon-MCP**: Lightweight MCP server (Port 8051)
+   - **Archon-FastAPI**: Web crawling & document processing (Port 8080)
+   - **Archon-Agents**: AI/ML operations & reranking (Port 8052)
+   - **Archon-UI**: Web interface (Port 3737)
 
 3. **Configure API Key**:
    - Open http://localhost:3737
@@ -71,9 +77,9 @@ SUPABASE_SERVICE_KEY=your-service-key-here
    -- Copy and paste the contents of migration/2_archon_projects.sql
    ```
 
-2. **Restart Python Server**:
+2. **Restart Services**:
    ```bash
-   docker-compose restart archon-api
+   docker-compose restart Archon-FastAPI Archon-MCP Archon-Agents
    ```
 
 3. **Enable Projects Feature**:
@@ -158,13 +164,25 @@ Add this configuration to your Cursor settings:
 
 ## 📚 Documentation
 
-**Complete documentation is available at: http://localhost:3838**
+### Core Services
 
-| Service | URL | Purpose |
-|---------|-----|---------|
-| **Web Interface** | http://localhost:3737 | Main dashboard and controls |
-| **Documentation** | http://localhost:3838 | Complete setup and usage guides |
-| **API Docs** | http://localhost:8080/docs | FastAPI documentation |
+| Service | Container Name | URL | Purpose |
+|---------|---------------|-----|---------|
+| **Web Interface** | Archon-UI | http://localhost:3737 | Main dashboard and controls |
+| **API Service** | Archon-FastAPI | http://localhost:8080 | Web crawling, document processing |
+| **MCP Server** | Archon-MCP | http://localhost:8051 | Model Context Protocol interface |
+| **Agents Service** | Archon-Agents | http://localhost:8052 | AI/ML operations, reranking |
+
+### Optional Documentation Service
+
+The documentation service is optional. To run it:
+
+```bash
+# Start core services + documentation
+docker-compose -f docker-compose.yml -f docker-compose.docs.yml up --build -d
+```
+
+Then access documentation at: **http://localhost:3838**
 
 ## ⚡ Quick Test
 
@@ -177,19 +195,27 @@ Once everything is running:
 
 ## 🛠️ What's Included
 
+### Features
 - **Smart Web Crawling**: Automatically detects sitemaps, text files, or webpages
 - **Document Processing**: Upload PDFs, Word docs, markdown, and text files
 - **AI Integration**: Connect any MCP-compatible client (Cursor, Windsurf, etc.)
 - **Task Management**: Organize projects and tasks with AI agent integration
 - **Real-time Updates**: WebSocket-based live progress tracking
 
+### Architecture
+Archon uses a true microservices architecture with:
+- **Lightweight MCP container**: ~150MB using distroless base
+- **Service separation**: Each service has only its required dependencies
+- **HTTP-based communication**: Services communicate via internal REST APIs
+- **Optimized containers**: 50-90% size reduction compared to monolithic approach
+
 ## 🔧 Development
 
 For development with hot reload:
 
 ```bash
-# Backend (with auto-reload)
-docker-compose up archon-api --build
+# Backend services (with auto-reload)
+docker-compose up Archon-FastAPI Archon-MCP Archon-Agents --build
 
 # Frontend (with hot reload) 
 cd archon-ui-main && npm run dev

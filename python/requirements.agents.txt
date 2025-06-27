@@ -1,0 +1,20 @@
+# Agents Service Dependencies - AI/ML focused
+# AI/ML libraries
+sentence-transformers>=4.1.0
+openai==1.71.0
+pydantic-ai>=0.0.13
+
+# Web framework for internal API
+fastapi>=0.104.0
+uvicorn>=0.24.0
+
+# Database client
+supabase==2.15.1
+
+# Core utilities
+httpx>=0.24.0
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+
+# Logging
+logfire>=0.30.0

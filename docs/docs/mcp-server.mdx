@@ -49,7 +49,7 @@ graph TB
     end
     
     subgraph "📦 Microservices"
-        API["⚡ API Service<br/>archon-api:8080"]
+        API["⚡ Server Service<br/>Archon-Server:8080"]
         Agents["🤖 Agents Service<br/>archon-agents:8052"]
     end
     
@@ -144,7 +144,7 @@ graph LR
         MCP[MCP Server<br/>:8051]
     end
     
-    subgraph "archon-api"
+    subgraph "Archon-Server"
         API[FastAPI<br/>:8080]
     end
     
@@ -188,7 +188,7 @@ docker compose ps
 **Expected output:**
 ```
 NAME                IMAGE               STATUS
-archon-api         archon-api:latest   Up 30 seconds (healthy)
+archon-server      archon-server:latest Up 30 seconds (healthy)
 archon-mcp         archon-mcp:latest   Up 30 seconds (healthy)
 archon-agents      archon-agents:latest Up 30 seconds (healthy)
 archon-frontend    archon-frontend:latest Up 30 seconds
@@ -766,7 +766,7 @@ docker exec archon-mcp env | grep OPENAI
 # OPENAI_API_KEY=sk-...your-key-here
 
 # If not set, check credential service
-docker exec archon-api python -c "
+docker exec archon-server python -c "
 import os
 from src.credential_service import initialize_credentials
 initialize_credentials()
@@ -1107,7 +1107,7 @@ DATABASE_CONFIG = {
 ```bash
 # Scale individual services
 docker compose up -d --scale archon-agents=3
-docker compose up -d --scale archon-api=2
+docker compose up -d --scale archon-server=2
 ```
 
 ## 📈 Monitoring & Analytics

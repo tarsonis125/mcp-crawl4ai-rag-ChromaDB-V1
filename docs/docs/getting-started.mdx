@@ -176,7 +176,7 @@ When you run `docker compose up -d`, you get:
 graph TB
     subgraph "🚀 Docker Microservices Stack"
         Frontend["🌐 Frontend Container<br/>React + Vite<br/>archon-frontend<br/>Port 3737"]
-        API["⚡ API Container<br/>FastAPI + Socket.IO<br/>archon-api<br/>Port 8080"]
+        API["⚡ Server Container<br/>FastAPI + Socket.IO<br/>Archon-Server<br/>Port 8080"]
         MCP["🔧 MCP Server<br/>14 MCP Tools<br/>archon-mcp<br/>Port 8051"]
         Agents["🤖 Agents Service<br/>AI Processing<br/>archon-agents<br/>Port 8052"]
         Docs["📚 Documentation<br/>Docusaurus<br/>archon-docs<br/>Port 3838"]
@@ -334,7 +334,7 @@ docker compose down
 docker compose up --build -d
 
 # Check container logs
-docker compose logs archon-api
+docker compose logs archon-server
 docker compose logs archon-mcp
 docker compose logs archon-agents
 ```
@@ -346,7 +346,7 @@ docker compose logs archon-agents
 
 ```bash
 # Verify environment variables
-docker compose exec archon-api env | grep -E "(SUPABASE|OPENAI)"
+docker compose exec archon-server env | grep -E "(SUPABASE|OPENAI)"
 
 # Check MCP server health
 curl http://localhost:8051/sse

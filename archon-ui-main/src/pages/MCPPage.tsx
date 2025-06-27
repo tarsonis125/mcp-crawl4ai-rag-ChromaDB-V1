@@ -6,7 +6,7 @@ import { Button } from '../components/ui/Button';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import { useToast } from '../contexts/ToastContext';
 import { mcpServerService, ServerStatus, LogEntry, ServerConfig } from '../services/mcpServerService';
-import { MCPClients } from '../components/mcp/MCPClients';
+// import { MCPClients } from '../components/mcp/MCPClients'; // Commented out - feature not implemented
 
 /**
  * MCP Dashboard Page Component
@@ -359,6 +359,7 @@ export const MCPPage = () => {
               <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"></span>
             )}
           </button>
+          {/* TODO: MCP Client feature not implemented - commenting out for now
           <button
             onClick={() => setActiveTab('clients')}
             className={`pb-3 relative ${
@@ -372,6 +373,7 @@ export const MCPPage = () => {
               <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-cyan-500 shadow-[0_0_10px_rgba(34,211,238,0.5)]"></span>
             )}
           </button>
+          */}
         </div>
       </motion.div>
 
@@ -623,12 +625,13 @@ export const MCPPage = () => {
         </>
       )}
 
-      {/* Clients Tab */}
+      {/* Clients Tab - commented out as feature not implemented
       {activeTab === 'clients' && (
         <motion.div variants={itemVariants}>
           <MCPClients />
         </motion.div>
       )}
+      */}
     </motion.div>
   );
 };

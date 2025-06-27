@@ -1,0 +1,7 @@
+# MCP Service Dependencies - Minimal
+mcp==1.7.1
+httpx>=0.24.0
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+supabase==2.15.1
+logfire>=0.30.0

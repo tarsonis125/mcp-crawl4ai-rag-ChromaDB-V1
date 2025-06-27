@@ -42,7 +42,7 @@ Archon's backend is built on a modern, scalable architecture using FastAPI micro
 }}%%
 graph TB
     subgraph "🐳 Docker Microservices Environment"
-        subgraph "🚀 API Service (archon-api)"
+        subgraph "🚀 Server Service (Archon-Server)"
             FastAPI["⚡ FastAPI Application<br/>Port 8080"]
             WS["📡 Socket.IO Server<br/>Port 8080"]
         end
@@ -275,7 +275,7 @@ archon/
 │   │   │   ├── projects/                # Project services
 │   │   │   └── rag/                     # RAG services
 │   │   └── models/              # 📊 Data models
-│   ├── Dockerfile.api           # API service container
+│   ├── Dockerfile.server        # Server service container
 │   ├── Dockerfile.mcp           # MCP service container
 │   ├── Dockerfile.agents        # Agents service container
 │   ├── pyproject.toml           # Python project configuration
@@ -669,9 +669,9 @@ class CrawlProgressManagerSocketIO:
   </div>
 </div>
 
-## 🏗️ API Service Architecture
+## 🏗️ Server Service Architecture
 
-The API service (`archon-api`) is the main entry point for the application:
+The Server service (`Archon-Server`) is the main entry point for the application:
 
 ### Key Components
 
@@ -763,12 +763,12 @@ The Agents service (`archon-agents`) handles CPU-intensive AI processing:
 
 ```yaml title="docker-compose.yml"
 services:
-  # API Service (FastAPI + Socket.IO)
-  archon-api:
+  # Server Service (FastAPI + Socket.IO)
+  archon-server:
     build:
       context: ./python
-      dockerfile: Dockerfile.api
-    container_name: archon-api
+      dockerfile: Dockerfile.server
+    container_name: Archon-Server
     ports:
       - "8080:8080"
     environment:
@@ -883,9 +883,9 @@ networks:
 </TabItem>
 <TabItem value="dockerfiles" label="🐳 Dockerfiles">
 
-#### API Service Dockerfile
+#### Server Service Dockerfile
 
-```dockerfile title="Dockerfile.api"
+```dockerfile title="Dockerfile.server"
 # Multi-stage build for smaller image size
 FROM python:3.12-slim AS builder
 
@@ -956,13 +956,13 @@ class ServiceDiscovery:
         """Configure service URLs based on environment"""
         if self.mode == "docker_compose":
             return {
-                "api": "http://archon-api:8080",
+                "server": "http://Archon-Server:8080",
                 "mcp": "http://archon-mcp:8051",
                 "agents": "http://archon-agents:8052"
             }
         else:  # local development
             return {
-                "api": "http://localhost:8080",
+                "server": "http://localhost:8080",
                 "mcp": "http://localhost:8051", 
                 "agents": "http://localhost:8052"
             }
@@ -983,8 +983,8 @@ Each microservice can be scaled independently:
 # Scale the Agents service for more processing power
 docker compose up -d --scale archon-agents=3
 
-# Scale the API service for more concurrent requests
-docker compose up -d --scale archon-api=2
+# Scale the Server service for more concurrent requests
+docker compose up -d --scale archon-server=2
 
 # MCP typically doesn't need scaling as it's connection-based
 ```
@@ -1024,7 +1024,7 @@ docker compose up -d --scale archon-api=2
 
 ### Service-Specific Optimizations
 
-1. **API Service**
+1. **Server Service**
    - Connection pooling for database
    - Request caching with Redis
    - Async request handling

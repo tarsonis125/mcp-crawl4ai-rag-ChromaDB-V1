@@ -1,50 +1,36 @@
-# AI Agents Service
-# Multi-stage build for smaller image size
-
-# Build stage
-FROM python:3.12-slim AS builder
+# Agents Service - AI/ML operations microservice
+FROM python:3.11-slim
 
 WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
-    git \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install uv for faster dependency installation
-RUN pip install --no-cache-dir uv
-
-# Copy dependency files
-COPY pyproject.toml uv.lock ./
 
 # Install dependencies
-RUN uv sync --all-extras
+COPY requirements.agents.txt .
+RUN pip install --no-cache-dir -r requirements.agents.txt
 
-# Copy application files
-COPY src/ src/
+# Copy only agents-specific files
+COPY src/agents/ src/agents/
+COPY src/config/ src/config/
+COPY src/utils.py src/
+COPY src/server/services/credential_service.py src/server/services/
+COPY src/__init__.py src/
 
-# Compile Python files for faster startup
-RUN python -m compileall src/
-
-# Runtime stage - using slim image for simplicity
-FROM python:3.12-slim
-
-WORKDIR /app
-
-# Copy virtual environment from builder
-COPY --from=builder /app/.venv /app/.venv
-COPY --from=builder /app/src /app/src
+# Create necessary directory structure
+RUN mkdir -p src/server/services
+COPY src/server/services/__init__.py src/server/services/
 
 # Set environment variables
-ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app/src:$PYTHONPATH"
 ENV PYTHONUNBUFFERED=1
 
-# Expose port
+# Download sentence-transformers model during build to avoid runtime download
+RUN python -c "from sentence_transformers import CrossEncoder; CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
+
+# Expose Agents port
 EXPOSE 8052
 
-# Run the Agents server
-WORKDIR /app
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8052/health')"
+
+# Run the Agents service
 CMD ["python", "-m", "uvicorn", "src.agents.server:app", "--host", "0.0.0.0", "--port", "8052"]

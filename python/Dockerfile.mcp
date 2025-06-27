@@ -1,49 +1,30 @@
-# MCP Server Service
-# Multi-stage build for smaller image size
-
-# Build stage
-FROM python:3.12-slim AS builder
+# MCP Service - Lightweight HTTP-based microservice  
+FROM python:3.11-slim
 
 WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
-    git \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install uv for faster dependency installation
-RUN pip install --no-cache-dir uv
-
-# Copy dependency files
-COPY pyproject.toml uv.lock ./
 
 # Install dependencies
-RUN uv sync --all-extras
+COPY requirements.mcp.txt .
+RUN pip install --no-cache-dir -r requirements.mcp.txt
 
-# Copy application files
-COPY src/ src/
+# Create directory structure
+RUN mkdir -p src/mcp/modules src/server/services src/config
 
-# Compile Python files for faster startup
-RUN python -m compileall src/
-
-# Runtime stage - using slim image for simplicity
-FROM python:3.12-slim
-
-WORKDIR /app
-
-# Copy virtual environment from builder
-COPY --from=builder /app/.venv /app/.venv
-COPY --from=builder /app/src /app/src
+# Copy only MCP-specific files
+COPY src/mcp/ src/mcp/
+COPY src/server/services/mcp_service_client.py src/server/services/
+COPY src/server/services/__init__.py src/server/services/
+COPY src/config/ src/config/
+COPY src/utils.py src/
+COPY src/server/services/credential_service.py src/server/services/
+COPY src/__init__.py src/
 
 # Set environment variables
-ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app/src:$PYTHONPATH"
 ENV PYTHONUNBUFFERED=1
 
-# Expose port
+# Expose MCP port
 EXPOSE 8051
 
 # Run the MCP server
-CMD ["python", "src/mcp_server.py"]
+CMD ["python", "-m", "src.mcp.mcp_server"]

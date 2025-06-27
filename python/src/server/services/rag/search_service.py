@@ -9,7 +9,7 @@ import json
 import logging
 import os
 from typing import List, Dict, Any, Optional, Tuple
-from sentence_transformers import CrossEncoder
+# Reranking is now handled by Agents service via HTTP
 
 from src.utils import get_supabase_client, search_documents, search_code_examples
 from src.logfire_config import rag_logger, search_logger
@@ -20,10 +20,10 @@ logger = logging.getLogger(__name__)
 class SearchService:
     """Service class for search operations"""
     
-    def __init__(self, supabase_client=None, reranking_model=None):
-        """Initialize with optional supabase client and reranking model"""
+    def __init__(self, supabase_client=None, agents_client=None):
+        """Initialize with optional supabase client and agents client for reranking"""
         self.supabase_client = supabase_client or get_supabase_client()
-        self.reranking_model = reranking_model
+        self.agents_client = agents_client  # Will be injected for microservices mode
 
     def get_setting(self, key: str, default: str = "false") -> str:
         """Get a setting from the credential service or fall back to environment variable."""
@@ -50,9 +50,9 @@ class SearchService:
         value = self.get_setting(key, "false" if not default else "true")
         return value.lower() in ("true", "1", "yes", "on")
 
-    def rerank_results(self, query: str, results: List[Dict[str, Any]], content_key: str = "content") -> List[Dict[str, Any]]:
+    async def rerank_results(self, query: str, results: List[Dict[str, Any]], content_key: str = "content") -> List[Dict[str, Any]]:
         """
-        Rerank search results using a cross-encoder model.
+        Rerank search results using the Agents service.
         
         Args:
             query: The search query
@@ -62,24 +62,16 @@ class SearchService:
         Returns:
             Reranked list of results
         """
-        if not self.reranking_model or not results:
+        if not self.agents_client or not results:
             return results
         
         try:
-            # Extract content from results
-            texts = [result.get(content_key, "") for result in results]
-            
-            # Create pairs of [query, document] for the cross-encoder
-            pairs = [[query, text] for text in texts]
-            
-            # Get relevance scores from the cross-encoder
-            scores = self.reranking_model.predict(pairs)
-            
-            # Add scores to results and sort by score (descending)
-            for i, result in enumerate(results):
-                result["rerank_score"] = float(scores[i])
-            
-            # Sort by rerank score
+            # Use the Agents service client to rerank results
+            return await self.agents_client.rerank_results(query, results, content_key)
+        except Exception as e:
+            logger.error(f"Error reranking results: {str(e)}")
+            # Return original results if reranking fails
+            return results
             reranked = sorted(results, key=lambda x: x.get("rerank_score", 0), reverse=True)
             
             return reranked
@@ -183,7 +175,7 @@ class SearchService:
                     "execution_path": "service_vector_search"
                 }
 
-    def search_code_examples_service(self, query: str, source_id: str = None, match_count: int = 5) -> Tuple[bool, Dict[str, Any]]:
+    async def search_code_examples_service(self, query: str, source_id: str = None, match_count: int = 5) -> Tuple[bool, Dict[str, Any]]:
         """
         Search for code examples relevant to the query.
         
@@ -288,8 +280,8 @@ class SearchService:
             
             # Apply reranking if enabled
             use_reranking = self.get_bool_setting("USE_RERANKING", False)
-            if use_reranking and self.reranking_model:
-                results = self.rerank_results(query, results, content_key="content")
+            if use_reranking and self.agents_client:
+                results = await self.rerank_results(query, results, content_key="content")
             
             # Format the results
             formatted_results = []
@@ -311,7 +303,7 @@ class SearchService:
                 "query": query,
                 "source_filter": source_id,
                 "search_mode": "hybrid" if use_hybrid_search else "vector",
-                "reranking_applied": use_reranking and self.reranking_model is not None,
+                "reranking_applied": use_reranking and self.agents_client is not None,
                 "results": formatted_results,
                 "count": len(formatted_results)
             }

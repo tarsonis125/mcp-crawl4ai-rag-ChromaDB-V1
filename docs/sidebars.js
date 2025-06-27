@@ -30,7 +30,6 @@ module.exports = {
       items: [
         'mcp-overview',
         'mcp-server',
-        'mcp-client',
       ],
     },
     {

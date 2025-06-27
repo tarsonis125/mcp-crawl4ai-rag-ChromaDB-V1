@@ -1,0 +1,22 @@
+# Optional Documentation Service
+# Run with: docker-compose -f docker-compose.yml -f docker-compose.docs.yml up -d
+
+services:
+  # Documentation
+  docs:
+    build:
+      context: ./docs
+      dockerfile: Dockerfile
+    container_name: Archon-Docs
+    ports:
+      - "3838:80"
+    networks:
+      - app-network
+    depends_on:
+      - archon-api
+      - frontend
+
+networks:
+  app-network:
+    external: true
+    name: archon-2_app-network

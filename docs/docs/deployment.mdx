@@ -65,7 +65,7 @@ graph LR
     
     subgraph "Docker Containers"
         Frontend[archon-frontend<br/>React UI]
-        API[archon-api<br/>FastAPI + Socket.IO]
+        API[Archon-Server<br/>FastAPI + Socket.IO]
         MCP[archon-mcp<br/>MCP Server]
         Agents[archon-agents<br/>AI Processing]
         Docs[archon-docs<br/>Documentation]
@@ -119,7 +119,7 @@ docker-compose restart archon-frontend
 docker ps
 
 # View service logs
-docker logs archon-api
+docker logs archon-server
 docker logs archon-mcp
 docker logs archon-agents
 
@@ -150,8 +150,8 @@ For production deployments, consider:
 ```yaml
 # docker-compose.prod.yml
 services:
-  archon-api:
-    image: your-registry/archon-api:latest
+  archon-server:
+    image: your-registry/archon-server:latest
     environment:
       - ENVIRONMENT=production
       - LOG_LEVEL=WARNING

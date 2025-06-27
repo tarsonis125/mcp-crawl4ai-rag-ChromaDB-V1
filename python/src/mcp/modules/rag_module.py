@@ -1,5 +1,5 @@
 """
-RAG Module for Archon MCP Server
+RAG Module for Archon MCP Server (HTTP-based version)
 
 This module provides tools for:
 - Web crawling (single pages, smart crawling, recursive crawling)
@@ -8,9 +8,8 @@ This module provides tools for:
 - Source management
 - Code example extraction and search
 
-All tools in this module work with web content and document storage/retrieval.
-
-Refactored to use service-based architecture for better maintainability.
+This version uses HTTP calls to the server service instead of importing
+service modules directly, enabling true microservices architecture.
 """
 
 from mcp.server.fastmcp import FastMCP, Context
@@ -19,28 +18,16 @@ from urllib.parse import urlparse
 import json
 import logging
 import os
+from datetime import datetime
 
-# Import services
-from ..services.rag.crawling_service import CrawlingService
-from ..services.rag.document_storage_service import DocumentStorageService
-from ..services.rag.search_service import SearchService
-from ..services.rag.source_management_service import SourceManagementService
+# Import the service client for HTTP communication
+from src.server.services.mcp_service_client import get_mcp_service_client
 
-# Import utils
-from src.utils import (
-    get_supabase_client,
-    update_source_info,
-    extract_source_summary
-)
-
-# Import utils for code processing
-from src.utils import (
-    extract_code_blocks,
-    generate_code_example_summary
-)
+# Import lightweight utilities only
+from src.utils import get_supabase_client
 
 # Import Logfire
-from ..logfire_config import rag_logger, mcp_logger, search_logger
+from src.config.logfire_config import rag_logger, mcp_logger, search_logger
 
 logger = logging.getLogger(__name__)
 
@@ -72,11 +59,13 @@ def get_bool_setting(key: str, default: bool = False) -> bool:
     return value.lower() in ("true", "1", "yes", "on")
 
 
-async def smart_crawl_url_direct(ctx, url: str, max_depth: int = 3, max_concurrent: int = 10, chunk_size: int = 5000) -> str:
+# Note: Old direct service functions removed - now using HTTP-based communication
+
+def register_rag_tools(mcp: FastMCP):
     """
-    Standalone function for smart crawling that can be imported directly.
-    
-    Intelligently crawl a URL based on its type (sitemap, text file, or webpage).
+    Register all RAG-related tools with the MCP server.
+    These tools now use HTTP calls to other services.
+    """
     """
     try:
         crawler = ctx.request_context.lifespan_context.crawler
@@ -412,164 +401,101 @@ def register_rag_tools(mcp: FastMCP):
     """Register all RAG tools with the MCP server."""
     
     @mcp.tool()
-    async def crawl_single_page(ctx: Context, url: str) -> str:
+    async def crawl_single_page(ctx: Context, url: str, chunk_size: int = 5000) -> str:
         """
-        Crawl a single web page and store its content in Supabase.
+        Crawl a single web page and store its content.
         
-        This tool is ideal for quickly retrieving content from a specific URL without following links.
-        The content is stored in Supabase for later retrieval and querying.
+        This tool delegates to the API service via HTTP.
         
         Args:
-            url: URL of the web page to crawl (must be a valid HTTP/HTTPS URL)
+            url: The URL to crawl
+            chunk_size: Maximum size of each content chunk (default: 5000 characters)
         
         Returns:
-            JSON string with the operation results including success status, content metrics, and any errors
+            JSON string with success status and metadata
         """
-        try:
-            # Get services
-            crawler = ctx.request_context.lifespan_context.crawler
-            supabase_client = ctx.request_context.lifespan_context.supabase_client
-            
-            crawling_service = CrawlingService(crawler, supabase_client)
-            storage_service = DocumentStorageService(supabase_client)
-            source_service = SourceManagementService(supabase_client)
-            
-            # Crawl the page
-            result = await crawling_service.crawl_single_page(url)
-            
-            if not result["success"]:
-                return json.dumps(result)
-            
-            # Process the content
-            markdown_content = result["markdown"]
-            chunks = storage_service.smart_chunk_markdown(markdown_content, chunk_size=5000)
-            
-            # Create documents for Supabase
-            documents = []
-            total_word_count = 0
-            
-            for i, chunk in enumerate(chunks):
-                section_info = storage_service.extract_section_info(chunk)
-                total_word_count += section_info["word_count"]
-                
-                documents.append({
-                    "content": chunk,
-                    "url": url,
-                    "chunk_index": i,
-                    "metadata": {
-                        "source_id": urlparse(url).netloc,
-                        "title": result.get("title", "Untitled"),
-                        "headers": section_info["headers"],
-                        "char_count": section_info["char_count"],
-                        "word_count": section_info["word_count"]
-                    }
-                })
-            
-            # Create source info
-            source_id = urlparse(url).netloc
-            success, source_result = source_service.create_source_info(
-                source_id, markdown_content[:5000], total_word_count, "technical", [], 0
-            )
-            
-            # Store documents
-            urls = [doc['url'] for doc in documents]
-            chunk_numbers = [doc['chunk_index'] for doc in documents]
-            contents = [doc['content'] for doc in documents]
-            metadatas = [doc['metadata'] for doc in documents]
-            url_to_full_document = {url: markdown_content}
-            
-            # Use the original working function from utils.py with proper parallel processing
-            from src.utils import add_documents_to_supabase
-            await add_documents_to_supabase(
-                client=storage_service.supabase_client,
-                urls=urls,
-                chunk_numbers=chunk_numbers,
-                contents=contents,
-                metadatas=metadatas,
-                url_to_full_document=url_to_full_document,
-                batch_size=15,
-                progress_callback=None  # No progress callback for single page crawl
-            )
-            chunks_stored = len(documents)
-            
-            # Process code examples if enabled
-            code_examples_stored = 0
-            if get_bool_setting("USE_AGENTIC_RAG", False):
-                code_blocks = extract_code_blocks(markdown_content)
-                if code_blocks:
-                    code_examples = []
-                    for i, code_block in enumerate(code_blocks):
-                        summary = storage_service.process_code_example(code_block)
-                        code_examples.append({
-                            'code_block': code_block,
-                            'summary': summary,
-                            'url': url
-                        })
-                    
-                    success, code_result = storage_service.store_code_examples(code_examples)
-                    if success:
-                        code_examples_stored = code_result.get("code_examples_stored", 0)
-            
-            return json.dumps({
-                "success": True,
-                "url": url,
-                "chunks_stored": chunks_stored,
-                "code_examples_stored": code_examples_stored,
-                "content_length": len(markdown_content),
-                "total_word_count": total_word_count,
-                "source_id": source_id,
-                "links_count": {
-                    "internal": len(result.get("links", {}).get("internal", [])),
-                    "external": len(result.get("links", {}).get("external", []))
-                }
-            })
-            
-        except Exception as e:
-            return json.dumps({
-                "success": False,
-                "error": f"Error crawling page: {str(e)}"
-            })
+        client = get_mcp_service_client()
+        rag_logger.info(f"Crawling single page via HTTP: {url}")
+        
+        result = await client.crawl_url(
+            url,
+            options={
+                "max_depth": 1,
+                "chunk_size": chunk_size,
+                "smart_crawl": False
+            }
+        )
+        
+        return json.dumps(result, indent=2)
     
     @mcp.tool()
-    async def smart_crawl_url(ctx: Context, url: str, max_depth: int = 3, max_concurrent: int = 10, chunk_size: int = 5000) -> str:
+    async def smart_crawl_url(ctx: Context, url: str, max_depth: int = 3, chunk_size: int = 5000) -> str:
         """
-        Intelligently crawl a URL based on its type.
+        Intelligently crawl a URL based on its type (sitemap, text file, or webpage).
         
-        Automatically detects sitemaps, text files, or regular webpages and applies appropriate crawling method.
+        This tool delegates to the API service via HTTP.
         
         Args:
-            url: URL to crawl (webpage, sitemap.xml, or .txt file)
-            max_depth: Maximum recursion depth for regular URLs (default: 3)
-            max_concurrent: Maximum concurrent browser sessions (default: 10)
-            chunk_size: Maximum size of each content chunk (default: 5000)
+            url: The URL to crawl
+            max_depth: Maximum crawl depth for recursive crawling (default: 3)
+            chunk_size: Maximum size of each content chunk (default: 5000 characters)
         
         Returns:
-            JSON string with crawling results and statistics
+            JSON string with crawl results
         """
-        return await smart_crawl_url_direct(ctx, url, max_depth, max_concurrent, chunk_size)
+        client = get_mcp_service_client()
+        rag_logger.info(f"Smart crawling via HTTP: {url}")
+        
+        result = await client.crawl_url(
+            url,
+            options={
+                "max_depth": max_depth,
+                "chunk_size": chunk_size,
+                "smart_crawl": True
+            }
+        )
+        
+        return json.dumps(result, indent=2)
     
     @mcp.tool()
     async def get_available_sources(ctx: Context) -> str:
         """
-        Get all available sources from the sources table.
+        Get list of available sources in the knowledge base.
         
-        Returns a list of all unique sources that have been crawled and stored in the database.
+        This tool uses direct database access for simple read operations.
         
         Returns:
-            JSON string with list of sources and their metadata
+            JSON string with list of sources
         """
         try:
-            supabase_client = ctx.request_context.lifespan_context.supabase_client
-            source_service = SourceManagementService(supabase_client)
+            supabase_client = get_supabase_client()
             
-            success, result = source_service.get_available_sources()
-            return json.dumps({"success": success, **result})
+            # Get unique sources from documents table
+            response = supabase_client.table("documents").select("source").execute()
             
+            if response.data:
+                # Extract unique sources
+                sources = list(set(doc["source"] for doc in response.data if doc.get("source")))
+                sources.sort()
+                
+                return json.dumps({
+                    "success": True,
+                    "sources": sources,
+                    "count": len(sources)
+                }, indent=2)
+            else:
+                return json.dumps({
+                    "success": True,
+                    "sources": [],
+                    "count": 0
+                }, indent=2)
+                
         except Exception as e:
+            search_logger.error(f"Error getting sources: {e}")
             return json.dumps({
                 "success": False,
-                "error": f"Error retrieving sources: {str(e)}"
-            })
+                "error": str(e)
+            }, indent=2)
     
     @mcp.tool()
     async def perform_rag_query(ctx: Context, query: str, source: str = None, match_count: int = 5) -> str:
@@ -588,37 +514,52 @@ def register_rag_tools(mcp: FastMCP):
         Returns:
             JSON string with search results
         """
-        try:
-            supabase_client = ctx.request_context.lifespan_context.supabase_client
-            reranking_model = getattr(ctx.request_context.lifespan_context, 'reranking_model', None)
-            
-            search_service = SearchService(supabase_client, reranking_model)
-            
-            success, result = search_service.perform_rag_query(query, source, match_count)
-            return json.dumps({"success": success, **result}, indent=2)
-            
-        except Exception as e:
-            return json.dumps({
-                "success": False,
-                "error": str(e),
-                "error_type": type(e).__name__,
-                "query": query,
-                "source": source,
-                "execution_path": "mcp_vector_search"
-            }, indent=2)
+        client = get_mcp_service_client()
+        rag_logger.info(f"Performing RAG query via HTTP: {query}")
+        
+        # Check if reranking is enabled
+        use_reranking = get_bool_setting("USE_RERANKING", False)
+        
+        result = await client.search(
+            query,
+            source_filter=source,
+            match_count=match_count,
+            use_reranking=use_reranking
+        )
+        
+        return json.dumps(result, indent=2)
     
     @mcp.tool()
-    async def delete_source(ctx: Context, source_id: str) -> str:
+    async def delete_source(ctx: Context, source: str) -> str:
         """
-        Delete a source and all associated crawled pages and code examples from the database.
+        Delete all documents from a specific source.
+        
+        This tool uses direct database access for simple operations.
         
         Args:
-            source_id: The source ID to delete
+            source: The source domain to delete
         
         Returns:
             JSON string with deletion results
         """
-        return await delete_source_standalone(ctx, source_id)
+        try:
+            supabase_client = get_supabase_client()
+            
+            # Delete documents from the source
+            response = supabase_client.table("documents").delete().eq("source", source).execute()
+            
+            return json.dumps({
+                "success": True,
+                "source": source,
+                "message": f"Deleted all documents from source: {source}"
+            }, indent=2)
+            
+        except Exception as e:
+            search_logger.error(f"Error deleting source: {e}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, indent=2)
     
     @mcp.tool()
     async def search_code_examples(ctx: Context, query: str, source_id: str = None, match_count: int = 5) -> str:
@@ -639,55 +580,51 @@ def register_rag_tools(mcp: FastMCP):
         Returns:
             JSON string with search results
         """
-        try:
-            supabase_client = ctx.request_context.lifespan_context.supabase_client
-            reranking_model = getattr(ctx.request_context.lifespan_context, 'reranking_model', None)
-            
-            search_service = SearchService(supabase_client, reranking_model)
-            
-            success, result = search_service.search_code_examples_service(query, source_id, match_count)
-            return json.dumps({"success": success, **result}, indent=2)
-            
-        except Exception as e:
-            return json.dumps({
-                "success": False,
-                "query": query,
-                "error": str(e)
-            }, indent=2)
+        # For now, use the same search endpoint with enhanced query
+        client = get_mcp_service_client()
+        search_logger.info(f"Searching code examples via HTTP: {query}")
+        
+        result = await client.search(
+            f"code example {query}",  # Enhance query for code search
+            source_filter=source_id,
+            match_count=match_count,
+            use_reranking=True  # Code search benefits from reranking
+        )
+        
+        return json.dumps(result, indent=2)
     
     @mcp.tool()
-    async def upload_document(ctx: Context, file_content: str, filename: str, 
-                             knowledge_type: str = "technical", tags: List[str] = [], 
-                             chunk_size: int = 5000) -> str:
+    async def upload_document(ctx: Context, filename: str, content: str, doc_type: str = "general") -> str:
         """
-        Upload and process a document for RAG.
+        Upload a document's content to the knowledge base.
         
-        Takes document content and stores it in the knowledge base with proper chunking and embeddings.
+        This tool delegates to the API service via HTTP.
         
         Args:
-            file_content: The content of the document
-            filename: Name of the file
-            knowledge_type: Type of knowledge (default: "technical")
-            tags: List of tags for the document
-            chunk_size: Maximum size of each chunk (default: 5000)
+            filename: Name of the document
+            content: Document content as text
+            doc_type: Type of document (general, technical, business)
         
         Returns:
             JSON string with upload results
         """
-        try:
-            supabase_client = ctx.request_context.lifespan_context.supabase_client
-            storage_service = DocumentStorageService(supabase_client)
-            
-            success, result = await storage_service.upload_document(
-                file_content, filename, knowledge_type, tags, chunk_size
-            )
-            
-            return json.dumps({"success": success, **result})
-            
-        except Exception as e:
-            return json.dumps({
-                "success": False,
-                "error": f"Error uploading document: {str(e)}"
-            })
+        client = get_mcp_service_client()
+        rag_logger.info(f"Uploading document via HTTP: {filename}")
+        
+        # Prepare document for storage
+        document = {
+            "content": content,
+            "metadata": {
+                "filename": filename,
+                "doc_type": doc_type,
+                "source": "upload",
+                "upload_timestamp": str(datetime.now())
+            }
+        }
+        
+        result = await client.store_documents([document])
+        
+        return json.dumps(result, indent=2)
 
-    logger.info("✓ RAG Module registered with 7 refactored tools")
+    # Log successful registration
+    mcp_logger.info("✓ RAG tools registered (HTTP-based version)")

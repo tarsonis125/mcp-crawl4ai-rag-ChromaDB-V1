@@ -1,10 +1,12 @@
 services:
-  # API Service (FastAPI + Socket.IO)
-  archon-api:
+  # Server Service (FastAPI + Socket.IO + Crawling)
+  archon-server:
     build:
       context: ./python
-      dockerfile: Dockerfile.api
-    container_name: archon-api
+      dockerfile: Dockerfile.server
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    container_name: Archon-Server
     ports:
       - "8080:8080"
     environment:
@@ -14,8 +16,6 @@ services:
       - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
       - SERVICE_DISCOVERY_MODE=docker_compose
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-    volumes:
-      - ./python/src:/app/src:ro
     networks:
       - app-network
     healthcheck:
@@ -25,38 +25,46 @@ services:
       retries: 3
       start_period: 40s
 
-  # MCP Server Service
+  # Lightweight MCP Server Service (HTTP-based)
   archon-mcp:
     build:
       context: ./python
       dockerfile: Dockerfile.mcp
-    container_name: archon-mcp
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    container_name: Archon-MCP
     ports:
       - "8051:8051"
     environment:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
       - SERVICE_DISCOVERY_MODE=docker_compose
       - TRANSPORT=sse
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-    volumes:
-      - ./python/src:/app/src:ro
+      # MCP needs to know where to find other services
+      - API_SERVICE_URL=http://archon-server:8080
+      - AGENTS_SERVICE_URL=http://archon-agents:8052
     networks:
       - app-network
+    depends_on:
+      - archon-server
+      - archon-agents
     healthcheck:
       test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.connect(('localhost', 8051)); s.close()"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 60s  # Give dependencies time to start
 
-  # AI Agents Service
+  # AI Agents Service (ML/Reranking)
   archon-agents:
     build:
       context: ./python
       dockerfile: Dockerfile.agents
-    container_name: archon-agents
+      args:
+        BUILDKIT_INLINE_CACHE: 1
+    container_name: Archon-Agents
     ports:
       - "8052:8052"
     environment:
@@ -66,8 +74,6 @@ services:
       - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
       - SERVICE_DISCOVERY_MODE=docker_compose
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-    volumes:
-      - ./python/src:/app/src:ro
     networks:
       - app-network
     healthcheck:
@@ -75,11 +81,12 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 40s
 
   # Frontend
   frontend:
     build: ./archon-ui-main
-    container_name: archon-frontend
+    container_name: Archon-UI
     ports:
       - "3737:5173"
     environment:
@@ -95,21 +102,7 @@ services:
       - ./archon-ui-main/src:/app/src
       - ./archon-ui-main/public:/app/public
     depends_on:
-      - archon-api
-
-  # Documentation
-  docs:
-    build:
-      context: ./docs
-      dockerfile: Dockerfile
-    container_name: archon-docs
-    ports:
-      - "3838:80"
-    networks:
-      - app-network
-    depends_on:
-      - archon-api
-      - frontend
+      - archon-server
 
 networks:
   app-network:
