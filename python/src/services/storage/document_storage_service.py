@@ -280,28 +280,18 @@ async def add_documents_to_supabase_parallel(
                         full_document = url_to_full_document.get(url, "")
                         process_args.append((url, content, full_document))
                     
-                    # Show workers during contextual embedding phase
+                    # Show simplified batch progress
                     if websocket:
-                        # Create worker status for ThreadPool workers
-                        workers = []
-                        for worker_id in range(1, min(len(process_args), max_workers) + 1):
-                            workers.append({
-                                "worker_id": str(worker_id),
-                                "status": "processing",
-                                "batch_num": batch_num,
-                                "progress": 0,
-                                "message": f"Worker {worker_id}: Generating contextual embeddings"
-                            })
-                        
                         await websocket.send_json({
                             "type": "document_storage_progress",
                             "percentage": int((completed_batches / total_batches) * 100),
                             "completed_batches": completed_batches,
                             "total_batches": total_batches,
-                            "workers": workers,
-                            "parallelWorkers": max_workers,
-                            "totalJobs": total_batches,
-                            "message": f"Batch {batch_num}: Generating contextual embeddings with {len(workers)} workers"
+                            "current_batch": batch_num,
+                            "active_workers": min(len(process_args), max_workers),
+                            "chunks_in_batch": 0,
+                            "total_chunks_in_batch": len(process_args),
+                            "message": f"Batch {batch_num}/{total_batches}: Starting contextual embeddings"
                         })
                         await asyncio.sleep(0)
                     
@@ -333,29 +323,18 @@ async def add_documents_to_supabase_parallel(
                             
                             completed += 1
                             
-                            # Update worker progress
-                            if websocket and completed % 5 == 0:  # Update every 5 completions
-                                # Update worker statuses
-                                active_workers = min(total - completed, max_workers)
-                                workers = []
-                                for worker_id in range(1, active_workers + 1):
-                                    workers.append({
-                                        "worker_id": str(worker_id),
-                                        "status": "processing",
-                                        "batch_num": batch_num,
-                                        "progress": int((completed / total) * 100),
-                                        "message": f"Worker {worker_id}: Processing chunk {completed}/{total}"
-                                    })
-                                
+                            # Update batch progress
+                            if websocket and (completed % 3 == 0 or completed == total):  # Update every 3 completions or when done
                                 await websocket.send_json({
                                     "type": "document_storage_progress",
                                     "percentage": int((completed_batches / total_batches) * 100),
                                     "completed_batches": completed_batches,
                                     "total_batches": total_batches,
-                                    "workers": workers,
-                                    "parallelWorkers": active_workers,
-                                    "totalJobs": total_batches,
-                                    "message": f"Batch {batch_num}: Generated {completed}/{total} contextual embeddings"
+                                    "current_batch": batch_num,
+                                    "active_workers": min(total - completed, max_workers),
+                                    "chunks_in_batch": completed,
+                                    "total_chunks_in_batch": total,
+                                    "message": f"Batch {batch_num}/{total_batches}: Processed {completed}/{total} chunks"
                                 })
                                 await asyncio.sleep(0)
                     
@@ -373,10 +352,11 @@ async def add_documents_to_supabase_parallel(
                         "percentage": int((completed_batches / total_batches) * 100),
                         "completed_batches": completed_batches,
                         "total_batches": total_batches,
-                        "workers": [],  # No workers for embedding creation
-                        "parallelWorkers": 1,
-                        "totalJobs": total_batches,
-                        "message": f"Batch {batch_num}: Creating embeddings"
+                        "current_batch": batch_num,
+                        "active_workers": 0,  # No parallel workers for embedding creation
+                        "chunks_in_batch": len(contextual_contents),
+                        "total_chunks_in_batch": len(contextual_contents),
+                        "message": f"Batch {batch_num}/{total_batches}: Creating embeddings"
                     })
                     await asyncio.sleep(0)
                 
@@ -408,10 +388,11 @@ async def add_documents_to_supabase_parallel(
                         "percentage": int((completed_batches / total_batches) * 100),
                         "completed_batches": completed_batches,
                         "total_batches": total_batches,
-                        "workers": [],
-                        "parallelWorkers": 1,
-                        "totalJobs": total_batches,
-                        "message": f"Batch {batch_num}: Storing in database"
+                        "current_batch": batch_num,
+                        "active_workers": 0,
+                        "chunks_in_batch": len(batch_data),
+                        "total_chunks_in_batch": len(batch_data),
+                        "message": f"Batch {batch_num}/{total_batches}: Storing in database"
                     })
                     await asyncio.sleep(0)
                 
@@ -429,9 +410,10 @@ async def add_documents_to_supabase_parallel(
                         "percentage": overall_progress,
                         "completed_batches": completed_batches,
                         "total_batches": total_batches,
-                        "workers": [],
-                        "parallelWorkers": 1,
-                        "totalJobs": total_batches,
+                        "current_batch": 0 if completed_batches == total_batches else batch_num + 1,
+                        "active_workers": 0,
+                        "chunks_in_batch": 0,
+                        "total_chunks_in_batch": 0,
                         "message": f"Completed batch {batch_num}/{total_batches}"
                     })
                     await asyncio.sleep(0)
@@ -444,9 +426,10 @@ async def add_documents_to_supabase_parallel(
                         "percentage": int((completed_batches / total_batches) * 100),
                         "completed_batches": completed_batches,
                         "total_batches": total_batches,
-                        "workers": [],
-                        "parallelWorkers": 1,
-                        "totalJobs": total_batches,
+                        "current_batch": batch_num,
+                        "active_workers": 0,
+                        "chunks_in_batch": 0,
+                        "total_chunks_in_batch": 0,
                         "message": f"Batch {batch_num} failed: {str(e)}",
                         "error": str(e)
                     })

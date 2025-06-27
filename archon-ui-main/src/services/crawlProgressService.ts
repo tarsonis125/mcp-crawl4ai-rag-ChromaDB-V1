@@ -19,6 +19,16 @@ export interface WorkerProgress {
   batch_num?: number;
 }
 
+// Simplified batch progress interface
+export interface BatchProgress {
+  completedBatches: number;
+  totalBatches: number;
+  currentBatch: number;
+  activeWorkers: number;
+  chunksInBatch: number;
+  totalChunksInBatch: number;
+}
+
 export interface CrawlProgressData {
   progressId: string;
   status: string;
@@ -26,7 +36,7 @@ export interface CrawlProgressData {
   currentStep?: string;
   logs?: string[];
   log?: string;
-  workers?: WorkerProgress[];
+  workers?: WorkerProgress[];  // Deprecated - kept for backward compatibility
   error?: string;
   completed?: boolean;
   // Additional properties for document upload and crawling
@@ -40,10 +50,23 @@ export interface CrawlProgressData {
   wordCount?: number;
   duration?: string;
   sourceId?: string;
-  completedBatches?: number;
-  totalBatches?: number;
+  // Simplified batch progress (snake_case from backend)
+  completed_batches?: number;
+  total_batches?: number;
+  current_batch?: number;
+  active_workers?: number;
+  chunks_in_batch?: number;
+  total_chunks_in_batch?: number;
+  // Legacy fields
   totalJobs?: number;
   parallelWorkers?: number;
+  // Camel case aliases for convenience
+  completedBatches?: number;
+  totalBatches?: number;
+  currentBatch?: number;
+  activeWorkers?: number;
+  chunksInBatch?: number;
+  totalChunksInBatch?: number;
 }
 
 export interface ProgressStep {

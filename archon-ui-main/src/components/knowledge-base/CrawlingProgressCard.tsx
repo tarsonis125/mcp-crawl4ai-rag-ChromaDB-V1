@@ -529,68 +529,68 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
                     </div>
                   </div>
                   
-                  {/* Show worker progress under document_storage step if it's active and has workers */}
+                  {/* Show simplified batch progress for document_storage step */}
                   {step.id === 'document_storage' && (step.status === 'active' || progressData.status === 'document_storage') && 
-                   progressData.workers && progressData.workers.length > 0 && (
+                   progressData.total_batches && progressData.total_batches > 0 && (
                     <motion.div
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: 'auto', opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }}
                       transition={{ duration: 0.3 }}
-                      className="mt-3 ml-8 space-y-2 border-l-2 border-gray-200 dark:border-zinc-700 pl-4"
+                      className="mt-3 ml-8 space-y-3 border-l-2 border-gray-200 dark:border-zinc-700 pl-4"
                     >
-                      {/* Parallel workers info */}
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
-                          {progressData.parallelWorkers} parallel workers
-                        </span>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          {progressData.completedBatches || 0}/{progressData.totalJobs || progressData.totalBatches || 0} batches
-                        </span>
-                      </div>
-                      
-                      {/* Individual worker progress */}
-                      {progressData.workers.map((worker) => (
-                        <div key={worker.worker_id} className="flex items-center gap-2">
-                          <div className={`p-1 rounded ${
-                            worker.status === 'processing' ? 'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' :
-                            worker.status === 'completed' ? 'bg-green-100 dark:bg-green-500/10 text-green-600 dark:text-green-400' :
-                            worker.status === 'error' ? 'bg-pink-100 dark:bg-pink-500/10 text-pink-600 dark:text-pink-400' :
-                            'bg-gray-100 dark:bg-gray-500/10 text-gray-600 dark:text-gray-400'
-                          }`}>
-                            <Cpu className="w-2.5 h-2.5" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between mb-0.5">
-                              <span className="text-xs text-gray-600 dark:text-gray-400">
-                                Worker {worker.worker_id}
-                                {worker.batch_num && ` - Batch ${worker.batch_num}`}
+                      {/* Batch progress info */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                            Batch Progress
+                          </span>
+                          <div className="flex items-center gap-2">
+                            {progressData.active_workers && progressData.active_workers > 0 && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400">
+                                <Cpu className="w-3 h-3 mr-1" />
+                                {progressData.active_workers} {progressData.active_workers === 1 ? 'worker' : 'workers'}
                               </span>
-                              <span className="text-xs text-gray-500 dark:text-gray-400">
-                                {Math.round(worker.progress)}%
-                              </span>
-                            </div>
-                            <div className="w-full bg-gray-200 dark:bg-zinc-700 rounded-full h-1">
-                              <motion.div
-                                className={`h-1 rounded-full ${
-                                  worker.status === 'processing' ? 'bg-blue-400' :
-                                  worker.status === 'completed' ? 'bg-green-400' :
-                                  worker.status === 'error' ? 'bg-pink-400' :
-                                  'bg-gray-300 dark:bg-gray-600'
-                                }`}
-                                initial={{ width: 0 }}
-                                animate={{ width: `${worker.progress}%` }}
-                                transition={{ duration: 0.5, ease: 'easeOut' }}
-                              />
-                            </div>
-                            {worker.message && (
-                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
-                                {worker.message}
-                              </p>
                             )}
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              {progressData.completed_batches || 0}/{progressData.total_batches || 0}
+                            </span>
                           </div>
                         </div>
-                      ))}
+                        
+                        {/* Single batch progress bar */}
+                        <div className="w-full bg-gray-200 dark:bg-zinc-700 rounded-full h-2">
+                          <motion.div
+                            className="h-2 rounded-full bg-blue-500 dark:bg-blue-400"
+                            initial={{ width: 0 }}
+                            animate={{ 
+                              width: `${Math.round(((progressData.completed_batches || 0) / (progressData.total_batches || 1)) * 100)}%` 
+                            }}
+                            transition={{ duration: 0.5, ease: 'easeOut' }}
+                          />
+                        </div>
+                        
+                        {/* Current batch details */}
+                        {progressData.current_batch && progressData.current_batch > 0 && (
+                          <div className="text-xs text-gray-600 dark:text-gray-400">
+                            <span className="font-medium">Processing batch {progressData.current_batch}:</span>
+                            {progressData.total_chunks_in_batch && progressData.total_chunks_in_batch > 0 && (
+                              <span className="ml-2">
+                                {progressData.chunks_in_batch || 0}/{progressData.total_chunks_in_batch} chunks processed
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        
+                        {/* Status text */}
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          Completed: {progressData.completed_batches || 0} batches
+                          {progressData.current_batch && progressData.current_batch > 0 && 
+                            progressData.current_batch <= (progressData.total_batches || 0) && (
+                            <span> • In Progress: 1 batch</span>
+                          )}
+                        </div>
+                      </div>
                     </motion.div>
                   )}
                 </div>
