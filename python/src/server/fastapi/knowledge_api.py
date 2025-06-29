@@ -1028,7 +1028,7 @@ async def _perform_upload_with_progress(progress_id: str, file_content: bytes, f
             
             # CRITICAL FIX: Use the working function with progress reporting during storage
             # Instead of calling add_documents_to_supabase silently, we'll call it with progress
-            from src.utils import add_documents_to_supabase
+            from src.server.utils import add_documents_to_supabase
             
             # Create a scaled progress callback that maps 0-100% to 65-100%
             async def scaled_progress_callback(status: str, percentage: int, message: str, **kwargs):

@@ -1,20 +1,26 @@
-# Agents Service Dependencies - AI/ML focused
-# AI/ML libraries
-sentence-transformers>=4.1.0
-openai==1.71.0
-pydantic-ai>=0.0.13
+# Agents Service Dependencies - ONLY PydanticAI agents
+# This container should be lightweight (~200MB)
 
-# Web framework for internal API
+# PydanticAI for agent framework
+pydantic-ai>=0.0.13
+pydantic>=2.0.0
+
+# Web framework for agent server
 fastapi>=0.104.0
 uvicorn>=0.24.0
 
-# Database client
-supabase==2.15.1
-
-# Core utilities
+# HTTP client for MCP tool calls
 httpx>=0.24.0
-pydantic>=2.0.0
+
+# Basic utilities
 python-dotenv>=1.0.0
 
-# Logging
-logfire>=0.30.0
+# Logging (lightweight)
+structlog>=23.1.0
+
+# NOTE: NO ML libraries here!
+# - NO sentence-transformers
+# - NO OpenAI SDK (agents use MCP tools)
+# - NO database clients (agents use MCP tools)
+# - NO embeddings libraries
+# All ML and data operations happen in the Server service

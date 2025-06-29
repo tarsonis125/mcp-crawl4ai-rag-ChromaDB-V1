@@ -11,7 +11,7 @@ import os
 from typing import List, Dict, Any, Optional, Tuple
 # Reranking is now handled by Agents service via HTTP
 
-from src.utils import get_supabase_client, search_documents, search_code_examples
+from src.server.utils import get_supabase_client, search_documents, search_code_examples
 from src.logfire_config import rag_logger, search_logger
 
 logger = logging.getLogger(__name__)

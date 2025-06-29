@@ -24,10 +24,10 @@ from datetime import datetime
 from src.server.services.mcp_service_client import get_mcp_service_client
 
 # Import lightweight utilities only
-from src.utils import get_supabase_client
+from src.server.utils import get_supabase_client
 
 # Import Logfire
-from src.config.logfire_config import rag_logger, mcp_logger, search_logger
+from src.server.config.logfire_config import rag_logger, mcp_logger, search_logger
 
 logger = logging.getLogger(__name__)
 
@@ -283,7 +283,7 @@ def register_rag_tools(mcp: FastMCP):
             await report_progress('document_storage', 45, f'Preparing to store {len(all_documents)} chunks...')
             
             # Import the function we need
-            from src.utils import add_documents_to_supabase_parallel
+            from src.server.utils import add_documents_to_supabase_parallel
             
             # We'll call the function but add progress reporting around it
             # Since add_documents_to_supabase_parallel processes in batches, we can estimate progress

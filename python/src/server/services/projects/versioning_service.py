@@ -9,7 +9,7 @@ import json
 import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
-from src.utils import get_supabase_client
+from src.server.utils import get_supabase_client
 
 logger = logging.getLogger(__name__)
 

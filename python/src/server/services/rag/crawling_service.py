@@ -16,7 +16,7 @@ import requests
 import traceback
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, MemoryAdaptiveDispatcher
-from src.utils import get_supabase_client
+from src.server.utils import get_supabase_client
 
 logger = logging.getLogger(__name__)
 

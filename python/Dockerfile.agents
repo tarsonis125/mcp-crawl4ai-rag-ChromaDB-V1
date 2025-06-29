@@ -1,4 +1,4 @@
-# Agents Service - AI/ML operations microservice
+# Agents Service - Lightweight PydanticAI agents ONLY (no ML models)
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -7,23 +7,17 @@ WORKDIR /app
 COPY requirements.agents.txt .
 RUN pip install --no-cache-dir -r requirements.agents.txt
 
-# Copy only agents-specific files
+# Copy ONLY agents code - no dependencies on server code
+# Agents use MCP tools for all operations
 COPY src/agents/ src/agents/
-COPY src/config/ src/config/
-COPY src/utils.py src/
-COPY src/server/services/credential_service.py src/server/services/
 COPY src/__init__.py src/
 
-# Create necessary directory structure
-RUN mkdir -p src/server/services
-COPY src/server/services/__init__.py src/server/services/
-
 # Set environment variables
-ENV PYTHONPATH="/app/src:$PYTHONPATH"
+ENV PYTHONPATH="/app:$PYTHONPATH"
 ENV PYTHONUNBUFFERED=1
 
-# Download sentence-transformers model during build to avoid runtime download
-RUN python -c "from sentence_transformers import CrossEncoder; CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
+# NO ML models in agents container!
+# Agents use MCP tools for all ML operations
 
 # Expose Agents port
 EXPOSE 8052

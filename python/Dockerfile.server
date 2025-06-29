@@ -35,11 +35,11 @@ RUN pip install --no-cache-dir -r requirements.server.txt
 # Install Playwright browsers
 RUN playwright install chromium
 
-# Copy application code
-COPY src/ src/
+# Copy ONLY server code (all business logic is here)
+COPY src/server/ src/server/
 
 # Set environment variables
-ENV PYTHONPATH="/app/src:$PYTHONPATH"
+ENV PYTHONPATH="/app:$PYTHONPATH"
 ENV PYTHONUNBUFFERED=1
 
 # Expose Server port
@@ -50,4 +50,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
 
 # Run the Server service
-CMD ["python", "-m", "uvicorn", "src.main:socket_app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
+CMD ["python", "-m", "uvicorn", "src.server.main:socket_app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]

@@ -92,7 +92,7 @@ class MCPServerManager:
                 port = '8051'
                 
                 # Get only essential credentials from database
-                from ..credential_service import credential_service
+                from ..services.credential_service import credential_service
                 await credential_service.load_all_credentials()
                 model_choice = await credential_service.get_credential('MODEL_CHOICE', 'gpt-4o-mini')
                 openai_key = await credential_service.get_credential('OPENAI_API_KEY', '')
@@ -521,7 +521,7 @@ async def get_mcp_config():
             
             # Get only model choice from database
             try:
-                from ..credential_service import credential_service
+                from ..services.credential_service import credential_service
                 model_choice = await credential_service.get_credential('MODEL_CHOICE', 'gpt-4o-mini')
                 config['model_choice'] = model_choice
                 config['use_contextual_embeddings'] = (await credential_service.get_credential('USE_CONTEXTUAL_EMBEDDINGS', 'false')).lower() == 'true'

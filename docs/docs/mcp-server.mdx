@@ -13,6 +13,18 @@ import Admonition from '@theme/Admonition';
 
 Archon's MCP Server exposes your knowledge base and project management capabilities to any MCP-compatible AI client. With 14 comprehensive tools (7 project/task tools + 7 RAG tools), real-time Logfire monitoring, and SSE transport, you can integrate Archon with your preferred AI development environment.
 
+<Admonition type="warning" icon="⚠️" title="Critical: MCP is a Thin Protocol Wrapper">
+
+**The MCP service is NOT a business logic layer. It is simply a protocol adapter that:**
+- Imports services directly from the Server (`from src.server.services import ...`)
+- Wraps Server functions as MCP tools
+- Handles MCP protocol communication with AI clients
+- Contains NO business logic, ML models, or data operations
+
+**ALL actual functionality comes from the Server service.**
+
+</Admonition>
+
 ## MCP Server Architecture
 
 ```mermaid

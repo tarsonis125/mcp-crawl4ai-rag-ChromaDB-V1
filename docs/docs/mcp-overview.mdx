@@ -9,6 +9,15 @@ import Admonition from '@theme/Admonition';
 
 # Model Context Protocol (MCP) Overview
 
+<Admonition type="info" icon="🎯" title="Architecture Clarification">
+
+**Archon's MCP implementation follows a clear separation of concerns:**
+- The **Server service** contains ALL business logic, ML models, and data operations
+- The **MCP service** is a thin wrapper that exposes Server functionality as MCP tools
+- There are NO HTTP calls between services - MCP imports Server modules directly
+
+</Admonition>
+
 ## What is MCP?
 
 The Model Context Protocol (MCP) is an open standard that enables AI applications to securely access external data sources and tools. Archon implements both sides of MCP:

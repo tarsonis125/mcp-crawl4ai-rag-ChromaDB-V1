@@ -8,19 +8,20 @@ COPY requirements.mcp.txt .
 RUN pip install --no-cache-dir -r requirements.mcp.txt
 
 # Create directory structure
-RUN mkdir -p src/mcp/modules src/server/services src/config
+RUN mkdir -p src/mcp/modules src/server/services src/server/config
 
-# Copy only MCP-specific files
+# Copy only MCP-specific files (lightweight protocol wrapper)
 COPY src/mcp/ src/mcp/
+# Copy minimal dependencies from server
 COPY src/server/services/mcp_service_client.py src/server/services/
 COPY src/server/services/__init__.py src/server/services/
-COPY src/config/ src/config/
-COPY src/utils.py src/
 COPY src/server/services/credential_service.py src/server/services/
+COPY src/server/config/ src/server/config/
+COPY src/server/utils.py src/server/
 COPY src/__init__.py src/
 
 # Set environment variables
-ENV PYTHONPATH="/app/src:$PYTHONPATH"
+ENV PYTHONPATH="/app:$PYTHONPATH"
 ENV PYTHONUNBUFFERED=1
 
 # Expose MCP port

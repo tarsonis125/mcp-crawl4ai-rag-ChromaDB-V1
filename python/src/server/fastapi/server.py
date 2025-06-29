@@ -13,9 +13,8 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-from src.config.settings import get_settings
-from src.api.endpoints import api_router
-from src.api.internal_api import router as internal_router
+from src.server.config.settings import get_settings
+from src.server.fastapi import api_router
 from src.logfire_config import api_logger
 
 settings = get_settings()

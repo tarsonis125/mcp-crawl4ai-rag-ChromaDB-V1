@@ -14,7 +14,7 @@ import json
 from datetime import datetime
 
 from ..utils import get_supabase_client
-from ..credential_service import credential_service, CredentialItem, initialize_credentials
+from ..services.credential_service import credential_service, CredentialItem, initialize_credentials
 
 # Import logfire for comprehensive API logging
 from ..logfire_config import logfire

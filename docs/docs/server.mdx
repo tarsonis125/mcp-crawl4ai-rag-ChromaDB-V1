@@ -19,6 +19,28 @@ import Admonition from '@theme/Admonition';
 
 Archon's backend is built on a modern, scalable architecture using FastAPI microservices, Docker containers, and comprehensive **Logfire monitoring and observability**. This guide provides in-depth coverage of the server components, microservices architecture, Logfire integration, real-time debugging capabilities, and deployment strategies.
 
+## 🎯 Architecture Principles
+
+<Admonition type="warning" icon="⚠️" title="Critical Understanding: Service Responsibilities">
+
+**These principles are FUNDAMENTAL to understanding Archon's architecture:**
+
+1. **Server Service (Port 8080)**: Contains **ALL** business logic, services, ML models, and data operations
+2. **MCP Service (Port 8051)**: A **thin protocol wrapper** that exposes Server functionality as MCP tools
+3. **Agents Service (Port 8052)**: Contains **ONLY** PydanticAI agents that use MCP tools
+
+**There is NO business logic outside the Server. MCP and Agents are lightweight consumers of Server functionality.**
+
+</Admonition>
+
+### Key Architecture Rules
+
+- **Single Source of Truth**: ALL business logic lives in the Server service (`/src/server/`)
+- **No Inter-Service HTTP**: Within Python, services import directly - no HTTP calls between containers
+- **MCP is a Wrapper**: MCP simply imports Server services and exposes them as tools
+- **Agents are Pure AI**: Agents only contain PydanticAI logic and use MCP tools for everything else
+- **ML Models in Server**: ALL ML models (embeddings, reranking, etc.) belong in Server, NOT in Agents
+
 ## 🎯 Microservices Architecture Overview
 
 ```mermaid
@@ -87,52 +109,75 @@ graph TB
 
 ### 🎯 Service Breakdown
 
+<Admonition type="info" icon="🏗️" title="Critical Architecture Principle">
+
+**The Server contains ALL business logic, services, and ML models. MCP and Agents are lightweight layers that use the Server's functionality.**
+
+</Admonition>
+
 <div className="row">
   <div className="col col--4">
     <div className="card">
       <div className="card__header">
-        <h4>⚡ **API Service**</h4>
+        <h4>⚡ **Server Service (Archon-Server)**</h4>
       </div>
       <div className="card__body">
         <ul>
-          <li>FastAPI application</li>
-          <li>Socket.IO real-time events</li>
-          <li>REST API endpoints</li>
+          <li><strong>Contains ALL business logic</strong></li>
+          <li>FastAPI + Socket.IO server</li>
+          <li>REST API endpoints for UI</li>
+          <li>ALL service implementations</li>
+          <li>ALL ML models (embeddings, reranking)</li>
+          <li>Database operations</li>
           <li>Authentication & settings</li>
           <li>Port: **8080**</li>
         </ul>
+        <div className="alert alert--success" role="alert">
+          <strong>This is the ONLY place where business logic lives</strong>
+        </div>
       </div>
     </div>
   </div>
   <div className="col col--4">
     <div className="card">
       <div className="card__header">
-        <h4>🔌 **MCP Service**</h4>
+        <h4>🔌 **MCP Service (archon-mcp)**</h4>
       </div>
       <div className="card__body">
         <ul>
-          <li>AI agent connections</li>
-          <li>14 MCP tools</li>
-          <li>RAG operations</li>
-          <li>Task management</li>
+          <li><strong>Lightweight MCP protocol server</strong></li>
+          <li>Exposes 14 MCP tools to AI clients</li>
+          <li>Imports Server services directly</li>
+          <li>NO business logic</li>
+          <li>NO ML models</li>
+          <li>Simply wraps Server functions as MCP tools</li>
           <li>Port: **8051**</li>
         </ul>
+        <div className="alert alert--warning" role="alert">
+          <strong>This is just a protocol adapter - no logic here</strong>
+        </div>
       </div>
     </div>
   </div>
   <div className="col col--4">
     <div className="card">
       <div className="card__header">
-        <h4>⚙️ **Agents Service**</h4>
+        <h4>⚙️ **Agents Service (archon-agents)**</h4>
       </div>
       <div className="card__body">
         <ul>
-          <li>AI processing</li>
-          <li>Document analysis</li>
-          <li>Task execution</li>
-          <li>CPU-intensive work</li>
+          <li><strong>ONLY PydanticAI agents</strong></li>
+          <li>Document analysis agent</li>
+          <li>RAG conversation agent</li>
+          <li>Task automation agent</li>
+          <li>Uses MCP tools for ALL operations</li>
+          <li>NO ML models or embeddings</li>
+          <li>NO direct database access</li>
           <li>Port: **8052**</li>
         </ul>
+        <div className="alert alert--info" role="alert">
+          <strong>Pure AI agents - they use MCP tools for everything</strong>
+        </div>
       </div>
     </div>
   </div>
