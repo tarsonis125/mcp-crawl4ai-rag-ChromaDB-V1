@@ -301,12 +301,10 @@ def register_modules():
     projects_enabled = os.getenv("PROJECTS_ENABLED", "true").lower() == "true"
     if projects_enabled:
         try:
-            # TODO: Create project_module_http.py for HTTP-based version
-            # Temporarily disabled until converted to HTTP-based calls
-            # from src.mcp.modules.project_module import register_project_tools
-            # register_project_tools(mcp)
-            # modules_registered += 1
-            logger.warning("⚠ Project module temporarily disabled - needs HTTP conversion")
+            from src.mcp.modules.project_module import register_project_tools
+            register_project_tools(mcp)
+            modules_registered += 1
+            logger.info("✓ Project module registered (HTTP-based)")
         except ImportError as e:
             logger.warning(f"⚠ Project module not available: {e}")
         except Exception as e:

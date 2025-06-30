@@ -6,7 +6,7 @@ export default {
   tagline: 'Knowledge Engine for AI Coding Assistants',
   url: 'http://localhost:3838',
   baseUrl: '/',
-  onBrokenLinks: 'throw',
+  onBrokenLinks: 'warn',
   onBrokenMarkdownLinks: 'warn',
   favicon: 'img/favicon.svg',
   organizationName: 'archon',

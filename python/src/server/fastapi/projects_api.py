@@ -1875,9 +1875,19 @@ async def mcp_update_task_status_with_websockets(task_id: str, status: str):
             
             ctx.progress_callback = websocket_callback
             
-            # Import and call MCP function directly with context
-            from ..modules.project_module import update_task_status_direct
-            result = await update_task_status_direct(ctx, task_id, status)
+            # Update task status directly using the service
+            supabase_client = get_supabase_client()
+            update_response = supabase_client.table("tasks").update({"status": status, "updated_at": datetime.now().isoformat()}).eq("id", task_id).execute()
+            
+            if not update_response.data:
+                raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+            
+            updated_task = update_response.data[0]
+            
+            # Broadcast WebSocket update
+            await websocket_callback("task_updated", updated_task)
+            
+            result = json.dumps({"success": True, "task": updated_task})
             
             # Parse result
             if isinstance(result, str):

@@ -19,17 +19,15 @@ import json
 import logging
 from datetime import datetime
 
-# Import service classes
-from ..services.projects.project_service import ProjectService
-from ..services.projects.task_service import TaskService
-from ..services.projects.document_service import DocumentService
-from ..services.projects.versioning_service import VersioningService
+# Import HTTP client and service discovery
+import httpx
+from urllib.parse import urljoin
+
+# Import service discovery for HTTP calls
+from src.server.config.service_discovery import get_api_url
 
 # Import Logfire
-from ..logfire_config import mcp_logger
-
-# Import the direct function for FastAPI
-from ..utils import get_supabase_client
+from src.server.config.logfire_config import mcp_logger
 
 logger = logging.getLogger(__name__)
 
@@ -70,59 +68,73 @@ def register_project_tools(mcp: FastMCP):
             span.set_attribute("action", action)
             
             try:
-                # Get Supabase client
-                supabase_client = ctx.request_context.lifespan_context.supabase_client
-                service = ProjectService(supabase_client)
+                api_url = get_api_url()
+                timeout = httpx.Timeout(30.0, connect=5.0)
                 
                 if action == "create":
                     if not title:
                         return json.dumps({"success": False, "error": "Title is required for create action"})
                     
-                    success, result = service.create_project(title, prd, github_repo)
-                    
-                    # If project created successfully, try to add PRD document
-                    if success and prd:
-                        try:
-                            doc_service = DocumentService(supabase_client)
-                            doc_success, doc_result = doc_service.add_document(
-                                project_id=result["project"]["id"],
-                                document_type="prd",
-                                title=f"{title} - Product Requirements Document",
-                                content=prd,
-                                tags=["prd", "requirements"],
-                                author="System"
-                            )
-                            if not doc_success:
-                                result["warning"] = "Project created but PRD document creation failed"
-                        except Exception as e:
-                            logger.warning(f"Failed to create PRD document: {e}")
-                            result["warning"] = "Project created but PRD document creation failed"
-                    
-                    span.set_attribute("success", success)
-                    if success:
-                        span.set_attribute("project_id", result.get("project", {}).get("id"))
-                    return json.dumps({"success": success, **result})
+                    # Call Server API to create project
+                    async with httpx.AsyncClient(timeout=timeout) as client:
+                        response = await client.post(
+                            urljoin(api_url, "/api/projects"),
+                            json={
+                                "title": title,
+                                "prd": prd,
+                                "github_repo": github_repo
+                            }
+                        )
+                        
+                        if response.status_code == 200:
+                            result = response.json()
+                            span.set_attribute("success", True)
+                            span.set_attribute("project_id", result.get("progress_id"))
+                            return json.dumps({"success": True, "project": result})
+                        else:
+                            error_detail = response.json().get("detail", {}).get("error", "Unknown error")
+                            return json.dumps({"success": False, "error": error_detail})
                 
                 elif action == "list":
-                    success, result = service.list_projects()
-                    span.set_attribute("success", success)
-                    if success:
-                        span.set_attribute("project_count", len(result.get("projects", [])))
-                    return json.dumps({"success": success, **result})
+                    async with httpx.AsyncClient(timeout=timeout) as client:
+                        response = await client.get(urljoin(api_url, "/api/projects"))
+                        
+                        if response.status_code == 200:
+                            projects = response.json()
+                            span.set_attribute("success", True)
+                            span.set_attribute("project_count", len(projects))
+                            return json.dumps({"success": True, "projects": projects})
+                        else:
+                            return json.dumps({"success": False, "error": "Failed to list projects"})
                 
                 elif action == "get":
                     if not project_id:
                         return json.dumps({"success": False, "error": "project_id is required for get action"})
-                    success, result = service.get_project(project_id)
-                    span.set_attribute("success", success)
-                    return json.dumps({"success": success, **result})
+                    
+                    async with httpx.AsyncClient(timeout=timeout) as client:
+                        response = await client.get(urljoin(api_url, f"/api/projects/{project_id}"))
+                        
+                        if response.status_code == 200:
+                            project = response.json()
+                            span.set_attribute("success", True)
+                            return json.dumps({"success": True, "project": project})
+                        elif response.status_code == 404:
+                            return json.dumps({"success": False, "error": f"Project {project_id} not found"})
+                        else:
+                            return json.dumps({"success": False, "error": "Failed to get project"})
                 
                 elif action == "delete":
                     if not project_id:
                         return json.dumps({"success": False, "error": "project_id is required for delete action"})
-                    success, result = service.delete_project(project_id)
-                    span.set_attribute("success", success)
-                    return json.dumps({"success": success, **result})
+                    
+                    async with httpx.AsyncClient(timeout=timeout) as client:
+                        response = await client.delete(urljoin(api_url, f"/api/projects/{project_id}"))
+                        
+                        if response.status_code == 200:
+                            span.set_attribute("success", True)
+                            return json.dumps({"success": True, "message": "Project deleted successfully"})
+                        else:
+                            return json.dumps({"success": False, "error": "Failed to delete project"})
                 
                 else:
                     return json.dumps({
@@ -191,9 +203,8 @@ def register_project_tools(mcp: FastMCP):
             span.set_attribute("action", action)
             
             try:
-                # Get Supabase client
-                supabase_client = ctx.request_context.lifespan_context.supabase_client
-                service = TaskService(supabase_client)
+                api_url = get_api_url()
+                timeout = httpx.Timeout(30.0, connect=5.0)
                 
                 if action == "create":
                     if not project_id:
@@ -201,48 +212,77 @@ def register_project_tools(mcp: FastMCP):
                     if not title:
                         return json.dumps({"success": False, "error": "title is required for create action"})
                     
-                    success, result = await service.create_task(
-                        project_id, title, description, assignee, task_order,
-                        feature, parent_task_id, sources, code_examples
-                    )
-                    span.set_attribute("success", success)
-                    if success:
-                        span.set_attribute("task_id", result.get("task", {}).get("id"))
-                    return json.dumps({"success": success, **result})
+                    # Call Server API to create task
+                    async with httpx.AsyncClient(timeout=timeout) as client:
+                        response = await client.post(
+                            urljoin(api_url, "/api/tasks"),
+                            json={
+                                "project_id": project_id,
+                                "title": title,
+                                "description": description,
+                                "assignee": assignee,
+                                "task_order": task_order,
+                                "feature": feature,
+                                "parent_task_id": parent_task_id,
+                                "sources": sources,
+                                "code_examples": code_examples
+                            }
+                        )
+                        
+                        if response.status_code == 200:
+                            result = response.json()
+                            span.set_attribute("success", True)
+                            span.set_attribute("task_id", result.get("task", {}).get("id"))
+                            return json.dumps({"success": True, "task": result.get("task"), "message": result.get("message")})
+                        else:
+                            error_detail = response.text
+                            return json.dumps({"success": False, "error": error_detail})
                 
                 elif action == "list":
-                    # Determine filters based on filter_by
-                    list_project_id = None
-                    list_parent_id = None
-                    list_status = None
+                    # Build URL with query parameters
+                    params = {}
                     
                     if filter_by == "project" and filter_value:
-                        list_project_id = filter_value
+                        url = urljoin(api_url, f"/api/projects/{filter_value}/tasks")
+                        params["include_archived"] = False
+                        params["include_subtasks"] = include_closed
                     elif filter_by == "parent" and filter_value:
-                        list_parent_id = filter_value
-                    elif filter_by == "status" and filter_value:
-                        list_status = filter_value
-                        list_project_id = project_id  # Status filter usually needs project context
-                    elif project_id:  # Default to project filter if project_id provided
-                        list_project_id = project_id
+                        url = urljoin(api_url, f"/api/tasks/subtasks/{filter_value}")
+                        params["include_closed"] = include_closed
+                    elif project_id:
+                        url = urljoin(api_url, f"/api/projects/{project_id}/tasks")
+                        params["include_archived"] = False
+                        params["include_subtasks"] = include_closed
+                    else:
+                        return json.dumps({"success": False, "error": "project_id or filter_value required for list action"})
                     
-                    success, result = service.list_tasks(
-                        project_id=list_project_id,
-                        parent_task_id=list_parent_id,
-                        status=list_status,
-                        include_closed=include_closed
-                    )
-                    span.set_attribute("success", success)
-                    if success:
-                        span.set_attribute("task_count", len(result.get("tasks", [])))
-                    return json.dumps({"success": success, **result})
+                    async with httpx.AsyncClient(timeout=timeout) as client:
+                        response = await client.get(url, params=params)
+                        
+                        if response.status_code == 200:
+                            result = response.json()
+                            tasks = result if isinstance(result, list) else result.get("tasks", [])
+                            span.set_attribute("success", True)
+                            span.set_attribute("task_count", len(tasks))
+                            return json.dumps({"success": True, "tasks": tasks})
+                        else:
+                            return json.dumps({"success": False, "error": "Failed to list tasks"})
                 
                 elif action == "get":
                     if not task_id:
                         return json.dumps({"success": False, "error": "task_id is required for get action"})
-                    success, result = service.get_task(task_id)
-                    span.set_attribute("success", success)
-                    return json.dumps({"success": success, **result})
+                    
+                    async with httpx.AsyncClient(timeout=timeout) as client:
+                        response = await client.get(urljoin(api_url, f"/api/tasks/{task_id}"))
+                        
+                        if response.status_code == 200:
+                            task = response.json()
+                            span.set_attribute("success", True)
+                            return json.dumps({"success": True, "task": task})
+                        elif response.status_code == 404:
+                            return json.dumps({"success": False, "error": f"Task {task_id} not found"})
+                        else:
+                            return json.dumps({"success": False, "error": "Failed to get task"})
                 
                 elif action == "update":
                     if not task_id:
@@ -250,29 +290,33 @@ def register_project_tools(mcp: FastMCP):
                     if not update_fields:
                         return json.dumps({"success": False, "error": "update_fields is required for update action"})
                     
-                    success, result = await service.update_task(task_id, update_fields)
-                    
-                    # Broadcast WebSocket update if available
-                    if success:
-                        progress_callback = getattr(ctx, 'progress_callback', None)
-                        if progress_callback:
-                            try:
-                                await progress_callback(
-                                    event_type="task_updated",
-                                    task_data=result.get("task")
-                                )
-                            except Exception as ws_error:
-                                logger.warning(f"Failed to broadcast WebSocket update: {ws_error}")
-                    
-                    span.set_attribute("success", success)
-                    return json.dumps({"success": success, **result})
+                    async with httpx.AsyncClient(timeout=timeout) as client:
+                        response = await client.put(
+                            urljoin(api_url, f"/api/tasks/{task_id}"),
+                            json=update_fields
+                        )
+                        
+                        if response.status_code == 200:
+                            result = response.json()
+                            span.set_attribute("success", True)
+                            return json.dumps({"success": True, "task": result.get("task"), "message": result.get("message")})
+                        else:
+                            error_detail = response.text
+                            return json.dumps({"success": False, "error": error_detail})
                 
                 elif action in ["delete", "archive"]:
                     if not task_id:
                         return json.dumps({"success": False, "error": "task_id is required for delete/archive action"})
-                    success, result = await service.archive_task(task_id)
-                    span.set_attribute("success", success)
-                    return json.dumps({"success": success, **result})
+                    
+                    async with httpx.AsyncClient(timeout=timeout) as client:
+                        response = await client.delete(urljoin(api_url, f"/api/tasks/{task_id}"))
+                        
+                        if response.status_code == 200:
+                            result = response.json()
+                            span.set_attribute("success", True)
+                            return json.dumps({"success": True, "message": result.get("message"), "subtasks_archived": result.get("subtasks_archived", 0)})
+                        else:
+                            return json.dumps({"success": False, "error": "Failed to archive task"})
                 
                 else:
                     return json.dumps({
@@ -325,76 +369,11 @@ def register_project_tools(mcp: FastMCP):
             span.set_attribute("project_id", project_id)
             
             try:
-                # Get Supabase client
-                supabase_client = ctx.request_context.lifespan_context.supabase_client
-                service = DocumentService(supabase_client)
-                
-                if action == "add":
-                    if not document_type:
-                        return json.dumps({"success": False, "error": "document_type is required for add action"})
-                    if not title:
-                        return json.dumps({"success": False, "error": "title is required for add action"})
-                    
-                    # Extract metadata fields
-                    tags = metadata.get("tags") if metadata else None
-                    author = metadata.get("author") if metadata else None
-                    
-                    success, result = service.add_document(
-                        project_id, document_type, title, content, tags, author
-                    )
-                    span.set_attribute("success", success)
-                    if success:
-                        span.set_attribute("doc_id", result.get("document", {}).get("id"))
-                    return json.dumps({"success": success, **result})
-                
-                elif action == "list":
-                    success, result = service.list_documents(project_id)
-                    span.set_attribute("success", success)
-                    if success:
-                        span.set_attribute("document_count", len(result.get("documents", [])))
-                    return json.dumps({"success": success, **result})
-                
-                elif action == "get":
-                    if not doc_id:
-                        return json.dumps({"success": False, "error": "doc_id is required for get action"})
-                    success, result = service.get_document(project_id, doc_id)
-                    span.set_attribute("success", success)
-                    return json.dumps({"success": success, **result})
-                
-                elif action == "update":
-                    if not doc_id:
-                        return json.dumps({"success": False, "error": "doc_id is required for update action"})
-                    
-                    # Build update fields
-                    update_fields = {}
-                    if title is not None:
-                        update_fields["title"] = title
-                    if content is not None:
-                        update_fields["content"] = content
-                    if metadata:
-                        for key in ["status", "tags", "author", "version"]:
-                            if key in metadata:
-                                update_fields[key] = metadata[key]
-                    
-                    if not update_fields:
-                        return json.dumps({"success": False, "error": "No fields to update"})
-                    
-                    success, result = service.update_document(project_id, doc_id, update_fields)
-                    span.set_attribute("success", success)
-                    return json.dumps({"success": success, **result})
-                
-                elif action == "delete":
-                    if not doc_id:
-                        return json.dumps({"success": False, "error": "doc_id is required for delete action"})
-                    success, result = service.delete_document(project_id, doc_id)
-                    span.set_attribute("success", success)
-                    return json.dumps({"success": success, **result})
-                
-                else:
-                    return json.dumps({
-                        "success": False,
-                        "error": f"Invalid action '{action}'. Must be one of: add, list, get, update, delete"
-                    })
+                # Document management is not yet implemented in the Server API
+                return json.dumps({
+                    "success": False, 
+                    "error": "Document management endpoints are not yet implemented in the Server API"
+                })
                 
             except Exception as e:
                 logger.error(f"Error in manage_document: {e}")
@@ -443,49 +422,11 @@ def register_project_tools(mcp: FastMCP):
             span.set_attribute("field_name", field_name)
             
             try:
-                # Get Supabase client
-                supabase_client = ctx.request_context.lifespan_context.supabase_client
-                service = VersioningService(supabase_client)
-                
-                if action == "create":
-                    if not content:
-                        return json.dumps({"success": False, "error": "content is required for create action"})
-                    
-                    success, result = service.create_version(
-                        project_id, field_name, content, change_summary,
-                        "update", document_id, created_by
-                    )
-                    span.set_attribute("success", success)
-                    if success:
-                        span.set_attribute("version_number", result.get("version_number"))
-                    return json.dumps({"success": success, **result})
-                
-                elif action == "list":
-                    success, result = service.list_versions(project_id, field_name)
-                    span.set_attribute("success", success)
-                    if success:
-                        span.set_attribute("version_count", len(result.get("versions", [])))
-                    return json.dumps({"success": success, **result})
-                
-                elif action == "get":
-                    if version_number is None:
-                        return json.dumps({"success": False, "error": "version_number is required for get action"})
-                    success, result = service.get_version_content(project_id, field_name, version_number)
-                    span.set_attribute("success", success)
-                    return json.dumps({"success": success, **result})
-                
-                elif action == "restore":
-                    if version_number is None:
-                        return json.dumps({"success": False, "error": "version_number is required for restore action"})
-                    success, result = service.restore_version(project_id, field_name, version_number, created_by)
-                    span.set_attribute("success", success)
-                    return json.dumps({"success": success, **result})
-                
-                else:
-                    return json.dumps({
-                        "success": False,
-                        "error": f"Invalid action '{action}'. Must be one of: create, list, get, restore"
-                    })
+                # Version management is not yet implemented in the Server API
+                return json.dumps({
+                    "success": False, 
+                    "error": "Version management endpoints are not yet implemented in the Server API"
+                })
                 
             except Exception as e:
                 logger.error(f"Error in manage_versions: {e}")
@@ -508,52 +449,22 @@ def register_project_tools(mcp: FastMCP):
             JSON string with list of features
         """
         try:
-            # Get Supabase client
-            supabase_client = ctx.request_context.lifespan_context.supabase_client
-            service = ProjectService(supabase_client)
+            api_url = get_api_url()
+            timeout = httpx.Timeout(30.0, connect=5.0)
             
-            success, result = service.get_project_features(project_id)
-            return json.dumps({"success": success, **result})
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.get(urljoin(api_url, f"/api/projects/{project_id}/features"))
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    return json.dumps({"success": True, **result})
+                elif response.status_code == 404:
+                    return json.dumps({"success": False, "error": "Project not found"})
+                else:
+                    return json.dumps({"success": False, "error": "Failed to get project features"})
             
         except Exception as e:
             logger.error(f"Error getting project features: {e}")
             return json.dumps({"success": False, "error": str(e)})
     
     logger.info("✓ Project Module registered with 5 consolidated tools")
-
-
-# Direct function for FastAPI endpoints (following RAG pattern)
-async def update_task_status_direct(ctx, task_id: str, status: str) -> str:
-    """
-    Direct function for updating task status that can be called from FastAPI with context.
-    Follows the same pattern as RAG module's smart_crawl_url_direct.
-    """
-    try:
-        # Get Supabase client directly
-        supabase_client = get_supabase_client()
-        service = TaskService(supabase_client)
-        
-        # Update task status
-        success, result = service.update_task(task_id, {"status": status})
-        
-        if success:
-            # Check for progress callback and broadcast WebSocket update
-            progress_callback = getattr(ctx, 'progress_callback', None)
-            if progress_callback:
-                try:
-                    await progress_callback(
-                        event_type="task_updated",
-                        task_data=result.get("task")
-                    )
-                    logger.info(f"WebSocket update broadcast for task {task_id}")
-                except Exception as ws_error:
-                    logger.warning(f"Failed to broadcast WebSocket update: {ws_error}")
-        
-        return json.dumps({"success": success, **result})
-        
-    except Exception as e:
-        logger.error(f"Error updating task status: {str(e)}")
-        return json.dumps({
-            "success": False,
-            "error": f"Error updating task status: {str(e)}"
-        })

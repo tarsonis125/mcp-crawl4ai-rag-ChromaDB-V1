@@ -12,9 +12,6 @@ services:
       - "3838:80"
     networks:
       - app-network
-    depends_on:
-      - archon-api
-      - frontend
 
 networks:
   app-network:

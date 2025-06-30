@@ -34,10 +34,10 @@ class ServiceDiscovery:
     
     # Service name mappings
     SERVICE_NAMES = {
-        "api": "archon-api",
+        "api": "archon-server",
         "mcp": "archon-mcp",
         "agents": "archon-agents",
-        "archon-api": "archon-api",
+        "archon-server": "archon-server",
         "archon-mcp": "archon-mcp",
         "archon-agents": "archon-agents"
     }

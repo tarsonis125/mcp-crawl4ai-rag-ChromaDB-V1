@@ -411,9 +411,13 @@ AI coding assistants can autonomously manage tasks through MCP tools:
 |------|---------|-------------|------------|
 | **`manage_project`** | `create`, `list`, `get`, `delete` | Complete project lifecycle | `action`, `project_id`, `title`, `prd`, `github_repo` |
 | **`manage_task`** | `create`, `list`, `get`, `update`, `delete`, `archive` | All task operations | `action`, `task_id`, `project_id`, `filter_by`, `filter_value`, `update_fields` |
-| **`manage_document`** | `add`, `list`, `get`, `update`, `delete` | Document management | `action`, `project_id`, `doc_id`, `document_type`, `title`, `content`, `metadata` |
-| **`manage_versions`** | `create`, `list`, `get`, `restore` | Version control | `action`, `project_id`, `field_name`, `version_number`, `content` |
+| **`manage_document`** | `add`, `list`, `get`, `update`, `delete` | Document management *(Not yet implemented)* | `action`, `project_id`, `doc_id`, `document_type`, `title`, `content`, `metadata` |
+| **`manage_versions`** | `create`, `list`, `get`, `restore` | Version control *(Not yet implemented)* | `action`, `project_id`, `field_name`, `version_number`, `content` |
 | **`get_project_features`** | *(query only)* | Retrieve features | `project_id` |
+
+<Admonition type="info" title="Implementation Status">
+  The `manage_document` and `manage_versions` tools are defined in the MCP module but require corresponding Server API endpoints to be implemented. Currently, these tools will return "not yet implemented" errors. The other tools (`manage_project`, `manage_task`, and `get_project_features`) are fully functional.
+</Admonition>
 
 #### Action Patterns
 
