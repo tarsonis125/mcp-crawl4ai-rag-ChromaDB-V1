@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 import openai
 from supabase import Client
 
-from ...logfire_config import search_logger
+from ...config.logfire_config import search_logger
 from ..embeddings.embedding_service import create_embeddings_batch, create_embedding
 
 

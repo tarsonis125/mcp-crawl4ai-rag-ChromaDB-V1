@@ -11,7 +11,7 @@ from typing import Dict, Any, List, Optional, Tuple
 import uuid
 from urllib.parse import urljoin
 
-from ..config.config import get_api_url, get_agents_url
+from ..config.service_discovery import get_api_url, get_agents_url
 from ..config.logfire_config import mcp_logger
 
 class MCPServiceClient:

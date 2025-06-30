@@ -34,7 +34,7 @@ from ...utils import (
     get_utils_threading_service
 )
 from ..threading_service import ProcessingMode
-from ...logfire_config import search_logger
+from ...config.logfire_config import search_logger
 
 logger = logging.getLogger(__name__)
 

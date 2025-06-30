@@ -25,7 +25,7 @@ from ..utils import get_supabase_client, add_documents_to_supabase, extract_sour
 from ..services.rag.document_storage_service import DocumentStorageService
 
 # Import Logfire - use logfire directly like other working APIs
-from ..logfire_config import logfire
+from ..config.logfire_config import logfire
 
 # Document processing imports
 try:

@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext, ModelRetry
 
 from .base_agent import BaseAgent, ArchonDependencies
-from ..utils import get_supabase_client
+from .mcp_client import get_mcp_client
 
 logger = logging.getLogger(__name__)
 
@@ -126,21 +126,19 @@ class RagAgent(BaseAgent[RagDependencies, str]):
                 if source_filter is None:
                     source_filter = ctx.deps.source_filter
                 
-                # Use the SearchService directly
-                from ..services.rag.search_service import SearchService
-                from ..utils import get_supabase_client
-                
-                supabase_client = get_supabase_client()
-                search_service = SearchService(supabase_client)
-                
-                # Perform the RAG query using the service
-                success, result = search_service.perform_rag_query(
+                # Use MCP client to perform RAG query
+                mcp_client = await get_mcp_client()
+                result_json = await mcp_client.perform_rag_query(
                     query=query,
                     source=source_filter,
                     match_count=ctx.deps.match_count
                 )
                 
-                if not success:
+                # Parse the JSON response
+                import json
+                result = json.loads(result_json)
+                
+                if not result.get('success', False):
                     return f"Search failed: {result.get('error', 'Unknown error')}"
                 
                 results = result.get('results', [])
@@ -177,15 +175,15 @@ class RagAgent(BaseAgent[RagDependencies, str]):
         async def list_available_sources(ctx: RunContext[RagDependencies]) -> str:
             """List all available sources that can be searched."""
             try:
-                from ..services.rag.source_management_service import SourceManagementService
-                from ..utils import get_supabase_client
+                # Use MCP client to get available sources
+                mcp_client = await get_mcp_client()
+                result_json = await mcp_client.get_available_sources()
                 
-                supabase_client = get_supabase_client()
-                source_service = SourceManagementService(supabase_client)
+                # Parse the JSON response
+                import json
+                result = json.loads(result_json)
                 
-                success, result = source_service.get_available_sources()
-                
-                if not success:
+                if not result.get('success', False):
                     return f"Failed to get sources: {result.get('error', 'Unknown error')}"
                 
                 sources = result.get('sources', [])
@@ -216,26 +214,26 @@ class RagAgent(BaseAgent[RagDependencies, str]):
         async def search_code_examples(ctx: RunContext[RagDependencies], query: str, source_filter: Optional[str] = None) -> str:
             """Search for code examples related to the query."""
             try:
-                from ..services.rag.search_service import SearchService
-                from ..utils import get_supabase_client
-                
-                supabase_client = get_supabase_client()
-                search_service = SearchService(supabase_client)
-                
                 # Use source filter from context if not provided
                 if source_filter is None:
                     source_filter = ctx.deps.source_filter
                 
-                success, result = search_service.search_code_examples_service(
+                # Use MCP client to search code examples
+                mcp_client = await get_mcp_client()
+                result_json = await mcp_client.search_code_examples(
                     query=query,
                     source_id=source_filter,
                     match_count=ctx.deps.match_count
                 )
                 
-                if not success:
+                # Parse the JSON response
+                import json
+                result = json.loads(result_json)
+                
+                if not result.get('success', False):
                     return f"Code search failed: {result.get('error', 'Unknown error')}"
                 
-                examples = result.get('code_examples', [])
+                examples = result.get('results', result.get('code_examples', []))
                 if not examples:
                     return "No code examples found for your query."
                 
@@ -243,7 +241,7 @@ class RagAgent(BaseAgent[RagDependencies, str]):
                 for i, example in enumerate(examples, 1):
                     similarity = example.get('similarity', 0)
                     summary = example.get('summary', 'No summary')
-                    code = example.get('code_block', '')
+                    code = example.get('code', example.get('code_block', ''))
                     url = example.get('url', '')
                     
                     # Extract language from code block if available

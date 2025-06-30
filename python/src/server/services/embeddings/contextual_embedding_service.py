@@ -10,7 +10,7 @@ import asyncio
 from typing import List, Tuple
 import openai
 
-from ...logfire_config import search_logger
+from ...config.logfire_config import search_logger
 from ..threading_service import get_threading_service
 
 

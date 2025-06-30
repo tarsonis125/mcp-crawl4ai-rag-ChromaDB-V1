@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Tuple, Optional
 import openai
 from supabase import Client
 
-from ..logfire_config import search_logger
+from ..config.logfire_config import search_logger
 
 
 def extract_source_summary(source_id: str, content: str, max_length: int = 500) -> str:

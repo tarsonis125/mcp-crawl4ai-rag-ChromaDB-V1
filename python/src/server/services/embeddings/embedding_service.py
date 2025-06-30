@@ -10,7 +10,7 @@ from fastapi import WebSocket
 import openai
 from contextlib import asynccontextmanager
 
-from ...logfire_config import search_logger
+from ...config.logfire_config import search_logger
 from ..threading_service import get_threading_service
 
 

@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from typing import Optional
 import logging
 
-from .logfire_config import logfire
+from .config.logfire_config import logfire
 
 logger = logging.getLogger(__name__)
 

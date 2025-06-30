@@ -23,7 +23,7 @@ import aiohttp
 from ..utils import get_supabase_client
 
 # Import Logfire
-from ..logfire_config import mcp_logger, api_logger
+from ..config.logfire_config import mcp_logger, api_logger
 
 router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 

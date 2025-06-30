@@ -20,10 +20,10 @@ import time
 
 from ..utils import get_supabase_client
 import logging
-from ..logfire_config import get_logger
+from ..config.logfire_config import get_logger
 
 # Get logfire logger for this module - use logfire directly like MCP server does
-from ..logfire_config import logfire
+from ..config.logfire_config import logfire
 logfire_logger = logfire
 
 logger = logging.getLogger(__name__)

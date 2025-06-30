@@ -14,7 +14,7 @@ from mcp.server.fastmcp import FastMCP, Context
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Any
 from dotenv import load_dotenv
 from pathlib import Path
 import os
@@ -47,13 +47,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Import Logfire configuration
-from src.logfire_config import setup_logfire, mcp_logger
+from src.server.config.logfire_config import setup_logfire, mcp_logger
 
 # Import session management (lightweight)
-from src.services.mcp_session_manager import get_session_manager
+from src.server.services.mcp_session_manager import get_session_manager
 
 # Import service client for HTTP calls
-from src.services.mcp_service_client import get_mcp_service_client
+from src.server.services.mcp_service_client import get_mcp_service_client
 
 # Global initialization lock and flag
 _initialization_lock = threading.Lock()
@@ -287,7 +287,7 @@ def register_modules():
     
     # Import and register RAG module (HTTP-based version)
     try:
-        from src.modules.rag_module_http import register_rag_tools
+        from src.mcp.modules.rag_module import register_rag_tools
         register_rag_tools(mcp)
         modules_registered += 1
         logger.info("✓ RAG module registered (HTTP-based)")
@@ -302,10 +302,11 @@ def register_modules():
     if projects_enabled:
         try:
             # TODO: Create project_module_http.py for HTTP-based version
-            from src.modules.project_module import register_project_tools
-            register_project_tools(mcp)
-            modules_registered += 1
-            logger.info("✓ Project module registered (needs HTTP conversion)")
+            # Temporarily disabled until converted to HTTP-based calls
+            # from src.mcp.modules.project_module import register_project_tools
+            # register_project_tools(mcp)
+            # modules_registered += 1
+            logger.warning("⚠ Project module temporarily disabled - needs HTTP conversion")
         except ImportError as e:
             logger.warning(f"⚠ Project module not available: {e}")
         except Exception as e:

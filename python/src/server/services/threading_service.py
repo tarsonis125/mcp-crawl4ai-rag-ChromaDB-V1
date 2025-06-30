@@ -21,7 +21,7 @@ import logging
 from enum import Enum
 
 from fastapi import WebSocket
-from ..logfire_config import get_logger
+from ..config.logfire_config import get_logger
 
 # Get logger for this module
 logfire_logger = get_logger("threading")

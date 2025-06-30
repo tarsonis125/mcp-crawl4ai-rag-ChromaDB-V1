@@ -6,7 +6,7 @@ Handles vector similarity search for documents and code examples.
 from typing import List, Dict, Any, Optional
 from supabase import Client
 
-from ...logfire_config import search_logger
+from ...config.logfire_config import search_logger
 from ..embeddings.embedding_service import create_embedding
 
 

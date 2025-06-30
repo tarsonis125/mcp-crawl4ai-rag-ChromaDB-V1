@@ -22,23 +22,21 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import Logfire configuration
-from .logfire_config import setup_logfire, api_logger
+from .config.logfire_config import setup_logfire, api_logger
 
 # Import Socket.IO integration
 from .socketio_app import create_socketio_app, register_namespaces
 
 # Import modular API routers
-from .api.settings_api import router as settings_router
-from .api.mcp_api import router as mcp_router
-from .api.mcp_client_api import router as mcp_client_router
-from .api.knowledge_api import router as knowledge_router  
-from .api.projects_api import router as projects_router
-from .api.tests_api import router as tests_router
-from .api.agent_chat_api import router as agent_chat_router
-from .api.internal_api import router as internal_router
+from .fastapi.settings_api import router as settings_router
+from .fastapi.mcp_api import router as mcp_router
+from .fastapi.knowledge_api import router as knowledge_router  
+from .fastapi.projects_api import router as projects_router
+from .fastapi.tests_api import router as tests_router
+# from .fastapi.agent_chat_api import router as agent_chat_router  # TODO: Fix to use HTTP calls to agents service
 
 # Import utilities and core classes
-from .credential_service import initialize_credentials
+from .services.credential_service import initialize_credentials
 from .utils import get_supabase_client
 
 # Import missing dependencies that the modular APIs need
@@ -180,7 +178,7 @@ async def lifespan(app: FastAPI):
         # Initialize Socket.IO services
         try:
             # Import API modules to register their Socket.IO handlers
-            from .api import agent_chat_api, knowledge_api, projects_api
+            from .api import knowledge_api, projects_api  # agent_chat_api removed - TODO: Fix to use HTTP calls
             api_logger.info("✅ Socket.IO handlers imported from API modules")
             
             # Register all namespaces
@@ -197,39 +195,8 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             api_logger.warning(f"Could not initialize prompt service: {e}")
         
-        # Start MCP client service and auto-connect clients
-        try:
-            from .services.mcp_client_service import start_mcp_client_service, get_mcp_client_service
-            from .api.mcp_client_api import client_manager
-            
-            # Start the MCP client service
-            await start_mcp_client_service()
-            api_logger.info("✅ MCP client service started")
-            
-            # Schedule auto-connect in the background after a delay
-            async def auto_connect_clients():
-                # Wait a bit for MCP server to be fully ready
-                await asyncio.sleep(5)
-                
-                # Get all clients with auto_connect enabled
-                clients = await client_manager.get_all_clients()
-                auto_connect_clients = [c for c in clients if c.auto_connect]
-                
-                if auto_connect_clients:
-                    api_logger.info(f"🔌 Auto-connecting {len(auto_connect_clients)} MCP clients...")
-                    for client in auto_connect_clients:
-                        try:
-                            api_logger.info(f"  Connecting to {client.name}...")
-                            await client_manager.connect_client(client.id)
-                            api_logger.info(f"  ✅ Connected to {client.name}")
-                        except Exception as e:
-                            api_logger.error(f"  ❌ Failed to connect to {client.name}: {str(e)}")
-            
-            # Start auto-connect in background
-            asyncio.create_task(auto_connect_clients())
-            
-        except Exception as e:
-            api_logger.warning(f"Could not start MCP client service: {str(e)}")
+        # MCP Client functionality removed from architecture
+        # Agents now use MCP tools directly
         
         # Mark initialization as complete
         _initialization_complete = True
@@ -246,13 +213,7 @@ async def lifespan(app: FastAPI):
     api_logger.info("🛑 Shutting down Archon backend...")
     
     try:
-        # Stop MCP client service
-        try:
-            from .services.mcp_client_service import stop_mcp_client_service
-            await stop_mcp_client_service()
-            api_logger.info("✅ MCP client service stopped")
-        except Exception as e:
-            api_logger.warning("Could not stop MCP client service", error=str(e))
+        # MCP Client cleanup not needed
         
         # Cleanup crawling context
         try:
@@ -300,12 +261,12 @@ async def skip_health_check_logs(request, call_next):
 # Include API routers
 app.include_router(settings_router)
 app.include_router(mcp_router)
-app.include_router(mcp_client_router)
+# app.include_router(mcp_client_router)  # Removed - not part of new architecture
 app.include_router(knowledge_router)
 app.include_router(projects_router)
 app.include_router(tests_router)
-app.include_router(agent_chat_router)
-app.include_router(internal_router)
+# app.include_router(agent_chat_router)  # TODO: Fix to use HTTP calls to agents service
+# app.include_router(internal_router)  # Removed - internal API deleted
 
 # Root endpoint
 @app.get("/")

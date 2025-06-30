@@ -22,7 +22,7 @@ from pydantic import BaseModel
 import logging
 
 # Import logfire for comprehensive API logging
-from ..logfire_config import logfire
+from ..config.logfire_config import logfire
 
 logger = logging.getLogger(__name__)
 

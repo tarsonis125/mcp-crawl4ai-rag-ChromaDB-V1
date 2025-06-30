@@ -26,20 +26,20 @@ Archon's backend is built on a modern, scalable architecture using FastAPI micro
 **These principles are FUNDAMENTAL to understanding Archon's architecture:**
 
 1. **Server Service (Port 8080)**: Contains **ALL** business logic, services, ML models, and data operations
-2. **MCP Service (Port 8051)**: A **thin protocol wrapper** that exposes Server functionality as MCP tools
+2. **MCP Service (Port 8051)**: A **lightweight HTTP-based protocol wrapper** that calls Server APIs and exposes them as MCP tools
 3. **Agents Service (Port 8052)**: Contains **ONLY** PydanticAI agents that use MCP tools
 
-**There is NO business logic outside the Server. MCP and Agents are lightweight consumers of Server functionality.**
+**There is NO business logic outside the Server. MCP and Agents are lightweight HTTP-based consumers of Server functionality.**
 
 </Admonition>
 
 ### Key Architecture Rules
 
 - **Single Source of Truth**: ALL business logic lives in the Server service (`/src/server/`)
-- **No Inter-Service HTTP**: Within Python, services import directly - no HTTP calls between containers
-- **MCP is a Wrapper**: MCP simply imports Server services and exposes them as tools
+- **Inter-Service Communication**: Services communicate via HTTP APIs for true microservices separation
+- **MCP is a Lightweight Wrapper**: MCP makes HTTP calls to Server and exposes them as MCP tools
 - **Agents are Pure AI**: Agents only contain PydanticAI logic and use MCP tools for everything else
-- **ML Models in Server**: ALL ML models (embeddings, reranking, etc.) belong in Server, NOT in Agents
+- **ML Models in Server**: ALL ML models (embeddings, reranking, etc.) belong in Server, NOT in Agents or MCP
 
 ## 🎯 Microservices Architecture Overview
 

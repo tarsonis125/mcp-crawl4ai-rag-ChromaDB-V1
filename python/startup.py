@@ -9,7 +9,7 @@ import sys
 import subprocess
 import asyncio
 from pathlib import Path
-from src.credential_service import credential_service
+from src.server.services.credential_service import credential_service
 
 def print_header():
     """Print startup header."""

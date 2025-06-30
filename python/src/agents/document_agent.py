@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext, ModelRetry
 
 from .base_agent import BaseAgent, ArchonDependencies
-from ..utils import get_supabase_client
+from .mcp_client import get_mcp_client
 
 logger = logging.getLogger(__name__)
 
@@ -239,8 +239,8 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
                     author=ctx.deps.user_id or "DocumentAgent"
                 )
                 
-                if success:
-                    doc_id = result_data.get('document', {}).get('id', 'unknown')
+                if result_data.get('success', False):
+                    doc_id = result_data.get('document_id', 'unknown')
                     
                     # Send success progress update if callback available
                     if ctx.deps.progress_callback:
@@ -276,21 +276,23 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
         ) -> str:
             """Update a specific section of an existing document."""
             try:
-                supabase = get_supabase_client()
+                # First get the current document via MCP
+                mcp_client = await get_mcp_client()
+                get_result = await mcp_client.manage_document(
+                    action="get",
+                    project_id=ctx.deps.project_id,
+                    title=document_title
+                )
                 
-                # First get the current document
-                response = supabase.table("projects").select("docs").eq("id", ctx.deps.project_id).execute()
+                # Parse the response
+                get_data = json.loads(get_result)
+                if not get_data.get('success', False):
+                    return f"Failed to get document: {get_data.get('error', 'Unknown error')}"
                 
-                if not response.data:
-                    return "No project found."
-                
-                docs = response.data[0].get("docs", [])
-                matching_docs = [(i, doc) for i, doc in enumerate(docs) if document_title.lower() in doc.get('title', '').lower()]
-                
-                if not matching_docs:
+                doc = get_data.get('document', {})
+                if not doc:
                     return f"No document found matching '{document_title}'"
                 
-                doc_index, doc = matching_docs[0]
                 doc_id = doc.get("id")
                 current_content = doc.get("content", {})
                 
@@ -322,33 +324,16 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
                     except:
                         current_content[section_to_update] = new_content
                 
-                # Update document via MCP tools
-                from ..modules.project_module import update_project_document
-                from ..utils import get_supabase_client
-                
-                # Create proper MCP context structure
-                supabase_client = get_supabase_client()
-                lifespan_context = type('LifespanContext', (), {
-                    'supabase_client': supabase_client
-                })()
-                
-                request_context = type('RequestContext', (), {
-                    'lifespan_context': lifespan_context
-                })()
-                
-                mcp_ctx = type('Context', (), {
-                    'request_context': request_context
-                })()
-                
-                result = await update_project_document(
-                    ctx=mcp_ctx,
+                # Update document via MCP
+                update_result = await mcp_client.manage_document(
+                    action="update",
                     project_id=ctx.deps.project_id,
                     doc_id=doc_id,
                     content=current_content,
                     version=f"{float(doc.get('version', '1.0')) + 0.1:.1f}"
                 )
                 
-                result_data = json.loads(result)
+                result_data = json.loads(update_result)
                 if result_data.get("success"):
                     return f"Successfully updated section '{section_to_update}' in document '{document_title}'. Change: {update_description}"
                 else:
@@ -434,15 +419,8 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
                     }
                 }
                 
-                # Save to features array instead of docs
-                supabase = get_supabase_client()
-                
-                # Get current project features
-                project_response = supabase.table("projects").select("features").eq("id", ctx.deps.project_id).execute()
-                if not project_response.data:
-                    return "Project not found"
-                
-                current_features = project_response.data[0].get("features", [])
+                # Create feature via MCP
+                mcp_client = await get_mcp_client()
                 
                 # Create new feature entry
                 new_feature = {
@@ -454,20 +432,19 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
                     "created_by": ctx.deps.user_id or "DocumentAgent"
                 }
                 
-                # Add to features array
-                updated_features = current_features + [new_feature]
+                # Use MCP to update project features
+                result_json = await mcp_client.manage_project(
+                    action="add_feature",
+                    project_id=ctx.deps.project_id,
+                    feature=new_feature
+                )
                 
-                # Update project
-                update_response = supabase.table("projects").update({
-                    "features": updated_features
-                }).eq("id", ctx.deps.project_id).execute()
+                result_data = json.loads(result_json)
                 
-                success = bool(update_response.data)
-                
-                if success:
+                if result_data.get('success', False):
                     return f"Successfully created React Flow feature plan for '{feature_name}'. The plan includes a visual flow with 5 nodes and user story breakdown. You can now view and edit this in the project documents."
                 else:
-                    return f"Failed to create feature plan"
+                    return f"Failed to create feature plan: {result_data.get('error', 'Unknown error')}"
                 
             except Exception as e:
                 logger.error(f"Error creating feature plan: {e}")
@@ -569,15 +546,8 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
                     }
                 }
                 
-                # Save to data array instead of docs
-                supabase = get_supabase_client()
-                
-                # Get current project data
-                project_response = supabase.table("projects").select("data").eq("id", ctx.deps.project_id).execute()
-                if not project_response.data:
-                    return "Project not found"
-                
-                current_data = project_response.data[0].get("data", [])
+                # Create ERD via MCP
+                mcp_client = await get_mcp_client()
                 
                 # Create new data entry
                 new_data_model = {
@@ -589,20 +559,19 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
                     "created_by": ctx.deps.user_id or "DocumentAgent"
                 }
                 
-                # Add to data array
-                updated_data = current_data + [new_data_model]
+                # Use MCP to update project data
+                result_json = await mcp_client.manage_project(
+                    action="add_data",
+                    project_id=ctx.deps.project_id,
+                    data=new_data_model
+                )
                 
-                # Update project
-                update_response = supabase.table("projects").update({
-                    "data": updated_data
-                }).eq("id", ctx.deps.project_id).execute()
+                result_data = json.loads(result_json)
                 
-                success = bool(update_response.data)
-                
-                if success:
+                if result_data.get('success', False):
                     return f"Successfully created ERD for '{system_name}' with {len(entities)} entities. Generated SQL schema and relationship mappings. The ERD includes detailed entity definitions and can be imported into database design tools."
                 else:
-                    return f"Failed to create ERD"
+                    return f"Failed to create ERD: {result_data.get('error', 'Unknown error')}"
                 
             except Exception as e:
                 logger.error(f"Error creating ERD: {e}")
@@ -647,11 +616,10 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
                     }
                 }
                 
-                # Save approval request using DocumentService
-                from ..services.projects.document_service import DocumentService
-                
-                doc_service = DocumentService()
-                success, result_data = doc_service.add_document(
+                # Save approval request via MCP
+                mcp_client = await get_mcp_client()
+                result_json = await mcp_client.manage_document(
+                    action="create",
                     project_id=ctx.deps.project_id,
                     document_type="approval_request",
                     title=f"Approval Request: {document_title}",
@@ -660,7 +628,9 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
                     author=ctx.deps.user_id or "DocumentAgent"
                 )
                 
-                if success:
+                result_data = json.loads(result_json)
+                
+                if result_data.get('success', False):
                     return f"Approval request created for changes to '{document_title}'. Status: Pending approval from Product Manager and Technical Lead. Deadline: 3 days. Change summary: {change_summary}"
                 else:
                     return f"Failed to create approval request: {result_data.get('error', 'Unknown error')}"

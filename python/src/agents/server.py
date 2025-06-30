@@ -21,7 +21,7 @@ import uvicorn
 # Import our PydanticAI agents
 from .base_agent import BaseAgent
 from .document_agent import DocumentAgent
-from .rag_agent import RAGAgent
+from .rag_agent import RagAgent
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -45,7 +45,7 @@ class AgentResponse(BaseModel):
 # Agent registry
 AVAILABLE_AGENTS = {
     "document": DocumentAgent,
-    "rag": RAGAgent,
+    "rag": RagAgent,
 }
 
 # Lifespan context manager

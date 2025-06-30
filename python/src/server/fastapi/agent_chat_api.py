@@ -17,7 +17,7 @@ from ..agents.rag_agent import RagAgent
 from ..utils import get_supabase_client
 
 # Import logfire for comprehensive API logging  
-from ..logfire_config import logfire
+from ..config.logfire_config import logfire
 import logging
 
 # Set up logging

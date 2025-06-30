@@ -15,7 +15,7 @@ from slowapi.errors import RateLimitExceeded
 
 from src.server.config.settings import get_settings
 from src.server.fastapi import api_router
-from src.logfire_config import api_logger
+from src.server.config.logfire_config import api_logger
 
 settings = get_settings()
 
@@ -58,7 +58,6 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Include routers
 app.include_router(api_router, prefix="/api/v1")
-app.include_router(internal_router, prefix="/internal")
 
 # Health check endpoint
 @app.get("/health")

@@ -7,18 +7,23 @@ WORKDIR /app
 COPY requirements.mcp.txt .
 RUN pip install --no-cache-dir -r requirements.mcp.txt
 
-# Create directory structure
+# Create minimal directory structure
 RUN mkdir -p src/mcp/modules src/server/services src/server/config
 
 # Copy only MCP-specific files (lightweight protocol wrapper)
 COPY src/mcp/ src/mcp/
-# Copy minimal dependencies from server
-COPY src/server/services/mcp_service_client.py src/server/services/
-COPY src/server/services/__init__.py src/server/services/
-COPY src/server/services/credential_service.py src/server/services/
-COPY src/server/config/ src/server/config/
-COPY src/server/utils.py src/server/
 COPY src/__init__.py src/
+
+# Copy only the minimal server files MCP needs for HTTP communication
+COPY src/server/__init__.py src/server/
+COPY src/server/services/__init__.py src/server/services/
+COPY src/server/services/mcp_service_client.py src/server/services/
+COPY src/server/services/client_manager.py src/server/services/
+COPY src/server/services/mcp_session_manager.py src/server/services/
+COPY src/server/utils.py src/server/
+COPY src/server/config/__init__.py src/server/config/
+COPY src/server/config/service_discovery.py src/server/config/
+COPY src/server/config/logfire_config.py src/server/config/
 
 # Set environment variables
 ENV PYTHONPATH="/app:$PYTHONPATH"

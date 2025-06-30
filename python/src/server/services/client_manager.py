@@ -7,7 +7,7 @@ import os
 import re
 from supabase import create_client, Client
 
-from ..logfire_config import search_logger
+from ..config.logfire_config import search_logger
 
 
 def get_supabase_client() -> Client:

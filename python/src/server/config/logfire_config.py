@@ -42,7 +42,7 @@ def is_logfire_enabled() -> bool:
             
         # Try to get from credential service (database setting)
         try:
-            from src.credential_service import credential_service
+            from src.server.services.credential_service import credential_service
             if hasattr(credential_service, '_cache') and credential_service._cache_initialized:
                 cached_value = credential_service._cache.get("LOGFIRE_ENABLED")
                 if cached_value:

@@ -11,7 +11,7 @@ from supabase import Client
 from urllib.parse import urlparse
 from fastapi import WebSocket
 
-from ...logfire_config import search_logger
+from ...config.logfire_config import search_logger
 from ..embeddings.embedding_service import create_embeddings_batch_async
 from ..embeddings.contextual_embedding_service import (
     process_chunk_with_context,
