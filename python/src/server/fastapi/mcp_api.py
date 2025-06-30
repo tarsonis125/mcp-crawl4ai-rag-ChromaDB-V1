@@ -12,13 +12,14 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
 import asyncio
-import subprocess
+import docker
 import os
 import time
 from collections import deque
 from datetime import datetime
 import json
 import aiohttp
+from docker.errors import NotFound, APIError
 
 from ..utils import get_supabase_client
 
@@ -44,10 +45,12 @@ class LogEntry(BaseModel):
     message: str
 
 class MCPServerManager:
-    """Manages the MCP server process lifecycle."""
+    """Manages the MCP Docker container lifecycle."""
     
     def __init__(self):
-        self.process: Optional[subprocess.Popen] = None
+        self.container_name = 'Archon-MCP'  # Container name from docker-compose.yml
+        self.docker_client = None
+        self.container = None
         self.status: str = 'stopped'
         self.start_time: Optional[float] = None
         self.logs: deque = deque(maxlen=1000)  # Keep last 1000 log entries
@@ -56,9 +59,42 @@ class MCPServerManager:
         self._operation_lock = asyncio.Lock()  # Prevent concurrent start/stop operations
         self._last_operation_time = 0
         self._min_operation_interval = 2.0  # Minimum 2 seconds between operations
+        self._initialize_docker_client()
+    
+    def _initialize_docker_client(self):
+        """Initialize Docker client and get container reference."""
+        try:
+            self.docker_client = docker.from_env()
+            try:
+                self.container = self.docker_client.containers.get(self.container_name)
+                mcp_logger.info(f"Found Docker container: {self.container_name}")
+            except NotFound:
+                mcp_logger.warning(f"Docker container {self.container_name} not found")
+                self.container = None
+        except Exception as e:
+            mcp_logger.error(f"Failed to initialize Docker client: {str(e)}")
+            self.docker_client = None
+    
+    def _get_container_status(self) -> str:
+        """Get the current status of the MCP container."""
+        if not self.docker_client:
+            return 'docker_unavailable'
+        
+        try:
+            if self.container:
+                self.container.reload()  # Refresh container info
+            else:
+                self.container = self.docker_client.containers.get(self.container_name)
+            
+            return self.container.status
+        except NotFound:
+            return 'not_found'
+        except Exception as e:
+            mcp_logger.error(f"Error getting container status: {str(e)}")
+            return 'error'
     
     async def start_server(self) -> Dict[str, Any]:
-        """Start the MCP server process."""
+        """Start the MCP Docker container."""
         async with self._operation_lock:
             # Check throttling
             current_time = time.time()
@@ -74,101 +110,88 @@ class MCPServerManager:
         with mcp_logger.span("mcp_server_start") as span:
             span.set_attribute("action", "start_server")
             
-            if self.process and self.process.poll() is None:
+            if not self.docker_client:
+                mcp_logger.error("Docker client not available")
+                return {
+                    'success': False,
+                    'status': 'docker_unavailable',
+                    'message': 'Docker is not available. Is Docker socket mounted?'
+                }
+            
+            # Check current container status
+            container_status = self._get_container_status()
+            
+            if container_status == 'not_found':
+                mcp_logger.error(f"Container {self.container_name} not found")
+                return {
+                    'success': False,
+                    'status': 'not_found',
+                    'message': f'MCP container {self.container_name} not found. Run docker-compose up -d archon-mcp'
+                }
+            
+            if container_status == 'running':
                 mcp_logger.warning("MCP server start attempted while already running")
                 return {
                     'success': False,
-                    'status': self.status,
+                    'status': 'running',
                     'message': 'MCP server is already running'
                 }
             
             try:
-                # Set up environment variables for the MCP server
-                env = os.environ.copy()
-                
-                # Fixed configuration for SSE-only mode
-                transport = 'sse'
-                host = '0.0.0.0'
-                port = '8051'
-                
-                # Get only essential credentials from database
-                from ..services.credential_service import credential_service
-                await credential_service.load_all_credentials()
-                model_choice = await credential_service.get_credential('MODEL_CHOICE', 'gpt-4o-mini')
-                openai_key = await credential_service.get_credential('OPENAI_API_KEY', '')
-                
-                # Update environment with values
-                env.update({
-                    'MODEL_CHOICE': str(model_choice),
-                    'OPENAI_API_KEY': str(openai_key) if openai_key else env.get('OPENAI_API_KEY', '')
-                })
-                
-                # Verify and log key environment variables
-                openai_key_found = bool(env.get('OPENAI_API_KEY'))
-                
-                # Ensure Supabase environment variables are available
-                env.update({
-                    'SUPABASE_URL': os.getenv('SUPABASE_URL', ''),
-                    'SUPABASE_SERVICE_KEY': os.getenv('SUPABASE_SERVICE_KEY', ''),
-                })
-                
-                # Debug logging
-                self._add_log('INFO', f'MCP server environment - OpenAI key: {"Found" if openai_key_found else "Not found"}')
-                self._add_log('INFO', f'Configuration: SSE-only mode, host={host}, port={port}, model={model_choice}')
-                
-                mcp_logger.info("MCP server configuration", 
-                              mode="SSE-only", host=host, port=port, model=model_choice, 
-                              openai_key_available=openai_key_found)
-                
-                # Start the MCP server process (using uv like the old working version)
-                cmd = ['uv', 'run', 'python', 'src/mcp_server.py']
-                self.process = subprocess.Popen(
-                    cmd,
-                    env=env,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    bufsize=1  # Line buffered
-                )
-                
+                # Start the container
+                self.container.start()
                 self.status = 'starting'
                 self.start_time = time.time()
                 self._last_operation_time = time.time()
-                self._add_log('INFO', 'MCP server starting...')
-                mcp_logger.info("MCP server process started", pid=self.process.pid, cmd=cmd)
-                span.set_attribute("pid", self.process.pid)
+                self._add_log('INFO', 'MCP container starting...')
+                mcp_logger.info(f"Starting MCP container: {self.container_name}")
+                span.set_attribute("container_id", self.container.id)
                 
-                # Start reading logs from the process
-                self.log_reader_task = asyncio.create_task(self._read_process_logs())
+                # Start reading logs from the container
+                if self.log_reader_task:
+                    self.log_reader_task.cancel()
+                self.log_reader_task = asyncio.create_task(self._read_container_logs())
                 
                 # Give it a moment to start
                 await asyncio.sleep(2)
                 
-                # Check if process is still running
-                if self.process.poll() is None:
+                # Check if container is running
+                self.container.reload()
+                if self.container.status == 'running':
                     self.status = 'running'
-                    self._add_log('INFO', 'MCP server started successfully')
-                    mcp_logger.info("MCP server started successfully", pid=self.process.pid, uptime=0)
+                    self._add_log('INFO', 'MCP container started successfully')
+                    mcp_logger.info("MCP container started successfully", container_id=self.container.id)
                     span.set_attribute("success", True)
                     span.set_attribute("status", "running")
                     return {
                         'success': True,
                         'status': self.status,
                         'message': 'MCP server started successfully',
-                        'pid': self.process.pid
+                        'container_id': self.container.id[:12]
                     }
                 else:
                     self.status = 'failed'
-                    self._add_log('ERROR', 'MCP server failed to start')
-                    mcp_logger.error("MCP server failed to start - process exited immediately")
+                    self._add_log('ERROR', f'MCP container failed to start. Status: {self.container.status}')
+                    mcp_logger.error(f"MCP container failed to start - status: {self.container.status}")
                     span.set_attribute("success", False)
-                    span.set_attribute("status", "failed")
+                    span.set_attribute("status", self.container.status)
                     return {
                         'success': False,
                         'status': self.status,
-                        'message': 'MCP server failed to start'
+                        'message': f'MCP container failed to start. Status: {self.container.status}'
                     }
                     
+            except APIError as e:
+                self.status = 'failed'
+                self._add_log('ERROR', f'Docker API error: {str(e)}')
+                mcp_logger.error("Docker API error during MCP startup", error=str(e))
+                span.set_attribute("success", False)
+                span.set_attribute("error", str(e))
+                return {
+                    'success': False,
+                    'status': self.status,
+                    'message': f'Docker API error: {str(e)}'
+                }
             except Exception as e:
                 self.status = 'failed'
                 self._add_log('ERROR', f'Failed to start MCP server: {str(e)}')
@@ -182,7 +205,7 @@ class MCPServerManager:
                 }
     
     async def stop_server(self) -> Dict[str, Any]:
-        """Stop the MCP server process."""
+        """Stop the MCP Docker container."""
         async with self._operation_lock:
             # Check throttling
             current_time = time.time()
@@ -198,19 +221,30 @@ class MCPServerManager:
         with mcp_logger.span("mcp_server_stop") as span:
             span.set_attribute("action", "stop_server")
             
-            if not self.process or self.process.poll() is not None:
-                mcp_logger.warning("MCP server stop attempted when not running")
+            if not self.docker_client:
+                mcp_logger.error("Docker client not available")
                 return {
                     'success': False,
-                    'status': 'stopped',
-                    'message': 'MCP server is not running'
+                    'status': 'docker_unavailable',
+                    'message': 'Docker is not available'
+                }
+            
+            # Check current container status
+            container_status = self._get_container_status()
+            
+            if container_status not in ['running', 'restarting']:
+                mcp_logger.warning(f"MCP server stop attempted when not running. Status: {container_status}")
+                return {
+                    'success': False,
+                    'status': container_status,
+                    'message': f'MCP server is not running (status: {container_status})'
                 }
             
             try:
                 self.status = 'stopping'
-                self._add_log('INFO', 'Stopping MCP server...')
-                mcp_logger.info("Stopping MCP server", pid=self.process.pid)
-                span.set_attribute("pid", self.process.pid)
+                self._add_log('INFO', 'Stopping MCP container...')
+                mcp_logger.info(f"Stopping MCP container: {self.container_name}")
+                span.set_attribute("container_id", self.container.id)
                 
                 # Cancel log reading task
                 if self.log_reader_task:
@@ -220,27 +254,16 @@ class MCPServerManager:
                     except asyncio.CancelledError:
                         pass
                 
-                # Terminate the process
-                self.process.terminate()
+                # Stop the container with timeout
+                await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: self.container.stop(timeout=10)  # 10 second timeout
+                )
                 
-                # Wait for process to exit (with timeout)
-                try:
-                    await asyncio.wait_for(
-                        asyncio.get_event_loop().run_in_executor(None, self.process.wait),
-                        timeout=10.0
-                    )
-                except asyncio.TimeoutError:
-                    # Force kill if it doesn't exit gracefully
-                    self.process.kill()
-                    await asyncio.get_event_loop().run_in_executor(None, self.process.wait)
-                    mcp_logger.warning("MCP server force killed after timeout")
-                
-                self.process = None
                 self.status = 'stopped'
                 self.start_time = None
                 self._last_operation_time = time.time()
-                self._add_log('INFO', 'MCP server stopped')
-                mcp_logger.info("MCP server stopped successfully")
+                self._add_log('INFO', 'MCP container stopped')
+                mcp_logger.info("MCP container stopped successfully")
                 span.set_attribute("success", True)
                 span.set_attribute("status", "stopped")
                 
@@ -250,6 +273,16 @@ class MCPServerManager:
                     'message': 'MCP server stopped successfully'
                 }
                 
+            except APIError as e:
+                self._add_log('ERROR', f'Docker API error: {str(e)}')
+                mcp_logger.error("Docker API error during MCP stop", error=str(e))
+                span.set_attribute("success", False)
+                span.set_attribute("error", str(e))
+                return {
+                    'success': False,
+                    'status': self.status,
+                    'message': f'Docker API error: {str(e)}'
+                }
             except Exception as e:
                 self._add_log('ERROR', f'Error stopping MCP server: {str(e)}')
                 mcp_logger.error("Exception during MCP server stop", error=str(e), error_type=type(e).__name__)
@@ -263,16 +296,39 @@ class MCPServerManager:
     
     def get_status(self) -> Dict[str, Any]:
         """Get the current server status."""
-        if self.process:
-            if self.process.poll() is None:
-                self.status = 'running'
-            else:
-                self.status = 'stopped'
-                self.process = None
+        # Update status based on actual container state
+        container_status = self._get_container_status()
+        
+        # Map Docker statuses to our statuses
+        status_map = {
+            'running': 'running',
+            'restarting': 'restarting',
+            'paused': 'paused',
+            'exited': 'stopped',
+            'dead': 'stopped',
+            'created': 'stopped',
+            'removing': 'stopping',
+            'not_found': 'not_found',
+            'docker_unavailable': 'docker_unavailable',
+            'error': 'error'
+        }
+        
+        self.status = status_map.get(container_status, 'unknown')
         
         uptime = None
         if self.status == 'running' and self.start_time:
             uptime = int(time.time() - self.start_time)
+        elif self.status == 'running' and self.container:
+            # Try to get uptime from container info
+            try:
+                self.container.reload()
+                started_at = self.container.attrs['State']['StartedAt']
+                # Parse ISO format datetime
+                from datetime import datetime
+                started_time = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+                uptime = int((datetime.now(started_time.tzinfo) - started_time).total_seconds())
+            except Exception:
+                pass
         
         # Convert log entries to strings for backward compatibility
         recent_logs = []
@@ -285,7 +341,8 @@ class MCPServerManager:
         return {
             'status': self.status,
             'uptime': uptime,
-            'logs': recent_logs
+            'logs': recent_logs,
+            'container_status': container_status  # Include raw Docker status
         }
     
     def _add_log(self, level: str, message: str):
@@ -313,48 +370,53 @@ class MCPServerManager:
         for ws in disconnected:
             self.log_websockets.remove(ws)
     
-    async def _read_process_logs(self):
-        """Read logs from process stdout/stderr."""
-        if not self.process:
+    async def _read_container_logs(self):
+        """Read logs from Docker container."""
+        if not self.container:
             return
         
-        async def read_stream(stream, is_stderr=False):
+        try:
+            # Stream logs from container
+            log_generator = self.container.logs(stream=True, follow=True, tail=100)
+            
             while True:
                 try:
-                    line = await asyncio.get_event_loop().run_in_executor(
-                        None, stream.readline
+                    log_line = await asyncio.get_event_loop().run_in_executor(
+                        None, next, log_generator, None
                     )
-                    if not line:
+                    
+                    if log_line is None:
                         break
                     
-                    line = line.strip()
-                    if line:
-                        level, message = self._parse_log_line(line)
-                        # Only mark stderr as ERROR if it's not already parsed as something else
-                        if is_stderr and level == 'INFO' and not any(
-                            keyword in line.lower() for keyword in 
-                            ['info:', 'downloading', 'building', 'installed', 'creating', 'using cpython', 'uvicorn running']
-                        ):
-                            # Check if it looks like an actual error
-                            if any(err in line.lower() for err in ['error', 'exception', 'failed', 'critical']):
-                                level = 'ERROR'
+                    # Decode bytes to string
+                    if isinstance(log_line, bytes):
+                        log_line = log_line.decode('utf-8').strip()
+                    
+                    if log_line:
+                        level, message = self._parse_log_line(log_line)
                         self._add_log(level, message)
+                        
+                except StopIteration:
+                    break
                 except Exception as e:
                     self._add_log('ERROR', f'Log reading error: {str(e)}')
                     break
-        
-        # Read both stdout and stderr concurrently
-        try:
-            await asyncio.gather(
-                read_stream(self.process.stdout),
-                read_stream(self.process.stderr, is_stderr=True)
-            )
+                    
         except asyncio.CancelledError:
             pass
+        except APIError as e:
+            if 'container not found' not in str(e).lower():
+                self._add_log('ERROR', f'Docker API error reading logs: {str(e)}')
+        except Exception as e:
+            self._add_log('ERROR', f'Error reading container logs: {str(e)}')
         finally:
-            # Process has ended
-            if self.process and self.process.poll() is not None:
-                self._add_log('INFO', f'MCP server process terminated with code {self.process.returncode}')
+            # Check if container stopped
+            try:
+                self.container.reload()
+                if self.container.status not in ['running', 'restarting']:
+                    self._add_log('INFO', f'MCP container stopped with status: {self.container.status}')
+            except Exception:
+                pass
     
     def _parse_log_line(self, line: str) -> tuple[str, str]:
         """Parse a log line to extract level and message."""

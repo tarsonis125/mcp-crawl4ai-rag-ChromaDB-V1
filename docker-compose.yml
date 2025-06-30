@@ -18,6 +18,8 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     networks:
       - app-network
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for MCP container control
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
       interval: 30s
