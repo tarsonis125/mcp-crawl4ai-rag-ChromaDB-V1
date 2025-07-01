@@ -13,7 +13,7 @@ The actual implementations have been moved to:
 """
 
 # Import all functions from new services for backward compatibility
-from .services.embeddings import (
+from ..services.embeddings import (
     create_embedding,
     create_embeddings_batch,
     create_embedding_async,
@@ -28,7 +28,7 @@ from .services.embeddings import (
     process_chunk_with_context_async
 )
 
-from .services.storage import (
+from ..services.storage import (
     add_documents_to_supabase,
     add_documents_to_supabase_parallel,
     extract_code_blocks,
@@ -36,23 +36,23 @@ from .services.storage import (
     add_code_examples_to_supabase
 )
 
-from .services.search import (
+from ..services.search import (
     search_documents,
     search_code_examples
 )
 
-from .services.source_management_service import (
+from ..services.source_management_service import (
     extract_source_summary,
     generate_source_title_and_metadata,
     update_source_info
 )
 
-from .services.client_manager import (
+from ..services.client_manager import (
     get_supabase_client
 )
 
 # Re-export threading service imports for compatibility
-from .services.threading_service import (
+from ..services.threading_service import (
     get_threading_service, 
     ProcessingMode, 
     ThreadingConfig, 
@@ -74,7 +74,7 @@ async def initialize_threading_service(
     """Initialize the global threading service for utilities"""
     global _threading_service
     if _threading_service is None:
-        from .services.threading_service import ThreadingService
+        from ..services.threading_service import ThreadingService
         _threading_service = ThreadingService(threading_config, rate_limit_config)
         await _threading_service.start()
     return _threading_service

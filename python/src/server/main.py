@@ -60,16 +60,6 @@ import uvicorn.logging
 uvicorn_logger = logging.getLogger("uvicorn.access")
 uvicorn_logger.setLevel(logging.WARNING)  # Only log warnings and errors, not every request
 
-# Mock context classes that the knowledge API expects
-@dataclass
-class MockRequestContext:
-    lifespan_context: Any
-
-@dataclass
-class MockContext:
-    request_context: MockRequestContext
-    state: Any = None
-
 class CrawlingContext:
     """Context for direct crawling function calls."""
     
@@ -126,21 +116,6 @@ class CrawlingContext:
         
         self._initialized = False
     
-    def create_context(self) -> MockContext:
-        """Create a context object that matches what MCP functions expect."""
-        lifespan_context = type('LifespanContext', (), {
-            'crawler': self.crawler,
-            'supabase_client': self.supabase_client,
-            'reranking_model': self.reranking_model
-        })()
-        
-        request_context = MockRequestContext(lifespan_context=lifespan_context)
-        context = MockContext(request_context=request_context)
-        
-        # Add state as well for compatibility
-        context.state = type('State', (), {'supabase_client': self.supabase_client})()
-        
-        return context
 
 # Global crawling context instance
 crawling_context = CrawlingContext()
@@ -178,7 +153,7 @@ async def lifespan(app: FastAPI):
         # Initialize Socket.IO services
         try:
             # Import API modules to register their Socket.IO handlers
-            from .api import knowledge_api, projects_api  # agent_chat_api removed - TODO: Fix to use HTTP calls
+            from .fastapi import knowledge_api, projects_api  # agent_chat_api removed - TODO: Fix to use HTTP calls
             api_logger.info("✅ Socket.IO handlers imported from API modules")
             
             # Register all namespaces

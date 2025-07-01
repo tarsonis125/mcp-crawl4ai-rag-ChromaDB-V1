@@ -19,6 +19,7 @@ import json
 import logging
 import os
 from datetime import datetime
+import httpx
 
 # Import the service client for HTTP communication
 from src.server.services.mcp_service_client import get_mcp_service_client
@@ -216,19 +217,31 @@ def register_rag_tools(mcp: FastMCP):
             JSON string with deletion results
         """
         try:
-            # MCP should use HTTP to delete sources - commenting out direct DB access
-            # supabase_client = get_supabase_client()
-            # response = supabase_client.table("documents").delete().eq("source", source).execute()
+            # Use HTTP call to server API to delete source
+            client = get_mcp_service_client()
+            mcp_logger.info(f"Deleting source via HTTP: {source}")
             
-            # TODO: Implement HTTP call to server API to delete source
-            mcp_logger.warning("Source deletion via HTTP not yet implemented")
-            response = type('obj', (object,), {'data': []})
-            
-            return json.dumps({
-                "success": True,
-                "source": source,
-                "message": f"Deleted all documents from source: {source}"
-            }, indent=2)
+            # Call the delete source endpoint
+            async with httpx.AsyncClient() as http_client:
+                response = await http_client.delete(
+                    f"{client.api_url}/api/sources/{source}",
+                    headers=client._get_headers()
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    return json.dumps({
+                        "success": True,
+                        "source": source,
+                        "message": result.get("message", f"Deleted all documents from source: {source}")
+                    }, indent=2)
+                else:
+                    error_detail = response.json() if response.content else {"error": f"HTTP {response.status_code}"}
+                    return json.dumps({
+                        "success": False,
+                        "source": source,
+                        "error": error_detail.get("error", "Failed to delete source")
+                    }, indent=2)
             
         except Exception as e:
             search_logger.error(f"Error deleting source: {e}")

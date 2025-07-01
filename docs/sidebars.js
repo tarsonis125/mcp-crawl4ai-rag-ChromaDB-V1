@@ -16,85 +16,39 @@ module.exports = {
       ],
     },
     
-    // CORE FEATURES (feature-based perspective)
+    // CORE FEATURES
     {
       type: 'category',
-      label: 'Core Features',
+      label: 'Features',
       items: [
-        {
-          type: 'category',
-          label: '📊 Archon Projects',
-          items: [
-            'projects-overview',
-            'projects-features',
-          ],
-        },
-        {
-          type: 'category',
-          label: '🧠 Archon Knowledge',
-          items: [
-            'knowledge-overview',
-            'knowledge-features',
-          ],
-        },
+        'projects-overview',
+        'knowledge-overview',
       ],
     },
     
-    // REFERENCE SECTION (organized by containers)
+    // REFERENCE SECTION
     {
       type: 'category',
       label: 'Reference',
       items: [
-        {
-          type: 'category',
-          label: '🌐 UI',
-          items: [
-            'ui',
-            'websockets',
-            'ui-components',
-          ],
-        },
-        {
-          type: 'category',
-          label: '🏗️ Server',
-          items: [
-            'server-overview',
-            'server-services',
-            'api-reference',
-            'server-deployment',
-            'server-monitoring',
-          ],
-        },
-        {
-          type: 'category',
-          label: '🔌 MCP',
-          items: [
-            'mcp-overview',
-            'mcp-server',
-            'mcp-tools',
-          ],
-        },
-        {
-          type: 'category',
-          label: '⚙️ Agents',
-          items: [
-            'agents-overview',
-            'agent-document',
-            'agent-rag',
-            'agent-task',
-          ],
-        },
+        'architecture',
+        'server-overview',
+        'server-services',
+        'api-reference',
+        'mcp-server',
+        'websockets',
+        'testing',
       ],
     },
     
-    // ADDITIONAL RESOURCES
+    // GUIDES
     {
       type: 'category',
-      label: 'Additional Resources',
+      label: 'Guides',
       items: [
-        'testing',
-        'testing-python-strategy',
-        'testing-vitest-strategy',
+        'ui',
+        'agents-overview',
+        'server-monitoring',
       ],
     },
   ],

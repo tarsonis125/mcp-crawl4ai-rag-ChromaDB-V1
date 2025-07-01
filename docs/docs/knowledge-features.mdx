@@ -99,7 +99,7 @@ import Admonition from '@theme/Admonition';
 ### Crawl Interface
 - **URL Input**: Simple URL entry with validation
 - **Crawl Options**: Configure depth, filters
-- **Progress Monitoring**: Live crawl status via WebSocket
+- **Progress Monitoring**: Live crawl status via Socket.IO
 - **Result Preview**: See crawled content immediately
 
 ## 🔧 Technical Capabilities
@@ -132,7 +132,7 @@ import Admonition from '@theme/Admonition';
 - **Rate Limiting**: 200k tokens/minute OpenAI limit
 - **Parallel Processing**: ThreadPoolExecutor optimization
 - **Batch Operations**: Process multiple documents efficiently
-- **WebSocket Progress**: Real-time status updates
+- **Socket.IO Progress**: Real-time status updates
 - **Caching**: Intelligent result caching
 
 ## 🚀 Advanced Features
@@ -203,28 +203,35 @@ The system will:
 
 ## 🔗 Real-time Features
 
-### WebSocket Progress
-- **Crawl Progress**: Percentage completion
-- **Current URL**: What's being processed
-- **Batch Updates**: Processing batches
-- **Error Reporting**: Failed URLs
-- **Completion Status**: Final statistics
+### Socket.IO Progress
+- **Crawl Progress**: Percentage completion with smooth updates
+- **Current URL**: What's being processed in real-time
+- **Batch Updates**: Processing batches with accurate progress
+- **Error Reporting**: Failed URLs with detailed errors
+- **Completion Status**: Final statistics and results
 
 ### Live Updates
 ```javascript
-// Progress message format
-{
-  "type": "crawl_progress",
-  "data": {
-    "progressId": "uuid",
-    "status": "document_storage",
-    "percentage": 45,
-    "currentUrl": "https://example.com/page",
-    "totalPages": 150,
-    "processedPages": 68,
-    "log": "Batch 5/10: Processing items 61-75..."
-  }
-}
+// Connect to Socket.IO and subscribe to progress
+import { io } from 'socket.io-client';
+
+const socket = io('/crawl');
+socket.emit('subscribe', { progress_id: 'uuid' });
+
+// Handle progress updates
+socket.on('progress_update', (data) => {
+  console.log(`Progress: ${data.percentage}%`);
+  console.log(`Status: ${data.status}`);
+  console.log(`Current URL: ${data.currentUrl}`);
+  console.log(`Pages: ${data.processedPages}/${data.totalPages}`);
+});
+
+// Handle completion
+socket.on('progress_complete', (data) => {
+  console.log('Crawl completed!');
+  console.log(`Chunks stored: ${data.chunksStored}`);
+  console.log(`Word count: ${data.wordCount}`);
+});
 ```
 
 ## 🔗 Related Documentation

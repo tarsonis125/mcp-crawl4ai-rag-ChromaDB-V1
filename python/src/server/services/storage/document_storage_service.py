@@ -262,13 +262,8 @@ async def add_documents_to_supabase_parallel(
                 # Report batch progress
                 if progress_callback:
                     await progress_callback(
-                        'document_storage',
-                        int((completed_batches / total_batches) * 100),
                         f"Processing batch {batch_num}/{total_batches}",
-                        completed_batches=completed_batches,
-                        total_batches=total_batches,
-                        parallelWorkers=max_workers if use_contextual_embeddings else 1,
-                        totalJobs=total_batches
+                        int((completed_batches / total_batches) * 100)
                     )
                 
                 # Apply contextual embedding if enabled
@@ -438,7 +433,7 @@ async def add_documents_to_supabase_parallel(
         
         # Final completion
         if progress_callback and asyncio.iscoroutinefunction(progress_callback):
-            await progress_callback('document_storage', 100, f"Successfully stored all {len(contents)} documents")
+            await progress_callback(f"Successfully stored all {len(contents)} documents", 100)
         
         span.set_attribute("success", True)
         span.set_attribute("total_processed", len(contents))

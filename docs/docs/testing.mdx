@@ -1,417 +1,204 @@
 ---
-title: Testing Overview
-sidebar_position: 8
+title: Testing
+sidebar_position: 7
 ---
 
-# Testing Overview
+# Testing
 
-Archon employs a comprehensive testing strategy across both backend (Python/pytest) and frontend (React/Vitest) components. This guide provides an overview of our testing approach, with detailed strategies available for each technology stack.
+Archon uses a comprehensive testing strategy across all services.
 
-## 🎯 Core Testing Principles
+## Testing Stack
 
-1. **Test at the Right Level**: Follow the testing pyramid - many unit tests, fewer integration tests, minimal E2E tests
-2. **Fast Feedback**: Tests should run quickly to enable rapid development
-3. **Isolation**: Each test should be independent and repeatable
-4. **User-Focused**: Test behavior and outcomes, not implementation details
-5. **Comprehensive Coverage**: Aim for high coverage of critical paths
+| Service | Framework | Test Types | Coverage Target |
+|---------|-----------|------------|-----------------|
+| **Frontend** | Vitest + React Testing Library | Unit, Component, Integration | 80% |
+| **Server** | Pytest + FastAPI TestClient | Unit, Integration, E2E | 85% |
+| **MCP** | Pytest | Unit, Protocol | 80% |
+| **Agents** | Pytest + PydanticAI | Unit, Agent behavior | 75% |
 
-## 🏗️ Testing Architecture
+## Running Tests
 
-```mermaid
-graph TB
-    subgraph "Backend Testing (Python)"
-        PyUnit["Unit Tests<br/>⚡ pytest + mocks<br/>Services, Utils, Models"]
-        PyInt["Integration Tests<br/>🔗 FastAPI TestClient<br/>API Endpoints, Database"]
-        PyE2E["E2E Tests<br/>🔍 Full Workflows<br/>MCP Tools, Socket.IO"]
-    end
+### All Services
+```bash
+# Run all tests
+./scripts/test-all.sh
 
-    subgraph "Frontend Testing (React)"
-        JSUnit["Component Tests<br/>⚡ Vitest + RTL<br/>Components, Hooks"]
-        JSInt["Integration Tests<br/>🔗 Page Tests<br/>User Flows, API Mocks"]
-        JSE2E["E2E Tests<br/>🔍 Playwright<br/>Full Application"]
-    end
-
-    subgraph "Test Execution & Reporting"
-        UI["UI Test Runner<br/>Settings Page<br/>Real-time Results"]
-        Local["Local Development<br/>npm test, pytest"]
-        CI["CI/CD Pipeline<br/>GitHub Actions"]
-        Coverage["Coverage Reports<br/>HTML, JSON, LCOV"]
-    end
-
-    PyUnit --> PyInt
-    PyInt --> PyE2E
-    JSUnit --> JSInt
-    JSInt --> JSE2E
-    
-    PyE2E --> UI
-    JSE2E --> UI
-    UI --> Coverage
-    Local --> CI
-    UI --> Local
+# With coverage
+./scripts/test-all.sh --coverage
 ```
 
-## 🚀 UI Test Runner & Results Dashboard
-
-Archon includes a built-in test runner with comprehensive reporting accessible from the Settings page. This provides:
-
-### **Test Results Modal Features**
-- **Test Health Score**: Executive summary combining test success rate + coverage percentage
-- **Test Summary**: Pass/fail counts, duration, and individual test suite breakdown
-- **Coverage Analysis**: Lines, functions, statements, and branches coverage with visual progress bars
-- **Color-coded Indicators**: Green ≥80%, Yellow ≥60%, Red `<60%`
-- **Real-time Updates**: Button appears automatically after successful test runs
-
-### **Accessing the Test Runner**
-1. Navigate to **Settings** in the Archon UI
-2. Scroll to the **Archon Unit Tests** section
-3. Run React UI tests to generate test results and coverage
-4. Click **Test Results** button (appears after tests complete)
-5. View comprehensive test health report in modal
-
-### **Key Capabilities**
-- **On-Demand Execution**: Run Python and React test suites without command line
-- **Streaming Output**: Real-time test results via Socket.IO
-- **Visual Feedback**: Color-coded status indicators and progress bars
-- **Coverage Integration**: Automatic HTML coverage report generation
-- **Test History**: Previous test run tracking
-
-## 📋 Testing Strategy Documents
-
-For detailed testing strategies and best practices:
-
-- **[Vitest Testing Strategy](./testing-vitest-strategy)** - Comprehensive React & TypeScript testing guide
-- **[Python Testing Strategy](./testing-python-strategy)** - Backend testing with pytest
-
-## 📁 Test Directory Structure
-
-### Frontend (React/TypeScript)
-
-```
-archon-ui-main/
-├── vitest.config.ts           # Vitest configuration with coverage
-├── vite.config.ts             # Dev server with test endpoints
-├── test/
-│   ├── setup.ts              # Enhanced test setup with mocks
-│   ├── README_TEST_GUIDE.md   # Comprehensive testing guide
-│   ├── TEST_STRUCTURE.md      # File structure documentation
-│   ├── components/           # Component tests (73 files)
-│   │   ├── ui/               # UI component tests
-│   │   ├── layouts/          # Layout component tests
-│   │   ├── mcp/              # MCP component tests
-│   │   ├── settings/         # Settings component tests
-│   │   └── project-tasks/    # Project task component tests
-│   ├── services/             # Service layer tests (12 files)
-│   ├── pages/                # Page component tests (5 files)
-│   ├── hooks/                # Custom hook tests (2 files)
-│   ├── contexts/             # Context provider tests (3 files)
-│   ├── lib/                  # Utility function tests (2 files)
-│   ├── integration/          # Integration tests (8 files)
-│   ├── e2e/                  # End-to-end tests (5 files)
-│   ├── performance/          # Performance tests (3 files)
-│   ├── fixtures/             # Test data and mocks
-│   └── utils/                # Test utilities
-└── coverage/                 # Generated coverage reports
-    ├── index.html            # HTML coverage report
-    ├── coverage-summary.json # Coverage summary
-    └── test-results.json     # Test execution results
+### Frontend Tests
+```bash
+cd ui
+npm test                 # Run tests
+npm run test:coverage    # With coverage
+npm run test:watch      # Watch mode
 ```
 
-### Backend (Python)
+### Python Tests
+```bash
+cd python
+pytest                          # All tests
+pytest tests/test_server.py     # Specific file
+pytest -k "test_delete_source"  # Specific test
+pytest --cov=src               # With coverage
+```
 
+## Test Organization
+
+### Frontend Structure
+```
+ui/
+├── src/
+│   ├── components/
+│   │   ├── Button.tsx
+│   │   └── Button.test.tsx
+│   └── hooks/
+│       ├── useAuth.ts
+│       └── useAuth.test.ts
+└── tests/
+    ├── setup.ts
+    └── e2e/
+```
+
+### Python Structure
 ```
 python/
-├── tests/                    # Backend test suite
-│   ├── unit/                # Unit tests
-│   ├── integration/         # Integration tests
-│   ├── e2e/                 # End-to-end tests
-│   ├── performance/         # Performance tests
-│   ├── fixtures/            # Test data
-│   ├── conftest.py         # Pytest configuration
-│   └── pytest.ini         # Pytest settings
-├── src/                     # Application source code
-└── pyproject.toml          # Python project configuration
+├── src/
+│   └── server/
+│       └── services/
+└── tests/
+    ├── conftest.py
+    ├── test_server.py
+    ├── test_services.py
+    └── fixtures/
 ```
 
-## 🔧 Test Configuration
+## Key Testing Patterns
 
-### Frontend Vitest Configuration
+### FastAPI Testing
+```python
+from fastapi.testclient import TestClient
+from src.server.main import app
 
+client = TestClient(app)
+
+def test_delete_source():
+    response = client.delete("/api/sources/test-source")
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+```
+
+### Service Testing
+```python
+import pytest
+from src.server.services.rag.source_management_service import SourceManagementService
+
+@pytest.fixture
+def source_service(mock_supabase):
+    return SourceManagementService(mock_supabase)
+
+def test_delete_source_success(source_service):
+    success, result = source_service.delete_source("test-id")
+    assert success is True
+    assert result["source_id"] == "test-id"
+```
+
+### React Component Testing
 ```typescript
-// vitest.config.ts
-export default defineConfig({
-  plugins: [react()],
-  test: {
-    globals: true,
-    environment: 'jsdom',
-    setupFiles: './test/setup.ts',
-    include: ['test/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
-    exclude: ['node_modules', 'dist', '.git', '.cache'],
-    reporters: ['default', 'json'],
-    outputFile: { 
-      json: './coverage/test-results.json' 
-    },
-    coverage: {
-      provider: 'v8',
-      reporter: [
-        'text-summary', 
-        'html', 
-        'json', 
-        'json-summary',
-        'lcov'
-      ],
-      reportsDirectory: './coverage',
-      thresholds: {
-        global: {
-          statements: 70,
-          branches: 65,
-          functions: 70,
-          lines: 70,
-        },
-        'src/services/**/*.ts': {
-          statements: 80,
-          branches: 75,
-          functions: 80,
-          lines: 80,
-        }
-      }
-    },
-  },
-})
+import { render, screen, fireEvent } from '@testing-library/react';
+import { DeleteButton } from './DeleteButton';
+
+test('calls onDelete when clicked', () => {
+  const handleDelete = jest.fn();
+  render(<DeleteButton onDelete={handleDelete} />);
+  
+  fireEvent.click(screen.getByRole('button'));
+  expect(handleDelete).toHaveBeenCalledTimes(1);
+});
 ```
 
-### Enhanced Test Setup
+## Mocking Strategies
 
-```typescript
-// test/setup.ts - Comprehensive test environment setup
-import '@testing-library/jest-dom'
-import { vi } from 'vitest'
-
-// Comprehensive Lucide React icon mocks (170+ icons)
-vi.mock('lucide-react', () => ({
-  Settings: ({ className, ...props }: any) => 
-    React.createElement('span', { 
-      className, 
-      'data-testid': 'settings-icon',
-      'data-lucide': 'Settings',
-      ...props 
-    }, 'Settings'),
-  // ... 170+ icon mocks
-}))
-
-// Enhanced Socket.IO mocking with lifecycle simulation
-export class MockSocketIO {
-  static CONNECTING = 0
-  static OPEN = 1
-  static CLOSING = 2
-  static CLOSED = 3
-
-  constructor(url: string) {
-    this.url = url
-    // Simulate connection opening asynchronously
-    setTimeout(() => {
-      this.readyState = MockSocketIO.OPEN
-      if (this.onopen) {
-        this.onopen(new Event('open'))
-      }
-    }, 0)
-  }
-
-  send = vi.fn()
-  close = vi.fn(() => {
-    this.readyState = MockSocketIO.CLOSED
-    if (this.onclose) {
-      this.onclose(new CloseEvent('close'))
-    }
-  })
-}
-
-// Enhanced Socket.IO service mock
-vi.mock('@/services/websocketService', () => ({
-  websocketService: {
-    connect: vi.fn().mockResolvedValue(undefined),
-    disconnect: vi.fn(),
-    subscribe: vi.fn().mockReturnValue(vi.fn()),
-    send: vi.fn(),
-    getConnectionState: vi.fn().mockReturnValue('connected')
-  }
-}))
+### Mock Supabase
+```python
+@pytest.fixture
+def mock_supabase():
+    client = Mock()
+    client.table.return_value.delete.return_value.eq.return_value.execute.return_value = Mock(data=[])
+    return client
 ```
 
-## 🚀 Quick Start Commands
+### Mock HTTP Calls
+```python
+@pytest.fixture
+def mock_httpx():
+    with patch('httpx.AsyncClient') as mock:
+        yield mock
+```
 
-### Frontend Testing (React/Vitest)
+### Mock WebSocket
+```python
+@pytest.fixture
+async def websocket_client():
+    async with TestClient(app).websocket_connect("/ws") as ws:
+        yield ws
+```
+
+## CI/CD Integration
+
+### GitHub Actions
+```yaml
+name: Tests
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run Tests
+        run: ./scripts/test-all.sh --coverage
+      - name: Upload Coverage
+        uses: codecov/codecov-action@v3
+```
+
+## Best Practices
+
+1. **Test Isolation** - Each test should be independent
+2. **Mock External Services** - Don't call real APIs in tests
+3. **Use Fixtures** - Share common test setup
+4. **Test Business Logic** - Focus on services, not just endpoints
+5. **Fast Tests** - Keep unit tests under 100ms
+6. **Descriptive Names** - `test_delete_source_removes_all_related_data`
+
+## Performance Testing
+
+```python
+import pytest
+import time
+
+@pytest.mark.performance
+def test_bulk_delete_performance(source_service):
+    start = time.time()
+    for i in range(100):
+        source_service.delete_source(f"source-{i}")
+    duration = time.time() - start
+    assert duration < 5.0  # Should complete in under 5 seconds
+```
+
+## Debugging Tests
 
 ```bash
-# Navigate to frontend directory
-cd archon-ui-main
+# Verbose output
+pytest -vv
 
-# Run all tests
-npm test
+# Show print statements
+pytest -s
 
-# Run tests with coverage and results generation
-npm run test:coverage
+# Drop into debugger on failure
+pytest --pdb
 
-# Run tests in watch mode
-npm test -- --watch
-
-# Run tests with UI
-npm run test:ui
-
-# Run specific test file
-npm test -- Button.test.tsx
-
-# Run tests matching pattern
-npm test -- --grep "should handle"
+# Run specific test with debugging
+pytest -vvs -k "test_delete" --pdb
 ```
-
-### Backend Testing (Python/Pytest)
-
-```bash
-# Navigate to backend directory
-cd python
-
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=src --cov-report=html
-
-# Run specific test categories
-pytest -m "unit"
-pytest -m "integration"
-pytest -m "mcp"
-```
-
-### Docker Testing
-
-```bash
-# Run frontend tests in Docker
-docker exec -it archon-frontend-1 npm run test:coverage
-
-# Run backend tests in Docker
-docker exec -it archon-api pytest --cov=src
-```
-
-## 📊 Coverage Goals & Current Status
-
-| Component | Target Coverage | Critical Path Coverage | Implementation Status |
-|-----------|----------------|----------------------|---------------------|
-| React Components | 80% | 90% | 🔴 15% (In Progress) |
-| Services | 85% | 95% | 🔴 25% (In Progress) |
-| Pages | 80% | 90% | 🟡 75% (Good Progress) |
-| Hooks | 90% | 95% | 🔴 0% (Not Started) |
-| Utils | 95% | 100% | 🔴 0% (Not Started) |
-| **Overall Frontend** | **80%** | **90%** | **🔴 15%** |
-
-### Test Implementation Progress
-
-- **Total Test Files Planned**: 68
-- **Already Implemented**: 7 files ✅
-- **To Be Implemented**: 61 files 📝
-- **Total Test Cases**: ~465
-
-## 🔄 Test Execution Environments
-
-### 1. Local Development
-- **Command Line**: Direct npm/pytest execution
-- **IDE Integration**: VS Code test runner support
-- **Watch Mode**: Automatic re-execution on file changes
-
-### 2. UI Test Runner (Settings Page)
-- **Visual Interface**: Click-to-run test execution
-- **Real-time Output**: Streaming test results
-- **Coverage Integration**: Automatic HTML report generation
-- **Test Results Modal**: Comprehensive health dashboard
-
-### 3. Docker Environment
-- **Isolated Execution**: Consistent environment across machines
-- **Production-like**: Tests run in containerized environment
-- **CI/CD Ready**: Same environment as deployment
-
-### 4. Continuous Integration
-- **GitHub Actions**: Automated test execution on PRs
-- **Coverage Reporting**: Automatic coverage upload
-- **Quality Gates**: Failed tests block merges
-
-## 🛠️ Socket.IO Testing Strategy
-
-Socket.IO functionality is critical to Archon's real-time features. Our testing approach:
-
-### **Safety First**
-- **Never create real Socket.IO connections** in tests
-- **Always mock** the websocketService module
-- **Clean up subscriptions** in afterEach hooks
-- **Avoid function references** in useCallback dependencies
-
-### **Mock Implementation**
-```typescript
-// Enhanced Socket.IO mocking
-vi.mock('@/services/websocketService', () => ({
-  websocketService: {
-    connect: vi.fn().mockResolvedValue(undefined),
-    disconnect: vi.fn(),
-    subscribe: vi.fn().mockReturnValue(vi.fn()),
-    send: vi.fn(),
-    getConnectionState: vi.fn().mockReturnValue('connected')
-  }
-}))
-```
-
-### **Testing Patterns**
-- Test connection establishment
-- Test message handling
-- Test reconnection logic
-- Test error scenarios
-- Test cleanup and disconnection
-
-## 🎯 Quality Assurance Checklist
-
-### Before Committing Code
-
-- [ ] All tests pass locally
-- [ ] Coverage meets minimum thresholds
-- [ ] No console errors in test output
-- [ ] Socket.IO mocks are properly implemented
-- [ ] Test names are descriptive and clear
-
-### For New Features
-
-- [ ] Unit tests for core functionality
-- [ ] Integration tests for user workflows
-- [ ] Error scenario testing
-- [ ] Accessibility testing
-- [ ] Performance impact assessment
-
-### For Bug Fixes
-
-- [ ] Regression test added
-- [ ] Root cause identified and tested
-- [ ] Edge cases covered
-- [ ] Documentation updated if needed
-
-## 📚 Best Practices Summary
-
-1. **User-Centric Testing**: Test from the user's perspective, not implementation details
-2. **Test Isolation**: Each test should be independent and repeatable
-3. **Mock External Dependencies**: Keep tests fast and deterministic
-4. **Descriptive Test Names**: Clearly describe what is being tested
-5. **Socket.IO Safety**: Always mock Socket.IO connections in tests
-6. **Coverage Quality**: Focus on meaningful coverage, not just numbers
-7. **Regular Maintenance**: Update tests when requirements change
-8. **Documentation**: Keep test documentation current and accurate
-
-## 🔗 Related Documentation
-
-- **[Vitest Testing Strategy](./testing-vitest-strategy)** - Detailed frontend testing patterns
-- **[Python Testing Strategy](./testing-python-strategy)** - Backend testing guide
-- **[UI Documentation](./ui)** - Component documentation and guidelines
-- **[Socket.IO Documentation](./websockets)** - Real-time communication patterns
-- **[API Reference](./api-reference)** - Backend API testing endpoints
-
----
-
-**Quick Links:**
-- 🚀 [Get Started with Testing](./testing-vitest-strategy#quick-start)
-- 📊 [View Test Coverage Reports](#coverage-goals--current-status)
-- 🎯 [UI Test Runner Guide](#ui-test-runner--results-dashboard)
-- 🔧 [Docker Testing Setup](#docker-testing)

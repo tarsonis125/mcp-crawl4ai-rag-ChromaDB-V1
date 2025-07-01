@@ -235,90 +235,123 @@ def create_socketio_app(app: FastAPI):
 ```
 
 </TabItem>
-<TabItem value="namespace" label="Namespace Handlers">
+<TabItem value="namespace" label="Namespace Class Implementation">
 
 ```python
-# Default namespace handlers
-@sio.event
-async def connect(sid, environ):
-    """Handle new Socket.IO connections"""
-    client_address = environ.get('REMOTE_ADDR', 'unknown')
-    logfire.info("Socket.IO client connected", 
-                 session_id=sid, 
-                 client_address=client_address)
-    await sio.emit('connected', {'sid': sid}, to=sid)
-
-@sio.event
-async def disconnect(sid):
-    """Handle Socket.IO disconnections"""
-    logfire.info("Socket.IO client disconnected", session_id=sid)
-
-@sio.event
-async def ping(sid):
-    """Handle ping messages for connection health checks"""
-    await sio.emit('pong', to=sid)
-
-# Crawl namespace handlers
-@sio.on('connect', namespace='/crawl')
-async def on_crawl_connect(sid, environ):
-    """Handle client connections to crawl namespace"""
-    await sio.emit('connected', 
-                   {'message': 'Connected to crawl progress'}, 
-                   to=sid, namespace='/crawl')
-
-@sio.on('subscribe', namespace='/crawl')
-async def on_subscribe_progress(sid, data):
-    """Subscribe to crawl progress updates"""
-    progress_id = data.get('progress_id')
-    if not progress_id:
-        await sio.emit('error', 
-                      {'message': 'progress_id required'}, 
-                      to=sid, namespace='/crawl')
-        return
+# socketio/crawl_namespace.py
+class CrawlNamespace(socketio.AsyncNamespace):
+    """Socket.IO namespace for crawl progress tracking."""
     
-    # Join the room for this progress ID
-    await sio.enter_room(sid, progress_id, namespace='/crawl')
-
-@sio.on('unsubscribe', namespace='/crawl')
-async def on_unsubscribe_progress(sid, data):
-    """Unsubscribe from crawl progress updates"""
-    progress_id = data.get('progress_id')
-    if progress_id:
-        await sio.leave_room(sid, progress_id, namespace='/crawl')
+    async def on_connect(self, sid, environ):
+        """Handle client connection to crawl namespace."""
+        logfire.info("Client connected to crawl namespace", sid=sid)
+        await self.emit('connected', {'message': 'Connected to crawl progress'}, to=sid)
+    
+    async def on_disconnect(self, sid):
+        """Handle client disconnection from crawl namespace."""
+        logfire.info("Client disconnected from crawl namespace", sid=sid)
+    
+    async def on_subscribe(self, sid, data):
+        """Subscribe to crawl progress updates for a specific progress_id."""
+        progress_id = data.get('progress_id')
+        if not progress_id:
+            await self.emit('error', {'message': 'progress_id required'}, to=sid)
+            return
+        
+        # Join the room for this progress ID
+        self.enter_room(sid, progress_id)
+        logfire.info(f"Client {sid} subscribed to progress {progress_id}")
+        
+        # Import here to avoid circular dependency
+        from .progress_utils import get_active_crawl
+        
+        # Send current progress if available
+        active_crawl = get_active_crawl(progress_id)
+        if active_crawl:
+            await self.emit('progress_update', active_crawl, to=sid)
+    
+    async def on_unsubscribe(self, sid, data):
+        """Unsubscribe from crawl progress updates."""
+        progress_id = data.get('progress_id')
+        if progress_id:
+            self.leave_room(sid, progress_id)
+            logfire.info(f"Client {sid} unsubscribed from progress {progress_id}")
 ```
 
 </TabItem>
-<TabItem value="broadcast" label="Broadcasting">
+<TabItem value="broadcast" label="Progress Management">
 
 ```python
-class CrawlProgressManagerSocketIO:
-    """Socket.IO-based progress manager"""
+# socketio/progress_utils.py
+from ..socketio_app import get_socketio_instance, NAMESPACE_CRAWL
+
+# Get the Socket.IO instance
+sio = get_socketio_instance()
+
+# Track active crawls for initial state sending
+active_crawls: Dict[str, Dict[str, Any]] = {}
+
+async def start_crawl_progress(progress_id: str, initial_data: Dict[str, Any]) -> None:
+    """Start tracking a new crawl operation."""
+    crawl_data = {
+        'status': 'starting',
+        'percentage': 0,
+        'start_time': datetime.now().isoformat(),
+        'logs': initial_data.get('logs', ['Starting crawl...']),
+        'progressId': progress_id,
+        **initial_data
+    }
     
-    async def update_progress(self, progress_id: str, data: dict):
-        """Update progress and notify clients via Socket.IO"""
-        self.active_crawls[progress_id].update(data)
-        
-        # Broadcast to all clients in the room
-        await self.sio.emit(
-            'progress_update',
-            self._prepare_progress_data(progress_id),
-            room=progress_id,
-            namespace='/crawl'
-        )
+    # Store in active crawls
+    active_crawls[progress_id] = crawl_data
     
-    async def _broadcast_worker_progress(self, progress_id: str, 
-                                       worker_id: str, data: dict):
-        """Broadcast worker-specific progress"""
-        await self.sio.emit(
-            'worker_progress',
-            {
-                'progress_id': progress_id,
-                'worker_id': worker_id,
-                **data
-            },
-            room=progress_id,
-            namespace='/crawl'
-        )
+    # Emit initial progress
+    await sio.emit('progress_update', crawl_data, room=progress_id, namespace=NAMESPACE_CRAWL)
+    logfire.info(f"Started crawl progress tracking for {progress_id}")
+
+async def update_crawl_progress(progress_id: str, update_data: Dict[str, Any]) -> None:
+    """Update crawling progress and notify connected clients."""
+    if progress_id not in active_crawls:
+        return
+    
+    # Update progress data
+    active_crawls[progress_id].update(update_data)
+    active_crawls[progress_id]['updated_at'] = datetime.now().isoformat()
+    
+    # Add to logs if message provided
+    if 'log' in update_data:
+        active_crawls[progress_id]['logs'].append(update_data['log'])
+    
+    # Emit progress update
+    await sio.emit('progress_update', active_crawls[progress_id], room=progress_id, namespace=NAMESPACE_CRAWL)
+
+async def complete_crawl_progress(progress_id: str, completion_data: Dict[str, Any]) -> None:
+    """Mark crawl as completed and notify clients."""
+    if progress_id not in active_crawls:
+        return
+    
+    active_crawls[progress_id].update({
+        'status': 'completed',
+        'percentage': 100,
+        'completed_at': datetime.now().isoformat(),
+        **completion_data
+    })
+    
+    # Emit completion
+    await sio.emit('progress_complete', active_crawls[progress_id], room=progress_id, namespace=NAMESPACE_CRAWL)
+```
+
+</TabItem>
+<TabItem value="registration" label="Namespace Registration">
+
+```python
+# fastapi/knowledge_api.py
+from ..socketio.crawl_namespace import CrawlNamespace
+from ..socketio_app import get_socketio_instance, NAMESPACE_CRAWL
+
+# Get Socket.IO instance and register namespace
+sio = get_socketio_instance()
+sio.register_namespace(CrawlNamespace(NAMESPACE_CRAWL))
 ```
 
 </TabItem>
@@ -326,36 +359,28 @@ class CrawlProgressManagerSocketIO:
 
 ## Migration from WebSockets
 
-### Feature Flag
+<Admonition type="success" title="Migration Complete">
+Archon has fully migrated to Socket.IO. All WebSocket endpoints have been removed and replaced with Socket.IO namespaces.
+</Admonition>
 
-The backend supports a feature flag for gradual migration:
+### Key Architecture Changes
 
-```python
-# Enable Socket.IO (default: true)
-USE_SOCKETIO_PROGRESS = os.getenv("USE_SOCKETIO_PROGRESS", "true").lower() == "true"
+1. **No More WebSocket Endpoints**: All `/api/crawl-progress/{id}` WebSocket endpoints removed
+2. **Namespace-Based Organization**: Progress tracking now uses `/crawl` namespace
+3. **Class-Based Handlers**: Socket.IO handlers are organized in namespace classes
+4. **Centralized Progress Utils**: Progress functions in `socketio/progress_utils.py`
 
-if USE_SOCKETIO_PROGRESS:
-    from .crawl_progress_manager_socketio import progress_manager
-else:
-    # Legacy WebSocket implementation
-    progress_manager = CrawlProgressManager()
+### File Structure
+
 ```
-
-### Deprecated WebSocket Endpoint
-
-The legacy WebSocket endpoint now returns a deprecation message:
-
-```python
-@router.websocket("/crawl-progress/{progress_id}")
-async def websocket_crawl_progress(websocket: WebSocket, progress_id: str):
-    if USE_SOCKETIO_PROGRESS:
-        await websocket.accept()
-        await websocket.send_json({
-            "type": "error",
-            "message": "WebSocket endpoint deprecated. Please use Socket.IO connection on /crawl namespace."
-        })
-        await websocket.close()
-        return
+python/src/server/
+├── socketio/
+│   ├── __init__.py
+│   ├── crawl_namespace.py      # CrawlNamespace class
+│   └── progress_utils.py       # Progress tracking functions
+├── socketio_app.py             # Socket.IO server configuration
+└── fastapi/
+    └── knowledge_api.py        # Registers namespace
 ```
 
 ## Best Practices

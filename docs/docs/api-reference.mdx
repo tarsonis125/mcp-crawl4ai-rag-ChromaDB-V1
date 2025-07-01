@@ -26,7 +26,7 @@ Archon provides a comprehensive REST API built with FastAPI for knowledge manage
 Archon uses a modular FastAPI architecture with separate routers for different functionalities:
 
 - **`knowledge_api.py`**: Knowledge items, web crawling, and document management (891 lines)
-- **`mcp_api.py`**: MCP server control and WebSocket communications (705 lines)
+- **`mcp_api.py`**: MCP server control and Socket.IO communications (705 lines)
 - **`settings_api.py`**: Application settings and credential management (345 lines)
 - **`projects_api.py`**: Project and task management (528 lines)
 - **`agent_chat_api.py`**: AI agent chat interface (516 lines)
@@ -234,44 +234,66 @@ curl -X POST "http://localhost:8080/api/knowledge-items/crawl" \
 }
 ```
 
-### WebSocket Knowledge Stream
+### Socket.IO Knowledge Stream
 
-**WebSocket** `/api/knowledge-items/stream`
+**Socket.IO Namespace** `/knowledge`
 
 Real-time updates for knowledge items changes.
 
 #### Connection Example
 
 ```javascript
-const ws = new WebSocket('ws://localhost:8080/api/knowledge-items/stream');
+import { io } from 'socket.io-client';
 
-ws.onmessage = function(event) {
-  const data = JSON.parse(event.data);
-  if (data.type === 'knowledge_items_update') {
-    console.log('Items updated:', data.data.items);
-  }
-};
+// Connect to knowledge namespace
+const socket = io('/knowledge');
+
+// Handle source updates
+socket.on('source_added', (data) => {
+  console.log('New source added:', data.source_id);
+});
+
+socket.on('source_updated', (data) => {
+  console.log('Source updated:', data.source_id);
+});
 ```
 
-### WebSocket Progress Tracking
+### Socket.IO Progress Tracking
 
-**WebSocket** `/api/crawl-progress/{progress_id}`
+**Socket.IO Namespace** `/crawl`
 
-Real-time progress updates for crawling operations with smooth batch progress and detailed status information.
+Real-time progress updates for crawling operations using Socket.IO for improved reliability and automatic reconnection.
 
 #### Connection Example
 
 ```javascript
-const ws = new WebSocket('ws://localhost:8080/api/crawl-progress/183e2615-fca4-4a71-a051-ab5a0292f9ff');
+import { io } from 'socket.io-client';
 
-ws.onmessage = function(event) {
-  const data = JSON.parse(event.data);
-  if (data.type === 'crawl_progress') {
-    console.log('Progress:', data.data.percentage + '%');
-    console.log('Status:', data.data.status);
-    console.log('Log:', data.data.log);
-  }
-};
+// Connect to crawl namespace
+const socket = io('/crawl');
+
+// Subscribe to specific progress
+const progressId = '183e2615-fca4-4a71-a051-ab5a0292f9ff';
+socket.emit('subscribe', { progress_id: progressId });
+
+// Handle progress updates
+socket.on('progress_update', (data) => {
+  console.log('Progress:', data.percentage + '%');
+  console.log('Status:', data.status);
+  console.log('Logs:', data.logs);
+});
+
+// Handle completion
+socket.on('progress_complete', (data) => {
+  console.log('Crawl completed!');
+  console.log('Chunks stored:', data.chunksStored);
+  console.log('Word count:', data.wordCount);
+});
+
+// Handle errors
+socket.on('progress_error', (data) => {
+  console.error('Crawl failed:', data.error);
+});
 ```
 
 #### Progress Message Format
@@ -279,7 +301,7 @@ ws.onmessage = function(event) {
 **New Progress Features:**
 - **📊 Smooth Progress**: Linear 0-100% progression across all document batches
 - **📦 Detailed Batch Info**: "Batch 3/9: Processing items 31-45..." with accurate percentages
-- **🔄 Real-Time Updates**: WebSocket broadcasts for each processing step
+- **🔄 Real-Time Updates**: Socket.IO broadcasts for each processing step
 - **⏱️ No Progress Jumps**: Progress bar advances smoothly without resetting
 
 ```json
@@ -469,6 +491,46 @@ Retrieve all available knowledge sources for filtering.
 }
 ```
 
+### Delete Source
+
+**DELETE** `/api/sources/{source_id}`
+
+Delete a source and all its associated data (crawled pages, code examples, embeddings).
+
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `source_id` | string | ✅ | Source identifier to delete |
+
+#### Example Request
+
+```bash
+curl -X DELETE "http://localhost:8080/api/sources/docs.python.org" \
+  -H "Accept: application/json"
+```
+
+#### Example Response
+
+```json
+{
+  "success": true,
+  "message": "Successfully deleted source docs.python.org",
+  "source_id": "docs.python.org",
+  "pages_deleted": 145,
+  "code_examples_deleted": 89,
+  "total_chunks_removed": 1450
+}
+```
+
+#### Error Response
+
+```json
+{
+  "error": "Source not found"
+}
+```
+
 ## 🔧 MCP Server Management API
 
 ### Get MCP Server Status
@@ -625,23 +687,34 @@ Save MCP server configuration.
 
 ### MCP Server Logs Stream
 
-**WebSocket** `/api/mcp/logs/stream`
+**Socket.IO Namespace** `/logs`
 
-Real-time MCP server log streaming.
+Real-time MCP server log streaming using Socket.IO.
 
 #### Connection Example
 
 ```javascript
-const ws = new WebSocket('ws://localhost:8080/api/mcp/logs/stream');
+import { io } from 'socket.io-client';
 
-ws.onmessage = function(event) {
-  const data = JSON.parse(event.data);
-  if (data.type === 'connection') {
-    console.log('Connected to log stream');
-  } else if (data.type === 'log') {
-    console.log(`[${data.timestamp}] ${data.level}: ${data.message}`);
-  }
-};
+// Connect to logs namespace
+const socket = io('/logs');
+
+// Handle connection
+socket.on('connect', () => {
+  console.log('Connected to log stream');
+});
+
+// Handle log entries
+socket.on('log_entry', (data) => {
+  console.log(`[${data.timestamp}] ${data.level}: ${data.message}`);
+});
+
+// Handle batch logs
+socket.on('log_batch', (logs) => {
+  logs.forEach(log => {
+    console.log(`[${log.timestamp}] ${log.level}: ${log.message}`);
+  });
+});
 ```
 
 ### Get MCP Tools
@@ -901,21 +974,65 @@ Projects API health check.
 }
 ```
 
-### WebSocket Project Creation Progress
+### Socket.IO Project Creation Progress
 
-**WebSocket** `/api/project-creation-progress/{progress_id}`
+**Socket.IO Namespace** `/project`
 
 Real-time progress updates for project creation operations.
 
-### WebSocket Task Updates
+#### Connection Example
 
-**WebSocket** `/api/projects/{project_id}/tasks/ws`
+```javascript
+import { io } from 'socket.io-client';
 
-Real-time task updates for a specific project.
+// Connect to project namespace
+const socket = io('/project');
 
-### WebSocket Projects Stream
+// Subscribe to progress
+const progressId = 'your-progress-id';
+socket.emit('subscribe_progress', { progress_id: progressId });
 
-**WebSocket** `/api/projects/stream`
+// Handle progress updates
+socket.on('project_progress', (data) => {
+  console.log(`Progress: ${data.percentage}% - ${data.step}`);
+});
+
+socket.on('project_completed', (data) => {
+  console.log('Project created:', data.project_id);
+});
+```
+
+### Socket.IO Task Updates
+
+**Socket.IO Namespace** `/tasks`
+
+Real-time task updates for projects.
+
+#### Connection Example
+
+```javascript
+import { io } from 'socket.io-client';
+
+// Connect to tasks namespace
+const socket = io('/tasks');
+
+// Handle task events
+socket.on('task_created', (task) => {
+  console.log('New task:', task.title);
+});
+
+socket.on('task_updated', (task) => {
+  console.log('Task updated:', task.id);
+});
+
+socket.on('task_status_changed', (data) => {
+  console.log(`Task ${data.task_id}: ${data.old_status} → ${data.new_status}`);
+});
+```
+
+### Socket.IO Projects Stream
+
+**Socket.IO Namespace** `/project`
 
 Real-time updates for all projects.
 
@@ -1406,16 +1523,23 @@ Send a message in a chat session.
 }
 ```
 
-### WebSocket Chat
+### Socket.IO Chat
 
-**WebSocket** `/api/agent-chat/sessions/{session_id}/ws`
+**Socket.IO Namespace** `/chat`
 
 Real-time chat communication.
 
 #### Connection Example
 
 ```javascript
-const ws = new WebSocket('ws://localhost:8080/api/agent-chat/sessions/session-uuid/ws');
+import { io } from 'socket.io-client';
+
+// Connect to chat namespace
+const socket = io('/chat');
+
+// Join session
+const sessionId = 'session-uuid';
+socket.emit('join_session', { session_id: sessionId });
 
 ws.onmessage = function(event) {
   const data = JSON.parse(event.data);
@@ -1570,9 +1694,9 @@ Delete test execution records.
 |-----------|------|----------|-------------|
 | `execution_id` | string | ✅ | Test execution UUID |
 
-### WebSocket Test Stream
+### Socket.IO Test Stream
 
-**WebSocket** `/api/tests/stream/{execution_id}`
+**Socket.IO Namespace** `/tests`
 
 Real-time test execution output streaming.
 
