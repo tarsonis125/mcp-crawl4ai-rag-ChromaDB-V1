@@ -30,7 +30,6 @@ from ..services.embeddings import (
 
 from ..services.storage import (
     add_documents_to_supabase,
-    add_documents_to_supabase_parallel,
     extract_code_blocks,
     generate_code_example_summary,
     add_code_examples_to_supabase

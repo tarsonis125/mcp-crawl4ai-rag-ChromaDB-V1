@@ -78,7 +78,7 @@ export function ProjectPage({
 
   const { showToast } = useToast();
 
-  // Load projects with WebSocket support
+  // Load projects with Socket.IO support
   useEffect(() => {
     let isComponentMounted = true;
     let wsConnected = false;
@@ -139,30 +139,28 @@ export function ProjectPage({
       setIsLoadingProjects(false);
     };
 
-    // Try WebSocket connection first
+    // Try Socket.IO connection first
     const connectWebSocket = () => {
-      console.log('📡 Attempting WebSocket connection for real-time project updates');
+      console.log('📡 Attempting Socket.IO connection for real-time project updates');
       projectListSocketIO.connect('/').then(() => {
         // Subscribe to project list updates after connection
         projectListSocketIO.send({ type: 'subscribe_projects' });
       });
       
-      const handleProjectUpdate = (data: any) => {
+      const handleProjectUpdate = (message: any) => {
         if (!isComponentMounted) return;
         
-        if (data.type === 'projects_update') {
-          console.log('✅ WebSocket: Received projects update');
-          updateProjectsState(data.projects);
-          wsConnected = true;
-        }
+        console.log('✅ Socket.IO: Received projects update', message.data);
+        updateProjectsState(message.data.projects);
+        wsConnected = true;
       };
       
       projectListSocketIO.addMessageHandler('projects_update', handleProjectUpdate);
       
-      // Set fallback timeout - only execute if WebSocket hasn't connected and component is still mounted
+      // Set fallback timeout - only execute if Socket.IO hasn't connected and component is still mounted
       loadTimeoutRef = setTimeout(() => {
         if (isComponentMounted && !wsConnected && !fallbackExecuted) {
-          console.log('⏰ WebSocket fallback: Loading via REST API after timeout');
+          console.log('⏰ Socket.IO fallback: Loading via REST API after timeout');
           fallbackExecuted = true;
           loadProjectsViaRest();
         }
@@ -233,11 +231,11 @@ export function ProjectPage({
     }
   }, [selectedProject]);
 
-  // Set up WebSocket for real-time task count updates for selected project
+  // Set up Socket.IO for real-time task count updates for selected project
   useEffect(() => {
     if (!selectedProject) return;
 
-    console.log('🔌 Setting up WebSocket for project task updates:', selectedProject.id);
+    console.log('🔌 Setting up Socket.IO for project task updates:', selectedProject.id);
     
     const connectWebSocket = async () => {
       try {
@@ -278,14 +276,14 @@ export function ProjectPage({
         taskUpdateSocketIO.addMessageHandler('task_archived', handleTaskArchived);
         
       } catch (error) {
-        console.error('Failed to connect task WebSocket:', error);
+        console.error('Failed to connect task Socket.IO:', error);
       }
     };
 
     connectWebSocket();
 
     return () => {
-      console.log('🔌 Disconnecting task WebSocket');
+      console.log('🔌 Disconnecting task Socket.IO');
       taskUpdateSocketIO.disconnect();
     };
   }, [selectedProject?.id, loadTaskCountsForAllProjects, projects]);
@@ -530,7 +528,7 @@ export function ProjectPage({
         setNewProjectForm({ title: '', description: '' });
         setIsCreatingProject(false);
         
-        // Set up WebSocket connection for real-time progress
+        // Set up Socket.IO connection for real-time progress
         projectCreationProgressService.streamProgress(
           response.progress_id,
           (data: ProjectCreationProgressData) => {
@@ -689,7 +687,7 @@ export function ProjectPage({
                           
                           // Show completion briefly, then refresh to show the actual project
                           setTimeout(() => {
-                            // Disconnect WebSocket
+                            // Disconnect Socket.IO
                             projectCreationProgressService.disconnect();
                             
                             // Remove temp project and reload to show the real project

@@ -26,7 +26,6 @@ from fastapi import WebSocket
 from ...utils import (
     get_supabase_client,
     add_documents_to_supabase,
-    add_documents_to_supabase_parallel,
     add_code_examples_to_supabase,
     update_source_info,
     extract_source_summary,
@@ -350,11 +349,8 @@ class DocumentStorageService:
                 
                 await report_progress("Source info updated, storing document chunks...", 70)
                 
-                # Get worker count from settings
-                max_workers = int(os.getenv("CONTEXTUAL_EMBEDDINGS_MAX_WORKERS", "3"))
-                
-                # Add documentation chunks to Supabase using parallel function
-                await add_documents_to_supabase_parallel(
+                # Add documentation chunks to Supabase
+                await add_documents_to_supabase(
                     client=self.supabase_client,
                     urls=urls,
                     chunk_numbers=chunk_numbers,
@@ -364,7 +360,7 @@ class DocumentStorageService:
                     batch_size=15,
                     websocket=websocket,
                     progress_callback=progress_callback,
-                    max_workers=max_workers
+                    enable_parallel_batches=True
                 )
                 
                 await report_progress("Document upload completed!", 100)
@@ -429,11 +425,8 @@ class DocumentStorageService:
                                total_documents=len(contents),
                                batch_size=batch_size) as span:
             
-            # Get worker count from settings
-            max_workers = int(os.getenv("CONTEXTUAL_EMBEDDINGS_MAX_WORKERS", "3"))
-            
-            # Use the parallel async function
-            await add_documents_to_supabase_parallel(
+            # Add documents to Supabase
+            await add_documents_to_supabase(
                 client=self.supabase_client,
                 urls=urls,
                 chunk_numbers=chunk_numbers,
@@ -443,7 +436,7 @@ class DocumentStorageService:
                 batch_size=batch_size,
                 websocket=websocket,
                 progress_callback=progress_callback,
-                max_workers=max_workers
+                enable_parallel_batches=True
             )
             
             span.set_attribute("success", True)
