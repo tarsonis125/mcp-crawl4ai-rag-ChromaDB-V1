@@ -9,7 +9,7 @@ import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
 import { Select } from '../ui/Select';
 import { CrawlProgressData, crawlProgressService } from '../../services/crawlProgressService';
-import { WebSocketState } from '../../services/webSocketService';
+import { WebSocketState } from '../../services/socketIOService';
 import { BlockNoteEditor } from './BlockNoteEditor';
 import { VersionHistoryModal } from './VersionHistoryModal';
 

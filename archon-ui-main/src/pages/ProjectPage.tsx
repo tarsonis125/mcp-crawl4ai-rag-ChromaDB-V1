@@ -17,7 +17,7 @@ import type { Task } from '../components/project-tasks/TaskTableView';
 import { ProjectCreationProgressCard } from '../components/ProjectCreationProgressCard';
 import { projectCreationProgressService } from '../services/projectCreationProgressService';
 import type { ProjectCreationProgressData } from '../services/projectCreationProgressService';
-import { projectListWebSocket, taskUpdateWebSocket } from '../services/webSocketService';
+import { projectListSocketIO, taskUpdateSocketIO } from '../services/socketIOService';
 
 interface ProjectPageProps {
   className?: string;
@@ -142,9 +142,9 @@ export function ProjectPage({
     // Try WebSocket connection first
     const connectWebSocket = () => {
       console.log('📡 Attempting WebSocket connection for real-time project updates');
-      projectListWebSocket.connect('/').then(() => {
+      projectListSocketIO.connect('/').then(() => {
         // Subscribe to project list updates after connection
-        projectListWebSocket.send({ type: 'subscribe_projects' });
+        projectListSocketIO.send({ type: 'subscribe_projects' });
       });
       
       const handleProjectUpdate = (data: any) => {
@@ -157,7 +157,7 @@ export function ProjectPage({
         }
       };
       
-      projectListWebSocket.addMessageHandler('projects_update', handleProjectUpdate);
+      projectListSocketIO.addMessageHandler('projects_update', handleProjectUpdate);
       
       // Set fallback timeout - only execute if WebSocket hasn't connected and component is still mounted
       loadTimeoutRef = setTimeout(() => {
@@ -169,7 +169,7 @@ export function ProjectPage({
       }, 2000);
       
       return () => {
-        projectListWebSocket.removeMessageHandler('projects_update', handleProjectUpdate);
+        projectListSocketIO.removeMessageHandler('projects_update', handleProjectUpdate);
       };
     };
 
@@ -197,7 +197,7 @@ export function ProjectPage({
         clearTimeout(loadTimeoutRef);
       }
       cleanup();
-      projectListWebSocket.disconnect();
+      projectListSocketIO.disconnect();
     };
   }, []); // Only run once on mount
 
@@ -241,10 +241,10 @@ export function ProjectPage({
     
     const connectWebSocket = async () => {
       try {
-        await taskUpdateWebSocket.connect('/');
+        await taskUpdateSocketIO.connect('/');
         
         // Join the project room after connection
-        taskUpdateWebSocket.send({ type: 'join_project', project_id: selectedProject.id });
+        taskUpdateSocketIO.send({ type: 'join_project', project_id: selectedProject.id });
         
         // Set up event handlers for task updates
         const handleTaskCreated = () => {
@@ -272,10 +272,10 @@ export function ProjectPage({
         };
         
         // Add event handlers
-        taskUpdateWebSocket.addMessageHandler('task_created', handleTaskCreated);
-        taskUpdateWebSocket.addMessageHandler('task_updated', handleTaskUpdated);
-        taskUpdateWebSocket.addMessageHandler('task_deleted', handleTaskDeleted);
-        taskUpdateWebSocket.addMessageHandler('task_archived', handleTaskArchived);
+        taskUpdateSocketIO.addMessageHandler('task_created', handleTaskCreated);
+        taskUpdateSocketIO.addMessageHandler('task_updated', handleTaskUpdated);
+        taskUpdateSocketIO.addMessageHandler('task_deleted', handleTaskDeleted);
+        taskUpdateSocketIO.addMessageHandler('task_archived', handleTaskArchived);
         
       } catch (error) {
         console.error('Failed to connect task WebSocket:', error);
@@ -286,7 +286,7 @@ export function ProjectPage({
 
     return () => {
       console.log('🔌 Disconnecting task WebSocket');
-      taskUpdateWebSocket.disconnect();
+      taskUpdateSocketIO.disconnect();
     };
   }, [selectedProject?.id, loadTaskCountsForAllProjects, projects]);
 

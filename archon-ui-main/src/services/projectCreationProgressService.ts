@@ -1,5 +1,5 @@
 import type { Project } from '../types/project';
-import { createWebSocketService, WebSocketService, WebSocketState } from './webSocketService';
+import { createWebSocketService, WebSocketService, WebSocketState } from './socketIOService';
 
 export interface ProjectCreationProgressData {
   progressId: string;

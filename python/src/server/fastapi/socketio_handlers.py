@@ -209,6 +209,18 @@ async def crawl_subscribe(sid, data):
         return
     
     await sio.enter_room(sid, progress_id)
+    logger.info(f"✅ [SOCKETIO] Client {sid} subscribed to crawl progress {progress_id}")
+    
+    # Send initial acknowledgment that subscription is active
+    # Since crawl progress isn't stored, we can't send current state
+    await sio.emit('crawl_progress', {
+        'progressId': progress_id,
+        'status': 'subscribed',
+        'percentage': 0,
+        'log': 'Connected to crawl progress stream',
+        'subscription_active': True
+    }, to=sid)
+    
     print(f"✅ Client {sid} subscribed to crawl progress {progress_id}")
 
 @sio.event

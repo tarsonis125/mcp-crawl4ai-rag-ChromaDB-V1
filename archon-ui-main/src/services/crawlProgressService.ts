@@ -5,7 +5,7 @@
  * and improved connection management.
  */
 
-import { createWebSocketService, WebSocketService } from './webSocketService';
+import { createWebSocketService, WebSocketService } from './socketIOService';
 
 // Define types for crawl progress
 export interface WorkerProgress {
@@ -95,7 +95,7 @@ class CrawlProgressService {
     onMessage: ProgressCallback,
     options: StreamProgressOptions = {}
   ): Promise<void> {
-    console.log(`📡 Starting Socket.IO progress stream for ${progressId}`);
+    // Starting Socket.IO progress stream
 
     try {
       // Create WebSocket service if not exists
@@ -111,27 +111,27 @@ class CrawlProgressService {
       await this.wsService.connect(endpoint);
 
       // Add message handlers
+      this.wsService.addMessageHandler('crawl_progress', (message) => {
+        const data = message.data || message;
+        // Crawl progress update received
+        onMessage(data);
+      });
+
+      // Also listen for legacy event names for backward compatibility
       this.wsService.addMessageHandler('progress_update', (message) => {
         const data = message.data || message;
-        console.log('Progress update:', data);
+        // Progress update (legacy) received
         onMessage(data);
       });
 
-      this.wsService.addMessageHandler('worker_progress', (message) => {
+      this.wsService.addMessageHandler('crawl_complete', (message) => {
         const data = message.data || message;
-        console.log('Worker progress:', data);
-        // Worker progress is handled within the main progress data
-        onMessage(data);
-      });
-
-      this.wsService.addMessageHandler('progress_complete', (message) => {
-        const data = message.data || message;
-        console.log(`Progress completed for ${progressId}`);
+        // Crawl completed
         onMessage({ ...data, completed: true });
       });
 
-      this.wsService.addMessageHandler('error', (message) => {
-        console.error(`Progress error for ${progressId}:`, message);
+      this.wsService.addMessageHandler('crawl_error', (message) => {
+        // Crawl error
         onMessage({ 
           progressId,
           status: 'error',
@@ -140,9 +140,9 @@ class CrawlProgressService {
         });
       });
 
-      // Subscribe to the progress
+      // Subscribe to the crawl progress
       this.wsService.send({
-        type: 'subscribe',
+        type: 'crawl_subscribe',
         data: { progress_id: progressId }
       });
 
@@ -152,7 +152,7 @@ class CrawlProgressService {
       });
 
     } catch (error) {
-      console.error(`Failed to start progress stream for ${progressId}:`, error);
+      // Failed to start progress stream
       throw error;
     }
   }
@@ -161,12 +161,12 @@ class CrawlProgressService {
    * Stop streaming progress for a specific ID
    */
   stopStreaming(progressId: string): void {
-    console.log(`🛑 Stopping progress stream for ${progressId}`);
+    // Stopping progress stream
     
     if (this.wsService) {
       // Send unsubscribe message
       this.wsService.send({
-        type: 'unsubscribe',
+        type: 'crawl_unsubscribe',
         data: { progress_id: progressId }
       });
     }
@@ -179,7 +179,7 @@ class CrawlProgressService {
    * Stop all active streams
    */
   stopAllStreams(): void {
-    console.log('🛑 Stopping all progress streams');
+    // Stopping all progress streams
     
     // Stop each active subscription
     for (const [progressId] of this.activeSubscriptions) {

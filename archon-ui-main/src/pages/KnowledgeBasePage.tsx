@@ -10,10 +10,10 @@ import { GlassCrawlDepthSelector } from '../components/ui/GlassCrawlDepthSelecto
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import { useToast } from '../contexts/ToastContext';
 import { knowledgeBaseService, KnowledgeItem, KnowledgeItemMetadata } from '../services/knowledgeBaseService';
-import { knowledgeWebSocket } from '../services/webSocketService';
+import { knowledgeSocketIO } from '../services/socketIOService';
 import { CrawlingProgressCard } from '../components/knowledge-base/CrawlingProgressCard';
 import { CrawlProgressData, crawlProgressService } from '../services/crawlProgressService';
-import { WebSocketState } from '../services/webSocketService';
+import { WebSocketState } from '../services/socketIOService';
 import { KnowledgeTable } from '../components/knowledge-base/KnowledgeTable';
 import { KnowledgeItemCard } from '../components/knowledge-base/KnowledgeItemCard';
 import { GroupedKnowledgeItemCard } from '../components/knowledge-base/GroupedKnowledgeItemCard';
@@ -152,7 +152,7 @@ export const KnowledgeBasePage = () => {
     // Try WebSocket connection first
     const connectWebSocket = () => {
       console.log('📡 Attempting WebSocket connection for real-time updates');
-      knowledgeWebSocket.connect('/api/knowledge-items/stream');
+      knowledgeSocketIO.connect('/api/knowledge-items/stream');
       
       const handleKnowledgeUpdate = (data: any) => {
         if (!isComponentMounted) return;
@@ -176,7 +176,7 @@ export const KnowledgeBasePage = () => {
         }
       };
       
-      knowledgeWebSocket.addMessageHandler('knowledge_items_update', handleKnowledgeUpdate);
+      knowledgeSocketIO.addMessageHandler('knowledge_items_update', handleKnowledgeUpdate);
       
       // Set fallback timeout - only execute if WebSocket hasn't connected and component is still mounted
       loadTimeoutRef.current = setTimeout(() => {
@@ -188,7 +188,7 @@ export const KnowledgeBasePage = () => {
       }, 2000); // Reduced from 3000ms to 2000ms for better UX
       
       return () => {
-        knowledgeWebSocket.removeMessageHandler('knowledge_items_update', handleKnowledgeUpdate);
+        knowledgeSocketIO.removeMessageHandler('knowledge_items_update', handleKnowledgeUpdate);
       };
     };
 
@@ -201,7 +201,7 @@ export const KnowledgeBasePage = () => {
         clearTimeout(loadTimeoutRef.current);
       }
       cleanup();
-      knowledgeWebSocket.disconnect();
+      knowledgeSocketIO.disconnect();
       
       // Clean up any active crawl progress connections
       console.log('🧹 Disconnecting crawl progress service');

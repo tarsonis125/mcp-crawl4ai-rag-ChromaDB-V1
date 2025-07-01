@@ -86,23 +86,18 @@ export class WebSocketService {
     // Extract session ID from endpoint for room identification
     const { sessionId } = this.parseEndpoint(endpoint);
     
-    console.log(`🔌 [CONNECT] Requested connection to: ${endpoint}, sessionId: ${sessionId}, current state: ${this.state}`);
-    
     // If already connected with the same session, return existing connection
     if (this.socket && this.state === WebSocketState.CONNECTED && this.sessionId === sessionId) {
-      console.log(`🔄 [CONNECT] Already connected with same session, returning existing connection`);
       return Promise.resolve();
     }
 
     // If currently connecting, return existing promise
     if (this.connectionPromise && this.state === WebSocketState.CONNECTING) {
-      console.log(`⏳ [CONNECT] Already connecting, returning existing promise`);
       return this.connectionPromise;
     }
 
     // Disconnect if session changed
     if (this.socket && this.sessionId !== sessionId) {
-      console.log(`🔄 [CONNECT] Session changed from ${this.sessionId} to ${sessionId}, disconnecting first`);
       this.disconnect();
     }
 
@@ -152,9 +147,6 @@ export class WebSocketService {
     // Use window.location.origin to ensure we go through the proxy
     const connectionUrl = window.location.origin;
     
-    console.log(`🔌 Connecting to Socket.IO: default namespace (room-based) via proxy`);
-    console.log(`🔌 Connection URL: ${connectionUrl}, path: ${socketPath}, sessionId: ${this.sessionId}`);
-    
     try {
       // Connect to default namespace with explicit origin to ensure proxy usage
       this.socket = io(connectionUrl, {
@@ -170,8 +162,6 @@ export class WebSocketService {
         }
       });
       
-      console.log(`🔌 Socket.IO client created for ${connectionUrl}${socketPath}, waiting for connection...`);
-      
       this.setupEventHandlers();
     } catch (error) {
       console.error('Failed to create Socket.IO connection:', error);
@@ -185,15 +175,7 @@ export class WebSocketService {
     if (!this.socket) return;
 
     this.socket.on('connect', () => {
-      console.log(`✅ Socket.IO connected to default namespace (room-based)`);
       this.setState(WebSocketState.CONNECTED);
-      
-      // Emit appropriate subscription events based on the endpoint type
-      // Note: Individual services will send room subscription events as needed
-      if (this.sessionId) {
-        // Services will join specific rooms via subscription events
-        console.log(`🔗 Connected to Socket.IO - ready to join rooms with session: ${this.sessionId}`);
-      }
       
       // Resolve connection promise
       if (this.connectionResolver) {
@@ -204,7 +186,7 @@ export class WebSocketService {
     });
 
     this.socket.on('disconnect', (reason: string) => {
-      console.log(`🔌 Socket.IO disconnected from default namespace`, { reason });
+      // Socket.IO disconnected
       
       // Socket.IO handles reconnection automatically based on the reason
       if (reason === 'io server disconnect') {
@@ -236,12 +218,12 @@ export class WebSocketService {
     });
 
     this.socket.on('reconnect', (attemptNumber: number) => {
-      console.log(`🔄 Socket.IO reconnected after ${attemptNumber} attempts`);
+      // Socket.IO reconnected
       this.setState(WebSocketState.CONNECTED);
     });
 
     this.socket.on('reconnect_attempt', (attemptNumber: number) => {
-      console.log(`🔄 Socket.IO reconnection attempt ${attemptNumber}`);
+      // Socket.IO reconnection attempt
       this.setState(WebSocketState.RECONNECTING);
     });
 
@@ -445,8 +427,8 @@ export function createWebSocketService(config?: WebSocketConfig): WebSocketServi
 }
 
 // Export singleton instances for different features
-export const knowledgeWebSocket = new WebSocketService();
+export const knowledgeSocketIO = new WebSocketService();
 
 // Export instances for backward compatibility
-export const taskUpdateWebSocket = new WebSocketService();
-export const projectListWebSocket = new WebSocketService();
+export const taskUpdateSocketIO = new WebSocketService();
+export const projectListSocketIO = new WebSocketService();

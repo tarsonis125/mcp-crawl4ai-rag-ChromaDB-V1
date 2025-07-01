@@ -6,7 +6,7 @@ import { Button } from '../ui/Button';
 import { ArchonLoadingSpinner } from '../animations/Animations';
 import { Toggle } from '../ui/Toggle';
 import { projectService } from '../../services/projectService';
-import { taskUpdateWebSocket } from '../../services/webSocketService';
+import { taskUpdateSocketIO } from '../../services/socketIOService';
 import type { CreateTaskRequest, UpdateTaskRequest, DatabaseTaskStatus } from '../../types/project';
 import { TaskTableView, Task } from './TaskTableView';
 import { TaskBoardView } from './TaskBoardView';
@@ -105,16 +105,16 @@ export const TasksTab = ({
       
       const connectWebSocket = async () => {
         // Check if already connected to avoid double connections
-        if (taskUpdateWebSocket.isConnected()) {
+        if (taskUpdateSocketIO.isConnected()) {
           console.log('🔄 WebSocket already connected, skipping reconnection');
           return;
         }
         
         // Clear any existing handlers first
-        taskUpdateWebSocket.disconnect();
+        taskUpdateSocketIO.disconnect();
         
         // Add connection state handler
-        taskUpdateWebSocket.addStateChangeHandler((state) => {
+        taskUpdateSocketIO.addStateChangeHandler((state) => {
           console.log(`🔌 WebSocket state changed: ${state}`);
           if (state === 'CONNECTED') {
             console.log('✅ Task updates WebSocket connected');
@@ -125,14 +125,14 @@ export const TasksTab = ({
         });
       
       // Add message handlers
-      taskUpdateWebSocket.addMessageHandler('initial_tasks', (message) => {
+      taskUpdateSocketIO.addMessageHandler('initial_tasks', (message) => {
         const initialWebSocketTasks = message.data || message;
         const uiTasks: Task[] = initialWebSocketTasks.map(mapDatabaseTaskToUITask);
         setTasks(uiTasks);
         onTasksChange(uiTasks);
       });
       
-      taskUpdateWebSocket.addMessageHandler('task_created', (message) => {
+      taskUpdateSocketIO.addMessageHandler('task_created', (message) => {
         const newTask = message.data || message;
         console.log('🆕 Real-time task created:', newTask);
         const mappedTask = mapDatabaseTaskToUITask(newTask);
@@ -149,7 +149,7 @@ export const TasksTab = ({
         });
       });
       
-      taskUpdateWebSocket.addMessageHandler('task_updated', (message) => {
+      taskUpdateSocketIO.addMessageHandler('task_updated', (message) => {
         const updatedTask = message.data || message;
           console.log('📝 Real-time task updated:', updatedTask);
           const mappedTask = mapDatabaseTaskToUITask(updatedTask);
@@ -171,7 +171,7 @@ export const TasksTab = ({
       });
 
       // Handle bulk task updates from MCP DatabaseChangeDetector
-      taskUpdateWebSocket.addMessageHandler('tasks_change', (message) => {
+      taskUpdateSocketIO.addMessageHandler('tasks_change', (message) => {
         const updatedTasks = message.data || message;
           setTasks(prev => {
             const updated = [...prev];
@@ -191,7 +191,7 @@ export const TasksTab = ({
         });
       });
       
-      taskUpdateWebSocket.addMessageHandler('task_deleted', (message) => {
+      taskUpdateSocketIO.addMessageHandler('task_deleted', (message) => {
         const deletedTask = message.data || message;
           console.log('🗑️ Real-time task deleted:', deletedTask);
           setTasks(prev => {
@@ -202,7 +202,7 @@ export const TasksTab = ({
         });
       });
       
-      taskUpdateWebSocket.addMessageHandler('task_archived', (message) => {
+      taskUpdateSocketIO.addMessageHandler('task_archived', (message) => {
         const archivedTask = message.data || message;
           console.log('📦 Real-time task archived:', archivedTask);
           setTasks(prev => {
@@ -214,17 +214,17 @@ export const TasksTab = ({
       });
       
       // Add error handler
-      taskUpdateWebSocket.addErrorHandler((error) => {
+      taskUpdateSocketIO.addErrorHandler((error) => {
         console.error('❌ Task updates WebSocket error:', error);
         setIsWebSocketConnected(false);
       });
       
         // Connect to WebSocket
         try {
-          await taskUpdateWebSocket.connect('/');
+          await taskUpdateSocketIO.connect('/');
           
           // Join the project room after connection
-          taskUpdateWebSocket.send({ type: 'join_project', project_id: projectId });
+          taskUpdateSocketIO.send({ type: 'join_project', project_id: projectId });
           
         } catch (error) {
           console.error('Failed to connect to task updates WebSocket:', error);
@@ -239,7 +239,7 @@ export const TasksTab = ({
     return () => {
       console.log('🧹 Cleaning up WebSocket connection');
       clearTimeout(connectionTimeout); // Clear the debounce timeout
-      taskUpdateWebSocket.disconnect();
+      taskUpdateSocketIO.disconnect();
       setIsWebSocketConnected(false);
     };
   }, [projectId]); // Removed onTasksChange from dependency array

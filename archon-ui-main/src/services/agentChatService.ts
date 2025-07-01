@@ -9,7 +9,7 @@ import {
   WebSocketState,
   WebSocketMessage,
   WebSocketConfig
-} from './webSocketService';
+} from './socketIOService';
 
 export interface ChatMessage {
   id: string;
