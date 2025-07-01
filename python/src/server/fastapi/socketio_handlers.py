@@ -50,8 +50,10 @@ async def broadcast_progress_update(progress_id: str, progress_data: dict):
 
 async def broadcast_crawl_progress(progress_id: str, data: dict):
     """Broadcast crawl progress to subscribers."""
+    # Log the room we're broadcasting to
+    logger.debug(f"📢 [SOCKETIO] Broadcasting crawl_progress to room: {progress_id}, data keys: {list(data.keys())}")
     await sio.emit('crawl_progress', data, room=progress_id)
-    logger.debug(f"Broadcasted crawl progress for {progress_id}")
+    logger.debug(f"✅ [SOCKETIO] Broadcasted crawl progress for {progress_id}")
 
 # Crawl progress helper functions for knowledge API
 async def start_crawl_progress(progress_id: str, data: dict):
@@ -80,14 +82,17 @@ async def error_crawl_progress(progress_id: str, error_msg: str):
 @sio.event
 async def connect(sid, environ):
     """Handle client connection."""
-    logger.info(f'🔌 [SOCKETIO] Client connected: {sid}')
-    print(f'🔌 Client connected: {sid}')
+    client_address = environ.get('REMOTE_ADDR', 'unknown')
+    logger.info(f'🔌 [SOCKETIO] Client connected: {sid} from {client_address}')
+    print(f'🔌 Client connected: {sid} from {client_address}')
 
 @sio.event
 async def disconnect(sid):
     """Handle client disconnection."""
-    logger.info(f'🔌 [SOCKETIO] Client disconnected: {sid}')
-    print(f'🔌 Client disconnected: {sid}')
+    # Log which rooms the client was in before disconnecting
+    rooms = sio.rooms(sid) if hasattr(sio, 'rooms') else []
+    logger.info(f'🔌 [SOCKETIO] Client disconnected: {sid}, was in rooms: {rooms}')
+    print(f'🔌 Client disconnected: {sid}, was in rooms: {rooms}')
 
 @sio.event
 async def join_project(sid, data):
@@ -99,6 +104,7 @@ async def join_project(sid, data):
     
     # Join the room for this project
     await sio.enter_room(sid, project_id)
+    logger.info(f"📥 [SOCKETIO] Client {sid} joined project room: {project_id}")
     print(f"✅ Client {sid} joined project {project_id}")
     
     # Send initial tasks for this project using TaskService
@@ -130,6 +136,7 @@ async def leave_project(sid, data):
 async def subscribe_projects(sid, data=None):
     """Subscribe to project list updates."""
     await sio.enter_room(sid, 'project_list')
+    logger.info(f"📥 [SOCKETIO] Client {sid} joined project_list room")
     print(f"✅ Client {sid} subscribed to project list")
     
     # Send current project list using ProjectService
@@ -168,7 +175,7 @@ async def subscribe_progress(sid, data):
         return
     
     await sio.enter_room(sid, progress_id)
-    logger.info(f"✅ [SOCKETIO] Client {sid} subscribed to progress room {progress_id}")
+    logger.info(f"📥 [SOCKETIO] Client {sid} joined progress room: {progress_id}")
     
     # Send current progress state if operation exists
     try:
@@ -209,18 +216,7 @@ async def crawl_subscribe(sid, data):
         return
     
     await sio.enter_room(sid, progress_id)
-    logger.info(f"✅ [SOCKETIO] Client {sid} subscribed to crawl progress {progress_id}")
-    
-    # Send initial acknowledgment that subscription is active
-    # Since crawl progress isn't stored, we can't send current state
-    await sio.emit('crawl_progress', {
-        'progressId': progress_id,
-        'status': 'subscribed',
-        'percentage': 0,
-        'log': 'Connected to crawl progress stream',
-        'subscription_active': True
-    }, to=sid)
-    
+    logger.info(f"✅ [SOCKETIO] Client {sid} subscribed to crawl progress room: {progress_id}")
     print(f"✅ Client {sid} subscribed to crawl progress {progress_id}")
 
 @sio.event
@@ -229,4 +225,5 @@ async def crawl_unsubscribe(sid, data):
     progress_id = data.get('progress_id')
     if progress_id:
         await sio.leave_room(sid, progress_id)
+        logger.info(f"📤 [SOCKETIO] Client {sid} left crawl progress room: {progress_id}")
         print(f"🛑 Client {sid} unsubscribed from crawl progress {progress_id}")

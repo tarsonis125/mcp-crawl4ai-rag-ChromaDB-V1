@@ -52,29 +52,8 @@ def create_socketio_app(app: FastAPI) -> socketio.ASGIApp:
                  ping_timeout=60,
                  ping_interval=25)
     
-    # Register basic connection handlers
-    @sio.event
-    async def connect(sid, environ):
-        """Handle new Socket.IO connections."""
-        client_address = environ.get('REMOTE_ADDR', 'unknown')
-        safe_logfire_info("Socket.IO client connected", 
-                     session_id=sid, 
-                     client_address=client_address)
-        logger.info(f"Socket.IO client connected: {sid} from {client_address}")
-        
-        # Send connection acknowledgment
-        await sio.emit('connected', {'sid': sid}, to=sid)
-    
-    @sio.event
-    async def disconnect(sid):
-        """Handle Socket.IO disconnections."""
-        safe_logfire_info("Socket.IO client disconnected", session_id=sid)
-        logger.info(f"Socket.IO client disconnected: {sid}")
-    
-    @sio.event
-    async def ping(sid):
-        """Handle ping messages for connection health checks."""
-        await sio.emit('pong', to=sid)
+    # Note: Socket.IO event handlers are registered in socketio_handlers.py
+    # This module only creates the Socket.IO server instance
     
     # Create and return the Socket.IO ASGI app
     socket_app = socketio.ASGIApp(sio, other_asgi_app=app)

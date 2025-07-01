@@ -44,13 +44,11 @@ const AppContent = () => {
     // Start health monitoring
     serverHealthService.startMonitoring({
       onDisconnected: () => {
-        console.log('Server disconnected - activating disconnect screen');
         if (!disconnectScreenDismissed) {
           setDisconnectScreenActive(true);
         }
       },
       onReconnected: () => {
-        console.log('Server reconnected - refreshing page');
         setDisconnectScreenActive(false);
         setDisconnectScreenDismissed(false);
         // Refresh the page to ensure all data is fresh

@@ -95,17 +95,10 @@ export const DraggableTaskCard = ({
 
   const handleMouseEnter = () => {
     onTaskHover?.(task.id);
-    console.log('TASK CARD HOVER: Mouse Entered');
-    console.log('  hoverEffectClasses:', hoverEffectClasses);
-    console.log('  cardBaseStyles:', cardBaseStyles);
-    console.log('  Current className for front side:', 
-      `absolute w-full h-full backface-hidden ${cardBaseStyles} ${transitionStyles} ${hoverEffectClasses} rounded-lg`
-    );
   };
 
   const handleMouseLeave = () => {
     onTaskHover?.(null);
-    console.log('TASK CARD HOVER: Mouse Left');
   };
 
   // Get subtasks for this parent task

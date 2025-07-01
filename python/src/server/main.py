@@ -49,8 +49,7 @@ except ImportError:
     BrowserConfig = None
     CrossEncoder = None
 
-# Initialize logger
-logging.basicConfig(level=logging.INFO)
+# Logger will be initialized after credentials are loaded
 logger = logging.getLogger(__name__)
 
 # Set up logging configuration to reduce noise
@@ -135,10 +134,13 @@ async def lifespan(app: FastAPI):
     try:
         # Initialize credentials from database FIRST - this is the foundation for everything else
         await initialize_credentials()
-        logger.info("✅ Credentials initialized")
         
-        # Initialize Logfire after credentials are loaded (so database toggle works)
+        # Now that credentials are loaded, we can properly initialize logging
+        # This must happen AFTER credentials so LOGFIRE_ENABLED is set from database
         setup_logfire(service_name="archon-backend")
+        
+        # Now we can safely use the logger
+        logger.info("✅ Credentials initialized")
         api_logger.info("🔥 Logfire initialized for backend")
         
         # Initialize crawling context

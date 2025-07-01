@@ -23,13 +23,14 @@ class ServerHealthService {
       const enabledRes = await credentialsService.getCredential('DISCONNECT_SCREEN_ENABLED').catch(() => ({ value: 'true' }));
       this.disconnectScreenEnabled = enabledRes.value === 'true';
     } catch (error) {
-      console.error('Failed to load disconnect screen settings:', error);
+      // Failed to load disconnect screen settings
     }
   }
 
   async checkHealth(): Promise<boolean> {
     try {
-      const response = await fetch('http://localhost:8080/health', {
+      // Use the proxied /api/health endpoint which works in both dev and Docker
+      const response = await fetch('/api/health', {
         method: 'GET',
         signal: AbortSignal.timeout(5000) // 5 second timeout
       });
@@ -40,7 +41,7 @@ class ServerHealthService {
       }
       return false;
     } catch (error) {
-      console.error('Health check failed:', error);
+      // Health check failed
       return false;
     }
   }
@@ -67,13 +68,13 @@ class ServerHealthService {
       } else {
         // Server is not responding
         this.missedChecks++;
-        console.log(`Health check failed ${this.missedChecks}/${this.maxMissedChecks}`);
+        // Health check failed
         
         // After maxMissedChecks failures, trigger disconnect screen
         if (this.missedChecks >= this.maxMissedChecks && this.isConnected) {
           this.isConnected = false;
           if (this.disconnectScreenEnabled && this.callbacks) {
-            console.log('Triggering disconnect screen after multiple health check failures');
+            // Triggering disconnect screen after multiple health check failures
             this.callbacks.onDisconnected();
           }
         }
@@ -91,7 +92,7 @@ class ServerHealthService {
   private handleConnectionRestored() {
     if (!this.isConnected) {
       this.isConnected = true;
-      console.log('Connection to server restored');
+      // Connection to server restored
       if (this.callbacks) {
         this.callbacks.onReconnected();
       }
