@@ -10,7 +10,7 @@ from fastapi import WebSocket
 import openai
 from contextlib import asynccontextmanager
 
-from ...config.logfire_config import search_logger
+from ...config.logfire_config import search_logger, safe_span
 from ..threading_service import get_threading_service
 
 
@@ -130,7 +130,7 @@ async def create_embeddings_batch_async(
     
     threading_service = get_threading_service()
     
-    with search_logger.span("create_embeddings_batch_async", 
+    with safe_span("create_embeddings_batch_async", 
                            text_count=len(texts),
                            total_chars=sum(len(t) for t in texts)) as span:
         

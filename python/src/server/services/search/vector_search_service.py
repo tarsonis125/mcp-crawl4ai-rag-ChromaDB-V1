@@ -6,7 +6,7 @@ Handles vector similarity search for documents and code examples.
 from typing import List, Dict, Any, Optional
 from supabase import Client
 
-from ...config.logfire_config import search_logger
+from ...config.logfire_config import search_logger, safe_span
 from ..embeddings.embedding_service import create_embedding
 
 
@@ -34,7 +34,7 @@ def search_documents(
     Returns:
         List of matching documents
     """
-    with search_logger.span("vector_search", 
+    with safe_span("vector_search", 
                            query_length=len(query),
                            match_count=match_count,
                            threshold=threshold,
@@ -47,7 +47,7 @@ def search_documents(
                               filter_metadata=filter_metadata)
             
             # Create embedding for the query
-            with search_logger.span("create_embedding"):
+            with safe_span("create_embedding"):
                 query_embedding = create_embedding(query)
                 
                 if not query_embedding:
@@ -57,7 +57,7 @@ def search_documents(
                 span.set_attribute("embedding_dimensions", len(query_embedding))
             
             # Build the filter for the RPC call
-            with search_logger.span("prepare_rpc_params"):
+            with safe_span("prepare_rpc_params"):
                 rpc_params = {
                     "query_embedding": query_embedding,
                     "match_count": match_count
@@ -84,7 +84,7 @@ def search_documents(
                     rpc_params["filter"] = {}
             
             # Call the RPC function
-            with search_logger.span("supabase_rpc_call"):
+            with safe_span("supabase_rpc_call"):
                 search_logger.debug("Calling Supabase RPC function", 
                                   function_name="match_crawled_pages",
                                   rpc_params_keys=list(rpc_params.keys()))

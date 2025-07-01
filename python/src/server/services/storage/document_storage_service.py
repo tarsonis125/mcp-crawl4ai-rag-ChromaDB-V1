@@ -11,7 +11,7 @@ from supabase import Client
 from urllib.parse import urlparse
 from fastapi import WebSocket
 
-from ...config.logfire_config import search_logger
+from ...config.logfire_config import search_logger, safe_span
 from ..embeddings.embedding_service import create_embeddings_batch_async
 from ..embeddings.contextual_embedding_service import (
     process_chunk_with_context,
@@ -48,7 +48,7 @@ async def add_documents_to_supabase(
         progress_callback: Optional async callback function for progress reporting
         websocket: Optional WebSocket for progress updates
     """
-    with search_logger.span("add_documents_to_supabase",
+    with safe_span("add_documents_to_supabase",
                            total_documents=len(contents),
                            batch_size=batch_size) as span:
         
@@ -211,7 +211,7 @@ async def add_documents_to_supabase_parallel(
     Uses ThreadPoolExecutor for CPU-intensive contextual embeddings and
     async for I/O operations. Shows worker progress during embedding phase.
     """
-    with search_logger.span("add_documents_to_supabase_parallel",
+    with safe_span("add_documents_to_supabase_parallel",
                            total_documents=len(contents),
                            batch_size=batch_size,
                            max_workers=max_workers) as span:

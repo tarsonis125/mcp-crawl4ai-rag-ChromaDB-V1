@@ -34,7 +34,7 @@ from ...utils import (
     get_utils_threading_service
 )
 from ..threading_service import ProcessingMode
-from ...config.logfire_config import search_logger, get_logger
+from ...config.logfire_config import search_logger, get_logger, safe_span
 
 logger = get_logger(__name__)
 
@@ -74,7 +74,7 @@ class DocumentStorageService:
             search_logger.warning("Invalid text provided for chunking")
             return []
             
-        with search_logger.span("smart_chunk_markdown_async", 
+        with safe_span("smart_chunk_markdown_async", 
                                text_length=len(text),
                                chunk_size=chunk_size) as span:
             try:
@@ -251,7 +251,7 @@ class DocumentStorageService:
         Returns:
             Tuple of (success, result_dict)
         """
-        with search_logger.span("upload_document_async",
+        with safe_span("upload_document_async",
                                filename=filename,
                                content_length=len(file_content),
                                knowledge_type=knowledge_type) as span:
@@ -425,7 +425,7 @@ class DocumentStorageService:
             progress_callback: Optional progress callback
             batch_size: Batch size for processing
         """
-        with search_logger.span("store_documents_with_progress",
+        with safe_span("store_documents_with_progress",
                                total_documents=len(contents),
                                batch_size=batch_size) as span:
             

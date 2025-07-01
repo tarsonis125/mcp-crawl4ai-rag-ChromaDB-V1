@@ -16,7 +16,7 @@ except ImportError:
     CrossEncoder = None
 
 from src.server.utils import get_supabase_client, search_documents, search_code_examples
-from src.server.config.logfire_config import rag_logger, search_logger
+from src.server.config.logfire_config import rag_logger, search_logger, safe_span
 
 from ...config.logfire_config import get_logger
 
@@ -105,7 +105,7 @@ class SearchService:
         Returns:
             Tuple of (success, result_dict)
         """
-        with rag_logger.span("rag_query",
+        with safe_span("rag_query",
                             query_length=len(query),
                             source=source,
                             match_count=match_count,
@@ -119,13 +119,13 @@ class SearchService:
                 # Build filter metadata if source is provided
                 filter_metadata = None
                 if source:
-                    with rag_logger.span("build_filter"):
+                    with safe_span("build_filter"):
                         filter_metadata = {"source": source}
                         rag_logger.debug("Built filter metadata", source=source)
                         span.set_attribute("filter_applied", True)
                 
                 # Perform vector search
-                with rag_logger.span("vector_search"):
+                with safe_span("vector_search"):
                     results = search_documents(
                         client=self.supabase_client,
                         query=query,
@@ -135,7 +135,7 @@ class SearchService:
                     span.set_attribute("raw_results_count", len(results))
                 
                 # Format results for response
-                with rag_logger.span("format_response"):
+                with safe_span("format_response"):
                     formatted_results = []
                     for i, result in enumerate(results):
                         try:
