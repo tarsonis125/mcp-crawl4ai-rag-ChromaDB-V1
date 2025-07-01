@@ -24,7 +24,7 @@ from docker.errors import NotFound, APIError
 from ..utils import get_supabase_client
 
 # Import Logfire
-from ..config.logfire_config import mcp_logger, api_logger
+from ..config.logfire_config import mcp_logger, api_logger, logfire
 
 router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 
@@ -107,7 +107,7 @@ class MCPServerManager:
                     'message': f'Please wait {wait_time:.1f}s before starting server again'
                 }
             
-        with mcp_logger.span("mcp_server_start") as span:
+        with logfire.span("mcp_server_start") as span:
             span.set_attribute("action", "start_server")
             
             if not self.docker_client:
@@ -160,7 +160,7 @@ class MCPServerManager:
                 if self.container.status == 'running':
                     self.status = 'running'
                     self._add_log('INFO', 'MCP container started successfully')
-                    mcp_logger.info("MCP container started successfully", container_id=self.container.id)
+                    mcp_logger.info(f"MCP container started successfully - container_id={self.container.id}")
                     span.set_attribute("success", True)
                     span.set_attribute("status", "running")
                     return {
@@ -184,7 +184,7 @@ class MCPServerManager:
             except APIError as e:
                 self.status = 'failed'
                 self._add_log('ERROR', f'Docker API error: {str(e)}')
-                mcp_logger.error("Docker API error during MCP startup", error=str(e))
+                mcp_logger.error(f"Docker API error during MCP startup - error={str(e)}")
                 span.set_attribute("success", False)
                 span.set_attribute("error", str(e))
                 return {
@@ -195,7 +195,7 @@ class MCPServerManager:
             except Exception as e:
                 self.status = 'failed'
                 self._add_log('ERROR', f'Failed to start MCP server: {str(e)}')
-                mcp_logger.error("Exception during MCP server startup", error=str(e), error_type=type(e).__name__)
+                mcp_logger.error(f"Exception during MCP server startup - error={str(e)}, error_type={type(e).__name__}")
                 span.set_attribute("success", False)
                 span.set_attribute("error", str(e))
                 return {
@@ -218,7 +218,7 @@ class MCPServerManager:
                     'message': f'Please wait {wait_time:.1f}s before stopping server again'
                 }
                 
-        with mcp_logger.span("mcp_server_stop") as span:
+        with logfire.span("mcp_server_stop") as span:
             span.set_attribute("action", "stop_server")
             
             if not self.docker_client:
@@ -275,7 +275,7 @@ class MCPServerManager:
                 
             except APIError as e:
                 self._add_log('ERROR', f'Docker API error: {str(e)}')
-                mcp_logger.error("Docker API error during MCP stop", error=str(e))
+                mcp_logger.error(f"Docker API error during MCP stop - error={str(e)}")
                 span.set_attribute("success", False)
                 span.set_attribute("error", str(e))
                 return {
@@ -285,7 +285,7 @@ class MCPServerManager:
                 }
             except Exception as e:
                 self._add_log('ERROR', f'Error stopping MCP server: {str(e)}')
-                mcp_logger.error("Exception during MCP server stop", error=str(e), error_type=type(e).__name__)
+                mcp_logger.error(f"Exception during MCP server stop - error={str(e)}, error_type={type(e).__name__}")
                 span.set_attribute("success", False)
                 span.set_attribute("error", str(e))
                 return {
@@ -477,7 +477,7 @@ mcp_manager = MCPServerManager()
 @router.post("/start", response_model=ServerResponse)
 async def start_server():
     """Start the MCP server."""
-    with api_logger.span("api_mcp_start") as span:
+    with logfire.span("api_mcp_start") as span:
         span.set_attribute("endpoint", "/mcp/start")
         span.set_attribute("method", "POST")
         
@@ -495,7 +495,7 @@ async def start_server():
 @router.post("/stop", response_model=ServerResponse)
 async def stop_server():
     """Stop the MCP server."""
-    with api_logger.span("api_mcp_stop") as span:
+    with logfire.span("api_mcp_stop") as span:
         span.set_attribute("endpoint", "/mcp/stop")
         span.set_attribute("method", "POST")
         
@@ -513,7 +513,7 @@ async def stop_server():
 @router.get("/status")
 async def get_status():
     """Get MCP server status."""
-    with api_logger.span("api_mcp_status") as span:
+    with logfire.span("api_mcp_status") as span:
         span.set_attribute("endpoint", "/mcp/status")
         span.set_attribute("method", "GET")
         
@@ -531,7 +531,7 @@ async def get_status():
 @router.get("/logs")
 async def get_logs(limit: int = 100):
     """Get MCP server logs."""
-    with api_logger.span("api_mcp_logs") as span:
+    with logfire.span("api_mcp_logs") as span:
         span.set_attribute("endpoint", "/mcp/logs")
         span.set_attribute("method", "GET")
         span.set_attribute("limit", limit)
@@ -549,7 +549,7 @@ async def get_logs(limit: int = 100):
 @router.delete("/logs")
 async def clear_logs():
     """Clear MCP server logs."""
-    with api_logger.span("api_mcp_clear_logs") as span:
+    with logfire.span("api_mcp_clear_logs") as span:
         span.set_attribute("endpoint", "/mcp/logs")
         span.set_attribute("method", "DELETE")
         
@@ -567,7 +567,7 @@ async def clear_logs():
 @router.get("/config")
 async def get_mcp_config():
     """Get MCP server configuration."""
-    with api_logger.span("api_get_mcp_config") as span:
+    with logfire.span("api_get_mcp_config") as span:
         span.set_attribute("endpoint", "/api/mcp/config")
         span.set_attribute("method", "GET")
         
@@ -613,7 +613,7 @@ async def get_mcp_config():
 @router.post("/config")
 async def save_configuration(config: ServerConfig):
     """Save MCP server configuration."""
-    with api_logger.span("api_save_mcp_config") as span:
+    with logfire.span("api_save_mcp_config") as span:
         span.set_attribute("endpoint", "/api/mcp/config")
         span.set_attribute("method", "POST")
         span.set_attribute("transport", config.transport)
@@ -675,7 +675,7 @@ async def websocket_log_stream(websocket: WebSocket):
 @router.get("/tools")
 async def get_mcp_tools():
     """Get available MCP tools by querying the running MCP server's registered tools."""
-    with api_logger.span("api_get_mcp_tools") as span:
+    with logfire.span("api_get_mcp_tools") as span:
         span.set_attribute("endpoint", "/api/mcp/tools")
         span.set_attribute("method", "GET")
         
@@ -750,7 +750,7 @@ async def get_mcp_tools():
 @router.get("/health")
 async def mcp_health():
     """Health check for MCP API."""
-    with api_logger.span("api_mcp_health") as span:
+    with logfire.span("api_mcp_health") as span:
         span.set_attribute("endpoint", "/api/mcp/health")
         span.set_attribute("method", "GET")
         

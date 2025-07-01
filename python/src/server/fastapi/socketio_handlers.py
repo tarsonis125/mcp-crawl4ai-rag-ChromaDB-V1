@@ -50,6 +50,30 @@ async def broadcast_crawl_progress(progress_id: str, data: dict):
     await sio.emit('crawl_progress', data, room=progress_id)
     logger.debug(f"Broadcasted crawl progress for {progress_id}")
 
+# Crawl progress helper functions for knowledge API
+async def start_crawl_progress(progress_id: str, data: dict):
+    """Start crawl progress tracking."""
+    data['status'] = 'starting'
+    await broadcast_crawl_progress(progress_id, data)
+
+async def update_crawl_progress(progress_id: str, data: dict):
+    """Update crawl progress."""
+    await broadcast_crawl_progress(progress_id, data)
+
+async def complete_crawl_progress(progress_id: str, data: dict):
+    """Complete crawl progress tracking."""
+    data['status'] = 'completed'
+    await broadcast_crawl_progress(progress_id, data)
+
+async def error_crawl_progress(progress_id: str, error_msg: str):
+    """Signal crawl progress error."""
+    data = {
+        'status': 'error',
+        'error': error_msg,
+        'progressId': progress_id
+    }
+    await broadcast_crawl_progress(progress_id, data)
+
 @sio.event
 async def connect(sid, environ):
     """Handle client connection."""

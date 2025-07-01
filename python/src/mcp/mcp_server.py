@@ -344,14 +344,14 @@ async def main():
         logger.info(f"   URL: http://{host}:{port}/sse")
         
         mcp_logger.info("🔥 Logfire initialized for lightweight MCP server")
-        mcp_logger.info("🌟 Starting lightweight MCP server", host=host, port=port)
+        mcp_logger.info(f"🌟 Starting lightweight MCP server - host={host}, port={port}")
         
         # Run SSE server
         logger.info("🌐 Starting Server-Sent Events (SSE) transport")
         await mcp.run_sse_async()
             
     except Exception as e:
-        mcp_logger.error("💥 Fatal error in main", error=str(e), error_type=type(e).__name__)
+        mcp_logger.error(f"💥 Fatal error in main - error={str(e)}, error_type={type(e).__name__}")
         logger.error(f"💥 Fatal error in main: {e}")
         logger.error(traceback.format_exc())
         raise
