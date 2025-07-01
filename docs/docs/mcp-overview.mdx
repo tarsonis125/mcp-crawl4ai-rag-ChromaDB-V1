@@ -13,8 +13,8 @@ import Admonition from '@theme/Admonition';
 
 **Archon's MCP implementation follows a clear separation of concerns:**
 - The **Server service** contains ALL business logic, ML models, and data operations
-- The **MCP service** is a thin wrapper that exposes Server functionality as MCP tools
-- There are NO HTTP calls between services - MCP imports Server modules directly
+- The **MCP service** is a lightweight HTTP-based wrapper that exposes Server functionality as MCP tools
+- **MCP communicates with Server exclusively via HTTP APIs** - maintaining true microservices separation
 
 </Admonition>
 

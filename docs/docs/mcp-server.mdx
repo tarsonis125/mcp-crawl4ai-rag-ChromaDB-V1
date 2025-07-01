@@ -97,9 +97,9 @@ graph TB
 
 ## Available Tools
 
-Archon provides 14 comprehensive MCP tools organized into two main categories:
+Archon provides 14 comprehensive MCP tools organized into three main categories:
 
-### Knowledge Management Tools (7 tools)
+### 🧠 RAG & Knowledge Management Tools (7 tools)
 
 | Tool | Description | Use Case |
 |------|-------------|----------|
@@ -111,17 +111,44 @@ Archon provides 14 comprehensive MCP tools organized into two main categories:
 | `upload_document` | Process and index documents | Upload PDFs, Word docs, markdown |
 | `delete_source` | Remove indexed content | Clean up outdated sources |
 
-### Project Management Tools (7 tools)
+### 📊 Project & Task Management Tools (5 tools with action-based patterns)
+
+| Tool | Description | Actions Available |
+|------|-------------|-------------------|
+| `manage_project` | Unified project management | `create`, `list`, `get`, `delete` |
+| `manage_task` | Complete task lifecycle | `create`, `list`, `get`, `update`, `delete`, `archive` |
+| `manage_document` | Document management | `add`, `list`, `get`, `update`, `delete` |
+| `manage_versions` | Version control for documents | `create`, `list`, `get`, `restore` |
+| `get_project_features` | Retrieve project features | Direct query (no actions) |
+
+### 🏥 System & Monitoring Tools (2 tools)
 
 | Tool | Description | Use Case |
 |------|-------------|----------|
-| `create_project` | Create new project | Start a new AI development project |
-| `list_projects` | List all projects | View all active projects |
-| `create_task` | Create task in project | Add development tasks |
-| `update_task` | Update task status/details | Mark tasks as complete |
-| `list_tasks` | List project tasks | View tasks by status |
-| `add_document` | Add document to project | Attach specs, notes |
-| `search_projects` | Search across projects | Find specific projects |
+| `health_check` | System health diagnostics | Monitor server status, database connectivity |
+| `session_info` | MCP session management | View active sessions and connection info |
+
+## 🎯 How MCP Tools Work
+
+<Admonition type="tip" icon="🔧" title="Lightweight HTTP-Based Architecture">
+
+**The MCP service is designed as a lightweight protocol wrapper that:**
+1. **Receives MCP tool calls** from AI clients (Cursor, Windsurf, Claude)
+2. **Translates them to HTTP requests** to the Server service (port 8080)
+3. **Returns formatted responses** back to the AI client
+
+**Example flow for a RAG query:**
+```
+AI Client → MCP Tool Call → MCP Service → HTTP POST to Server:8080/api/rag/query → Response → AI Client
+```
+
+This architecture ensures:
+- ✅ **True microservices separation** - Services communicate only via HTTP
+- ✅ **Scalability** - Each service can be scaled independently
+- ✅ **Maintainability** - Clear boundaries between services
+- ✅ **Flexibility** - Easy to add new tools without modifying core logic
+
+</Admonition>
 
 ## 🏗️ Microservices Integration
 

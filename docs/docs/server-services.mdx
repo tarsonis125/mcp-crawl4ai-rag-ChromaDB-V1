@@ -1,0 +1,348 @@
+---
+title: Server Services Documentation
+sidebar_position: 4
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import Admonition from '@theme/Admonition';
+
+# 📊 Comprehensive Server Services Documentation
+
+<div className="hero hero--primary">
+  <div className="container">
+    <h2 className="hero__subtitle">
+      Complete documentation for all 20+ services in Archon's Server
+    </h2>
+  </div>
+</div>
+
+<Admonition type="info" icon="📚" title="Service Documentation Structure">
+
+This section provides detailed documentation for all 20+ services in the Server. Each service table includes:
+- **Function Name**: The exact function signature
+- **Parameters**: Input parameters with types
+- **Returns**: Return type and structure
+- **Description**: What the function does
+
+</Admonition>
+
+## 🏗️ Modular Service Architecture
+
+<Admonition type="tip" title="🎯 New Modular Architecture">
+  Archon features a **fully modular service architecture** where each major functionality is separated into dedicated service modules for better maintainability, testability, and performance.
+</Admonition>
+
+### 📦 Service Modules Overview
+
+The refactored architecture splits the monolithic `utils.py` (previously 1600+ lines) into focused service modules:
+
+<div className="row">
+  <div className="col col--6">
+    <div className="card">
+      <div className="card__header">
+        <h4>🧠 **Embeddings Services**</h4>
+      </div>
+      <div className="card__body">
+        <ul>
+          <li>**embedding_service.py**: OpenAI embeddings with rate limiting</li>
+          <li>**contextual_embedding_service.py**: Context-aware embeddings for better RAG</li>
+          <li>Automatic rate limiting and retry logic</li>
+          <li>Batch processing optimizations</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div className="col col--6">
+    <div className="card">
+      <div className="card__header">
+        <h4>💾 **Storage Services**</h4>
+      </div>
+      <div className="card__body">
+        <ul>
+          <li>**document_storage_service.py**: Parallel document storage</li>
+          <li>**code_storage_service.py**: Code extraction and indexing</li>
+          <li>ThreadPoolExecutor for parallel processing</li>
+          <li>WebSocket progress tracking</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div className="row">
+  <div className="col col--6">
+    <div className="card">
+      <div className="card__header">
+        <h4>🔍 **Search Services**</h4>
+      </div>
+      <div className="card__body">
+        <ul>
+          <li>**vector_search_service.py**: Similarity search with pgvector</li>
+          <li>Hybrid search capabilities</li>
+          <li>Source filtering and metadata search</li>
+          <li>Result ranking and relevance scoring</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div className="col col--6">
+    <div className="card">
+      <div className="card__header">
+        <h4>🔧 **Core Services**</h4>
+      </div>
+      <div className="card__body">
+        <ul>
+          <li>**client_manager.py**: Database connection pooling</li>
+          <li>**source_management_service.py**: Source metadata</li>
+          <li>**threading_service.py**: Thread pool & rate limiting</li>
+          <li>**mcp_session_manager.py**: MCP session handling</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+### 🚀 Benefits of Modular Architecture
+
+1. **Better Performance**: Each service is optimized for its specific task
+2. **Easier Testing**: Services can be tested in isolation
+3. **Maintainability**: Clear separation of concerns
+4. **Scalability**: Services can be scaled independently
+5. **Rate Limiting**: Built-in OpenAI API rate limiting (200k tokens/min)
+
+## 🔧 Core Services
+
+### Client Manager Service (`services/client_manager.py`)
+**Purpose:** Manages database and API client connections with connection pooling
+
+| Function | Parameters | Returns | Description |
+|----------|------------|---------|-------------|
+| `get_supabase_client()` | None | `Client` | Get a Supabase client instance with connection pooling |
+
+### Credential Service (`services/credential_service.py`)
+**Purpose:** Handles loading, storing, and accessing credentials with encryption for sensitive values
+
+| Function | Parameters | Returns | Description |
+|----------|------------|---------|-------------|
+| `load_all_credentials()` | None | `Dict[str, Any]` | Load all credentials from database and cache them |
+| `get_credential()` | `key: str`, `default: Any = None`, `decrypt: bool = True` | `Any` | Get a credential value by key |
+| `get_encrypted_credential_raw()` | `key: str` | `Optional[str]` | Get raw encrypted value without decryption |
+| `set_credential()` | `key: str`, `value: str`, `is_encrypted: bool = False`, `category: str = None`, `description: str = None` | `bool` | Set a credential value |
+| `delete_credential()` | `key: str` | `bool` | Delete a credential |
+| `get_credentials_by_category()` | `category: str` | `Dict[str, Any]` | Get all credentials for a specific category |
+| `list_all_credentials()` | None | `List[CredentialItem]` | Get all credentials as a list of CredentialItem objects |
+| `get_config_as_env_dict()` | None | `Dict[str, str]` | Get configuration as environment variable style dict |
+
+### Prompt Service (`services/prompt_service.py`)
+**Purpose:** Manages AI agent prompts loaded from database
+
+| Function | Parameters | Returns | Description |
+|----------|------------|---------|-------------|
+| `load_prompts()` | None | `None` | Load all prompts from database into memory |
+| `get_prompt()` | `prompt_name: str`, `default: Optional[str] = None` | `str` | Get a prompt by name |
+| `reload_prompts()` | None | `None` | Reload prompts from database |
+| `get_all_prompt_names()` | None | `List[str]` | Get a list of all available prompt names |
+| `get_last_loaded_time()` | None | `Optional[datetime]` | Get timestamp of when prompts were last loaded |
+
+### Threading Service (`services/threading_service.py`)
+**Purpose:** Provides comprehensive threading patterns for high-performance AI operations
+
+| Function | Parameters | Returns | Description |
+|----------|------------|---------|-------------|
+| `start()` | None | `None` | Start the threading service |
+| `stop()` | None | `None` | Stop the threading service |
+| `rate_limited_operation()` | `estimated_tokens: int` | Context Manager | Context manager for rate-limited operations |
+| `run_cpu_intensive()` | `func: Callable`, `*args`, `**kwargs` | `Any` | Run CPU-intensive function in thread pool |
+| `run_io_bound()` | `func: Callable`, `*args`, `**kwargs` | `Any` | Run I/O-bound function in thread pool |
+| `batch_process()` | `items: List[Any]`, `process_func: Callable`, `mode: ProcessingMode`, `batch_size: int = 10`, `description: str = None` | `List[Any]` | Process items in batches with optimal threading |
+| `websocket_safe_process()` | `items: List[Any]`, `process_func: Callable`, `operation_name: str` | `List[Any]` | Process items with WebSocket safety guarantees |
+| `get_system_metrics()` | None | `SystemMetrics` | Get current system performance metrics |
+
+### Source Management Service (`services/source_management_service.py`)
+**Purpose:** Handles source metadata, summaries, and management
+
+| Function | Parameters | Returns | Description |
+|----------|------------|---------|-------------|
+| `extract_source_summary()` | `source_id: str`, `content: str`, `max_length: int = 500` | `str` | Extract a summary for a source using LLM |
+| `generate_source_title_and_metadata()` | `source_id: str`, `content: str`, `knowledge_type: str`, `tags: List[str]` | `Tuple[str, Dict[str, Any]]` | Generate title and metadata for a source |
+| `update_source_info()` | `client: Client`, `source_id: str`, `summary: str`, `word_count: int`, `char_count: int`, `knowledge_type: str`, `tags: List[str]` | `None` | Update or insert source information |
+
+## 🧠 Embeddings Services
+
+### Embedding Service (`services/embeddings/embedding_service.py`)
+**Purpose:** Handles all OpenAI embedding operations with rate limiting
+
+| Function | Parameters | Returns | Description |
+|----------|------------|---------|-------------|
+| `create_embedding()` | `text: str` | `List[float]` | Create embedding for a single text |
+| `create_embedding_async()` | `text: str` | `List[float]` | Async version of create_embedding |
+| `create_embeddings_batch()` | `texts: List[str]` | `List[List[float]]` | Create embeddings for multiple texts |
+| `create_embeddings_batch_async()` | `texts: List[str]`, `websocket: Optional[Any] = None`, `progress_callback: Optional[Any] = None` | `List[List[float]]` | Async batch embeddings with progress |
+
+### Contextual Embedding Service (`services/embeddings/contextual_embedding_service.py`)
+**Purpose:** Generates contextual embeddings for improved RAG retrieval
+
+| Function | Parameters | Returns | Description |
+|----------|------------|---------|-------------|
+| `generate_contextual_embedding()` | `full_document: str`, `chunk: str` | `Tuple[str, bool]` | Generate contextual info for a chunk (sync) |
+| `generate_contextual_embedding_async()` | `full_document: str`, `chunk: str` | `Tuple[str, bool]` | Generate contextual info for a chunk (async) |
+| `process_chunk_with_context()` | `args` | `Tuple[str, bool]` | Process a single chunk with contextual embedding |
+| `process_chunk_with_context_async()` | `url: str`, `content: str`, `full_document: str` | `Tuple[str, bool]` | Async version of process_chunk_with_context |
+| `generate_contextual_embeddings_batch()` | `full_documents: List[str]`, `chunks: List[str]` | `List[Tuple[str, bool]]` | Batch generate contextual embeddings |
+
+## 📦 Projects Services
+
+### Project Service (`services/projects/project_service.py`)
+**Purpose:** Core business logic for project operations
+
+| Function | Parameters | Returns | Description |
+|----------|------------|---------|-------------|
+| `create_project()` | `title: str`, `prd: Dict[str, Any] = None`, `github_repo: str = None` | `Tuple[bool, Dict[str, Any]]` | Create a new project |
+| `list_projects()` | None | `Tuple[bool, Dict[str, Any]]` | List all projects |
+| `get_project()` | `project_id: str` | `Tuple[bool, Dict[str, Any]]` | Get a specific project by ID |
+| `delete_project()` | `project_id: str` | `Tuple[bool, Dict[str, Any]]` | Delete a project and its tasks |
+| `get_project_features()` | `project_id: str` | `Tuple[bool, Dict[str, Any]]` | Get features from a project |
+
+### Task Service (`services/projects/task_service.py`)
+**Purpose:** Core business logic for task operations
+
+| Function | Parameters | Returns | Description |
+|----------|------------|---------|-------------|
+| `create_task()` | `project_id: str`, `title: str`, `description: str = ""`, `assignee: str = "User"`, `task_order: int = 0`, `feature: str = None`, `parent_task_id: str = None`, `sources: List[Dict] = None`, `code_examples: List[Dict] = None` | `Tuple[bool, Dict[str, Any]]` | Create a new task |
+| `list_tasks()` | `project_id: str = None`, `parent_task_id: str = None`, `status: str = None`, `include_closed: bool = False` | `Tuple[bool, Dict[str, Any]]` | List tasks with filters |
+| `get_task()` | `task_id: str` | `Tuple[bool, Dict[str, Any]]` | Get a specific task by ID |
+| `update_task()` | `task_id: str`, `update_fields: Dict[str, Any]` | `Tuple[bool, Dict[str, Any]]` | Update task fields |
+| `archive_task()` | `task_id: str`, `archived_by: str = "system"` | `Tuple[bool, Dict[str, Any]]` | Archive a task (soft delete) |
+
+### Document Service (`services/projects/document_service.py`)
+**Purpose:** Core business logic for document operations within projects
+
+| Function | Parameters | Returns | Description |
+|----------|------------|---------|-------------|
+| `add_document()` | `project_id: str`, `document_type: str`, `title: str`, `content: Dict[str, Any]`, `metadata: Dict[str, Any] = None` | `Tuple[bool, Dict[str, Any]]` | Add a new document to project |
+| `list_documents()` | `project_id: str` | `Tuple[bool, Dict[str, Any]]` | List all documents in project |
+| `get_document()` | `project_id: str`, `doc_id: str` | `Tuple[bool, Dict[str, Any]]` | Get a specific document |
+| `update_document()` | `project_id: str`, `doc_id: str`, `update_fields: Dict[str, Any]`, `create_version: bool = True` | `Tuple[bool, Dict[str, Any]]` | Update a document |
+| `delete_document()` | `project_id: str`, `doc_id: str` | `Tuple[bool, Dict[str, Any]]` | Delete a document |
+
+### Versioning Service (`services/projects/versioning_service.py`)
+**Purpose:** Core business logic for document versioning operations
+
+| Function | Parameters | Returns | Description |
+|----------|------------|---------|-------------|
+| `create_version()` | `project_id: str`, `field_name: str`, `content: Dict[str, Any]`, `change_summary: str = None`, `document_id: str = None`, `created_by: str = "system"` | `Tuple[bool, Dict[str, Any]]` | Create a version snapshot |
+| `list_versions()` | `project_id: str`, `field_name: str` | `Tuple[bool, Dict[str, Any]]` | Get version history |
+| `get_version_content()` | `project_id: str`, `field_name: str`, `version_number: int` | `Tuple[bool, Dict[str, Any]]` | Get specific version content |
+| `restore_version()` | `project_id: str`, `field_name: str`, `version_number: int`, `restored_by: str = "system"` | `Tuple[bool, Dict[str, Any]]` | Restore to a specific version |
+
+## 🔍 RAG Services
+
+### Crawling Service (`services/rag/crawling_service.py`)
+**Purpose:** Core crawling functionality for web pages
+
+| Function | Parameters | Returns | Description |
+|----------|------------|---------|-------------|
+| `is_sitemap()` | `url: str` | `bool` | Check if URL is a sitemap |
+| `is_txt()` | `url: str` | `bool` | Check if URL is a text file |
+| `parse_sitemap()` | `sitemap_url: str` | `List[str]` | Parse sitemap and extract URLs |
+| `crawl_single_page()` | `url: str`, `retry_count: int = 3` | `Dict[str, Any]` | Crawl a single web page |
+| `crawl_markdown_file()` | `url: str` | `List[Dict[str, Any]]` | Crawl a markdown/txt file |
+| `crawl_batch_with_progress()` | `urls: List[str]`, `max_concurrent: int = 10`, `websocket: Optional[WebSocket] = None`, `crawl_id: str = None` | `List[Dict[str, Any]]` | Batch crawl multiple URLs |
+| `crawl_recursive_with_progress()` | `start_urls: List[str]`, `max_depth: int = 3`, `max_concurrent: int = 10`, `websocket: Optional[WebSocket] = None`, `crawl_id: str = None` | `List[Dict[str, Any]]` | Recursively crawl links |
+
+### Document Storage Service (`services/rag/document_storage_service.py`)
+**Purpose:** Core document storage and processing functionality with threading
+
+| Function | Parameters | Returns | Description |
+|----------|------------|---------|-------------|
+| `smart_chunk_markdown_async()` | `text: str`, `chunk_size: int = 5000`, `websocket: Optional[WebSocket] = None` | `List[str]` | Split text into chunks intelligently (async) |
+| `smart_chunk_markdown()` | `text: str`, `chunk_size: int = 5000` | `List[str]` | Split text into chunks (sync) |
+| `extract_section_info()` | `chunk: str` | `Dict[str, Any]` | Extract headers and stats from chunk |
+| `process_code_example()` | `code_block_dict` | `str` | Process code example to generate summary |
+| `upload_document()` | `file_content: str`, `filename: str`, `doc_type: str = "general"`, `chunk_size: int = 5000` | `Tuple[bool, Dict[str, Any]]` | Upload and process a document |
+| `store_documents_with_progress()` | `urls: List[str]`, `contents: List[str]`, `knowledge_type: str`, `source_id: str`, `tags: List[str] = None`, `websocket: Optional[WebSocket] = None`, `progress_id: str = None`, `chunk_size: int = 5000`, `use_contextual_embeddings: bool = True` | `None` | Store documents with progress reporting |
+| `store_code_examples()` | `code_examples: List[Dict[str, Any]]` | `Tuple[bool, Dict[str, Any]]` | Store code examples in database |
+
+### Search Service (`services/rag/search_service.py`)
+**Purpose:** Core search functionality including RAG queries and reranking
+
+| Function | Parameters | Returns | Description |
+|----------|------------|---------|-------------|
+| `get_setting()` | `key: str`, `default: str = ""` | `str` | Get setting from credential service |
+| `get_bool_setting()` | `key: str`, `default: bool = False` | `bool` | Get boolean setting |
+| `rerank_results()` | `query: str`, `results: List[Dict[str, Any]]`, `content_key: str = "content"` | `List[Dict[str, Any]]` | Rerank search results using CrossEncoder |
+| `perform_rag_query()` | `query: str`, `source: Optional[str] = None`, `match_count: int = 5` | `Tuple[bool, Dict[str, Any]]` | Perform RAG query on stored content |
+| `search_code_examples_service()` | `query: str`, `source_id: Optional[str] = None`, `match_count: int = 5` | `Tuple[bool, Dict[str, Any]]` | Search for code examples |
+
+### Source Management Service (`services/rag/source_management_service.py`)
+**Purpose:** Core source management functionality
+
+| Function | Parameters | Returns | Description |
+|----------|------------|---------|-------------|
+| `get_available_sources()` | None | `Tuple[bool, Dict[str, Any]]` | Get all available sources |
+| `delete_source()` | `source_id: str` | `Tuple[bool, Dict[str, Any]]` | Delete a source and all associated data |
+| `update_source_metadata()` | `source_id: str`, `summary: str = None`, `knowledge_type: str = None`, `tags: List[str] = None` | `Tuple[bool, Dict[str, Any]]` | Update source metadata |
+| `create_source_info()` | `source_id: str`, `content_sample: str`, `knowledge_type: str = "general"`, `tags: List[str] = None` | `Tuple[bool, Dict[str, Any]]` | Create source information entry |
+| `get_source_details()` | `source_id: str` | `Tuple[bool, Dict[str, Any]]` | Get detailed info about a source |
+| `list_sources_by_type()` | `knowledge_type: str` | `Tuple[bool, Dict[str, Any]]` | List sources filtered by type |
+
+## 🔍 Search Services
+
+### Vector Search Service (`services/search/vector_search_service.py`)
+**Purpose:** Handles vector similarity search for documents and code examples
+
+| Function | Parameters | Returns | Description |
+|----------|------------|---------|-------------|
+| `search_documents()` | `client: Client`, `query: str`, `match_count: int = 5`, `filter_metadata: Dict[str, Any] = None` | `List[Dict[str, Any]]` | Search documents using semantic search |
+| `search_code_examples()` | `client: Client`, `query: str`, `match_count: int = 5`, `filter_metadata: Dict[str, Any] = None` | `List[Dict[str, Any]]` | Search code examples using vector similarity |
+
+## 💾 Storage Services
+
+### Document Storage Service (`services/storage/document_storage_service.py`)
+**Purpose:** Handles storage of documents in Supabase with parallel processing
+
+| Function | Parameters | Returns | Description |
+|----------|------------|---------|-------------|
+| `add_documents_to_supabase()` | `client`, `urls: List[str]`, `contents: List[str]`, `contextual_contents: List[str]`, `embeddings: List[List[float]]`, `source_id: str`, `knowledge_type: str`, `tags: List[str]` | `None` | Add documents to Supabase (sequential) |
+| `add_documents_to_supabase_parallel()` | `client`, `urls: List[str]`, `contents: List[str]`, `contextual_contents: List[str]`, `embeddings: List[List[float]]`, `source_id: str`, `knowledge_type: str`, `tags: List[str]` | `None` | Add documents with parallel processing |
+
+### Code Storage Service (`services/storage/code_storage_service.py`)
+**Purpose:** Handles extraction and storage of code examples from documents
+
+| Function | Parameters | Returns | Description |
+|----------|------------|---------|-------------|
+| `extract_code_blocks()` | `markdown_content: str`, `min_length: int = 50` | `List[Dict[str, Any]]` | Extract code blocks from markdown |
+| `generate_code_example_summary()` | `code: str`, `context_before: str = ""`, `context_after: str = ""` | `str` | Generate summary for code example |
+| `add_code_examples_to_supabase()` | `client: Client`, `urls: List[str]`, `contents: List[str]`, `source_id: str`, `websocket: Optional[WebSocket] = None`, `progress_id: str = None` | `None` | Add code examples to Supabase |
+
+## 🔌 MCP Integration Services
+
+### MCP Service Client (`services/mcp_service_client.py`)
+**Purpose:** HTTP client for MCP service to communicate with other microservices
+
+| Function | Parameters | Returns | Description |
+|----------|------------|---------|-------------|
+| `crawl_url()` | `url: str`, `options: Optional[Dict[str, Any]] = None` | `Dict[str, Any]` | Crawl a URL by calling the API service |
+| `search()` | `query: str`, `source_filter: Optional[str] = None`, `match_count: int = 5`, `use_reranking: bool = False` | `Dict[str, Any]` | Perform a search via API service |
+| `store_documents()` | `documents: List[Dict[str, Any]]`, `generate_embeddings: bool = True` | `Dict[str, Any]` | Store documents (simplified version) |
+| `generate_embeddings()` | `texts: List[str]`, `model: str = "text-embedding-3-small"` | `Dict[str, Any]` | Generate embeddings (not implemented) |
+| `health_check()` | None | `Dict[str, Any]` | Check health of all dependent services |
+
+### MCP Session Manager (`services/mcp_session_manager.py`)
+**Purpose:** Simplified session management for MCP server connections
+
+| Function | Parameters | Returns | Description |
+|----------|------------|---------|-------------|
+| `create_session()` | None | `str` | Create a new session and return its ID |
+| `validate_session()` | `session_id: str` | `bool` | Validate a session ID and update last seen time |
+| `cleanup_expired_sessions()` | None | `int` | Remove expired sessions and return count removed |
+| `get_active_session_count()` | None | `int` | Get count of active sessions |
+
+---
+
+**Next Steps**: 
+- Return to [Server Architecture Overview](./server-overview)
+- Learn about [Server Deployment](./server-deployment)
+- Explore [Server Monitoring](./server-monitoring) with Logfire
+- Review the [API Reference](./api-reference) for REST endpoints
