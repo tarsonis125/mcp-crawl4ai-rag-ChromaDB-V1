@@ -124,7 +124,7 @@ async def leave_project(sid, data):
         print(f"🛑 Client {sid} left project {project_id}")
 
 @sio.event
-async def subscribe_projects(sid):
+async def subscribe_projects(sid, data=None):
     """Subscribe to project list updates."""
     await sio.enter_room(sid, 'project_list')
     print(f"✅ Client {sid} subscribed to project list")
@@ -149,7 +149,7 @@ async def subscribe_projects(sid):
         await sio.emit('error', {'message': str(e)}, to=sid)
 
 @sio.event
-async def unsubscribe_projects(sid):
+async def unsubscribe_projects(sid, data=None):
     """Unsubscribe from project list updates."""
     await sio.leave_room(sid, 'project_list')
     print(f"🛑 Client {sid} unsubscribed from project list")

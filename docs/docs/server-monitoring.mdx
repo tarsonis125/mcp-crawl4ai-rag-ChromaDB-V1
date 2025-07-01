@@ -121,22 +121,42 @@ SUPABASE_SERVICE_KEY=your_service_key
 # AI services
 OPENAI_API_KEY=your_openai_key
 
-# Development & Troubleshooting (Optional)
-LOGFIRE_TOKEN=your_logfire_token
+# Unified Logging Configuration
+LOGFIRE_ENABLED=false              # true=Logfire logging, false=standard logging
+LOGFIRE_TOKEN=your_logfire_token    # Only required when LOGFIRE_ENABLED=true
 
 # Service communication
 API_BASE_URL=http://archon-server:8080
 ```
 
-### Advanced Debugging with Logfire
+### Unified Logging System
 
-For detailed request tracing and performance debugging, you can optionally enable [Logfire](https://logfire.pydantic.dev/):
+Archon includes a unified logging system with optional [Logfire](https://logfire.pydantic.dev/) integration:
 
-1. **Get a Logfire token** from [logfire.pydantic.dev](https://logfire.pydantic.dev/)
-2. **Add to your .env file**: `LOGFIRE_TOKEN=your_logfire_token`
-3. **View traces** in the Logfire dashboard for detailed request flows
+**Standard Logging (Default)**:
+```bash
+LOGFIRE_ENABLED=false
+```
+- Uses Python's standard logging framework
+- Logs to console with structured format
+- Perfect for development and basic monitoring
+- Zero external dependencies
 
-This provides real-time debugging for RAG queries, MCP tool calls, and API performance analysis.
+**Enhanced Logging with Logfire**:
+```bash
+LOGFIRE_ENABLED=true
+LOGFIRE_TOKEN=your_logfire_token    # Get from logfire.pydantic.dev
+```
+- Real-time traces and performance monitoring
+- Advanced debugging for RAG queries and MCP tool calls
+- Automatic request/response tracking
+- Visual dashboards and analytics
+
+**Key Benefits**:
+- 🔄 **Seamless Toggle**: Switch between modes with a single environment variable
+- 🛡️ **Graceful Fallback**: Always works even without Logfire
+- 📊 **Consistent Format**: Same log structure in both modes
+- 🚀 **Zero Setup**: Standard logging works out of the box
 
 ### Resource Management
 

@@ -33,7 +33,7 @@ archon/
 │   │   ├── mcp_server.py        # MCP server implementation
 │   │   ├── config.py            # Configuration management
 │   │   ├── utils.py             # Utility functions (compatibility layer)
-│   │   ├── logfire_config.py    # Development debugging configuration
+│   │   ├── logfire_config.py    # Unified logging configuration
 │   │   ├── api/                 # 🎯 Modular API routers (6 modules)
 │   │   │   ├── knowledge_api.py # Knowledge & crawling endpoints
 │   │   │   ├── mcp_api.py       # MCP server control & monitoring
@@ -402,8 +402,9 @@ SUPABASE_SERVICE_KEY=your-service-key-here
 # OpenAI Configuration
 OPENAI_API_KEY=sk-your-openai-api-key
 
-# Monitoring Configuration
-LOGFIRE_TOKEN=your-logfire-token
+# Unified Logging Configuration
+LOGFIRE_ENABLED=false              # true=Logfire logging, false=standard logging
+LOGFIRE_TOKEN=your-logfire-token    # Only required when LOGFIRE_ENABLED=true
 
 # Service Configuration
 SERVICE_DISCOVERY_MODE=docker_compose
@@ -424,7 +425,8 @@ DOCS_PORT=3838
 | `SUPABASE_URL` | ✅ | - | Supabase project URL |
 | `SUPABASE_SERVICE_KEY` | ✅ | - | Supabase service role key |
 | `OPENAI_API_KEY` | ✅ | - | OpenAI API key for embeddings |
-| `LOGFIRE_TOKEN` | ❌ | - | Logfire monitoring token |
+| `LOGFIRE_ENABLED` | ❌ | `false` | Enable unified Logfire logging (`true`/`false`) |
+| `LOGFIRE_TOKEN` | ❌ | - | Logfire token (only required when enabled) |
 | `SERVICE_DISCOVERY_MODE` | ❌ | `local` | Service discovery mode (`docker_compose` or `local`) |
 | `LOG_LEVEL` | ❌ | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 | `TRANSPORT` | ❌ | `sse` | MCP transport mode (`sse`, `stdio`, `websocket`) |

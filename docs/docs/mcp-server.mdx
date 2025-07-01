@@ -78,8 +78,9 @@ AGENTS_BASE_URL=http://archon-agents:8052
 # Authentication
 MCP_SERVICE_KEY=your-service-key
 
-# Development & Troubleshooting (Optional)
-LOGFIRE_TOKEN=your-logfire-token
+# Unified Logging Configuration (Optional)
+LOGFIRE_ENABLED=false              # true=Logfire logging, false=standard logging
+LOGFIRE_TOKEN=your-logfire-token    # Only required when LOGFIRE_ENABLED=true
 ```
 
 ### Docker Service

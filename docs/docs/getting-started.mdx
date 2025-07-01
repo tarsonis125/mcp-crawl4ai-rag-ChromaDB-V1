@@ -72,7 +72,9 @@ SUPABASE_SERVICE_KEY=your-service-key-here
 
 # Optional (but recommended for monitoring)
 OPENAI_API_KEY=sk-proj-your-openai-key
-LOGFIRE_TOKEN=your-logfire-token-here
+# Unified Logging Configuration (Optional)
+LOGFIRE_ENABLED=false              # true=Logfire logging, false=standard logging
+LOGFIRE_TOKEN=your-logfire-token-here    # Only required when LOGFIRE_ENABLED=true
 ```
 
 ### 3. Set Up Database
@@ -379,7 +381,7 @@ curl -X POST http://localhost:8080/api/rag/query \
 
 - **📖 [Complete Documentation](http://localhost:3838)** - Comprehensive guides
 - **🐛 [GitHub Issues](https://github.com/coleam00/archon/issues)** - Bug reports and feature requests
-- **📊 [Logfire Dashboard](https://logfire.pydantic.dev/)** - Real-time debugging and monitoring
+- **📊 [Logfire Dashboard](https://logfire.pydantic.dev/)** - Optional enhanced logging (when `LOGFIRE_ENABLED=true`)
 
 ---
 

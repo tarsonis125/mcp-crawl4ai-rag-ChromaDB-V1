@@ -95,15 +95,39 @@ SUPABASE_SERVICE_KEY=eyJ0eXAi...
 
 # Optional - Set via UI Settings page
 # OPENAI_API_KEY=sk-...
-# LOGFIRE_TOKEN=pylf_...
+
+# Unified Logging Configuration (Optional)
+LOGFIRE_ENABLED=false              # true=Logfire logging, false=standard logging  
+# LOGFIRE_TOKEN=pylf_...            # Only required when LOGFIRE_ENABLED=true
 
 # Service Discovery (automatically set for Docker)
 # SERVICE_DISCOVERY_MODE=docker_compose
 ```
 
-<Admonition type="tip" title="API Keys via UI">
-You can set API keys through the Settings page in the UI instead of environment variables.
+<Admonition type="tip" title="Configuration Options">
+- **API Keys**: Set through the Settings page UI instead of environment variables
+- **Logging**: Use `LOGFIRE_ENABLED=true/false` to toggle between standard and enhanced logging
+- **Zero Setup**: Standard logging works perfectly without any additional configuration
 </Admonition>
+
+### Unified Logging Architecture
+
+Archon includes a unified logging system that works seamlessly with or without Logfire:
+
+```bash
+# Standard Logging (Default - Zero Setup)
+LOGFIRE_ENABLED=false
+
+# Enhanced Logging with Logfire
+LOGFIRE_ENABLED=true
+LOGFIRE_TOKEN=your_token
+```
+
+**Key Benefits:**
+- 🔄 **Single Toggle**: One environment variable controls everything
+- 🛡️ **Always Works**: Graceful fallback to standard Python logging
+- 📊 **Consistent**: Same log format and structure in both modes
+- 🚀 **Zero Dependencies**: Standard logging requires no external services
 
 ### Socket.IO Configuration
 

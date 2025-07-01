@@ -87,9 +87,14 @@ class ProjectCreationProgressService {
       console.error('Project creation progress Socket.IO error:', error);
     });
 
-    // Connect to the project namespace
+    // Connect to the default namespace and join progress room
     try {
-      await this.wsService.connect(`/api/project-creation-progress/${progressId}`);
+      await this.wsService.connect('/');
+      // Subscribe to progress updates for this specific progress ID
+      this.wsService.send({
+        type: 'subscribe_progress',
+        data: { progress_id: progressId }
+      });
     } catch (error) {
       console.error('Failed to connect to project creation progress:', error);
       throw error;
