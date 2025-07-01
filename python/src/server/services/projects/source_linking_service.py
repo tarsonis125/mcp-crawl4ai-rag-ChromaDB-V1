@@ -141,15 +141,12 @@ class SourceLinkingService:
             "github_repo": project.get("github_repo"),
             "created_at": created_at,
             "updated_at": updated_at,
-            "prd": project.get("prd", {}),
             "docs": project.get("docs", []),
             "features": project.get("features", []),
             "data": project.get("data", []),
             "technical_sources": sources["technical_sources"],
             "business_sources": sources["business_sources"],
-            "pinned": project.get("pinned", False),
-            "color": project.get("color", "blue"),
-            "icon": project.get("icon", "Briefcase")
+            "pinned": project.get("pinned", False)
         }
     
     def format_projects_with_sources(self, projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

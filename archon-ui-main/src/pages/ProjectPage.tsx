@@ -527,7 +527,7 @@ export function ProjectPage({
         
         // Close modal immediately
         setIsNewProjectModalOpen(false);
-        setNewProjectForm({ title: '', description: '', color: 'blue' });
+        setNewProjectForm({ title: '', description: '' });
         setIsCreatingProject(false);
         
         // Set up WebSocket connection for real-time progress
@@ -561,7 +561,7 @@ export function ProjectPage({
         setSelectedProject(newProject);
         setShowProjectDetails(true);
         
-        setNewProjectForm({ title: '', description: '', color: 'blue' });
+        setNewProjectForm({ title: '', description: '' });
         setIsNewProjectModalOpen(false);
         setIsCreatingProject(false);
       }

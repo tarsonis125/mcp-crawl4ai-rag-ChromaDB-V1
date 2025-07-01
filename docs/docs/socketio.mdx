@@ -12,14 +12,28 @@ import Admonition from '@theme/Admonition';
 
 ## Overview
 
-Archon uses **Socket.IO** for real-time communication between the frontend and backend. We keep it simple - all events on the root namespace, no complexity.
+Archon uses **Socket.IO** for real-time communication between the frontend and backend. We follow 2025 best practices - all events on the default namespace with room-based organization.
 
 <Admonition type="success" title="Simple by Design">
-- **One file**: All Socket.IO logic in `projects_api.py`  
-- **One namespace**: Everything on root `/`
-- **Simple events**: Just `@sio.event` decorators
+- **Default namespace only**: Everything on root `/` namespace
+- **Room-based organization**: Projects, progress tracking, and features use rooms
+- **Simple events**: Clear event names with `@sio.event` decorators
+- **Automatic reconnection**: Socket.IO handles connection reliability
 - **~100 lines total**: For the entire real-time system
 </Admonition>
+
+## Socket.IO Rooms Architecture
+
+Rooms provide isolated communication channels within the default namespace:
+
+### Room Types
+
+| Room Pattern | Purpose | Example Room ID | Members |
+|--------------|---------|-----------------|---------|
+| `project_list` | Project list updates | `project_list` | Users viewing project dashboard |
+| `{project_id}` | Project-specific updates | `abc123-def456` | Users viewing that project |
+| `{progress_id}` | Progress tracking | `progress_789` | Users tracking creation/crawl progress |
+| `chat_{session_id}` | Agent chat sessions | `chat_session_123` | Individual chat participants |
 
 ## Socket.IO Events
 
@@ -54,55 +68,89 @@ These are emitted by the server to rooms:
 ## Frontend Usage
 
 <Tabs>
-<TabItem value="basic" label="Basic Connection">
+<TabItem value="basic" label="Room-Based Connection">
 
 ```typescript
 import { createWebSocketService } from './services/webSocketService';
 
-// Connect (Socket.IO under the hood)
+// Always connect to default namespace
 const ws = createWebSocketService();
 await ws.connect('/');
 
-// Join a project room
-ws.send({ type: 'join_project', project_id: 'abc123' });
-
-// Subscribe to project list
-ws.send({ type: 'subscribe_projects' });
-
-// Listen for updates
-ws.addMessageHandler('task_created', (task) => {
-  console.log('New task:', task);
+// Join specific rooms via events
+ws.send({ 
+  type: 'join_project', 
+  data: { project_id: 'abc123' } 
 });
 
-ws.addMessageHandler('projects_update', (data) => {
-  console.log('Projects:', data.projects);
+// Subscribe to project list room
+ws.send({ type: 'subscribe_projects' });
+
+// Listen for room-specific updates
+ws.addMessageHandler('task_created', (message) => {
+  console.log('New task in project room:', message.data);
+});
+
+ws.addMessageHandler('projects_update', (message) => {
+  console.log('Project list updated:', message.data.projects);
 });
 ```
 
 </TabItem>
-<TabItem value="progress" label="Progress Tracking">
+<TabItem value="progress" label="Progress Room Tracking">
 
 ```typescript
-// Subscribe to progress
+// Subscribe to progress room
 ws.send({ 
   type: 'subscribe_progress', 
-  progress_id: progressId 
+  data: { progress_id: progressId }
 });
 
-// Or crawl progress
-ws.send({ 
-  type: 'crawl_subscribe', 
-  progress_id: crawlId 
+// Handle progress updates from room
+ws.addMessageHandler('project_progress', (message) => {
+  const { percentage, status, step } = message.data;
+  updateProgress(percentage, status, step);
 });
 
-// Handle updates
-ws.addMessageHandler('project_progress', (data) => {
-  updateProgress(data.percentage, data.status);
+// Unsubscribe from progress room
+ws.send({
+  type: 'unsubscribe_progress',
+  data: { progress_id: progressId }
 });
+```
 
-ws.addMessageHandler('crawl_progress', (data) => {
-  updateCrawlUI(data);
-});
+</TabItem>
+<TabItem value="service" label="Service Pattern">
+
+```typescript
+class ProjectProgressService {
+  private wsService: WebSocketService | null = null;
+  
+  async streamProgress(progressId: string, onMessage: (data: any) => void) {
+    this.wsService = createWebSocketService();
+    
+    // Always connect to default namespace
+    await this.wsService.connect('/');
+    
+    // Subscribe to progress room
+    this.wsService.send({
+      type: 'subscribe_progress',
+      data: { progress_id: progressId }
+    });
+    
+    // Handle room messages
+    this.wsService.addMessageHandler('project_progress', (message) => {
+      onMessage(message.data);
+    });
+  }
+  
+  disconnect() {
+    if (this.wsService) {
+      // Rooms are cleaned up automatically
+      this.wsService.disconnect();
+    }
+  }
+}
 ```
 
 </TabItem>
@@ -199,12 +247,90 @@ def create_socketio_app(app: FastAPI):
 
 ## Best Practices
 
-<Admonition type="tip" title="Keep It Simple">
-1. **All events in one place** - Easy to find and understand
-2. **Clear event names** - `task_created` not `message` 
-3. **Use rooms for targeting** - Projects and progress IDs as rooms
-4. **Let Socket.IO handle reconnection** - Don't add custom logic
-5. **Broadcast from services** - Keep API endpoints clean
+<Admonition type="tip" title="Room-Based Organization">
+1. **Default namespace only** - Never use custom namespaces like `/chat` or `/project`
+2. **Rooms for isolation** - Use rooms to group related clients
+3. **Clear room naming** - Use IDs like `project_abc123` or descriptive names like `project_list`
+4. **Join on connect** - Add clients to appropriate rooms immediately after connection
+5. **Leave on disconnect** - Socket.IO handles room cleanup automatically
+6. **Broadcast to rooms** - Target specific audiences with `room=room_id`
+</Admonition>
+
+### Room Management Best Practices
+
+<Tabs>
+<TabItem value="joining" label="Joining Rooms">
+
+```python
+@sio.event
+async def join_project(sid, data):
+    """Join a project room for real-time updates."""
+    project_id = data.get('project_id')
+    if project_id:
+        # Join the project-specific room
+        await sio.enter_room(sid, project_id)
+        
+        # Send current state to the new member
+        tasks = await get_project_tasks(project_id)
+        await sio.emit('initial_tasks', tasks, to=sid)
+        
+        logger.info(f"Client {sid} joined project room {project_id}")
+
+@sio.event  
+async def subscribe_projects(sid, data=None):
+    """Subscribe to project list updates."""
+    await sio.enter_room(sid, 'project_list')
+    
+    # Send current project list
+    projects = await get_all_projects()
+    await sio.emit('projects_update', {'projects': projects}, to=sid)
+```
+
+</TabItem>
+<TabItem value="broadcasting" label="Broadcasting to Rooms">
+
+```python
+async def broadcast_task_update(project_id: str, event_type: str, task_data: dict):
+    """Broadcast task updates to all project members."""
+    await sio.emit(event_type, task_data, room=project_id)
+
+async def broadcast_project_list_update():
+    """Notify all project list subscribers."""
+    projects = await get_all_projects()
+    await sio.emit('projects_update', {'projects': projects}, room='project_list')
+
+async def broadcast_progress_update(progress_id: str, progress_data: dict):
+    """Update progress subscribers."""
+    await sio.emit('progress_update', progress_data, room=progress_id)
+```
+
+</TabItem>
+<TabItem value="cleanup" label="Room Cleanup">
+
+```python
+@sio.event
+async def leave_project(sid, data):
+    """Leave a project room."""
+    project_id = data.get('project_id')
+    if project_id:
+        await sio.leave_room(sid, project_id)
+        logger.info(f"Client {sid} left project room {project_id}")
+
+@sio.event
+async def disconnect(sid):
+    """Handle client disconnection."""
+    # Socket.IO automatically removes client from all rooms
+    logger.info(f"Client {sid} disconnected")
+```
+
+</TabItem>
+</Tabs>
+
+<Admonition type="warning" title="Common Mistakes">
+- **Don't use namespaces** - Stick to the default `/` namespace
+- **Don't broadcast to all** - Use rooms to target specific audiences  
+- **Don't forget room cleanup** - Let Socket.IO handle it automatically
+- **Don't create custom reconnection logic** - Socket.IO handles it
 </Admonition>
 
 ## Common Patterns
@@ -229,6 +355,42 @@ async def update_progress(progress_id: str, percentage: int):
     })
 ```
 
+## Room-Based Architecture Summary
+
+<Admonition type="info" title="2025 Socket.IO Best Practices">
+Archon follows modern Socket.IO patterns with:
+- **Default namespace only** - No custom namespaces like `/chat` or `/project`
+- **Room-based isolation** - Each feature uses specific rooms for targeted communication
+- **Automatic cleanup** - Socket.IO handles room membership and reconnection
+- **Simple event names** - Clear, descriptive event names for better debugging
+</Admonition>
+
+### Key Benefits
+
+1. **Scalability**: Rooms allow targeting specific user groups without broadcasting to all
+2. **Isolation**: Project updates don't affect users in other projects
+3. **Reliability**: Socket.IO handles reconnection and room re-joining automatically
+4. **Simplicity**: No namespace complexity, just rooms within the default namespace
+5. **Performance**: Targeted broadcasts reduce unnecessary network traffic
+
+### Architecture Diagram
+
+```mermaid
+graph TB
+    Client1[Client 1] --> Namespace[Default Namespace '/']
+    Client2[Client 2] --> Namespace
+    Client3[Client 3] --> Namespace
+    
+    Namespace --> ProjectRoom[Project Room 'abc123']
+    Namespace --> ListRoom[Project List Room 'project_list']
+    Namespace --> ProgressRoom[Progress Room 'progress_789']
+    
+    ProjectRoom --> Client1
+    ListRoom --> Client1
+    ListRoom --> Client2
+    ProgressRoom --> Client3
+```
+
 ## That's It!
 
-No namespaces. No complex patterns. No separate Socket.IO services. Just simple events in one file for our two modules. Total complexity: ~100 lines of Socket.IO code.
+No namespaces. No complex patterns. Room-based organization within the default namespace. Simple events with clear targeting. Total complexity: ~100 lines of Socket.IO code for a production-ready real-time system.

@@ -306,54 +306,127 @@ Wraps pages with smooth fade/slide animations:
 
 ## 🔌 Socket.IO Integration
 
-All real-time connections in the frontend now use **Socket.IO** through the WebSocketService for improved reliability:
+All real-time connections use **Socket.IO** with a room-based architecture on the default namespace for improved reliability and organization:
 
 ### Key Services Using Socket.IO
 
-| Service | Purpose | Status |
-|---------|---------|--------|
-| `crawlProgressService` | Progress tracking for crawling | ✅ Socket.IO |
-| `webSocketService` | Socket.IO client wrapper | ✅ Socket.IO |
-| `taskUpdateService` | Real-time task updates | ✅ Socket.IO |
-| `agentChatService` | Agent chat streaming | ✅ Socket.IO |
+| Service | Purpose | Room Pattern | Status |
+|---------|---------|--------------|--------|
+| `crawlProgressService` | Progress tracking for crawling | `progress_{id}` | ✅ Room-based |
+| `projectCreationProgressService` | Project creation progress | `progress_{id}` | ✅ Room-based |
+| `webSocketService` | Socket.IO client wrapper | Default namespace | ✅ Room-based |
+| `taskUpdateService` | Real-time task updates | `{project_id}` | ✅ Room-based |
+| `agentChatService` | Agent chat streaming | `chat_{session_id}` | ✅ Room-based |
 
-### Socket.IO Usage Pattern
+### Room-Based Socket.IO Pattern
 
 ```typescript
 import { createWebSocketService } from './services/webSocketService';
 
-// Create service
+// Always connect to default namespace
 const wsService = createWebSocketService({
   maxReconnectAttempts: 5,
   reconnectInterval: 1000
 });
 
-// Connect to Socket.IO namespace (automatically mapped)
-await wsService.connect('/api/endpoint');
+// Connect to default namespace only
+await wsService.connect('/');
 
-wsService.addMessageHandler('message_type', (message) => {
-  // Handle message
+// Join specific rooms via subscription events
+wsService.send({
+  type: 'subscribe_progress',
+  data: { progress_id: progressId }
 });
 
-// Clean up
+// Handle room-specific messages
+wsService.addMessageHandler('progress_update', (message) => {
+  updateProgressUI(message.data);
+});
+
+// Clean up (rooms cleaned automatically)
 wsService.disconnect();
 ```
 
-### Component Integration
+### Component Integration with Rooms
 
 ```typescript
 useEffect(() => {
   const ws = createWebSocketService();
   
-  ws.addMessageHandler('update', (data) => {
-    setState(data);
+  // Connect to default namespace
+  ws.connect('/').then(() => {
+    // Join relevant rooms
+    ws.send({
+      type: 'join_project',
+      data: { project_id: projectId }
+    });
+    
+    // Handle room messages
+    ws.addMessageHandler('task_created', (message) => {
+      setTasks(prev => [...prev, message.data]);
+    });
   });
   
-  ws.connect('/api/endpoint');
-  
   return () => ws.disconnect();
-}, []); // Only stable dependencies
+}, [projectId]); // Stable dependencies only
 ```
+
+### Room Subscription Patterns
+
+<Tabs>
+<TabItem value="project" label="Project Rooms">
+
+```typescript
+// Subscribe to project-specific updates
+const subscribeToProject = (projectId: string) => {
+  wsService.send({
+    type: 'join_project',
+    data: { project_id: projectId }
+  });
+  
+  // Handle project room events
+  wsService.addMessageHandler('task_created', handleTaskCreated);
+  wsService.addMessageHandler('task_updated', handleTaskUpdated);
+  wsService.addMessageHandler('task_deleted', handleTaskDeleted);
+};
+```
+
+</TabItem>
+<TabItem value="progress" label="Progress Rooms">
+
+```typescript
+// Subscribe to progress tracking
+const subscribeToProgress = (progressId: string) => {
+  wsService.send({
+    type: 'subscribe_progress',
+    data: { progress_id: progressId }
+  });
+  
+  // Handle progress updates
+  wsService.addMessageHandler('project_progress', (message) => {
+    updateProgressBar(message.data.percentage);
+    updateStatus(message.data.status);
+  });
+};
+```
+
+</TabItem>
+<TabItem value="list" label="List Rooms">
+
+```typescript
+// Subscribe to project list updates
+const subscribeToProjectList = () => {
+  wsService.send({ type: 'subscribe_projects' });
+  
+  // Handle list updates
+  wsService.addMessageHandler('projects_update', (message) => {
+    setProjects(message.data.projects);
+  });
+};
+```
+
+</TabItem>
+</Tabs>
 
 ## 🔌 Services
 
@@ -475,19 +548,54 @@ CMD ["npm", "run", "preview"]
 
 ## ✅ Frontend Development Standards
 
-### Socket.IO Best Practices
+### Socket.IO Room-Based Best Practices
 
 **DO:**
-- ✅ Use WebSocketService (Socket.IO) for all real-time connections
-- ✅ Clean up connections in useEffect return
-- ✅ Handle all connection states (connecting, connected, failed)
-- ✅ Use typed message handlers
+- ✅ Always connect to default namespace `/` only
+- ✅ Use room subscription events to join specific rooms
+- ✅ Handle room-specific messages with clear event names
+- ✅ Clean up connections in useEffect return (rooms auto-cleanup)
+- ✅ Use typed message handlers with proper data extraction
+- ✅ Follow the subscription pattern: connect → subscribe → handle messages
 
 **DON'T:**
-- ❌ Create direct WebSocket instances with `new WebSocket()` or native Socket.IO clients
+- ❌ Use custom namespaces like `/chat`, `/project`, `/crawl`
+- ❌ Create direct WebSocket instances or native Socket.IO clients
+- ❌ Broadcast to all clients - use rooms for targeting
 - ❌ Include unstable functions in useCallback dependencies
-- ❌ Forget to handle reconnection scenarios
 - ❌ Create multiple connections to the same endpoint
+- ❌ Forget to handle reconnection scenarios
+
+### Room Subscription Pattern
+
+```typescript
+// ✅ CORRECT: Room-based subscription
+useEffect(() => {
+  const ws = createWebSocketService();
+  
+  const connectAndSubscribe = async () => {
+    // Always connect to default namespace
+    await ws.connect('/');
+    
+    // Subscribe to specific rooms
+    ws.send({
+      type: 'subscribe_progress',
+      data: { progress_id: progressId }
+    });
+    
+    // Handle room messages
+    ws.addMessageHandler('progress_update', (message) => {
+      setProgress(message.data);
+    });
+  };
+  
+  connectAndSubscribe();
+  return () => ws.disconnect();
+}, [progressId]);
+
+// ❌ WRONG: Custom namespace connection
+await ws.connect('/project-creation-progress/123'); // Don't do this
+```
 
 ### Stable Dependencies Pattern
 

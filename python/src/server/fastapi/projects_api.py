@@ -44,9 +44,6 @@ class CreateProjectRequest(BaseModel):
     title: str
     description: Optional[str] = None
     github_repo: Optional[str] = None
-    color: Optional[str] = 'blue'
-    icon: Optional[str] = 'Briefcase'
-    prd: Optional[Dict[str, Any]] = None
     docs: Optional[List[Any]] = None
     features: Optional[List[Any]] = None
     data: Optional[List[Any]] = None
@@ -58,7 +55,6 @@ class UpdateProjectRequest(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None  # Add description field
     github_repo: Optional[str] = None
-    prd: Optional[Dict[str, Any]] = None
     docs: Optional[List[Any]] = None
     features: Optional[List[Any]] = None
     data: Optional[List[Any]] = None
@@ -142,14 +138,8 @@ async def _create_project_with_ai(progress_id: str, request: CreateProjectReques
     try:
         # Prepare kwargs for additional project fields
         kwargs = {}
-        if request.color:
-            kwargs['color'] = request.color
-        if request.icon:
-            kwargs['icon'] = request.icon
         if request.pinned is not None:
             kwargs['pinned'] = request.pinned
-        if request.prd:
-            kwargs['prd'] = request.prd
         if request.features:
             kwargs['features'] = request.features
         if request.data:
@@ -270,7 +260,6 @@ async def get_project(project_id: str):
         return {
             **project,
             "description": project.get("description", ""),
-            "prd": project.get("prd", {}),
             "docs": project.get("docs", []),
             "features": project.get("features", []),
             "data": project.get("data", []),
@@ -297,8 +286,6 @@ async def update_project(project_id: str, request: UpdateProjectRequest):
                 update_fields["description"] = request.description
             if request.github_repo is not None:
                 update_fields["github_repo"] = request.github_repo
-            if request.prd is not None:
-                update_fields["prd"] = request.prd
             if request.docs is not None:
                 update_fields["docs"] = request.docs
             if request.features is not None:
@@ -324,7 +311,7 @@ async def update_project(project_id: str, request: UpdateProjectRequest):
                         version_count = 0
                         
                         # Create versions for updated JSONB fields
-                        for field_name in ['docs', 'prd', 'features', 'data']:
+                        for field_name in ['docs', 'features', 'data']:
                             if field_name in update_fields:
                                 current_content = current_project.get(field_name, {})
                                 new_content = update_fields[field_name]

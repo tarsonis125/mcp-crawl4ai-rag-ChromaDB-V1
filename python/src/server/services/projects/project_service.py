@@ -25,7 +25,7 @@ class ProjectService:
         """Initialize with optional supabase client"""
         self.supabase_client = supabase_client or get_supabase_client()
     
-    def create_project(self, title: str, prd: Dict[str, Any] = None, github_repo: str = None) -> Tuple[bool, Dict[str, Any]]:
+    def create_project(self, title: str, github_repo: str = None) -> Tuple[bool, Dict[str, Any]]:
         """
         Create a new project with optional PRD and GitHub repo.
         
@@ -234,8 +234,8 @@ class ProjectService:
             }
             
             # Add allowed fields
-            allowed_fields = ["title", "description", "github_repo", "prd", "docs", "features", 
-                            "data", "technical_sources", "business_sources", "pinned", "color", "icon"]
+            allowed_fields = ["title", "description", "github_repo", "docs", "features", 
+                            "data", "technical_sources", "business_sources", "pinned"]
             
             for field in allowed_fields:
                 if field in update_fields:

@@ -139,21 +139,8 @@ export class WebSocketService {
     const projectProgressMatch = endpoint.match(/project-creation-progress\/([^\/]+)/);
     const projectProgressId = projectProgressMatch ? projectProgressMatch[1] : '';
     
-    // Map endpoints to Socket.IO namespaces
+    // Always use default namespace - backend uses rooms for organization
     let namespace = '/';
-    if (endpoint.includes('/agent-chat/')) {
-      namespace = '/chat';
-    } else if (endpoint.includes('/crawl-progress/')) {
-      namespace = '/crawl';
-    } else if (endpoint.includes('/crawl/')) {
-      namespace = '/crawl';
-    } else if (endpoint.includes('/projects/') && endpoint.includes('/tasks/')) {
-      namespace = '/tasks';
-    } else if (endpoint.includes('/projects/stream')) {
-      namespace = '/project';
-    } else if (endpoint.includes('/project-creation-progress/')) {
-      namespace = '/project';
-    }
     
     return { namespace, sessionId: sessionId || projectId || progressId || projectProgressId };
   }
@@ -195,14 +182,12 @@ export class WebSocketService {
       console.log(`✅ Socket.IO connected to ${this.namespace} namespace`);
       this.setState(WebSocketState.CONNECTED);
       
-      // Emit session join event for chat namespace
-      if (this.namespace === '/chat' && this.sessionId) {
-        this.socket!.emit('join_session', { session_id: this.sessionId });
-      }
-      
-      // Emit subscribe_progress event for project namespace
-      if (this.namespace === '/project' && this.sessionId) {
-        this.socket!.emit('subscribe_progress', { progress_id: this.sessionId });
+      // Emit appropriate subscription events based on the endpoint type
+      // Note: We determine the event type from the stored endpoint context
+      if (this.sessionId) {
+        // For now, we'll emit a generic subscribe event
+        // Individual services will send more specific subscription events as needed
+        console.log(`🔗 Connected to Socket.IO default namespace with session: ${this.sessionId}`);
       }
       
       // Resolve connection promise

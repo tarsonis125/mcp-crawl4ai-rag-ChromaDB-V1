@@ -10,8 +10,6 @@ export type UITaskStatus = 'backlog' | 'in-progress' | 'review' | 'complete';
 // Priority levels
 export type TaskPriority = 'low' | 'medium' | 'high' | 'critical';
 
-// Project color themes (from existing UI)
-export type ProjectColor = 'cyan' | 'purple' | 'pink' | 'blue' | 'orange' | 'green';
 
 // Assignee type - simplified to predefined options
 export type Assignee = 'User' | 'Archon' | 'AI IDE Agent';
@@ -32,8 +30,6 @@ export interface Project {
   
   // Extended UI properties (stored in JSONB fields)
   description?: string;
-  icon?: string;
-  color?: ProjectColor;
   progress?: number;
   updated?: string; // Human-readable format
   pinned: boolean; // Database column - indicates if project is pinned for priority
@@ -86,8 +82,6 @@ export interface Task {
 export interface CreateProjectRequest {
   title: string;
   description?: string;
-  icon?: string;
-  color?: ProjectColor;
   github_repo?: string;
   pinned?: boolean;
   // Note: PRD data should be stored as a document in the docs array with document_type="prd"
@@ -103,8 +97,6 @@ export interface CreateProjectRequest {
 export interface UpdateProjectRequest {
   title?: string;
   description?: string;
-  icon?: string;
-  color?: ProjectColor;
   github_repo?: string;
   prd?: Record<string, any>;
   docs?: any[];

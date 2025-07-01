@@ -56,14 +56,13 @@ class ProjectCreationService:
                 'github_repo': github_repo,
                 'created_at': datetime.now().isoformat(),
                 'updated_at': datetime.now().isoformat(),
-                'docs': [],  # Empty docs array to start
+                'docs': [],  # Empty docs array to start - PRD will be added here by DocumentAgent
                 'features': kwargs.get('features', {}),
-                'data': kwargs.get('data', {}),
-                'prd': kwargs.get('prd', {})
+                'data': kwargs.get('data', {})
             }
             
             # Add any additional fields from kwargs
-            for key in ['color', 'icon', 'pinned']:
+            for key in ['pinned']:
                 if key in kwargs:
                     project_data[key] = kwargs[key]
             
@@ -100,13 +99,10 @@ class ProjectCreationService:
                     'github_repo': final_project.get('github_repo'),
                     'created_at': final_project['created_at'],
                     'updated_at': final_project['updated_at'],
-                    'prd': final_project.get('prd', {}),
-                    'docs': final_project.get('docs', []),
+                    'docs': final_project.get('docs', []),  # PRD documents will be here
                     'features': final_project.get('features', []),
                     'data': final_project.get('data', []),
                     'pinned': final_project.get('pinned', False),
-                    'color': kwargs.get('color', 'blue'),
-                    'icon': kwargs.get('icon', 'Briefcase'),
                     'technical_sources': [],  # Empty initially
                     'business_sources': []     # Empty initially
                 }
