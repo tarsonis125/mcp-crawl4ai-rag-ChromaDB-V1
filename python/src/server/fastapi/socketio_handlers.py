@@ -16,6 +16,7 @@ logger = get_logger(__name__)
 
 # Get Socket.IO instance
 sio = get_socketio_instance()
+logger.info(f"🔗 [SOCKETIO] Socket.IO instance ID: {id(sio)}")
 
 # Broadcast helper functions
 async def broadcast_task_update(project_id: str, event_type: str, task_data: dict):
@@ -79,11 +80,13 @@ async def error_crawl_progress(progress_id: str, error_msg: str):
 @sio.event
 async def connect(sid, environ):
     """Handle client connection."""
+    logger.info(f'🔌 [SOCKETIO] Client connected: {sid}')
     print(f'🔌 Client connected: {sid}')
 
 @sio.event
 async def disconnect(sid):
     """Handle client disconnection."""
+    logger.info(f'🔌 [SOCKETIO] Client disconnected: {sid}')
     print(f'🔌 Client disconnected: {sid}')
 
 @sio.event
@@ -157,12 +160,36 @@ async def unsubscribe_projects(sid, data=None):
 @sio.event
 async def subscribe_progress(sid, data):
     """Subscribe to project creation progress."""
+    logger.info(f"🔔 [SOCKETIO] Received subscribe_progress from {sid} with data: {data}")
     progress_id = data.get('progress_id')
     if not progress_id:
+        logger.error(f"🔔 [SOCKETIO] No progress_id provided by {sid}")
         await sio.emit('error', {'message': 'progress_id required'}, to=sid)
         return
     
     await sio.enter_room(sid, progress_id)
+    logger.info(f"✅ [SOCKETIO] Client {sid} subscribed to progress room {progress_id}")
+    
+    # Send current progress state if operation exists
+    try:
+        from ..services.projects.progress_service import progress_service
+        current_status = progress_service.get_operation_status(progress_id)
+        if current_status:
+            logger.info(f"📤 [SOCKETIO] Sending current progress state to new subscriber {sid}: {current_status}")
+            # Send the current state immediately to the new subscriber
+            current_status_copy = current_status.copy()
+            current_status_copy['progressId'] = progress_id
+            
+            # Convert datetime to ISO string for JSON serialization
+            if 'start_time' in current_status_copy and hasattr(current_status_copy['start_time'], 'isoformat'):
+                current_status_copy['start_time'] = current_status_copy['start_time'].isoformat()
+            
+            await sio.emit('project_progress', current_status_copy, to=sid)
+        else:
+            logger.warning(f"📤 [SOCKETIO] No progress operation found for {progress_id}")
+    except Exception as e:
+        logger.error(f"📤 [SOCKETIO] Error sending current progress state: {e}")
+    
     print(f"✅ Client {sid} subscribed to progress {progress_id}")
 
 @sio.event

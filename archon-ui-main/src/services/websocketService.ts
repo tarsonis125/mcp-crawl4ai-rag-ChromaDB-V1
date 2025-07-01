@@ -86,18 +86,23 @@ export class WebSocketService {
     // Extract session ID from endpoint for room identification
     const { sessionId } = this.parseEndpoint(endpoint);
     
+    console.log(`🔌 [CONNECT] Requested connection to: ${endpoint}, sessionId: ${sessionId}, current state: ${this.state}`);
+    
     // If already connected with the same session, return existing connection
     if (this.socket && this.state === WebSocketState.CONNECTED && this.sessionId === sessionId) {
+      console.log(`🔄 [CONNECT] Already connected with same session, returning existing connection`);
       return Promise.resolve();
     }
 
     // If currently connecting, return existing promise
     if (this.connectionPromise && this.state === WebSocketState.CONNECTING) {
+      console.log(`⏳ [CONNECT] Already connecting, returning existing promise`);
       return this.connectionPromise;
     }
 
     // Disconnect if session changed
     if (this.socket && this.sessionId !== sessionId) {
+      console.log(`🔄 [CONNECT] Session changed from ${this.sessionId} to ${sessionId}, disconnecting first`);
       this.disconnect();
     }
 
@@ -144,12 +149,15 @@ export class WebSocketService {
     // Use relative URL to go through Vite's proxy
     const socketPath = '/socket.io/';  // Use default Socket.IO path
     
+    // Use window.location.origin to ensure we go through the proxy
+    const connectionUrl = window.location.origin;
+    
     console.log(`🔌 Connecting to Socket.IO: default namespace (room-based) via proxy`);
-    console.log(`🔌 Connection details: path=${socketPath}, sessionId=${this.sessionId}`);
+    console.log(`🔌 Connection URL: ${connectionUrl}, path: ${socketPath}, sessionId: ${this.sessionId}`);
     
     try {
-      // Always connect to default namespace (omit URL for better proxy compatibility)
-      this.socket = io({
+      // Connect to default namespace with explicit origin to ensure proxy usage
+      this.socket = io(connectionUrl, {
         reconnection: this.config.enableAutoReconnect,
         reconnectionAttempts: this.config.maxReconnectAttempts,
         reconnectionDelay: this.config.reconnectInterval,
@@ -162,7 +170,7 @@ export class WebSocketService {
         }
       });
       
-      console.log(`🔌 Socket.IO client created for default namespace, waiting for connection...`);
+      console.log(`🔌 Socket.IO client created for ${connectionUrl}${socketPath}, waiting for connection...`);
       
       this.setupEventHandlers();
     } catch (error) {

@@ -98,20 +98,31 @@ export const TasksTab = ({
     if (!projectId) return;
 
     console.log('🔌 Setting up WebSocket connection for project:', projectId);
-
-    const connectWebSocket = async () => {
-      // Clear any existing handlers first
-      taskUpdateWebSocket.disconnect();
+    
+    // Debounce connection to avoid race conditions
+    const connectionTimeout = setTimeout(() => {
+      console.log('⏱️ Debounce period passed, establishing WebSocket connection...');
       
-      // Add connection state handler
-      taskUpdateWebSocket.addStateChangeHandler((state) => {
-        if (state === 'CONNECTED') {
-          console.log('✅ Task updates WebSocket connected');
-          setIsWebSocketConnected(true);
-        } else if (state === 'DISCONNECTED' || state === 'FAILED') {
-          setIsWebSocketConnected(false);
+      const connectWebSocket = async () => {
+        // Check if already connected to avoid double connections
+        if (taskUpdateWebSocket.isConnected()) {
+          console.log('🔄 WebSocket already connected, skipping reconnection');
+          return;
         }
-      });
+        
+        // Clear any existing handlers first
+        taskUpdateWebSocket.disconnect();
+        
+        // Add connection state handler
+        taskUpdateWebSocket.addStateChangeHandler((state) => {
+          console.log(`🔌 WebSocket state changed: ${state}`);
+          if (state === 'CONNECTED') {
+            console.log('✅ Task updates WebSocket connected');
+            setIsWebSocketConnected(true);
+          } else if (state === 'DISCONNECTED' || state === 'FAILED') {
+            setIsWebSocketConnected(false);
+          }
+        });
       
       // Add message handlers
       taskUpdateWebSocket.addMessageHandler('initial_tasks', (message) => {
@@ -208,24 +219,26 @@ export const TasksTab = ({
         setIsWebSocketConnected(false);
       });
       
-      // Connect to WebSocket
-      try {
-        await taskUpdateWebSocket.connect('/');
-        
-        // Join the project room after connection
-        taskUpdateWebSocket.send({ type: 'join_project', project_id: projectId });
-        
-      } catch (error) {
-        console.error('Failed to connect to task updates WebSocket:', error);
-        setIsWebSocketConnected(false);
-      }
-    };
+        // Connect to WebSocket
+        try {
+          await taskUpdateWebSocket.connect('/');
+          
+          // Join the project room after connection
+          taskUpdateWebSocket.send({ type: 'join_project', project_id: projectId });
+          
+        } catch (error) {
+          console.error('Failed to connect to task updates WebSocket:', error);
+          setIsWebSocketConnected(false);
+        }
+      };
 
-    connectWebSocket();
+      connectWebSocket();
+    }, 100); // 100ms debounce to let component settle
 
     // Cleanup on unmount or projectId change
     return () => {
       console.log('🧹 Cleaning up WebSocket connection');
+      clearTimeout(connectionTimeout); // Clear the debounce timeout
       taskUpdateWebSocket.disconnect();
       setIsWebSocketConnected(false);
     };

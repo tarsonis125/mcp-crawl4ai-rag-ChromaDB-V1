@@ -16,6 +16,7 @@ logger = get_logger(__name__)
 
 # Get Socket.IO instance
 sio = get_socketio_instance()
+logger.info(f"🔗 [PROGRESS] Socket.IO instance ID: {id(sio)}")
 
 
 class ProgressService:
@@ -44,7 +45,8 @@ class ProgressService:
             'step': 'initialization',
             **initial_data
         }
-        logger.info(f"Started tracking {operation_type} operation: {progress_id}")
+        logger.info(f"🎬 [PROGRESS] Started tracking {operation_type} operation: {progress_id}")
+        logger.info(f"🎬 [PROGRESS] Active operations: {list(self.active_operations.keys())}")
     
     async def update_progress(self, progress_id: str, update_data: Dict[str, Any]) -> None:
         """
@@ -54,8 +56,10 @@ class ProgressService:
             progress_id: Operation identifier
             update_data: Progress update data
         """
+        logger.info(f"📊 [PROGRESS] update_progress called for {progress_id} with data: {update_data}")
         if progress_id not in self.active_operations:
-            logger.warning(f"Attempted to update unknown operation: {progress_id}")
+            logger.warning(f"📊 [PROGRESS] Attempted to update unknown operation: {progress_id}")
+            logger.warning(f"📊 [PROGRESS] Active operations: {list(self.active_operations.keys())}")
             return
         
         # Update progress data
@@ -99,11 +103,15 @@ class ProgressService:
         self.active_operations[progress_id].update(completion_data)
         await self._broadcast_progress(progress_id)
         
-        # Clean up after a delay
+        # Clean up after a longer delay to give frontend time to connect
         import asyncio
-        await asyncio.sleep(5)
+        logger.info(f"🧹 [PROGRESS] Scheduling cleanup for {progress_id} in 30 seconds")
+        await asyncio.sleep(30)  # Increased from 5 to 30 seconds
         if progress_id in self.active_operations:
+            logger.info(f"🧹 [PROGRESS] Cleaning up completed operation: {progress_id}")
             del self.active_operations[progress_id]
+        else:
+            logger.info(f"🧹 [PROGRESS] Operation {progress_id} already cleaned up")
     
     async def error_operation(self, progress_id: str, error_message: str) -> None:
         """
@@ -171,10 +179,11 @@ class ProgressService:
                 event_type = f'{operation_type}_error'
         
         try:
+            logger.info(f"🚀 [PROGRESS] About to emit {event_type} to room {progress_id} with data: {progress_data}")
             await sio.emit(event_type, progress_data, room=progress_id)
-            logger.debug(f"Emitted {event_type} for progress {progress_id}")
+            logger.info(f"✅ [PROGRESS] Successfully emitted {event_type} for progress {progress_id}")
         except Exception as e:
-            logger.error(f"Error broadcasting progress via Socket.IO: {e}")
+            logger.error(f"❌ [PROGRESS] Error broadcasting progress via Socket.IO: {e}")
 
 
 # Global progress service instance
