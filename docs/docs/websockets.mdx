@@ -18,6 +18,21 @@ Archon uses **Socket.IO** for real-time communication between the frontend and b
 Archon has migrated from native WebSockets to Socket.IO for improved reliability and features. The legacy WebSocket endpoints are deprecated and will return an error message directing clients to use Socket.IO.
 </Admonition>
 
+## Available Namespaces
+
+Archon implements Socket.IO communication through dedicated namespaces:
+
+| Namespace | Purpose | Primary Events |
+|-----------|---------|----------------|
+| `/` | Default namespace | `connect`, `disconnect`, `ping/pong` |
+| `/crawl` | Crawling progress | `subscribe`, `progress_update`, `worker_progress` |
+| `/chat` | Agent chat sessions | `join_session`, `message`, `typing` |
+| `/tasks` | Task updates | `task_created`, `task_updated`, `task_status_changed` |
+| `/project` | Project updates | `project_progress`, `project_completed` |
+| `/knowledge` | Knowledge base updates | `source_added`, `source_updated` |
+| `/logs` | Log streaming | `log_entry`, `log_batch` |
+| `/tests` | Test execution | `test_progress`, `test_result` |
+
 ## Architecture
 
 ```mermaid
@@ -191,6 +206,8 @@ await sio.emit('progress_update', data, room=progress_id);
 
 ### Socket.IO Server Setup
 
+The Socket.IO server is configured in `socketio_app.py` with optimized settings for production:
+
 <Tabs>
 <TabItem value="setup" label="Server Setup">
 
@@ -199,45 +216,75 @@ await sio.emit('progress_update', data, room=progress_id);
 import socketio
 from fastapi import FastAPI
 
-# Create Socket.IO server
+# Create Socket.IO server with optimized settings
 sio = socketio.AsyncServer(
     async_mode='asgi',
-    cors_allowed_origins="*",
+    cors_allowed_origins="*",  # Configure for production
+    logger=False,  # Disable verbose logging
+    engineio_logger=False,
+    # Performance settings
+    max_http_buffer_size=1000000,  # 1MB
     ping_timeout=60,
     ping_interval=25
 )
 
 def create_socketio_app(app: FastAPI):
     """Wrap FastAPI with Socket.IO"""
-    return socketio.ASGIApp(sio, app)
+    socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
+    return socket_app
 ```
 
 </TabItem>
-<TabItem value="namespace" label="Namespace Handler">
+<TabItem value="namespace" label="Namespace Handlers">
 
 ```python
-# Crawl namespace handler
+# Default namespace handlers
+@sio.event
+async def connect(sid, environ):
+    """Handle new Socket.IO connections"""
+    client_address = environ.get('REMOTE_ADDR', 'unknown')
+    logfire.info("Socket.IO client connected", 
+                 session_id=sid, 
+                 client_address=client_address)
+    await sio.emit('connected', {'sid': sid}, to=sid)
+
+@sio.event
+async def disconnect(sid):
+    """Handle Socket.IO disconnections"""
+    logfire.info("Socket.IO client disconnected", session_id=sid)
+
+@sio.event
+async def ping(sid):
+    """Handle ping messages for connection health checks"""
+    await sio.emit('pong', to=sid)
+
+# Crawl namespace handlers
 @sio.on('connect', namespace='/crawl')
 async def on_crawl_connect(sid, environ):
     """Handle client connections to crawl namespace"""
-    print(f"Client {sid} connected to /crawl")
     await sio.emit('connected', 
                    {'message': 'Connected to crawl progress'}, 
                    to=sid, namespace='/crawl')
 
 @sio.on('subscribe', namespace='/crawl')
-async def on_subscribe(sid, data):
-    """Subscribe to progress updates"""
+async def on_subscribe_progress(sid, data):
+    """Subscribe to crawl progress updates"""
     progress_id = data.get('progress_id')
-    
-    # Join room for this progress ID
-    await sio.enter_room(sid, progress_id, namespace='/crawl')
-    
-    # Send current progress if available
-    if progress_id in active_crawls:
-        await sio.emit('progress_update', 
-                      active_crawls[progress_id], 
+    if not progress_id:
+        await sio.emit('error', 
+                      {'message': 'progress_id required'}, 
                       to=sid, namespace='/crawl')
+        return
+    
+    # Join the room for this progress ID
+    await sio.enter_room(sid, progress_id, namespace='/crawl')
+
+@sio.on('unsubscribe', namespace='/crawl')
+async def on_unsubscribe_progress(sid, data):
+    """Unsubscribe from crawl progress updates"""
+    progress_id = data.get('progress_id')
+    if progress_id:
+        await sio.leave_room(sid, progress_id, namespace='/crawl')
 ```
 
 </TabItem>
@@ -324,15 +371,59 @@ async def websocket_crawl_progress(websocket: WebSocket, progress_id: str):
 ### Event Naming Conventions
 
 ```typescript
-// Good event names
+// Good event names - clear and specific
 socket.emit('progress_update', data);
 socket.emit('task_completed', data);
 socket.emit('worker_status', data);
+socket.emit('source_added', data);
 
 // Avoid generic names
 socket.emit('message', data);  // Too generic
 socket.emit('data', data);     // Unclear purpose
+socket.emit('update', data);   // Not descriptive
 ```
+
+## Complete Event Reference
+
+### Default Namespace (`/`)
+
+| Event | Direction | Description | Data Format |
+|-------|-----------|-------------|-------------|
+| `connect` | Server→Client | Connection established | `{sid: string}` |
+| `disconnect` | Server→Client | Connection closed | None |
+| `ping` | Client→Server | Health check | None |
+| `pong` | Server→Client | Health response | None |
+| `connected` | Server→Client | Acknowledgment | `{sid: string}` |
+
+### Crawl Namespace (`/crawl`)
+
+| Event | Direction | Description | Data Format |
+|-------|-----------|-------------|-------------|
+| `subscribe` | Client→Server | Subscribe to progress | `{progress_id: string}` |
+| `unsubscribe` | Client→Server | Unsubscribe from progress | `{progress_id: string}` |
+| `progress_update` | Server→Client | Progress update | `{progressId, status, percentage, logs, ...}` |
+| `worker_progress` | Server→Client | Worker-specific update | `{progress_id, worker_id, status, ...}` |
+| `crawl_completed` | Server→Client | Crawl finished | `{progressId, chunksStored, wordCount}` |
+| `crawl_error` | Server→Client | Crawl failed | `{progressId, error}` |
+
+### Task Namespace (`/tasks`)
+
+| Event | Direction | Description | Data Format |
+|-------|-----------|-------------|-------------|
+| `task_created` | Server→Client | New task created | Full task object |
+| `task_updated` | Server→Client | Task modified | Full task object |
+| `task_deleted` | Server→Client | Task removed | `{task_id: string}` |
+| `task_status_changed` | Server→Client | Status update | `{task_id, old_status, new_status}` |
+| `task_batch_update` | Server→Client | Multiple tasks updated | Array of task objects |
+
+### Project Namespace (`/project`)
+
+| Event | Direction | Description | Data Format |
+|-------|-----------|-------------|-------------|
+| `project_progress` | Server→Client | Creation progress | `{progressId, status, step, percentage}` |
+| `project_completed` | Server→Client | Project created | `{progressId, project_id, success}` |
+| `project_error` | Server→Client | Creation failed | `{progressId, error}` |
+| `project_updated` | Server→Client | Project modified | Full project object |
 
 ### Error Handling
 
@@ -373,24 +464,36 @@ useEffect(() => {
 ### Progress Tracking with Workers
 
 ```typescript
-// Handle parallel worker progress
+// Subscribe to specific progress
+socket.emit('subscribe', { progress_id: progressId });
+
+// Handle overall progress updates
 socket.on('progress_update', (data) => {
-  // Overall progress
   setProgress({
     percentage: data.percentage,
     status: data.status,
-    logs: data.logs
+    logs: data.logs,
+    currentUrl: data.currentUrl,
+    totalPages: data.totalPages,
+    processedPages: data.processedPages
   });
-  
-  // Worker-specific progress
-  if (data.workers) {
-    setWorkers(data.workers.map(worker => ({
-      id: worker.worker_id,
-      status: worker.status,
-      progress: worker.progress,
-      message: worker.message
-    })));
-  }
+});
+
+// Handle worker-specific updates
+socket.on('worker_progress', (data) => {
+  updateWorker(data.worker_id, {
+    status: data.status,
+    progress: data.progress,
+    message: data.message,
+    current_item: data.current_item
+  });
+});
+
+// Handle completion
+socket.on('crawl_completed', (data) => {
+  console.log(`Crawl completed: ${data.chunksStored} chunks stored`);
+  // Unsubscribe when done
+  socket.emit('unsubscribe', { progress_id: data.progressId });
 });
 ```
 
@@ -421,20 +524,54 @@ socket.on('typing', (data) => {
 ### Task Updates
 
 ```typescript
-// Subscribe to task updates
-socket.emit('subscribe_tasks', { project_id });
+// Join project room for task updates
+const taskSocket = io('/tasks');
 
-// Receive task updates
-socket.on('task_created', (task) => {
+// Listen for task events
+taskSocket.on('task_created', (task) => {
   addTask(task);
+  showToast(`New task: ${task.title}`, 'info');
 });
 
-socket.on('task_updated', (task) => {
+taskSocket.on('task_updated', (task) => {
   updateTask(task.id, task);
 });
 
-socket.on('task_status_changed', (data) => {
+taskSocket.on('task_status_changed', (data) => {
   updateTaskStatus(data.task_id, data.new_status);
+  if (data.new_status === 'done') {
+    showToast(`Task completed: ${data.task_title}`, 'success');
+  }
+});
+
+taskSocket.on('task_batch_update', (tasks) => {
+  // Handle multiple task updates efficiently
+  tasks.forEach(task => updateTask(task.id, task));
+});
+```
+
+### Project Creation Progress
+
+```typescript
+// Monitor project creation
+const projectSocket = io('/project');
+
+projectSocket.on('project_progress', (data) => {
+  updateProgress({
+    step: data.step,
+    percentage: data.percentage,
+    message: data.log
+  });
+});
+
+projectSocket.on('project_completed', (data) => {
+  if (data.success) {
+    navigateToProject(data.project_id);
+  }
+});
+
+projectSocket.on('project_error', (data) => {
+  showError(`Project creation failed: ${data.error}`);
 });
 ```
 

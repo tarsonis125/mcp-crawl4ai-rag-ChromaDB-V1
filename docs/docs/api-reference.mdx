@@ -40,8 +40,11 @@ All routers are mounted with the `/api` prefix and provide comprehensive OpenAPI
 - [RAG API](#rag-retrieval-augmented-generation-api)
 - [MCP Server](#mcp-server-management-api)
 - [Project Management](#project-management-api)
+- [Task Management](#task-management-api)
 - [Settings](#settings-management-api)
+- [Credentials](#credentials-api)
 - [Agent Chat](#agent-chat-api)
+- [Testing](#testing-api)
 - [System Info](#system-information-api)
 
 
@@ -60,7 +63,9 @@ Retrieve all knowledge items with optional filtering and pagination.
 | `page` | integer | ❌ | Page number (default: 1) |
 | `per_page` | integer | ❌ | Items per page (default: 20, max: 100) |
 | `knowledge_type` | string | ❌ | Filter by knowledge type (`technical`, `business`, `general`) |
-| `search` | string | ❌ | Text search in title and content |
+| `tags` | string[] | ❌ | Filter by tags |
+| `status` | string | ❌ | Filter by status (`active`, `archived`) |
+| `source_type` | string | ❌ | Filter by source type (`url`, `file`) |
 
 #### Example Request
 
@@ -99,6 +104,40 @@ curl -X GET "http://localhost:8080/api/knowledge-items?page=1&per_page=10&knowle
     "has_next": true,
     "has_prev": false
   }
+}
+```
+
+### Update Knowledge Item
+
+**PUT** `/api/knowledge-items/{source_id}`
+
+Update metadata for a knowledge item.
+
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `source_id` | string | ✅ | Source identifier |
+
+#### Request Body
+
+```json
+{
+  "title": "Updated Title",
+  "knowledge_type": "technical",
+  "tags": ["python", "updated"],
+  "status": "active",
+  "update_frequency": 14
+}
+```
+
+#### Example Response
+
+```json
+{
+  "success": true,
+  "message": "Successfully updated knowledge item docs.python.org",
+  "source_id": "docs.python.org"
 }
 ```
 
@@ -150,7 +189,8 @@ Archon automatically detects the content type and applies the appropriate crawli
   "url": "https://docs.python.org/3/tutorial/",
   "knowledge_type": "technical",
   "tags": ["python", "tutorial"],
-  "update_frequency": 7
+  "update_frequency": 7,
+  "max_depth": 2
 }
 ```
 
@@ -162,10 +202,11 @@ Archon automatically detects the content type and applies the appropriate crawli
 | `knowledge_type` | string | ✅ | Knowledge classification (`technical`, `business`, `general`) |
 | `tags` | string[] | ❌ | Tags for categorization |
 | `update_frequency` | integer | ❌ | How often to refresh content (days, default: 7) |
+| `max_depth` | integer | ❌ | Maximum crawl depth (1-5, default: 2) |
 
 **Smart Crawling Behavior:**
-- **Max Depth**: 3 levels for recursive webpage crawling
-- **Max Concurrent**: 10 simultaneous browser sessions  
+- **Max Depth**: Configurable 1-5 levels for recursive webpage crawling
+- **Max Concurrent**: 5 simultaneous crawl workers  
 - **Chunk Size**: 5000 characters per knowledge chunk
 - **Automatic Detection**: Content type determined by URL pattern
 
@@ -191,6 +232,25 @@ curl -X POST "http://localhost:8080/api/knowledge-items/crawl" \
   "message": "Crawling started",
   "estimated_duration": "3-5 minutes"
 }
+```
+
+### WebSocket Knowledge Stream
+
+**WebSocket** `/api/knowledge-items/stream`
+
+Real-time updates for knowledge items changes.
+
+#### Connection Example
+
+```javascript
+const ws = new WebSocket('ws://localhost:8080/api/knowledge-items/stream');
+
+ws.onmessage = function(event) {
+  const data = JSON.parse(event.data);
+  if (data.type === 'knowledge_items_update') {
+    console.log('Items updated:', data.data.items);
+  }
+};
 ```
 
 ### WebSocket Progress Tracking
@@ -259,7 +319,6 @@ ws.onmessage = function(event) {
    - Sub-steps: Creating embeddings → Storing in database
 6. **`code_storage`** (90-95%): Extracting and storing code examples
 7. **`finalization`** (95-100%): Completing crawl and cleanup
-```
 
 ## 📄 Document Management API
 
@@ -416,25 +475,21 @@ Retrieve all available knowledge sources for filtering.
 
 **GET** `/api/mcp/status`
 
-Retrieve current MCP server status and configuration.
+Retrieve current MCP Docker container status and health information.
 
 #### Example Response
 
 ```json
 {
   "status": "running",
-  "pid": 12345,
-  "port": 8051,
+  "container_id": "a1b2c3d4e5f6",
+  "container_name": "Archon-MCP",
   "uptime": 3600,
-  "transport": "sse",
-  "tools_available": 14,
-  "last_activity": "2024-01-15T10:44:30Z",
-  "version": "1.0.0",
+  "start_time": "2024-01-15T09:44:30Z",
   "health": {
     "status": "healthy",
-    "database_ready": true,
-    "crawler_ready": true,
-    "reranking_ready": false
+    "port": 8051,
+    "transport": "sse"
   }
 }
 ```
@@ -443,20 +498,11 @@ Retrieve current MCP server status and configuration.
 
 **POST** `/api/mcp/start`
 
-Start the MCP server if not running.
+Start the MCP Docker container.
 
-#### Request Body (Optional)
-
-```json
-{
-  "port": 8051,
-  "transport": "sse",
-  "options": {
-    "enable_logging": true,
-    "log_level": "INFO"
-  }
-}
-```
+<Admonition type="info" title="Container Management">
+The MCP server runs as a Docker container named `Archon-MCP`. Ensure Docker is running and the container exists (created by docker-compose).
+</Admonition>
 
 #### Example Response
 
@@ -464,13 +510,8 @@ Start the MCP server if not running.
 {
   "success": true,
   "message": "MCP server started successfully",
-  "pid": 12345,
-  "port": 8051,
   "status": "running",
-  "connection_info": {
-    "stdio_command": "python python/src/mcp_server.py",
-    "sse_endpoint": "http://localhost:8080/api/mcp/sse"
-  }
+  "container_id": "a1b2c3d4e5f6"
 }
 ```
 
@@ -478,7 +519,7 @@ Start the MCP server if not running.
 
 **POST** `/api/mcp/stop`
 
-Stop the running MCP server.
+Stop the running MCP Docker container.
 
 #### Example Response
 
@@ -486,8 +527,99 @@ Stop the running MCP server.
 {
   "success": true,
   "message": "MCP server stopped successfully",
-  "previous_status": "running",
-  "uptime": 3600
+  "status": "stopped"
+}
+```
+
+### Get MCP Logs
+
+**GET** `/api/mcp/logs`
+
+Retrieve recent MCP server logs.
+
+#### Query Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `limit` | integer | ❌ | Number of log entries (default: 100) |
+
+#### Example Response
+
+```json
+{
+  "logs": [
+    {
+      "timestamp": "2024-01-15T10:45:30Z",
+      "level": "INFO",
+      "message": "MCP server started successfully"
+    },
+    {
+      "timestamp": "2024-01-15T10:45:31Z",
+      "level": "INFO",
+      "message": "Registered 14 tools"
+    }
+  ]
+}
+```
+
+### Clear MCP Logs
+
+**DELETE** `/api/mcp/logs`
+
+Clear the MCP server log buffer.
+
+#### Example Response
+
+```json
+{
+  "success": true,
+  "message": "Logs cleared successfully"
+}
+```
+
+### Get MCP Configuration
+
+**GET** `/api/mcp/config`
+
+Retrieve MCP server configuration.
+
+#### Example Response
+
+```json
+{
+  "host": "localhost",
+  "port": 8051,
+  "transport": "sse",
+  "model_choice": "gpt-4o-mini",
+  "use_contextual_embeddings": false,
+  "use_hybrid_search": false,
+  "use_agentic_rag": false,
+  "use_reranking": false
+}
+```
+
+### Save MCP Configuration
+
+**POST** `/api/mcp/config`
+
+Save MCP server configuration.
+
+#### Request Body
+
+```json
+{
+  "transport": "sse",
+  "host": "localhost",
+  "port": 8051
+}
+```
+
+#### Example Response
+
+```json
+{
+  "success": true,
+  "message": "Configuration saved"
 }
 ```
 
@@ -503,42 +635,77 @@ Real-time MCP server log streaming.
 const ws = new WebSocket('ws://localhost:8080/api/mcp/logs/stream');
 
 ws.onmessage = function(event) {
-  const logEntry = JSON.parse(event.data);
-  console.log(`[${logEntry.timestamp}] ${logEntry.level}: ${logEntry.message}`);
+  const data = JSON.parse(event.data);
+  if (data.type === 'connection') {
+    console.log('Connected to log stream');
+  } else if (data.type === 'log') {
+    console.log(`[${data.timestamp}] ${data.level}: ${data.message}`);
+  }
 };
 ```
 
-#### Log Message Format
+### Get MCP Tools
+
+**GET** `/api/mcp/tools`
+
+Get list of available MCP tools.
+
+#### Example Response
 
 ```json
 {
-  "timestamp": "2024-01-15T10:45:30.123Z",
-  "level": "INFO",
-  "logger": "mcp.server",
-  "message": "Tool 'search_knowledge' called with query: 'Python exceptions'",
-  "metadata": {
-    "client_id": "cursor_client_001",
-    "tool_name": "search_knowledge",
-    "execution_time": 0.245
-  }
+  "tools": [
+    {
+      "name": "perform_rag_query",
+      "description": "Search the knowledge base using semantic search",
+      "module": "rag",
+      "parameters": [
+        {"name": "query", "type": "string", "required": true},
+        {"name": "source", "type": "string", "required": false},
+        {"name": "match_count", "type": "integer", "required": false}
+      ]
+    }
+  ],
+  "count": 14,
+  "server_running": true,
+  "source": "mcp_server"
+}
+```
+
+### MCP Health Check
+
+**GET** `/api/mcp/health`
+
+Health check for MCP API module.
+
+#### Example Response
+
+```json
+{
+  "status": "healthy",
+  "service": "mcp"
 }
 ```
 
 ## 📋 Project Management API
 
+<Admonition type="info" title="Project Structure">
+Projects in Archon use JSONB fields for flexible document storage:
+- `prd`: Product Requirements Document
+- `docs`: Array of project documents
+- `features`: Array of feature specifications
+- `data`: Custom project data
+</Admonition>
+
 ### List Projects
 
 **GET** `/api/projects`
 
-Retrieve all projects with optional filtering.
+Retrieve all projects.
 
 #### Query Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `limit` | integer | ❌ | Maximum results (default: 50) |
-| `offset` | integer | ❌ | Pagination offset |
-| `search` | string | ❌ | Search in project titles |
+None - returns all projects.
 
 #### Example Response
 
@@ -562,7 +729,7 @@ Retrieve all projects with optional filtering.
 
 **POST** `/api/projects`
 
-Create a new project with optional PRD document.
+Create a new project with optional PRD and GitHub repository.
 
 #### Request Body
 
@@ -571,7 +738,8 @@ Create a new project with optional PRD document.
   "title": "New Documentation Project",
   "prd": {
     "overview": "Project overview",
-    "goals": ["Goal 1", "Goal 2"]
+    "goals": ["Goal 1", "Goal 2"],
+    "requirements": ["Requirement 1", "Requirement 2"]
   },
   "github_repo": "https://github.com/user/project"
 }
@@ -596,6 +764,163 @@ Create a new project with optional PRD document.
 }
 ```
 
+### Get Project Details
+
+**GET** `/api/projects/{project_id}`
+
+Get detailed information about a specific project.
+
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_id` | string | ✅ | Project UUID |
+
+#### Example Response
+
+```json
+{
+  "success": true,
+  "project": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "title": "Archon Documentation",
+    "github_repo": "https://github.com/user/archon",
+    "prd": {
+      "overview": "Documentation project",
+      "goals": ["Complete API docs", "Add examples"]
+    },
+    "features": [
+      {
+        "id": "feat-001",
+        "name": "API Documentation",
+        "description": "Complete API reference"
+      }
+    ],
+    "docs": [
+      {
+        "id": "doc-001",
+        "title": "Getting Started",
+        "type": "guide"
+      }
+    ],
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T10:45:00Z"
+  }
+}
+```
+
+### Update Project
+
+**PUT** `/api/projects/{project_id}`
+
+Update project information.
+
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_id` | string | ✅ | Project UUID |
+
+#### Request Body
+
+```json
+{
+  "title": "Updated Project Title",
+  "github_repo": "https://github.com/user/new-repo",
+  "prd": {
+    "overview": "Updated overview"
+  }
+}
+```
+
+### Delete Project
+
+**DELETE** `/api/projects/{project_id}`
+
+Delete a project and all associated tasks.
+
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_id` | string | ✅ | Project UUID |
+
+### Get Project Features
+
+**GET** `/api/projects/{project_id}/features`
+
+Retrieve features from a project's features JSONB field.
+
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_id` | string | ✅ | Project UUID |
+
+#### Example Response
+
+```json
+{
+  "success": true,
+  "features": [
+    {
+      "id": "feat-001",
+      "name": "User Authentication",
+      "description": "JWT-based auth system",
+      "priority": "high",
+      "status": "in_progress"
+    }
+  ]
+}
+```
+
+### Get Project Tasks
+
+**GET** `/api/projects/{project_id}/tasks`
+
+Get all tasks for a specific project.
+
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_id` | string | ✅ | Project UUID |
+
+### Health Check
+
+**GET** `/api/projects/health`
+
+Projects API health check.
+
+#### Example Response
+
+```json
+{
+  "status": "healthy",
+  "service": "projects"
+}
+```
+
+### WebSocket Project Creation Progress
+
+**WebSocket** `/api/project-creation-progress/{progress_id}`
+
+Real-time progress updates for project creation operations.
+
+### WebSocket Task Updates
+
+**WebSocket** `/api/projects/{project_id}/tasks/ws`
+
+Real-time task updates for a specific project.
+
+### WebSocket Projects Stream
+
+**WebSocket** `/api/projects/stream`
+
+Real-time updates for all projects.
+
+## 📝 Task Management API
+
 ### List Tasks
 
 **GET** `/api/tasks`
@@ -607,8 +932,9 @@ Retrieve tasks with filtering options.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `project_id` | string | ❌ | Filter by project ID |
-| `status` | string | ❌ | Filter by status (`todo`, `doing`, `blocked`, `done`) |
+| `status` | string | ❌ | Filter by status (`todo`, `doing`, `review`, `done`) |
 | `parent_task_id` | string | ❌ | Filter by parent task |
+| `assignee` | string | ❌ | Filter by assignee |
 
 #### Example Response
 
@@ -662,62 +988,293 @@ Create a new task under a project.
 }
 ```
 
+### Get Task Details
+
+**GET** `/api/tasks/{task_id}`
+
+Get detailed information about a specific task.
+
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `task_id` | string | ✅ | Task UUID |
+
 ### Update Task
 
-**PATCH** `/api/tasks/{task_id}`
+**PUT** `/api/tasks/{task_id}`
 
 Update an existing task.
 
-#### Request Body (Partial Update)
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `task_id` | string | ✅ | Task UUID |
+
+#### Request Body
 
 ```json
 {
+  "title": "Updated task title",
+  "description": "Updated description",
   "status": "done",
-  "description": "Updated description with completion notes"
+  "assignee": "User",
+  "sources": [
+    {"name": "New source", "url": "https://example.com"}
+  ]
+}
+```
+
+### Delete Task
+
+**DELETE** `/api/tasks/{task_id}`
+
+Delete a task.
+
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `task_id` | string | ✅ | Task UUID |
+
+### Get Subtasks
+
+**GET** `/api/tasks/subtasks/{parent_task_id}`
+
+Get all subtasks for a parent task.
+
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `parent_task_id` | string | ✅ | Parent task UUID |
+
+### Update Task Status (MCP)
+
+**PUT** `/api/mcp/tasks/{task_id}/status`
+
+Update task status (MCP compatibility endpoint).
+
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `task_id` | string | ✅ | Task UUID |
+
+#### Request Body
+
+```json
+{
+  "status": "doing"
 }
 ```
 
 ## ⚙️ Settings Management API
 
-### Get All Credentials
+### OpenAI Key Status
 
-**GET** `/api/credentials`
+**GET** `/api/openai-key/status`
 
-Retrieve all stored credentials (values masked for security).
+Check if OpenAI API key is configured.
+
+#### Example Response
+
+```json
+{
+  "configured": true,
+  "message": "OpenAI API key is configured"
+}
+```
+
+### Set OpenAI Key
+
+**POST** `/api/openai-key`
+
+Set the OpenAI API key.
+
+#### Request Body
+
+```json
+{
+  "api_key": "sk-proj-..."
+}
+```
 
 #### Example Response
 
 ```json
 {
   "success": true,
-  "credentials": [
-    {
-      "key": "OPENAI_API_KEY",
-      "category": "api_keys",
-      "description": "OpenAI API key for embeddings and chat",
-      "is_encrypted": true,
-      "value_preview": "sk-proj-****",
-      "created_at": "2024-01-15T10:00:00Z"
-    }
-  ]
+  "message": "OpenAI API key saved successfully"
 }
 ```
 
-### Set Credential
+### Delete OpenAI Key
+
+**DELETE** `/api/openai-key`
+
+Delete the stored OpenAI API key.
+
+#### Example Response
+
+```json
+{
+  "success": true,
+  "message": "OpenAI API key deleted successfully"
+}
+```
+
+### Settings Health Check
+
+**GET** `/api/settings/health`
+
+Settings API health check.
+
+#### Example Response
+
+```json
+{
+  "status": "healthy",
+  "service": "settings"
+}
+```
+
+## 🔐 Credentials API
+
+### List All Credentials
+
+**GET** `/api/credentials`
+
+Retrieve all stored credentials.
+
+#### Query Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `category` | string | ❌ | Filter by category |
+
+#### Example Response
+
+```json
+[
+  {
+    "key": "OPENAI_API_KEY",
+    "value": "***masked***",
+    "encrypted_value": null,
+    "is_encrypted": false,
+    "category": "api_keys",
+    "description": "OpenAI API key for embeddings"
+  },
+  {
+    "key": "GITHUB_TOKEN",
+    "value": null,
+    "encrypted_value": "encrypted_base64_string",
+    "is_encrypted": true,
+    "category": "api_keys",
+    "description": "GitHub personal access token"
+  }
+]
+```
+
+### Get Credentials by Category
+
+**GET** `/api/credentials/categories/{category}`
+
+Get all credentials for a specific category.
+
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `category` | string | ✅ | Category name |
+
+#### Example Response
+
+```json
+{
+  "credentials": {
+    "OPENAI_API_KEY": "sk-proj-...",
+    "ANTHROPIC_API_KEY": "sk-ant-..."
+  }
+}
+```
+
+### Create/Update Credential
 
 **POST** `/api/credentials`
 
-Store or update a credential.
+Create or update a credential.
 
 #### Request Body
 
 ```json
 {
-  "key": "OPENAI_API_KEY",
-  "value": "sk-proj-...",
+  "key": "GITHUB_TOKEN",
+  "value": "ghp_...",
+  "is_encrypted": true,
   "category": "api_keys",
-  "description": "OpenAI API key for RAG functionality",
-  "encrypt": true
+  "description": "GitHub personal access token"
+}
+```
+
+#### Example Response
+
+```json
+{
+  "success": true,
+  "message": "Credential GITHUB_TOKEN encrypted and saved successfully"
+}
+```
+
+### Get Specific Credential
+
+**GET** `/api/credentials/{key}`
+
+Get a specific credential by key.
+
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `key` | string | ✅ | Credential key |
+
+#### Query Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `decrypt` | boolean | ❌ | Decrypt if encrypted (default: true) |
+
+#### Example Response
+
+```json
+{
+  "key": "GITHUB_TOKEN",
+  "value": "ghp_...",
+  "is_encrypted": true
+}
+```
+
+### Update Credential
+
+**PUT** `/api/credentials/{key}`
+
+Update an existing credential.
+
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `key` | string | ✅ | Credential key |
+
+#### Request Body
+
+```json
+{
+  "value": "new_value",
+  "is_encrypted": true,
+  "category": "api_keys",
+  "description": "Updated description"
 }
 ```
 
@@ -727,32 +1284,55 @@ Store or update a credential.
 
 Delete a stored credential.
 
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `key` | string | ✅ | Credential key |
+
 #### Example Response
 
 ```json
 {
   "success": true,
-  "message": "Credential 'OPENAI_API_KEY' deleted successfully"
+  "message": "Credential GITHUB_TOKEN deleted successfully"
+}
+```
+
+### Initialize Credentials
+
+**POST** `/api/credentials/initialize`
+
+Reload credentials from database.
+
+#### Example Response
+
+```json
+{
+  "success": true,
+  "message": "Credentials reloaded from database"
 }
 ```
 
 ## 💬 Agent Chat API
 
-### Send Chat Message
+<Admonition type="warning" title="Integration Note">
+The Agent Chat API is currently being refactored to use HTTP calls to the separate Agents service. Some endpoints may be temporarily unavailable.
+</Admonition>
 
-**POST** `/api/agent-chat/message`
+### Create Chat Session
 
-Send a message to the AI agent for processing.
+**POST** `/api/agent-chat/sessions`
+
+Create a new chat session.
 
 #### Request Body
 
 ```json
 {
-  "message": "Help me implement authentication in my API",
+  "agent_type": "rag",
   "context": {
-    "project_id": "550e8400-e29b-41d4-a716-446655440000",
-    "use_rag": true,
-    "include_tasks": true
+    "project_id": "550e8400-e29b-41d4-a716-446655440000"
   }
 }
 ```
@@ -762,24 +1342,239 @@ Send a message to the AI agent for processing.
 ```json
 {
   "success": true,
-  "response": "I'll help you implement authentication. Based on your project context, here's what I recommend...",
-  "sources_used": [
-    {
-      "title": "JWT Authentication Guide",
-      "url": "https://jwt.io/introduction",
-      "relevance": 0.92
-    }
-  ],
-  "tasks_referenced": [
-    {
-      "id": "task-uuid",
-      "title": "Implement user authentication",
-      "status": "todo"
-    }
-  ],
-  "processing_time": 1.234
+  "session": {
+    "id": "chat-session-uuid",
+    "agent_type": "rag",
+    "created_at": "2024-01-15T10:45:00Z"
+  }
 }
 ```
+
+### Get Session Details
+
+**GET** `/api/agent-chat/sessions/{session_id}`
+
+Get chat session details and history.
+
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `session_id` | string | ✅ | Session UUID |
+
+### Send Message
+
+**POST** `/api/agent-chat/sessions/{session_id}/messages`
+
+Send a message in a chat session.
+
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `session_id` | string | ✅ | Session UUID |
+
+#### Request Body
+
+```json
+{
+  "message": "Help me implement authentication in my API"
+}
+```
+
+#### Example Response
+
+```json
+{
+  "success": true,
+  "message": {
+    "id": "msg-uuid",
+    "role": "assistant",
+    "content": "I'll help you implement authentication. Based on your project, here's what I recommend...",
+    "metadata": {
+      "sources_used": [
+        {
+          "title": "JWT Authentication Guide",
+          "url": "https://jwt.io/introduction",
+          "relevance": 0.92
+        }
+      ],
+      "processing_time": 1.234
+    },
+    "created_at": "2024-01-15T10:45:30Z"
+  }
+}
+```
+
+### WebSocket Chat
+
+**WebSocket** `/api/agent-chat/sessions/{session_id}/ws`
+
+Real-time chat communication.
+
+#### Connection Example
+
+```javascript
+const ws = new WebSocket('ws://localhost:8080/api/agent-chat/sessions/session-uuid/ws');
+
+ws.onmessage = function(event) {
+  const data = JSON.parse(event.data);
+  if (data.type === 'message') {
+    console.log('Agent:', data.content);
+  } else if (data.type === 'thinking') {
+    console.log('Agent is thinking...');
+  }
+};
+
+// Send message
+ws.send(JSON.stringify({
+  type: 'message',
+  content: 'Help me with authentication'
+}));
+```
+
+### Agent Status
+
+**GET** `/api/agent-chat/status`
+
+Get agent chat service status.
+
+#### Example Response
+
+```json
+{
+  "status": "healthy",
+  "active_sessions": 3,
+  "available_agents": ["rag", "document", "task"],
+  "total_messages_processed": 1250
+}
+```
+
+### Debug Token Usage
+
+**GET** `/api/agent-chat/debug/token-usage`
+
+Get token usage statistics for debugging.
+
+#### Example Response
+
+```json
+{
+  "total_tokens_used": 125000,
+  "sessions": [
+    {
+      "session_id": "session-uuid",
+      "tokens_used": 5000,
+      "messages_count": 10
+    }
+  ]
+}
+```
+
+## 🧪 Testing API
+
+### Run MCP Tests
+
+**POST** `/api/tests/mcp/run`
+
+Run MCP integration tests.
+
+#### Request Body
+
+```json
+{
+  "test_filter": "test_rag_query",
+  "verbose": true
+}
+```
+
+#### Example Response
+
+```json
+{
+  "success": true,
+  "execution_id": "test-exec-uuid",
+  "message": "MCP tests started",
+  "test_count": 5
+}
+```
+
+### Run UI Tests
+
+**POST** `/api/tests/ui/run`
+
+Run UI component tests.
+
+#### Request Body
+
+```json
+{
+  "test_filter": "KnowledgeTable",
+  "coverage": true
+}
+```
+
+### Get Test Status
+
+**GET** `/api/tests/status/{execution_id}`
+
+Get test execution status.
+
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `execution_id` | string | ✅ | Test execution UUID |
+
+#### Example Response
+
+```json
+{
+  "execution_id": "test-exec-uuid",
+  "status": "completed",
+  "start_time": "2024-01-15T10:00:00Z",
+  "end_time": "2024-01-15T10:01:30Z",
+  "duration": 90.5,
+  "test_type": "mcp",
+  "results": {
+    "total": 5,
+    "passed": 4,
+    "failed": 1,
+    "skipped": 0
+  }
+}
+```
+
+### Get Test History
+
+**GET** `/api/tests/history`
+
+Get test execution history.
+
+#### Query Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `limit` | integer | ❌ | Maximum results (default: 20) |
+| `test_type` | string | ❌ | Filter by test type (mcp/ui) |
+
+### Delete Test Execution
+
+**DELETE** `/api/tests/execution/{execution_id}`
+
+Delete test execution records.
+
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `execution_id` | string | ✅ | Test execution UUID |
+
+### WebSocket Test Stream
+
+**WebSocket** `/api/tests/stream/{execution_id}`
+
+Real-time test execution output streaming.
 
 ## 🔍 System Information API
 
@@ -809,19 +1604,32 @@ Get database statistics and health information.
 
 ```json
 {
-  "success": true,
-  "metrics": {
-    "total_documents": 1250,
-    "total_sources": 15,
-    "total_projects": 5,
-    "total_tasks": 42,
-    "storage_used_mb": 512,
-    "last_crawl": "2024-01-15T10:30:00Z"
+  "status": "healthy",
+  "database": "supabase",
+  "tables": {
+    "projects": 5,
+    "tasks": 42,
+    "crawled_pages": 1250,
+    "credentials": 8
   },
-  "health": {
-    "database_connected": true,
-    "response_time_ms": 12
-  }
+  "total_records": 1305,
+  "timestamp": "2024-01-15T10:45:00Z"
+}
+```
+
+### API Health Check
+
+**GET** `/api/health`
+
+General API health check endpoint.
+
+#### Example Response
+
+```json
+{
+  "status": "healthy",
+  "service": "knowledge-api",
+  "timestamp": "2024-01-15T10:45:00Z"
 }
 ```
 
