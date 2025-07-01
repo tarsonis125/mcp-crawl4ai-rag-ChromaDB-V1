@@ -5,12 +5,14 @@ This module contains all Socket.IO event handlers for real-time communication.
 Keeps the main projects_api.py file focused on REST endpoints.
 """
 
-import logging
+# Removed direct logging import - using unified config
 from ..socketio_app import get_socketio_instance
 from ..utils import get_supabase_client
 from ..services.projects import ProjectService, TaskService, SourceLinkingService
 
-logger = logging.getLogger(__name__)
+from ..config.logfire_config import get_logger
+
+logger = get_logger(__name__)
 
 # Get Socket.IO instance
 sio = get_socketio_instance()

@@ -6,7 +6,7 @@ code example search, hybrid search, and reranking capabilities.
 """
 
 import json
-import logging
+# Removed direct logging import - using unified config
 import os
 from typing import List, Dict, Any, Optional, Tuple
 # Import CrossEncoder for reranking if available
@@ -18,7 +18,9 @@ except ImportError:
 from src.server.utils import get_supabase_client, search_documents, search_code_examples
 from src.server.config.logfire_config import rag_logger, search_logger
 
-logger = logging.getLogger(__name__)
+from ...config.logfire_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class SearchService:

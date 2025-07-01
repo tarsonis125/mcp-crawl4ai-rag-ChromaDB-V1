@@ -14,7 +14,7 @@ Enhanced with:
 """
 
 import json
-import logging
+# Removed direct logging import - using unified config
 import os
 import re
 import asyncio
@@ -34,9 +34,9 @@ from ...utils import (
     get_utils_threading_service
 )
 from ..threading_service import ProcessingMode
-from ...config.logfire_config import search_logger
+from ...config.logfire_config import search_logger, get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class DocumentStorageService:

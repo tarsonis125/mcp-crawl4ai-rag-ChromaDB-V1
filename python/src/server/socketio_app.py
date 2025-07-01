@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from typing import Optional
 import logging
 
-from .config.logfire_config import logfire
+from .config.logfire_config import safe_logfire_info
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ def create_socketio_app(app: FastAPI) -> socketio.ASGIApp:
         Socket.IO ASGI app that wraps the FastAPI app
     """
     # Log Socket.IO server creation
-    logfire.info("Creating Socket.IO server", 
+    safe_logfire_info("Creating Socket.IO server", 
                  cors_origins="*", 
                  ping_timeout=60,
                  ping_interval=25)
@@ -57,7 +57,7 @@ def create_socketio_app(app: FastAPI) -> socketio.ASGIApp:
     async def connect(sid, environ):
         """Handle new Socket.IO connections."""
         client_address = environ.get('REMOTE_ADDR', 'unknown')
-        logfire.info("Socket.IO client connected", 
+        safe_logfire_info("Socket.IO client connected", 
                      session_id=sid, 
                      client_address=client_address)
         logger.info(f"Socket.IO client connected: {sid} from {client_address}")
@@ -68,7 +68,7 @@ def create_socketio_app(app: FastAPI) -> socketio.ASGIApp:
     @sio.event
     async def disconnect(sid):
         """Handle Socket.IO disconnections."""
-        logfire.info("Socket.IO client disconnected", session_id=sid)
+        safe_logfire_info("Socket.IO client disconnected", session_id=sid)
         logger.info(f"Socket.IO client disconnected: {sid}")
     
     @sio.event

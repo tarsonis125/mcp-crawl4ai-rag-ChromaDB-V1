@@ -1,21 +1,26 @@
 """
-Simple Logfire Configuration for Archon (2025 Best Practices)
+Unified Logging Configuration for Archon (2025 Best Practices)
 
-This module provides a simplified logging setup using Pydantic Logfire
-with automatic instrumentation and minimal boilerplate.
+This module provides a clean, unified logging setup with optional Pydantic Logfire integration.
+Simple toggle: LOGFIRE_ENABLED=true/false controls all logging behavior.
+
+Usage:
+    from .config.logfire_config import get_logger, safe_span, safe_set_attribute
+    
+    logger = get_logger(__name__)
+    logger.info("This works with or without Logfire")
+    
+    with safe_span("operation_name") as span:
+        logger.info("Processing data")
+        safe_set_attribute(span, "key", "value")
 """
+
 import os
 import logging
-from typing import Optional
+from typing import Optional, Any, Dict, Union
+from contextlib import contextmanager
 
-# Configure standard Python logging as fallback
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s | %(name)s | %(levelname)s | %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
-# Try to import and configure logfire
+# Try to import logfire (optional dependency)
 LOGFIRE_AVAILABLE = False
 logfire = None
 
@@ -23,133 +28,280 @@ try:
     import logfire
     LOGFIRE_AVAILABLE = True
 except ImportError:
-    logging.info("Logfire not installed. Using standard Python logging.")
+    logfire = None
 
-def is_logfire_enabled_in_db() -> Optional[bool]:
-    """
-    Check if logfire is enabled via database settings.
+# Global state
+_logfire_configured = False
+_logfire_enabled = False
+
+
+def is_logfire_enabled() -> bool:
+    """Check if Logfire should be enabled based on environment variables."""
+    global _logfire_enabled
     
-    Returns:
-        True if enabled, False if disabled, None if not set in database
-    """
-    try:
-        from ..services.credential_service import credential_service
-        if hasattr(credential_service, '_cache') and credential_service._cache_initialized:
-            cached_value = credential_service._cache.get("LOGFIRE_ENABLED")
-            if cached_value:
-                if isinstance(cached_value, dict):
-                    value = cached_value.get("value", "true")
-                else:
-                    value = str(cached_value)
-                return value.lower() in ("true", "1", "yes", "on")
-    except Exception:
-        pass
-    return None
+    # Check environment variable (master switch)
+    env_enabled = os.getenv("LOGFIRE_ENABLED", "false").lower()
+    if env_enabled in ("true", "1", "yes", "on"):
+        _logfire_enabled = True
+    else:
+        _logfire_enabled = False
+    
+    return _logfire_enabled and LOGFIRE_AVAILABLE
+
 
 def setup_logfire(
     token: Optional[str] = None,
-    environment: str = "development",
-    service_name: str = "archon-mcp"
+    environment: str = "development", 
+    service_name: str = "archon-server"
 ) -> None:
     """
-    Configure logfire for the application.
+    Configure logging with optional Logfire integration.
     
-    Checks in order:
-    1. Environment variable LOGFIRE_ENABLED
-    2. Database setting LOGFIRE_ENABLED
-    3. Environment variable DISABLE_LOGFIRE (for backward compatibility)
+    Simple behavior:
+    - If LOGFIRE_ENABLED=true and token available: Enable Logfire + unified logging
+    - If LOGFIRE_ENABLED=false or no token: Standard Python logging only
     
     Args:
-        token: Logfire token (will try to read from env if not provided)
+        token: Logfire token (reads from LOGFIRE_TOKEN env if not provided)
         environment: Environment name (development, staging, production)
-        service_name: Name of the service
+        service_name: Service name for Logfire
     """
-    if not LOGFIRE_AVAILABLE:
+    global _logfire_configured, _logfire_enabled
+    
+    if _logfire_configured:
         return
     
-    # Check environment variable first (highest priority)
-    env_enabled = os.getenv("LOGFIRE_ENABLED", "").lower()
-    if env_enabled in ("false", "0", "no", "off"):
-        logging.info("Logfire disabled via LOGFIRE_ENABLED environment variable. Using standard logging.")
-        return
-    if env_enabled in ("true", "1", "yes", "on"):
-        # Explicitly enabled, continue with setup
-        pass
-    else:
-        # No explicit env setting, check database
-        db_enabled = is_logfire_enabled_in_db()
-        if db_enabled is False:
-            logging.info("Logfire disabled via database setting. Using standard logging.")
-            return
-        # If db_enabled is True or None, continue
+    _logfire_enabled = is_logfire_enabled()
+    handlers = []
     
-    # Get logfire token
-    logfire_token = token or os.getenv("LOGFIRE_TOKEN")
-    if not logfire_token:
-        logging.info("No LOGFIRE_TOKEN found. Using standard logging.")
-        return
-    
-    try:
-        # Simple logfire configuration - let it handle the complexity
-        logfire.configure(
-            token=logfire_token,
-            service_name=service_name,
-            environment=environment
-        )
-        logging.info(f"Logfire configured for {service_name}")
+    if _logfire_enabled:
+        # Get logfire token
+        logfire_token = token or os.getenv("LOGFIRE_TOKEN")
         
-        # Set global flag to indicate logfire is active
-        global _logfire_configured
-        _logfire_configured = True
-        
-    except Exception as e:
-        logging.warning(f"Failed to configure logfire: {e}. Using standard logging.")
+        if logfire_token:
+            try:
+                # Configure logfire
+                logfire.configure(
+                    token=logfire_token,
+                    service_name=service_name,
+                    environment=environment,
+                    send_to_logfire=True
+                )
+                
+                # Add LogfireLoggingHandler to capture all standard logging
+                handlers.append(logfire.LogfireLoggingHandler())
+                print(f"✅ Logfire enabled for {service_name}")
+                
+            except Exception as e:
+                print(f"❌ Failed to configure Logfire: {e}. Using standard logging.")
+                _logfire_enabled = False
+        else:
+            print("❌ LOGFIRE_TOKEN not found. Using standard logging.")
+            _logfire_enabled = False
+    
+    if not _logfire_enabled and LOGFIRE_AVAILABLE:
+        try:
+            # Configure logfire but disable sending to remote
+            logfire.configure(send_to_logfire=False)
+            print("📝 Logfire configured but disabled (send_to_logfire=False)")
+        except Exception as e:
+            print(f"⚠️  Warning: Could not configure Logfire in disabled mode: {e}")
+    
+    # Set up standard Python logging (always)
+    if not handlers:
+        handlers.append(logging.StreamHandler())
+    
+    # Configure root logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s | %(name)s | %(levelname)s | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        handlers=handlers,
+        force=True
+    )
+    
+    _logfire_configured = True
+    print(f"📋 Logging configured (Logfire: {'enabled' if _logfire_enabled else 'disabled'})")
 
-# Global variable to track if logfire is actually configured and enabled
-_logfire_configured = False
 
-def is_logfire_active() -> bool:
-    """Check if logfire is currently active and should be used."""
-    return _logfire_configured and LOGFIRE_AVAILABLE and logfire is not None
-
-def get_logger(name: str, **tags) -> logging.Logger:
+def get_logger(name: str) -> logging.Logger:
     """
-    Get a logger instance. Uses logfire if available, otherwise standard logging.
+    Get a standard Python logger that works with or without Logfire.
     
     Args:
-        name: Logger name (usually __name__)
-        **tags: Additional tags (ignored for standard logging)
+        name: Logger name (typically __name__)
     
     Returns:
-        Logger instance
+        Standard Python Logger instance
     """
-    if is_logfire_active():
-        try:
-            # Logfire will handle structured logging automatically
-            return logfire.get_logger(name)
-        except:
-            pass
-    
-    # Fallback to standard logging
     return logging.getLogger(name)
 
-# Pre-configured loggers for different components
-rag_logger = get_logger("rag", module="rag", service="mcp", component="knowledge")
-mcp_logger = get_logger("mcp", module="mcp", service="mcp", component="server") 
-api_logger = get_logger("api", module="api", service="mcp", component="fastapi")
-search_logger = get_logger("search", module="search", service="mcp", component="vector")
-crawl_logger = get_logger("crawl", module="crawl", service="mcp", component="ingestion")
 
-# Export what's needed
+@contextmanager
+def safe_span(name: str, **kwargs):
+    """
+    Safe span context manager that works with or without Logfire.
+    
+    Args:
+        name: Span name
+        **kwargs: Additional span attributes
+    
+    Usage:
+        with safe_span("operation_name", key="value") as span:
+            # Your code here
+            safe_set_attribute(span, "result", "success")
+    """
+    if _logfire_enabled and logfire:
+        try:
+            with logfire.span(name, **kwargs) as span:
+                yield span
+        except Exception:
+            # Fallback to no-op if logfire fails
+            yield NoOpSpan()
+    else:
+        yield NoOpSpan()
+
+
+class NoOpSpan:
+    """No-operation span for when Logfire is disabled."""
+    
+    def set_attribute(self, key: str, value: Any) -> None:
+        """No-op set_attribute method."""
+        pass
+    
+    def record_exception(self, exception: Exception) -> None:
+        """No-op record_exception method."""
+        pass
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+
+def safe_set_attribute(span: Any, key: str, value: Any) -> None:
+    """
+    Safely set a span attribute.
+    
+    Args:
+        span: Span object (from safe_span or logfire.span)
+        key: Attribute key
+        value: Attribute value
+    """
+    if hasattr(span, 'set_attribute'):
+        try:
+            span.set_attribute(key, value)
+        except Exception:
+            pass
+
+
+def safe_record_exception(span: Any, exception: Exception) -> None:
+    """
+    Safely record an exception on a span.
+    
+    Args:
+        span: Span object
+        exception: Exception to record
+    """
+    if hasattr(span, 'record_exception'):
+        try:
+            span.record_exception(exception)
+        except Exception:
+            pass
+
+
+def safe_logfire_info(message: str, **kwargs) -> None:
+    """
+    Safely call logfire.info if available.
+    
+    Args:
+        message: Log message
+        **kwargs: Additional log data
+    """
+    if _logfire_enabled and logfire:
+        try:
+            logfire.info(message, **kwargs)
+        except Exception:
+            pass
+
+
+def safe_logfire_error(message: str, **kwargs) -> None:
+    """
+    Safely call logfire.error if available.
+    
+    Args:
+        message: Log message
+        **kwargs: Additional log data
+    """
+    if _logfire_enabled and logfire:
+        try:
+            logfire.error(message, **kwargs)
+        except Exception:
+            pass
+
+
+def safe_logfire_warning(message: str, **kwargs) -> None:
+    """
+    Safely call logfire.warning if available.
+    
+    Args:
+        message: Log message
+        **kwargs: Additional log data
+    """
+    if _logfire_enabled and logfire:
+        try:
+            logfire.warning(message, **kwargs)
+        except Exception:
+            pass
+
+
+def safe_logfire_debug(message: str, **kwargs) -> None:
+    """
+    Safely call logfire.debug if available.
+    
+    Args:
+        message: Log message
+        **kwargs: Additional log data
+    """
+    if _logfire_enabled and logfire:
+        try:
+            logfire.debug(message, **kwargs)
+        except Exception:
+            pass
+
+
+# Pre-configured loggers for different components
+api_logger = get_logger("api")
+mcp_logger = get_logger("mcp")
+rag_logger = get_logger("rag")
+search_logger = get_logger("search")
+crawl_logger = get_logger("crawl")
+project_logger = get_logger("project")
+storage_logger = get_logger("storage")
+embedding_logger = get_logger("embedding")
+
+
+# Export everything needed
 __all__ = [
-    'setup_logfire', 
+    'setup_logfire',
     'get_logger',
-    'is_logfire_active',
-    'rag_logger', 
+    'safe_span',
+    'safe_set_attribute', 
+    'safe_record_exception',
+    'safe_logfire_info',
+    'safe_logfire_error',
+    'safe_logfire_warning',
+    'safe_logfire_debug',
+    'is_logfire_enabled',
+    'api_logger',
     'mcp_logger', 
-    'api_logger', 
-    'search_logger', 
+    'rag_logger',
+    'search_logger',
     'crawl_logger',
-    'logfire',  # May be None if not available/disabled
+    'project_logger',
+    'storage_logger',
+    'embedding_logger',
+    'NoOpSpan',
     'LOGFIRE_AVAILABLE'
 ]

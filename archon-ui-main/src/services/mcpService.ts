@@ -107,15 +107,13 @@ export type MCPTool = z.infer<typeof MCPToolSchema>;
 export type MCPParameter = z.infer<typeof MCPParameterSchema>;
 
 class MCPService {
-  private baseUrl = (import.meta as any).env?.VITE_API_URL || this.getApiBaseUrl();
+  private baseUrl = ''; // Use relative URL to go through Vite proxy
 
   private getApiBaseUrl() {
-    const protocol = window.location.protocol;
-    const host = window.location.hostname;
-    const port = '8080'; // Backend API port
-    return `${protocol}//${host}:${port}`;
+    // Always use relative URL in production, goes through Vite proxy
+    return '';
   }
-  private wsUrl = this.baseUrl.replace('http', 'ws');
+  private wsUrl = ''; // Use relative WebSocket path through proxy
   private logWebSocket: WebSocket | null = null;
   private reconnectTimeout: NodeJS.Timeout | null = null;
   public isReconnecting = false;

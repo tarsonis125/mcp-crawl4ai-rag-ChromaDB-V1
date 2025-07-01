@@ -6,7 +6,7 @@ including PDF, Word documents, and plain text files.
 """
 
 import io
-import logging
+# Removed direct logging import - using unified config
 from typing import Union
 
 # Import document processing libraries with availability checks
@@ -30,7 +30,9 @@ except ImportError:
 
 from ..config.logfire_config import logfire
 
-logger = logging.getLogger(__name__)
+from ..config.logfire_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def extract_text_from_document(file_content: bytes, filename: str, content_type: str) -> str:

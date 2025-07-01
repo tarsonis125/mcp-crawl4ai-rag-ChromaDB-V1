@@ -18,11 +18,13 @@ import json
 import uuid
 
 from ..utils import get_supabase_client
-import logging
+# Removed direct logging import - using unified config
 from ..config.logfire_config import logfire
 
 # Set up standard logger for background tasks
-logger = logging.getLogger(__name__)
+from ..config.logfire_config import get_logger
+
+logger = get_logger(__name__)
 
 # Service imports
 from ..services.projects import (

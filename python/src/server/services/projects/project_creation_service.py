@@ -6,13 +6,14 @@ AI-assisted documentation generation and progress tracking.
 """
 
 import os
-import logging
+# Removed direct logging import - using unified config
 from datetime import datetime
 from typing import Dict, Any, Optional, Tuple
 from src.server.utils import get_supabase_client
 from .progress_service import progress_service
+from ...config.logfire_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ProjectCreationService:

@@ -8,12 +8,14 @@ separating business logic from transport-specific code.
 
 import json
 import uuid
-import logging
+# Removed direct logging import - using unified config
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
 from src.server.utils import get_supabase_client
 
-logger = logging.getLogger(__name__)
+from ...config.logfire_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class ProjectService:

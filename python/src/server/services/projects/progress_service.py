@@ -6,12 +6,13 @@ particularly project creation with AI assistance. It manages progress states
 and broadcasts updates via Socket.IO.
 """
 
-import logging
+# Removed direct logging import - using unified config
 from datetime import datetime
 from typing import Dict, Any, Optional
 from ...socketio_app import get_socketio_instance
+from ...config.logfire_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Get Socket.IO instance
 sio = get_socketio_instance()

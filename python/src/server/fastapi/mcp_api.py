@@ -23,8 +23,8 @@ from docker.errors import NotFound, APIError
 
 from ..utils import get_supabase_client
 
-# Import Logfire
-from ..config.logfire_config import mcp_logger, api_logger, logfire
+# Import unified logging
+from ..config.logfire_config import mcp_logger, api_logger, safe_span, safe_set_attribute, safe_record_exception
 
 router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 
@@ -107,8 +107,8 @@ class MCPServerManager:
                     'message': f'Please wait {wait_time:.1f}s before starting server again'
                 }
             
-        with logfire.span("mcp_server_start") as span:
-            span.set_attribute("action", "start_server")
+        with safe_span("mcp_server_start") as span:
+            safe_set_attribute(span, "action", "start_server")
             
             if not self.docker_client:
                 mcp_logger.error("Docker client not available")
@@ -145,7 +145,7 @@ class MCPServerManager:
                 self._last_operation_time = time.time()
                 self._add_log('INFO', 'MCP container starting...')
                 mcp_logger.info(f"Starting MCP container: {self.container_name}")
-                span.set_attribute("container_id", self.container.id)
+                safe_set_attribute(span, "container_id", self.container.id)
                 
                 # Start reading logs from the container
                 if self.log_reader_task:
@@ -161,8 +161,8 @@ class MCPServerManager:
                     self.status = 'running'
                     self._add_log('INFO', 'MCP container started successfully')
                     mcp_logger.info(f"MCP container started successfully - container_id={self.container.id}")
-                    span.set_attribute("success", True)
-                    span.set_attribute("status", "running")
+                    safe_set_attribute(span, "success", True)
+                    safe_set_attribute(span, "status", "running")
                     return {
                         'success': True,
                         'status': self.status,
@@ -173,8 +173,8 @@ class MCPServerManager:
                     self.status = 'failed'
                     self._add_log('ERROR', f'MCP container failed to start. Status: {self.container.status}')
                     mcp_logger.error(f"MCP container failed to start - status: {self.container.status}")
-                    span.set_attribute("success", False)
-                    span.set_attribute("status", self.container.status)
+                    safe_set_attribute(span, "success", False)
+                    safe_set_attribute(span, "status", self.container.status)
                     return {
                         'success': False,
                         'status': self.status,
@@ -185,8 +185,8 @@ class MCPServerManager:
                 self.status = 'failed'
                 self._add_log('ERROR', f'Docker API error: {str(e)}')
                 mcp_logger.error(f"Docker API error during MCP startup - error={str(e)}")
-                span.set_attribute("success", False)
-                span.set_attribute("error", str(e))
+                safe_set_attribute(span, "success", False)
+                safe_set_attribute(span, "error", str(e))
                 return {
                     'success': False,
                     'status': self.status,
@@ -196,8 +196,8 @@ class MCPServerManager:
                 self.status = 'failed'
                 self._add_log('ERROR', f'Failed to start MCP server: {str(e)}')
                 mcp_logger.error(f"Exception during MCP server startup - error={str(e)}, error_type={type(e).__name__}")
-                span.set_attribute("success", False)
-                span.set_attribute("error", str(e))
+                safe_set_attribute(span, "success", False)
+                safe_set_attribute(span, "error", str(e))
                 return {
                     'success': False,
                     'status': self.status,
@@ -218,8 +218,8 @@ class MCPServerManager:
                     'message': f'Please wait {wait_time:.1f}s before stopping server again'
                 }
                 
-        with logfire.span("mcp_server_stop") as span:
-            span.set_attribute("action", "stop_server")
+        with safe_span("mcp_server_stop") as span:
+            safe_set_attribute(span, "action", "stop_server")
             
             if not self.docker_client:
                 mcp_logger.error("Docker client not available")
@@ -244,7 +244,7 @@ class MCPServerManager:
                 self.status = 'stopping'
                 self._add_log('INFO', 'Stopping MCP container...')
                 mcp_logger.info(f"Stopping MCP container: {self.container_name}")
-                span.set_attribute("container_id", self.container.id)
+                safe_set_attribute(span, "container_id", self.container.id)
                 
                 # Cancel log reading task
                 if self.log_reader_task:
@@ -264,8 +264,8 @@ class MCPServerManager:
                 self._last_operation_time = time.time()
                 self._add_log('INFO', 'MCP container stopped')
                 mcp_logger.info("MCP container stopped successfully")
-                span.set_attribute("success", True)
-                span.set_attribute("status", "stopped")
+                safe_set_attribute(span, "success", True)
+                safe_set_attribute(span, "status", "stopped")
                 
                 return {
                     'success': True,
@@ -276,8 +276,8 @@ class MCPServerManager:
             except APIError as e:
                 self._add_log('ERROR', f'Docker API error: {str(e)}')
                 mcp_logger.error(f"Docker API error during MCP stop - error={str(e)}")
-                span.set_attribute("success", False)
-                span.set_attribute("error", str(e))
+                safe_set_attribute(span, "success", False)
+                safe_set_attribute(span, "error", str(e))
                 return {
                     'success': False,
                     'status': self.status,
@@ -286,8 +286,8 @@ class MCPServerManager:
             except Exception as e:
                 self._add_log('ERROR', f'Error stopping MCP server: {str(e)}')
                 mcp_logger.error(f"Exception during MCP server stop - error={str(e)}, error_type={type(e).__name__}")
-                span.set_attribute("success", False)
-                span.set_attribute("error", str(e))
+                safe_set_attribute(span, "success", False)
+                safe_set_attribute(span, "error", str(e))
                 return {
                     'success': False,
                     'status': self.status,
@@ -477,99 +477,99 @@ mcp_manager = MCPServerManager()
 @router.post("/start", response_model=ServerResponse)
 async def start_server():
     """Start the MCP server."""
-    with logfire.span("api_mcp_start") as span:
-        span.set_attribute("endpoint", "/mcp/start")
-        span.set_attribute("method", "POST")
+    with safe_span("api_mcp_start") as span:
+        safe_set_attribute(span, "endpoint", "/mcp/start")
+        safe_set_attribute(span, "method", "POST")
         
         try:
             result = await mcp_manager.start_server()
-            api_logger.info("MCP server start API called", success=result.get('success', False))
-            span.set_attribute("success", result.get('success', False))
+            api_logger.info("MCP server start API called - success=%s", result.get('success', False))
+            safe_set_attribute(span, "success", result.get('success', False))
             return result
         except Exception as e:
-            api_logger.error("MCP server start API failed", error=str(e))
-            span.set_attribute("success", False)
-            span.set_attribute("error", str(e))
+            api_logger.error("MCP server start API failed - error=%s", str(e))
+            safe_set_attribute(span, "success", False)
+            safe_set_attribute(span, "error", str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/stop", response_model=ServerResponse)
 async def stop_server():
     """Stop the MCP server."""
-    with logfire.span("api_mcp_stop") as span:
-        span.set_attribute("endpoint", "/mcp/stop")
-        span.set_attribute("method", "POST")
+    with safe_span("api_mcp_stop") as span:
+        safe_set_attribute(span, "endpoint", "/mcp/stop")
+        safe_set_attribute(span, "method", "POST")
         
         try:
             result = await mcp_manager.stop_server()
-            api_logger.info("MCP server stop API called", success=result.get('success', False))
-            span.set_attribute("success", result.get('success', False))
+            api_logger.info(f"MCP server stop API called - success={result.get('success', False)}")
+            safe_set_attribute(span, "success", result.get('success', False))
             return result
         except Exception as e:
-            api_logger.error("MCP server stop API failed", error=str(e))
-            span.set_attribute("success", False)
-            span.set_attribute("error", str(e))
+            api_logger.error(f"MCP server stop API failed - error={str(e)}")
+            safe_set_attribute(span, "success", False)
+            safe_set_attribute(span, "error", str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/status")
 async def get_status():
     """Get MCP server status."""
-    with logfire.span("api_mcp_status") as span:
-        span.set_attribute("endpoint", "/mcp/status")
-        span.set_attribute("method", "GET")
+    with safe_span("api_mcp_status") as span:
+        safe_set_attribute(span, "endpoint", "/mcp/status")
+        safe_set_attribute(span, "method", "GET")
         
         try:
             status = mcp_manager.get_status()
-            api_logger.debug("MCP server status checked", status=status.get('status'))
-            span.set_attribute("status", status.get('status'))
-            span.set_attribute("uptime", status.get('uptime'))
+            api_logger.debug(f"MCP server status checked - status={status.get('status')}")
+            safe_set_attribute(span, "status", status.get('status'))
+            safe_set_attribute(span, "uptime", status.get('uptime'))
             return status
         except Exception as e:
-            api_logger.error("MCP server status API failed", error=str(e))
-            span.set_attribute("error", str(e))
+            api_logger.error(f"MCP server status API failed - error={str(e)}")
+            safe_set_attribute(span, "error", str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/logs")
 async def get_logs(limit: int = 100):
     """Get MCP server logs."""
-    with logfire.span("api_mcp_logs") as span:
-        span.set_attribute("endpoint", "/mcp/logs")
-        span.set_attribute("method", "GET")
-        span.set_attribute("limit", limit)
+    with safe_span("api_mcp_logs") as span:
+        safe_set_attribute(span, "endpoint", "/mcp/logs")
+        safe_set_attribute(span, "method", "GET")
+        safe_set_attribute(span, "limit", limit)
         
         try:
             logs = mcp_manager.get_logs(limit)
             api_logger.debug("MCP server logs retrieved", count=len(logs))
-            span.set_attribute("log_count", len(logs))
+            safe_set_attribute(span, "log_count", len(logs))
             return {'logs': logs}
         except Exception as e:
             api_logger.error("MCP server logs API failed", error=str(e))
-            span.set_attribute("error", str(e))
+            safe_set_attribute(span, "error", str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/logs")
 async def clear_logs():
     """Clear MCP server logs."""
-    with logfire.span("api_mcp_clear_logs") as span:
-        span.set_attribute("endpoint", "/mcp/logs")
-        span.set_attribute("method", "DELETE")
+    with safe_span("api_mcp_clear_logs") as span:
+        safe_set_attribute(span, "endpoint", "/mcp/logs")
+        safe_set_attribute(span, "method", "DELETE")
         
         try:
             mcp_manager.clear_logs()
             api_logger.info("MCP server logs cleared")
-            span.set_attribute("success", True)
+            safe_set_attribute(span, "success", True)
             return {'success': True, 'message': 'Logs cleared successfully'}
         except Exception as e:
             api_logger.error("MCP server clear logs API failed", error=str(e))
-            span.set_attribute("success", False)
-            span.set_attribute("error", str(e))
+            safe_set_attribute(span, "success", False)
+            safe_set_attribute(span, "error", str(e))
             raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/config")
 async def get_mcp_config():
     """Get MCP server configuration."""
-    with logfire.span("api_get_mcp_config") as span:
-        span.set_attribute("endpoint", "/api/mcp/config")
-        span.set_attribute("method", "GET")
+    with safe_span("api_get_mcp_config") as span:
+        safe_set_attribute(span, "endpoint", "/api/mcp/config")
+        safe_set_attribute(span, "method", "GET")
         
         try:
             api_logger.info("Getting MCP server configuration")
@@ -599,26 +599,26 @@ async def get_mcp_config():
                 config['use_reranking'] = False
             
             api_logger.info("MCP configuration (SSE-only mode)")
-            span.set_attribute("host", config['host'])
-            span.set_attribute("port", config['port'])
-            span.set_attribute("transport", "sse")
-            span.set_attribute("model_choice", config.get('model_choice', 'gpt-4o-mini'))
+            safe_set_attribute(span, "host", config['host'])
+            safe_set_attribute(span, "port", config['port'])
+            safe_set_attribute(span, "transport", "sse")
+            safe_set_attribute(span, "model_choice", config.get('model_choice', 'gpt-4o-mini'))
             
             return config
         except Exception as e:
             api_logger.error("Failed to get MCP configuration", error=str(e))
-            span.set_attribute("error", str(e))
+            safe_set_attribute(span, "error", str(e))
             raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.post("/config")
 async def save_configuration(config: ServerConfig):
     """Save MCP server configuration."""
-    with logfire.span("api_save_mcp_config") as span:
-        span.set_attribute("endpoint", "/api/mcp/config")
-        span.set_attribute("method", "POST")
-        span.set_attribute("transport", config.transport)
-        span.set_attribute("host", config.host)
-        span.set_attribute("port", config.port)
+    with safe_span("api_save_mcp_config") as span:
+        safe_set_attribute(span, "endpoint", "/api/mcp/config")
+        safe_set_attribute(span, "method", "POST")
+        safe_set_attribute(span, "transport", config.transport)
+        safe_set_attribute(span, "host", config.host)
+        safe_set_attribute(span, "port", config.port)
         
         try:
             api_logger.info("Saving MCP server configuration", transport=config.transport, host=config.host, port=config.port)
@@ -635,7 +635,7 @@ async def save_configuration(config: ServerConfig):
                     "key_value": config_json
                 }).eq("key_name", "mcp_config").execute()
                 api_logger.info("MCP configuration updated")
-                span.set_attribute("operation", "update")
+                safe_set_attribute(span, "operation", "update")
             else:
                 # Insert new
                 response = supabase_client.table("credentials").insert({
@@ -643,14 +643,14 @@ async def save_configuration(config: ServerConfig):
                     "key_value": config_json
                 }).execute()
                 api_logger.info("MCP configuration created")
-                span.set_attribute("operation", "create")
+                safe_set_attribute(span, "operation", "create")
             
-            span.set_attribute("success", True)
+            safe_set_attribute(span, "success", True)
             return {"success": True, "message": "Configuration saved"}
             
         except Exception as e:
             api_logger.error("Failed to save MCP configuration", error=str(e))
-            span.set_attribute("error", str(e))
+            safe_set_attribute(span, "error", str(e))
             raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.websocket("/logs/stream")
@@ -675,9 +675,9 @@ async def websocket_log_stream(websocket: WebSocket):
 @router.get("/tools")
 async def get_mcp_tools():
     """Get available MCP tools by querying the running MCP server's registered tools."""
-    with logfire.span("api_get_mcp_tools") as span:
-        span.set_attribute("endpoint", "/api/mcp/tools")
-        span.set_attribute("method", "GET")
+    with safe_span("api_get_mcp_tools") as span:
+        safe_set_attribute(span, "endpoint", "/api/mcp/tools")
+        safe_set_attribute(span, "method", "GET")
         
         try:
             api_logger.info("Getting MCP tools from registered server instance")
@@ -685,7 +685,7 @@ async def get_mcp_tools():
             # Check if server is running
             server_status = mcp_manager.get_status()
             is_running = server_status.get('status') == 'running'
-            span.set_attribute("server_running", is_running)
+            safe_set_attribute(span, "server_running", is_running)
             
             if not is_running:
                 api_logger.warning("MCP server not running when requesting tools")
@@ -736,8 +736,8 @@ async def get_mcp_tools():
         
         except Exception as e:
             api_logger.error("Failed to get MCP tools", error=str(e))
-            span.set_attribute("error", str(e))
-            span.set_attribute("source", "general_error")
+            safe_set_attribute(span, "error", str(e))
+            safe_set_attribute(span, "source", "general_error")
             
             return {
                 'tools': [],
@@ -750,12 +750,12 @@ async def get_mcp_tools():
 @router.get("/health")
 async def mcp_health():
     """Health check for MCP API."""
-    with logfire.span("api_mcp_health") as span:
-        span.set_attribute("endpoint", "/api/mcp/health")
-        span.set_attribute("method", "GET")
+    with safe_span("api_mcp_health") as span:
+        safe_set_attribute(span, "endpoint", "/api/mcp/health")
+        safe_set_attribute(span, "method", "GET")
         
         # Removed health check logging to reduce console noise
         result = {"status": "healthy", "service": "mcp"}
-        span.set_attribute("status", "healthy")
+        safe_set_attribute(span, "status", "healthy")
         
         return result 

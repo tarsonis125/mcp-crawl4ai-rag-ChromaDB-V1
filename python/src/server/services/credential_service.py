@@ -8,7 +8,7 @@ Credentials include API keys, service credentials, and application configuration
 import os
 import re
 import base64
-import logging
+# Removed direct logging import - using unified config
 from typing import Dict, Optional, Any, List
 from dataclasses import dataclass
 from supabase import create_client, Client
@@ -17,7 +17,9 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-logger = logging.getLogger(__name__)
+from ..config.logfire_config import get_logger
+
+logger = get_logger(__name__)
 
 @dataclass
 class CredentialItem:

@@ -6,12 +6,13 @@ Prompts are loaded from the database at startup and cached in memory for
 fast access during agent operations.
 """
 
-import logging
+# Removed direct logging import - using unified config
 from typing import Dict, Optional
 from datetime import datetime
 from ..utils import get_supabase_client
+from ..config.logfire_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PromptService:

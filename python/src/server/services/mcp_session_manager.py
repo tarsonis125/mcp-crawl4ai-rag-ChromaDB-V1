@@ -8,9 +8,10 @@ enabling clients to reconnect after server restarts.
 import uuid
 from datetime import datetime, timedelta
 from typing import Dict, Optional
-import logging
+# Removed direct logging import - using unified config
+from ..config.logfire_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class SimplifiedSessionManager:
     """Simplified MCP session manager that tracks session IDs and expiration"""

@@ -19,12 +19,14 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Ba
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-import logging
+# Removed direct logging import - using unified config
 
 # Import logfire for comprehensive API logging
 from ..config.logfire_config import logfire
 
-logger = logging.getLogger(__name__)
+from ..config.logfire_config import get_logger
+
+logger = get_logger(__name__)
 
 # Create router
 router = APIRouter(prefix="/api/tests", tags=["tests"])

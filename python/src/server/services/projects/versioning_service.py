@@ -6,12 +6,13 @@ that can be shared between MCP tools and FastAPI endpoints.
 """
 
 import json
-import logging
+# Removed direct logging import - using unified config
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
 from src.server.utils import get_supabase_client
+from ...config.logfire_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class VersioningService:

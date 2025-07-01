@@ -7,7 +7,7 @@ single page crawling, batch crawling, and recursive crawling.
 """
 
 import json
-import logging
+# Removed direct logging import - using unified config
 import asyncio
 from typing import List, Dict, Any, Optional
 from urllib.parse import urlparse, urldefrag
@@ -17,8 +17,9 @@ import traceback
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, MemoryAdaptiveDispatcher
 from src.server.utils import get_supabase_client
+from ...config.logfire_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class CrawlingService:

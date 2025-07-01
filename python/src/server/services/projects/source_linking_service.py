@@ -5,11 +5,12 @@ This module provides centralized logic for managing project-source relationships
 handling both technical and business source associations.
 """
 
-import logging
+# Removed direct logging import - using unified config
 from typing import Dict, Any, List, Tuple
 from src.server.utils import get_supabase_client
+from ...config.logfire_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class SourceLinkingService:

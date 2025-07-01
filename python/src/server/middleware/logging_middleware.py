@@ -10,7 +10,7 @@ from fastapi import Request, Response
 from fastapi.routing import APIRoute
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from ..config.logfire_config import get_logger, is_logfire_active, logfire
+from ..config.logfire_config import get_logger, is_logfire_enabled, LOGFIRE_AVAILABLE
 
 
 class LoggingMiddleware(BaseHTTPMiddleware):
@@ -70,8 +70,10 @@ def instrument_fastapi(app):
     """
     logger = get_logger("instrumentation")
     
-    if is_logfire_active() and logfire:
+    if is_logfire_enabled() and LOGFIRE_AVAILABLE:
         try:
+            # Import logfire for instrumentation only when enabled
+            import logfire
             # Use logfire's built-in FastAPI instrumentation
             logfire.instrument_fastapi(app)
             logger.info("FastAPI instrumented with logfire")

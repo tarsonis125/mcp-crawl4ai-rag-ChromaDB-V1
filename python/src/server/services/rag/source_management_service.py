@@ -6,12 +6,13 @@ source retrieval, deletion, and metadata management.
 """
 
 import json
-import logging
+# Removed direct logging import - using unified config
 from typing import List, Dict, Any, Optional, Tuple
 
 from src.server.utils import get_supabase_client, update_source_info, extract_source_summary
+from ...config.logfire_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class SourceManagementService:
