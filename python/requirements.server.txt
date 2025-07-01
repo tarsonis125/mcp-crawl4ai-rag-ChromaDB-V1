@@ -3,6 +3,7 @@
 fastapi>=0.104.0
 uvicorn>=0.24.0
 python-multipart>=0.0.20
+watchfiles>=0.18  # For better hot reload performance
 
 # Web crawling
 crawl4ai==0.6.2

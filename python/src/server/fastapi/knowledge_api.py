@@ -400,10 +400,10 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         
         # Emit initial progress directly via Socket.IO
         await update_crawl_progress(progress_id, {
-            'status': 'starting',
+            'status': 'analyzing',
             'percentage': 0,
             'currentUrl': str(request.url),
-            'log': f'Starting crawl of {request.url}'
+            'log': f'Analyzing URL type for {request.url}'
         })
         
         # Get crawling context and ensure it's initialized
@@ -426,7 +426,7 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         if crawling_service.is_txt(str(request.url)):
             # For text files
             await update_crawl_progress(progress_id, {
-                'status': 'crawling', 'percentage': 15, 
+                'status': 'crawling', 'percentage': 10, 
                 'log': f'Detected text file, fetching content...'
             })
             crawl_results = await crawling_service.crawl_markdown_file(str(request.url))
@@ -434,7 +434,7 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         elif crawling_service.is_sitemap(str(request.url)):
             # For sitemaps
             await update_crawl_progress(progress_id, {
-                'status': 'crawling', 'percentage': 15,
+                'status': 'crawling', 'percentage': 10,
                 'log': f'Detected sitemap, parsing URLs...'
             })
             sitemap_urls = crawling_service.parse_sitemap(str(request.url))
@@ -454,7 +454,7 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         else:
             # For regular URLs
             await update_crawl_progress(progress_id, {
-                'status': 'crawling', 'percentage': 15,
+                'status': 'crawling', 'percentage': 10,
                 'log': f'Starting recursive crawl of webpage...'
             })
             crawl_results = await crawling_service.crawl_recursive_with_progress(
@@ -473,8 +473,10 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         
         # Process and store crawl results
         await update_crawl_progress(progress_id, {
-            'status': 'processing', 'percentage': 65,
-            'log': f'Processing {len(crawl_results)} pages...'
+            'status': 'processing', 'percentage': 30,
+            'log': f'Processing {len(crawl_results)} pages...',
+            'processedPages': len(crawl_results),
+            'totalPages': len(crawl_results)
         })
         
         # Prepare data for storage
@@ -540,12 +542,41 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
             word_count = source_word_counts.get(source_id, 0)
             update_source_info(supabase_client, source_id, summary, word_count)
         
+        # Source creation phase
         await update_crawl_progress(progress_id, {
-            'status': 'embedding', 'percentage': 75,
-            'log': f'Storing {chunk_count} chunks with embeddings...'
+            'status': 'source_creation', 'percentage': 40,
+            'log': f'Creating source records for {len(source_content_map)} sources...'
         })
         
-        # Store documents with embeddings (no progress callback needed)
+        # Create progress callback for batch updates
+        total_batches = (len(contents) + 20 - 1) // 20  # batch_size = 20
+        
+        async def batch_progress_callback(message: str, percentage: int, batch_info: dict = None):
+            progress_data = {
+                'status': 'document_storage',
+                'percentage': 45 + int(percentage * 0.45),  # 45% to 90%
+                'log': message
+            }
+            if batch_info:
+                progress_data.update({
+                    'completed_batches': batch_info.get('completed_batches', 0),
+                    'total_batches': total_batches,
+                    'current_batch': batch_info.get('current_batch', 0),
+                    'active_workers': batch_info.get('active_workers', 1),
+                    'chunks_in_batch': batch_info.get('chunks_in_batch', 0),
+                    'total_chunks_in_batch': batch_info.get('total_chunks_in_batch', 0)
+                })
+            await update_crawl_progress(progress_id, progress_data)
+        
+        # Document storage phase with progress
+        await update_crawl_progress(progress_id, {
+            'status': 'document_storage', 'percentage': 45,
+            'log': f'Starting document storage for {chunk_count} chunks...',
+            'total_batches': total_batches,
+            'completed_batches': 0
+        })
+        
+        # Store documents with embeddings
         await add_documents_to_supabase(
             supabase_client, 
             urls, 
@@ -554,14 +585,28 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
             metadatas, 
             url_to_full_document, 
             batch_size=20,
-            progress_callback=None  # Emit manually after completion
+            progress_callback=batch_progress_callback
         )
+        
+        # Code storage phase (even if we don't extract code, show the step)
+        await update_crawl_progress(progress_id, {
+            'status': 'code_storage', 'percentage': 95,
+            'log': 'Checking for code examples...'
+        })
+        
+        # Finalization phase
+        await update_crawl_progress(progress_id, {
+            'status': 'finalization', 'percentage': 99,
+            'log': 'Finalizing crawl results...'
+        })
         
         # Complete crawl
         completion_data = {
             'chunksStored': chunk_count,
             'wordCount': sum(source_word_counts.values()),
-            'log': 'All processing completed successfully'
+            'log': 'All processing completed successfully',
+            'processedPages': len(crawl_results),
+            'totalPages': len(crawl_results)
         }
         await complete_crawl_progress(progress_id, completion_data)
         

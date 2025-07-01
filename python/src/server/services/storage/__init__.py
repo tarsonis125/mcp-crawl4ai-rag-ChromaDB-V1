@@ -3,10 +3,7 @@ Storage Services
 
 Handles document and code storage operations.
 """
-from .document_storage_service import (
-    add_documents_to_supabase,
-    add_documents_to_supabase_parallel
-)
+from .document_storage_service import add_documents_to_supabase
 
 from .code_storage_service import (
     extract_code_blocks,
@@ -17,7 +14,6 @@ from .code_storage_service import (
 __all__ = [
     # Document storage
     'add_documents_to_supabase',
-    'add_documents_to_supabase_parallel',
     
     # Code storage
     'extract_code_blocks',

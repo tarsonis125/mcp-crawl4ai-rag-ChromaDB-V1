@@ -115,8 +115,27 @@ Create a new [Supabase project](https://supabase.com/dashboard), then follow the
 ### 4. Start Archon
 
 ```bash
+# Build and start all services
 docker compose up --build -d
+
+# View logs (optional)
+docker compose logs -f
 ```
+
+<Admonition type="tip" icon="🔥" title="Hot Module Reload">
+Archon includes Hot Module Reload (HMR) for both Python and React code. Changes to source files automatically reload without container rebuilds.
+
+**No rebuild needed for:**
+- Python code changes (`.py` files) 
+- React components (`.tsx`, `.jsx`)
+- CSS/Tailwind styles
+- Most configuration changes
+
+**Rebuild required for:**
+- New dependencies (`requirements.txt`, `package.json`)
+- Dockerfile changes
+- Environment variables
+</Admonition>
 
 ### 5. Access & Configure
 

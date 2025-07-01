@@ -204,7 +204,7 @@ export const KnowledgeBasePage = () => {
       knowledgeSocketIO.disconnect();
       
       // Clean up any active crawl progress connections
-      console.log('🧹 Disconnecting crawl progress service');
+      // Disconnecting crawl progress service
       crawlProgressService.disconnect();
     };
   }, []); // Only run once on mount
@@ -212,7 +212,7 @@ export const KnowledgeBasePage = () => {
   // Handle filter changes
   useEffect(() => {
     if (loadingStrategy === 'complete') {
-      console.log('🔍 Filter changed, reloading knowledge items');
+      // Filter changed, reloading knowledge items
       setCurrentPage(1);
       loadKnowledgeItems({ page: 1 });
       setForceReanimate(prev => prev + 1);
@@ -279,7 +279,7 @@ export const KnowledgeBasePage = () => {
     try {
       // Prevent duplicate operations by checking if already in progress
       if (loading) {
-        console.log('Delete already in progress, ignoring duplicate call');
+        // Delete already in progress, ignoring duplicate call
         return;
       }
       
@@ -374,8 +374,8 @@ export const KnowledgeBasePage = () => {
   };
 
   const handleStartCrawl = async (progressId: string, initialData: Partial<CrawlProgressData>) => {
-    console.log(`🚨 handleStartCrawl called with progressId: ${progressId}`);
-    console.log(`🚨 Initial data:`, initialData);
+    // handleStartCrawl called with progressId
+    // Initial data received
     
     const newProgressItem: CrawlProgressData = {
       progressId,
@@ -385,12 +385,12 @@ export const KnowledgeBasePage = () => {
       ...initialData
     };
     
-    console.log(`🚨 Adding progress item to state`);
+    // Adding progress item to state
     setProgressItems(prev => [...prev, newProgressItem]);
     
     // Set up callbacks for enhanced progress tracking
     const progressCallback = (data: CrawlProgressData) => {
-      console.log(`📨 Progress callback called for ${progressId}:`, data);
+      // Progress callback called
       
       if (data.progressId === progressId) {
         // Update progress first
@@ -406,7 +406,7 @@ export const KnowledgeBasePage = () => {
     };
     
     const stateChangeCallback = (state: WebSocketState) => {
-      console.log(`🔌 WebSocket state changed for ${progressId}: ${state}`);
+      // WebSocket state changed
       
       // Update UI based on connection state if needed
       if (state === WebSocketState.FAILED) {
@@ -415,12 +415,12 @@ export const KnowledgeBasePage = () => {
     };
     
     const errorCallback = (error: Error | Event) => {
-      console.error(`❌ WebSocket error for ${progressId}:`, error);
+      // WebSocket error
       const errorMessage = error instanceof Error ? error.message : 'Connection error';
       handleProgressError(`Connection error: ${errorMessage}`, progressId);
     };
     
-    console.log(`🚀 Starting progress stream for ${progressId}`);
+    // Starting progress stream
     
     try {
       // Use the enhanced streamProgress method with all callbacks
@@ -434,14 +434,14 @@ export const KnowledgeBasePage = () => {
         connectionTimeout: 10000
       });
       
-      console.log(`✅ WebSocket connected successfully for ${progressId}`);
+      // WebSocket connected successfully
       
       // Wait for connection to be fully established
       await crawlProgressService.waitForConnection(5000);
       
-      console.log(`✅ Connection verified for ${progressId}`);
+      // Connection verified
     } catch (error) {
-      console.error(`❌ Failed to establish WebSocket connection:`, error);
+      // Failed to establish WebSocket connection
       handleProgressError('Failed to connect to progress updates', progressId);
     }
   };
@@ -685,13 +685,13 @@ const AddKnowledgeModal = ({
           max_depth: crawlDepth
         });
         
-        console.log('🔍 Crawl URL result:', result);
+        // Crawl URL result received
         
         // Check if result contains a progressId for streaming
         if ((result as any).progressId) {
-          console.log('✅ Got progressId:', (result as any).progressId);
-          console.log('✅ About to call onStartCrawl function');
-          console.log('✅ onStartCrawl function is:', onStartCrawl);
+          // Got progressId
+          // About to call onStartCrawl function
+          // onStartCrawl function ready
           
           // Start progress tracking
           onStartCrawl((result as any).progressId, {
@@ -700,13 +700,13 @@ const AddKnowledgeModal = ({
             currentStep: 'Starting crawl'
           });
           
-          console.log('✅ onStartCrawl called successfully');
+          // onStartCrawl called successfully
           
           showToast('Crawling started - tracking progress', 'success');
           onClose(); // Close modal immediately
         } else {
-          console.log('❌ No progressId in result');
-          console.log('❌ Result structure:', JSON.stringify(result, null, 2));
+          // No progressId in result
+          // Result structure logged
           
           // Fallback for non-streaming response
           showToast((result as any).message || 'Crawling started', 'success');
@@ -724,7 +724,7 @@ const AddKnowledgeModal = ({
         });
         
         if (result.success && result.progressId) {
-          console.log(`📄 Upload started with progressId: ${result.progressId}`);
+          // Upload started with progressId
           
           // Start progress tracking for upload
           onStartCrawl(result.progressId, {
@@ -737,13 +737,13 @@ const AddKnowledgeModal = ({
             fileType: selectedFile.type
           });
           
-          console.log('✅ onStartCrawl called successfully for upload');
+          // onStartCrawl called successfully for upload
           
           showToast('Document upload started - tracking progress', 'success');
           onClose(); // Close modal immediately
         } else {
-          console.log('❌ No progressId in upload result');
-          console.log('❌ Upload result structure:', JSON.stringify(result, null, 2));
+          // No progressId in upload result
+          // Upload result structure logged
           
           // Fallback for non-streaming response
           showToast((result as any).message || 'Document uploaded successfully', 'success');

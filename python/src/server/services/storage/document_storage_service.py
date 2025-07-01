@@ -52,16 +52,19 @@ async def add_documents_to_supabase(
                            total_documents=len(contents),
                            batch_size=batch_size) as span:
         
-        # Simple progress reporting helper
-        async def report_progress(message: str, percentage: int):
+        # Simple progress reporting helper with batch info support
+        async def report_progress(message: str, percentage: int, batch_info: dict = None):
             if progress_callback and asyncio.iscoroutinefunction(progress_callback):
-                await progress_callback(message, percentage)
+                await progress_callback(message, percentage, batch_info)
             if websocket:
-                await websocket.send_json({
+                data = {
                     "type": "document_storage_progress",
                     "message": message,
                     "percentage": percentage
-                })
+                }
+                if batch_info:
+                    data.update(batch_info)
+                await websocket.send_json(data)
                 await asyncio.sleep(0)  # Yield control
         
         # Get unique URLs to delete existing records
@@ -95,9 +98,18 @@ async def add_documents_to_supabase(
             batch_metadatas = metadatas[i:batch_end]
             
             # Prepare progress message
+            total_batches = (len(contents) + batch_size - 1) // batch_size
             overall_percentage = int((i / len(contents)) * 100)
-            batch_msg = f"Processing batch {batch_num}/{(len(contents) + batch_size - 1) // batch_size}"
-            await report_progress(batch_msg, overall_percentage)
+            batch_msg = f"Processing batch {batch_num}/{total_batches}"
+            batch_info = {
+                'completed_batches': batch_num - 1,
+                'total_batches': total_batches,
+                'current_batch': batch_num,
+                'active_workers': 1,
+                'chunks_in_batch': 0,
+                'total_chunks_in_batch': batch_end - i
+            }
+            await report_progress(batch_msg, overall_percentage, batch_info)
             
             # Apply contextual embedding to each chunk if enabled
             if use_contextual_embeddings:
@@ -119,9 +131,10 @@ async def add_documents_to_supabase(
                 contextual_contents = batch_contents
             
             # Create embeddings for the batch
-            embeddings_msg = f"Batch {batch_num}/{(len(contents) + batch_size - 1) // batch_size}: Creating embeddings..."
+            embeddings_msg = f"Batch {batch_num}/{total_batches}: Creating embeddings..."
             embeddings_percentage = overall_percentage + 10
-            await report_progress(embeddings_msg, min(embeddings_percentage, 99))
+            batch_info['chunks_in_batch'] = len(batch_contents) // 2  # Halfway through
+            await report_progress(embeddings_msg, min(embeddings_percentage, 99), batch_info)
             
             batch_embeddings = await create_embeddings_batch_async(
                 contextual_contents, 
@@ -149,9 +162,10 @@ async def add_documents_to_supabase(
                 batch_data.append(data)
             
             # Insert batch with retry logic
-            storing_msg = f"Batch {batch_num}/{(len(contents) + batch_size - 1) // batch_size}: Storing in database..."
+            storing_msg = f"Batch {batch_num}/{total_batches}: Storing in database..."
             storing_percentage = overall_percentage + 15
-            await report_progress(storing_msg, min(storing_percentage, 99))
+            batch_info['chunks_in_batch'] = len(batch_contents)  # All chunks processed
+            await report_progress(storing_msg, min(storing_percentage, 99), batch_info)
             
             max_retries = 3
             retry_delay = 1.0
@@ -160,8 +174,10 @@ async def add_documents_to_supabase(
                 try:
                     client.table("crawled_pages").insert(batch_data).execute()
                     completion_percentage = int(batch_end / len(contents) * 100)
-                    complete_msg = f"Batch {batch_num}/{(len(contents) + batch_size - 1) // batch_size}: Completed storing {len(batch_data)} chunks"
-                    await report_progress(complete_msg, completion_percentage)
+                    complete_msg = f"Batch {batch_num}/{total_batches}: Completed storing {len(batch_data)} chunks"
+                    batch_info['completed_batches'] = batch_num
+                    batch_info['chunks_in_batch'] = len(batch_data)
+                    await report_progress(complete_msg, completion_percentage, batch_info)
                     break
                     
                 except Exception as e:
@@ -193,247 +209,3 @@ async def add_documents_to_supabase(
         span.set_attribute("total_processed", len(contents))
 
 
-async def add_documents_to_supabase_parallel(
-    client, 
-    urls: List[str], 
-    chunk_numbers: List[int],
-    contents: List[str], 
-    metadatas: List[Dict[str, Any]],
-    url_to_full_document: Dict[str, str],
-    batch_size: int = 15,
-    progress_callback: Optional[Any] = None,
-    websocket: Optional[WebSocket] = None,
-    max_workers: int = 10  # Changed from 3 to 10 for better parallelization
-) -> None:
-    """
-    Add documents to Supabase with simplified parallel batch processing.
-    
-    Uses ThreadPoolExecutor for CPU-intensive contextual embeddings and
-    async for I/O operations. Shows worker progress during embedding phase.
-    """
-    with safe_span("add_documents_to_supabase_parallel",
-                           total_documents=len(contents),
-                           batch_size=batch_size,
-                           max_workers=max_workers) as span:
-        
-        # Get unique URLs to delete existing records
-        unique_urls = list(set(urls))
-        
-        # Delete existing records for these URLs
-        try:
-            if unique_urls:
-                # Direct Supabase call, no threading service needed
-                client.table("crawled_pages").delete().in_("url", unique_urls).execute()
-                search_logger.info(f"Deleted existing records for {len(unique_urls)} URLs")
-        except Exception as e:
-            search_logger.warning(f"Batch delete failed: {e}")
-        
-        # Check configuration
-        use_contextual_embeddings = os.getenv("USE_CONTEXTUAL_EMBEDDINGS", "false") == "true"
-        
-        # Create batches
-        total_batches = (len(contents) + batch_size - 1) // batch_size
-        batches = []
-        
-        for batch_num, i in enumerate(range(0, len(contents), batch_size), 1):
-            batch_end = min(i + batch_size, len(contents))
-            batch = {
-                'batch_num': batch_num,
-                'start_idx': i,
-                'end_idx': batch_end,
-                'urls': urls[i:batch_end],
-                'chunk_numbers': chunk_numbers[i:batch_end],
-                'contents': contents[i:batch_end],
-                'metadatas': metadatas[i:batch_end]
-            }
-            batches.append(batch)
-        
-        # Process batches sequentially but with parallel contextual embeddings
-        completed_batches = 0
-        
-        for batch in batches:
-            batch_num = batch['batch_num']
-            batch_contents = batch['contents']
-            batch_urls = batch['urls']
-            batch_metadatas = batch['metadatas']
-            batch_chunk_numbers = batch['chunk_numbers']
-            
-            try:
-                # Report batch progress
-                if progress_callback:
-                    await progress_callback(
-                        f"Processing batch {batch_num}/{total_batches}",
-                        int((completed_batches / total_batches) * 100)
-                    )
-                
-                # Apply contextual embedding if enabled
-                if use_contextual_embeddings:
-                    # Prepare arguments for parallel processing
-                    process_args = []
-                    for j, content in enumerate(batch_contents):
-                        url = batch_urls[j]
-                        full_document = url_to_full_document.get(url, "")
-                        process_args.append((url, content, full_document))
-                    
-                    # Show simplified batch progress
-                    if websocket:
-                        await websocket.send_json({
-                            "type": "document_storage_progress",
-                            "percentage": int((completed_batches / total_batches) * 100),
-                            "completed_batches": completed_batches,
-                            "total_batches": total_batches,
-                            "current_batch": batch_num,
-                            "active_workers": min(len(process_args), max_workers),
-                            "chunks_in_batch": 0,
-                            "total_chunks_in_batch": len(process_args),
-                            "message": f"Batch {batch_num}/{total_batches}: Starting contextual embeddings"
-                        })
-                        await asyncio.sleep(0)
-                    
-                    # Process in parallel using ThreadPoolExecutor (like the original)
-                    contextual_contents = []
-                    
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-                        # Submit all tasks
-                        future_to_idx = {
-                            executor.submit(process_chunk_with_context, arg): idx 
-                            for idx, arg in enumerate(process_args)
-                        }
-                        
-                        # Track progress
-                        completed = 0
-                        total = len(future_to_idx)
-                        
-                        # Process results as they complete
-                        for future in concurrent.futures.as_completed(future_to_idx):
-                            idx = future_to_idx[future]
-                            try:
-                                result, success = future.result()
-                                contextual_contents.append((idx, result))
-                                if success:
-                                    batch_metadatas[idx]["contextual_embedding"] = True
-                            except Exception as e:
-                                search_logger.error(f"Error processing chunk {idx}: {e}")
-                                contextual_contents.append((idx, batch_contents[idx]))
-                            
-                            completed += 1
-                            
-                            # Update batch progress
-                            if websocket and (completed % 3 == 0 or completed == total):  # Update every 3 completions or when done
-                                await websocket.send_json({
-                                    "type": "document_storage_progress",
-                                    "percentage": int((completed_batches / total_batches) * 100),
-                                    "completed_batches": completed_batches,
-                                    "total_batches": total_batches,
-                                    "current_batch": batch_num,
-                                    "active_workers": min(total - completed, max_workers),
-                                    "chunks_in_batch": completed,
-                                    "total_chunks_in_batch": total,
-                                    "message": f"Batch {batch_num}/{total_batches}: Processed {completed}/{total} chunks"
-                                })
-                                await asyncio.sleep(0)
-                    
-                    # Sort results back into original order
-                    contextual_contents.sort(key=lambda x: x[0])
-                    contextual_contents = [content for _, content in contextual_contents]
-                else:
-                    # No contextual embeddings
-                    contextual_contents = batch_contents
-                
-                # Create embeddings
-                if websocket:
-                    await websocket.send_json({
-                        "type": "document_storage_progress",
-                        "percentage": int((completed_batches / total_batches) * 100),
-                        "completed_batches": completed_batches,
-                        "total_batches": total_batches,
-                        "current_batch": batch_num,
-                        "active_workers": 0,  # No parallel workers for embedding creation
-                        "chunks_in_batch": len(contextual_contents),
-                        "total_chunks_in_batch": len(contextual_contents),
-                        "message": f"Batch {batch_num}/{total_batches}: Creating embeddings"
-                    })
-                    await asyncio.sleep(0)
-                
-                batch_embeddings = await create_embeddings_batch_async(contextual_contents, websocket=None)
-                
-                # Prepare batch data
-                batch_data = []
-                for j in range(len(contextual_contents)):
-                    parsed_url = urlparse(batch_urls[j])
-                    source_id = parsed_url.netloc or parsed_url.path
-                    
-                    data = {
-                        "url": batch_urls[j],
-                        "chunk_number": batch_chunk_numbers[j],
-                        "content": contextual_contents[j],
-                        "metadata": {
-                            "chunk_size": len(contextual_contents[j]),
-                            **batch_metadatas[j]
-                        },
-                        "source_id": source_id,
-                        "embedding": batch_embeddings[j]
-                    }
-                    batch_data.append(data)
-                
-                # Store in database
-                if websocket:
-                    await websocket.send_json({
-                        "type": "document_storage_progress",
-                        "percentage": int((completed_batches / total_batches) * 100),
-                        "completed_batches": completed_batches,
-                        "total_batches": total_batches,
-                        "current_batch": batch_num,
-                        "active_workers": 0,
-                        "chunks_in_batch": len(batch_data),
-                        "total_chunks_in_batch": len(batch_data),
-                        "message": f"Batch {batch_num}/{total_batches}: Storing in database"
-                    })
-                    await asyncio.sleep(0)
-                
-                # Direct database insert
-                client.table("crawled_pages").insert(batch_data).execute()
-                
-                # Update completed count
-                completed_batches += 1
-                
-                # Report completion
-                if websocket:
-                    overall_progress = int((completed_batches / total_batches) * 100)
-                    await websocket.send_json({
-                        "type": "document_storage_progress",
-                        "percentage": overall_progress,
-                        "completed_batches": completed_batches,
-                        "total_batches": total_batches,
-                        "current_batch": 0 if completed_batches == total_batches else batch_num + 1,
-                        "active_workers": 0,
-                        "chunks_in_batch": 0,
-                        "total_chunks_in_batch": 0,
-                        "message": f"Completed batch {batch_num}/{total_batches}"
-                    })
-                    await asyncio.sleep(0)
-                
-            except Exception as e:
-                search_logger.error(f"Failed to process batch {batch_num}: {e}")
-                if websocket:
-                    await websocket.send_json({
-                        "type": "document_storage_progress",
-                        "percentage": int((completed_batches / total_batches) * 100),
-                        "completed_batches": completed_batches,
-                        "total_batches": total_batches,
-                        "current_batch": batch_num,
-                        "active_workers": 0,
-                        "chunks_in_batch": 0,
-                        "total_chunks_in_batch": 0,
-                        "message": f"Batch {batch_num} failed: {str(e)}",
-                        "error": str(e)
-                    })
-                    await asyncio.sleep(0)
-                raise
-        
-        # Final completion
-        if progress_callback and asyncio.iscoroutinefunction(progress_callback):
-            await progress_callback(f"Successfully stored all {len(contents)} documents", 100)
-        
-        span.set_attribute("success", True)
-        span.set_attribute("total_processed", len(contents))

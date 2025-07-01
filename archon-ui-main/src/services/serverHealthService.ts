@@ -37,7 +37,8 @@ class ServerHealthService {
       
       if (response.ok) {
         const data = await response.json();
-        return data.status === 'healthy' || data.status === 'online';
+        // Accept healthy, online, or initializing (server is starting up)
+        return data.status === 'healthy' || data.status === 'online' || data.status === 'initializing';
       }
       return false;
     } catch (error) {
