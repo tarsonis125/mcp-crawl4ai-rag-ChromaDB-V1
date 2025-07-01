@@ -65,20 +65,32 @@ class ProjectCreationProgressService {
 
     // Set up message handlers
     this.wsService.addMessageHandler('project_progress', (message) => {
+      console.log(`📨 [PROGRESS] Received project_progress event:`, message);
       if (message.data) {
+        console.log(`📨 [PROGRESS] Calling onMessage with data:`, message.data);
         onMessage(message.data);
+      } else {
+        console.warn(`📨 [PROGRESS] project_progress event had no data:`, message);
       }
     });
 
     this.wsService.addMessageHandler('project_completed', (message) => {
+      console.log(`✅ [PROGRESS] Received project_completed event:`, message);
       if (message.data) {
+        console.log(`✅ [PROGRESS] Calling onMessage with completion data:`, message.data);
         onMessage(message.data);
+      } else {
+        console.warn(`✅ [PROGRESS] project_completed event had no data:`, message);
       }
     });
 
     this.wsService.addMessageHandler('project_error', (message) => {
+      console.log(`❌ [PROGRESS] Received project_error event:`, message);
       if (message.data) {
+        console.log(`❌ [PROGRESS] Calling onMessage with error data:`, message.data);
         onMessage(message.data);
+      } else {
+        console.warn(`❌ [PROGRESS] project_error event had no data:`, message);
       }
     });
 
@@ -89,12 +101,16 @@ class ProjectCreationProgressService {
 
     // Connect to the default namespace and join progress room
     try {
+      console.log(`📡 [PROGRESS] Connecting to Socket.IO for progress: ${progressId}`);
       await this.wsService.connect('/');
+      console.log(`📡 [PROGRESS] Connected! Sending subscribe_progress event for: ${progressId}`);
+      
       // Subscribe to progress updates for this specific progress ID
       this.wsService.send({
         type: 'subscribe_progress',
         data: { progress_id: progressId }
       });
+      console.log(`📡 [PROGRESS] Sent subscribe_progress event, now listening for project_progress/project_completed/project_error events`);
     } catch (error) {
       console.error('Failed to connect to project creation progress:', error);
       throw error;

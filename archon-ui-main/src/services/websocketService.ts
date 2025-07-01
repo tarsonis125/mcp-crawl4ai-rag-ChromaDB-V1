@@ -45,7 +45,6 @@ type StateChangeHandler = (state: WebSocketState) => void;
 export class WebSocketService {
   private socket: Socket | null = null;
   private config: Required<WebSocketConfig>;
-  private namespace: string = '';
   private sessionId: string = '';
   
   private messageHandlers: Map<string, MessageHandler[]> = new Map();
@@ -84,12 +83,11 @@ export class WebSocketService {
    * Connect to Socket.IO with promise-based connection establishment
    */
   async connect(endpoint: string): Promise<void> {
-    // Extract namespace and session ID from endpoint
-    const { namespace, sessionId } = this.parseEndpoint(endpoint);
+    // Extract session ID from endpoint for room identification
+    const { sessionId } = this.parseEndpoint(endpoint);
     
-    // If already connected to the same namespace and session, return existing connection
-    if (this.socket && this.state === WebSocketState.CONNECTED && 
-        this.namespace === namespace && this.sessionId === sessionId) {
+    // If already connected with the same session, return existing connection
+    if (this.socket && this.state === WebSocketState.CONNECTED && this.sessionId === sessionId) {
       return Promise.resolve();
     }
 
@@ -98,12 +96,11 @@ export class WebSocketService {
       return this.connectionPromise;
     }
 
-    // Disconnect from current namespace if different
-    if (this.socket && (this.namespace !== namespace || this.sessionId !== sessionId)) {
+    // Disconnect if session changed
+    if (this.socket && this.sessionId !== sessionId) {
       this.disconnect();
     }
 
-    this.namespace = namespace;
     this.sessionId = sessionId;
     this.setState(WebSocketState.CONNECTING);
 
@@ -122,8 +119,8 @@ export class WebSocketService {
     }
   }
 
-  private parseEndpoint(endpoint: string): { namespace: string; sessionId: string } {
-    // Extract session ID from endpoint
+  private parseEndpoint(endpoint: string): { sessionId: string } {
+    // Extract session ID from endpoint - we'll use this for room identification
     const sessionMatch = endpoint.match(/sessions\/([^\/]+)/);
     const sessionId = sessionMatch ? sessionMatch[1] : '';
     
@@ -139,21 +136,20 @@ export class WebSocketService {
     const projectProgressMatch = endpoint.match(/project-creation-progress\/([^\/]+)/);
     const projectProgressId = projectProgressMatch ? projectProgressMatch[1] : '';
     
-    // Always use default namespace - backend uses rooms for organization
-    let namespace = '/';
-    
-    return { namespace, sessionId: sessionId || projectId || progressId || projectProgressId };
+    // Return the most relevant ID for room joining
+    return { sessionId: sessionId || projectId || progressId || projectProgressId };
   }
 
   private async establishConnection(): Promise<void> {
     // Use relative URL to go through Vite's proxy
     const socketPath = '/socket.io/';  // Use default Socket.IO path
     
-    console.log(`🔌 Connecting to Socket.IO: ${this.namespace} namespace via proxy`);
+    console.log(`🔌 Connecting to Socket.IO: default namespace (room-based) via proxy`);
+    console.log(`🔌 Connection details: path=${socketPath}, sessionId=${this.sessionId}`);
     
     try {
-      // Create Socket.IO connection with namespace
-      this.socket = io(this.namespace, {
+      // Always connect to default namespace (omit URL for better proxy compatibility)
+      this.socket = io({
         reconnection: this.config.enableAutoReconnect,
         reconnectionAttempts: this.config.maxReconnectAttempts,
         reconnectionDelay: this.config.reconnectInterval,
@@ -165,6 +161,8 @@ export class WebSocketService {
           session_id: this.sessionId
         }
       });
+      
+      console.log(`🔌 Socket.IO client created for default namespace, waiting for connection...`);
       
       this.setupEventHandlers();
     } catch (error) {
@@ -179,15 +177,14 @@ export class WebSocketService {
     if (!this.socket) return;
 
     this.socket.on('connect', () => {
-      console.log(`✅ Socket.IO connected to ${this.namespace} namespace`);
+      console.log(`✅ Socket.IO connected to default namespace (room-based)`);
       this.setState(WebSocketState.CONNECTED);
       
       // Emit appropriate subscription events based on the endpoint type
-      // Note: We determine the event type from the stored endpoint context
+      // Note: Individual services will send room subscription events as needed
       if (this.sessionId) {
-        // For now, we'll emit a generic subscribe event
-        // Individual services will send more specific subscription events as needed
-        console.log(`🔗 Connected to Socket.IO default namespace with session: ${this.sessionId}`);
+        // Services will join specific rooms via subscription events
+        console.log(`🔗 Connected to Socket.IO - ready to join rooms with session: ${this.sessionId}`);
       }
       
       // Resolve connection promise
@@ -199,7 +196,7 @@ export class WebSocketService {
     });
 
     this.socket.on('disconnect', (reason: string) => {
-      console.log(`🔌 Socket.IO disconnected from ${this.namespace}`, { reason });
+      console.log(`🔌 Socket.IO disconnected from default namespace`, { reason });
       
       // Socket.IO handles reconnection automatically based on the reason
       if (reason === 'io server disconnect') {
@@ -427,7 +424,6 @@ export class WebSocketService {
     this.messageHandlers.clear();
     this.errorHandlers = [];
     this.stateChangeHandlers = [];
-    this.namespace = '';
     this.sessionId = '';
     this.connectionPromise = null;
     this.connectionResolver = null;

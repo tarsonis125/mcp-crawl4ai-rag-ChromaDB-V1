@@ -23,13 +23,15 @@ interface ProjectCreationProgressCardProps {
   onComplete?: (data: ProjectCreationProgressData) => void;
   onError?: (error: string) => void;
   onRetry?: () => void;
+  connectionStatus?: 'connected' | 'connecting' | 'disconnected' | 'error';
 }
 
 export const ProjectCreationProgressCard: React.FC<ProjectCreationProgressCardProps> = ({
   progressData,
   onComplete,
   onError,
-  onRetry
+  onRetry,
+  connectionStatus = 'connected'
 }) => {
   const [showLogs, setShowLogs] = useState(false);
 
@@ -135,6 +137,22 @@ export const ProjectCreationProgressCard: React.FC<ProjectCreationProgressCardPr
         )}
       </div>
 
+      {/* Connection Status Indicator */}
+      {connectionStatus !== 'connected' && (
+        <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+          <div className="flex items-center gap-2 text-sm text-yellow-700 dark:text-yellow-400">
+            {connectionStatus === 'connecting' && <Loader2 className="w-4 h-4 animate-spin" />}
+            {connectionStatus === 'disconnected' && <AlertCircle className="w-4 h-4" />}
+            {connectionStatus === 'error' && <XCircle className="w-4 h-4" />}
+            <span>
+              {connectionStatus === 'connecting' && 'Connecting to progress stream...'}
+              {connectionStatus === 'disconnected' && 'Disconnected from progress stream'}
+              {connectionStatus === 'error' && 'Connection error - retrying...'}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Progress Bar */}
       <div className="mb-4">
         <div className="flex justify-between items-center mb-2">
@@ -174,10 +192,30 @@ export const ProjectCreationProgressCard: React.FC<ProjectCreationProgressCardPr
       )}
 
       {/* Error Information */}
-      {progressData.status === 'error' && progressData.error && (
+      {progressData.status === 'error' && (
         <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
           <div className="text-sm text-red-700 dark:text-red-400">
-            <strong>Error:</strong> {progressData.error}
+            <strong>Error:</strong> {progressData.error || 'Project creation failed'}
+            {progressData.progressId && (
+              <div className="mt-1 text-xs opacity-75">
+                Progress ID: {progressData.progressId}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Debug Information - Show when stuck on starting status */}
+      {progressData.status === 'starting' && progressData.percentage === 0 && connectionStatus === 'connected' && (
+        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+          <div className="text-sm text-blue-700 dark:text-blue-400">
+            <strong>Debug:</strong> Connected to progress stream but no updates received yet.
+            <div className="mt-1 text-xs opacity-75">
+              Progress ID: {progressData.progressId}
+            </div>
+            <div className="mt-1 text-xs opacity-75">
+              Check browser console for Socket.IO connection details.
+            </div>
           </div>
         </div>
       )}

@@ -534,17 +534,23 @@ export function ProjectPage({
         projectCreationProgressService.streamProgress(
           response.progress_id,
           (data: ProjectCreationProgressData) => {
-            console.log('📨 Project creation progress:', data);
+            console.log(`🎯 [PROJECT-PAGE] Progress callback triggered for ${response.progress_id}:`, data);
+            console.log(`🎯 [PROJECT-PAGE] Status: ${data.status}, Percentage: ${data.percentage}, Step: ${data.step}`);
             
             // Always update the temporary project's progress - this will trigger the card's useEffect
-            setProjects((prev) => prev.map(p => 
-              p.id === tempId 
-                ? { ...p, creationProgress: data }
-                : p
-            ));
+            setProjects((prev) => {
+              const updated = prev.map(p => 
+                p.id === tempId 
+                  ? { ...p, creationProgress: data }
+                  : p
+              );
+              console.log(`🎯 [PROJECT-PAGE] Updated projects state with progress data`);
+              return updated;
+            });
             
             // Handle error state
             if (data.status === 'error') {
+              console.log(`🎯 [PROJECT-PAGE] Error status detected, will remove project after delay`);
               // Remove failed project after delay
               setTimeout(() => {
                 setProjects((prev) => prev.filter(p => p.id !== tempId));
