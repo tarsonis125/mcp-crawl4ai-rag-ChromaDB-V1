@@ -58,7 +58,7 @@ graph TB
     end
     
     subgraph "Backend API"
-        ProjectAPI["projects_api.py<br/>528 lines"]
+        ProjectAPI["Projects API<br/>Service Layer"]
         TaskAPI["Task Management<br/>Endpoints"]
         MCPTools["MCP Project Tools<br/>5 consolidated tools"]
     end
@@ -104,74 +104,14 @@ graph TB
     Claude --> MCPTools
 ```
 
-## 📊 Database Schema
+## 📊 Data Structure
 
-The task management system uses two main tables in Supabase:
+Archon uses a simple but flexible data structure:
 
-### Projects Table
-
-```sql
-CREATE TABLE projects (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  title TEXT NOT NULL,
-  prd JSONB DEFAULT '{}'::jsonb,           -- Product Requirements Document
-  docs JSONB DEFAULT '[]'::jsonb,          -- Reference documentation array
-  features JSONB DEFAULT '[]'::jsonb,      -- Feature list with status
-  data JSONB DEFAULT '[]'::jsonb,          -- Sample datasets or resources
-  github_repo TEXT,                        -- GitHub repository URL
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
-#### Project Fields Explained
-
-| Field | Type | Purpose | Example |
-|-------|------|---------|----------|
-| `id` | UUID | Unique project identifier | `550e8400-e29b-41d4-a716-446655440000` |
-| `title` | TEXT | Project name | "API Documentation Overhaul" |
-| `prd` | JSONB | Product Requirements Document | `{"overview": "...", "goals": [...]}` |
-| `docs` | JSONB | Reference documentation array | `[{"id": "uuid", "title": "API Spec", "content": {...}}]` |
-| `features` | JSONB | Feature list with status | `[{"name": "Auth", "status": "done"}]` |
-| `data` | JSONB | Sample data or resources | `[{"name": "Test Data", "url": "..."}]` |
-| `github_repo` | TEXT | Repository URL | `https://github.com/user/repo` |
-
-### Tasks Table
-
-```sql
-CREATE TYPE task_status AS ENUM ('todo','doing','review','done');
-
-CREATE TABLE tasks (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  parent_task_id UUID REFERENCES tasks(id) ON DELETE CASCADE,
-  title TEXT NOT NULL,
-  description TEXT,
-  sources JSONB DEFAULT '[]'::jsonb,       -- Reference documentation
-  code_examples JSONB DEFAULT '[]'::jsonb, -- Code snippets and examples
-  status task_status DEFAULT 'todo',
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Indexes for performance
-CREATE INDEX idx_tasks_project ON tasks(project_id);
-CREATE INDEX idx_tasks_parent ON tasks(parent_task_id);
-CREATE INDEX idx_tasks_status ON tasks(status);
-```
-
-#### Task Fields Explained
-
-| Field | Type | Purpose | Example |
-|-------|------|---------|----------|
-| `id` | UUID | Unique task identifier | `660e8400-e29b-41d4-a716-446655440001` |
-| `project_id` | UUID | Parent project reference | Links to projects table |
-| `parent_task_id` | UUID | Parent task for subtasks | Creates task hierarchy |
-| `title` | TEXT | Task name | "Implement JWT authentication" |
-| `description` | TEXT | Detailed task description | "Add JWT-based auth to all API endpoints" |
-| `sources` | JSONB | Reference documentation | `[{"name": "JWT Guide", "url": "..."}]` |
-| `code_examples` | JSONB | Related code snippets | `[{"language": "python", "code": "..."}]` |
-| `status` | ENUM | Current task status | `todo`, `doing`, `review`, `done` |
+- **Projects**: Main containers with title, description, PRD, features, and GitHub integration
+- **Tasks**: Organized under projects with hierarchical support (parent/child relationships)  
+- **Documents**: JSONB-based document storage for PRDs, specs, and other project docs
+- **Status Tracking**: Simple workflow - Todo → Doing → Review → Done
 
 ## 🚀 Getting Started
 
@@ -629,209 +569,16 @@ When creating projects, Archon automatically generates a structured PRD:
 }
 ```
 
-### Project Document Management
+### Document Management
 
-Archon provides a sophisticated document management system that stores documents in a clean, structured format optimized for AI agent consumption while providing rich editing capabilities through the BlockNote editor.
+Projects can contain various types of documents:
 
-#### Document Architecture
+- **PRD (Product Requirements Document)**: Project overview, goals, and technical requirements
+- **Technical Specs**: Detailed implementation plans and architecture
+- **Feature Plans**: Feature breakdowns and user stories  
+- **Meeting Notes**: Team discussions and decisions
 
-Documents are stored in the project's `docs` JSONB field using a dual-format approach:
-
-1. **Clean MCP Format**: Structured content for AI agents
-2. **BlockNote Integration**: Rich editing with automatic format conversion
-
-#### Document Structure
-
-```json
-{
-  "docs": [
-    {
-      "id": "doc-uuid-1",
-      "document_type": "prd",
-      "title": "E-commerce Platform v1.0 - Product Requirements Document",
-      "content": {
-        "project_overview": {
-          "description": "A modern e-commerce platform built with React and Node.js, featuring a responsive UI, secure payment processing, and comprehensive product management.",
-          "target_completion": "Q3 2024"
-        },
-        "goals": [
-          "Enable seamless project creation with automatic document generation",
-          "Provide intuitive document editing with JSONB field management",
-          "Implement AI agents for feature planning from PRDs"
-        ],
-        "scope": {
-          "frontend": "React TypeScript with Tailwind CSS and shadcn/ui",
-          "backend": "FastAPI Python backend on port 8080 with Pydantic validation",
-          "database": "Supabase PostgreSQL with JSONB document storage"
-        },
-        "architecture": {
-          "frontend": [
-            "React + TypeScript",
-            "Redux for state management",
-            "React Router for navigation",
-            "Tailwind CSS for styling"
-          ],
-          "backend": [
-            "Node.js + Express",
-            "MongoDB for database",
-            "JWT for authentication",
-            "RESTful API architecture"
-          ]
-        },
-        "tech_packages": {
-          "frontend_dependencies": [
-            "react ^18.2.0",
-            "react-dom ^18.2.0",
-            "tailwindcss ^3.2.4"
-          ],
-          "backend_dependencies": [
-            "express ^4.18.2",
-            "mongoose ^6.9.0",
-            "jsonwebtoken ^9.0.0"
-          ]
-        },
-        "ui_ux_requirements": {
-          "color_palette": [
-            "#1a1a2e",
-            "#16213e", 
-            "#0f3460",
-            "#e94560"
-          ],
-          "typography": {
-            "headings": "Poppins (600, 700)",
-            "body": "Inter (400, 500)"
-          }
-        },
-        "coding_standards": [
-          "Follow Airbnb JavaScript Style Guide",
-          "Use functional components with hooks",
-          "Implement strict TypeScript typing"
-        ]
-      },
-      "status": "approved",
-      "tags": ["prd", "requirements", "e-commerce"],
-      "version": "1.0",
-      "author": "System",
-      "created_at": "2024-01-15T10:00:00Z",
-      "updated_at": "2024-01-15T10:00:00Z"
-    }
-  ]
-}
-```
-
-#### Document Format Guidelines for AI Agents
-
-<Admonition type="warning" title="MCP Document Format">
-  When creating documents via MCP tools, always use the clean structured format below. The UI will automatically convert this to editable blocks.
-</Admonition>
-
-**Required Format for `content` field**:
-
-```json
-{
-  "content": {
-    "project_overview": {
-      "description": "Clear project description",
-      "target_completion": "Timeline or milestone"
-    },
-    "goals": [
-      "Specific goal 1",
-      "Specific goal 2", 
-      "Specific goal 3"
-    ],
-    "scope": {
-      "section_name": "Description or array of items",
-      "in_scope": ["Feature 1", "Feature 2"],
-      "out_of_scope": ["Excluded feature 1"]
-    },
-    "architecture": {
-      "frontend": ["Technology 1", "Technology 2"],
-      "backend": ["Technology 1", "Technology 2"],
-      "database": ["Database choice", "Schema approach"]
-    },
-    "tech_packages": {
-      "frontend_dependencies": [
-        "package-name ^version",
-        "another-package ^version"
-      ],
-      "backend_dependencies": [
-        "package-name ^version"
-      ]
-    },
-    "ui_ux_requirements": {
-      "color_palette": ["#hex1", "#hex2", "#hex3"],
-      "typography": {
-        "headings": "Font family and weights",
-        "body": "Font family and weights"
-      },
-      "ui_components": [
-        "Component library choice",
-        "Custom component requirements"
-      ]
-    },
-    "coding_standards": [
-      "Style guide to follow",
-      "Architecture patterns",
-      "Testing requirements"
-    ]
-  }
-}
-```
-
-#### Document Types
-
-| Type | Purpose | Key Sections |
-|------|---------|--------------|
-| `prd` | Product Requirements Document | `project_overview`, `goals`, `scope`, `architecture` |
-| `technical_spec` | Technical Specification | `architecture`, `tech_packages`, `coding_standards` |
-| `feature_plan` | Feature Planning Document | `goals`, `scope`, `ui_ux_requirements` |
-| `meeting_notes` | Meeting Documentation | `attendees`, `agenda`, `action_items` |
-| `api_docs` | API Documentation | `endpoints`, `authentication`, `examples` |
-
-#### Template System
-
-The UI provides predefined templates that automatically create documents in the correct MCP format:
-
-```javascript
-// Example template structure (internal)
-const PRD_TEMPLATE = {
-  name: 'PRD Template',
-  icon: '📋',
-  generates: {
-    content: {
-      project_overview: { description: "Describe the project overview here..." },
-      goals: ["Goal 1", "Goal 2", "Goal 3"],
-      success_criteria: ["Criteria 1", "Criteria 2"],
-      requirements: ["Requirement 1", "Requirement 2"]
-    }
-  }
-}
-```
-
-#### BlockNote Editor Integration
-
-The BlockNote editor automatically:
-
-1. **Converts MCP format to editable blocks** when loading documents
-2. **Maintains clean MCP format** when saving changes
-3. **Provides rich editing** with headings, lists, and formatting
-4. **Auto-saves changes** with debounced updates
-5. **Supports dark/light themes** matching the application
-
-#### Document Creation Workflow
-
-**Via UI Templates**:
-1. Click "New Doc" → Choose template
-2. Template creates document in clean MCP format
-3. BlockNote editor loads and converts to editable blocks
-4. User edits in rich editor
-5. Changes auto-save in MCP format
-
-**Via MCP Tools**:
-1. AI agent calls `add_project_document` with structured content
-2. Document stored in clean MCP format
-3. UI automatically displays in BlockNote editor when selected
-4. User can edit and changes maintain MCP structure
+Documents are stored in a structured format that works well with AI agents while providing rich editing through the BlockNote editor.
 
 ### Feature Tracking
 
@@ -889,55 +636,14 @@ The frontend receives real-time updates via Socket.IO connections when:
 - Project status changes
 - Documents are added or modified
 
-## 📈 Analytics and Reporting
+## 📈 Progress Tracking
 
-### Project Progress Tracking
+Archon provides built-in progress tracking:
 
-```sql
--- Get project completion percentage
-SELECT 
-  p.title,
-  COUNT(t.id) as total_tasks,
-  COUNT(CASE WHEN t.status = 'done' THEN 1 END) as completed_tasks,
-  ROUND(
-    (COUNT(CASE WHEN t.status = 'done' THEN 1 END)::float / COUNT(t.id)) * 100, 
-    2
-  ) as completion_percentage
-FROM projects p
-LEFT JOIN tasks t ON p.id = t.project_id
-GROUP BY p.id, p.title
-ORDER BY completion_percentage DESC;
-```
-
-### Task Velocity Analysis
-
-```sql
--- Tasks completed per week
-SELECT 
-  DATE_TRUNC('week', updated_at) as week,
-  COUNT(*) as tasks_completed
-FROM tasks 
-WHERE status = 'done'
-  AND updated_at >= NOW() - INTERVAL '8 weeks'
-GROUP BY week
-ORDER BY week;
-```
-
-### Review Tasks Report
-
-```sql
--- Currently review tasks with duration
-SELECT 
-  t.title,
-  p.title as project,
-  t.description,
-  t.updated_at,
-  NOW() - t.updated_at as review_duration
-FROM tasks t
-JOIN projects p ON t.project_id = p.id
-WHERE t.status = 'review'
-ORDER BY review_duration DESC;
-```
+- **Project completion percentage** based on completed tasks
+- **Task velocity** showing development pace over time  
+- **Status distribution** showing work distribution across todo/doing/review/done
+- **Real-time updates** via Socket.IO when AI agents or users update tasks
 
 ## 🔍 Best Practices
 
@@ -1065,59 +771,11 @@ Would you like me to start with any specific task?
 
 ### GitHub Integration
 
-While not directly implemented yet, the system is designed for GitHub integration:
+Projects can be linked to GitHub repositories for context. Future versions will include bidirectional sync with GitHub issues and pull requests.
 
-```python
-# Future GitHub integration example
-class GitHubTaskSync:
-    async def sync_issues_to_tasks(self, project_id: str) -> List[Dict]:
-        """Sync GitHub issues to Archon tasks"""
-        issues = self.repo.get_issues(state='open')
-        created_tasks = []
-        
-        for issue in issues:
-            # Check if task already exists
-            existing_task = await self.find_task_by_github_issue(issue.number)
-            
-            if not existing_task:
-                task_data = {
-                    "project_id": project_id,
-                    "title": issue.title,
-                    "description": issue.body or "",
-                    "sources": [
-                        {
-                            "name": f"GitHub Issue #{issue.number}",
-                            "url": issue.html_url,
-                            "description": "Original GitHub issue"
-                        }
-                    ],
-                    "status": "todo"
-                }
-                
-                # Create task via MCP tool
-                task = await self.create_task(task_data)
-                created_tasks.append(task)
-        
-        return created_tasks
-```
+## 🔮 What's Next
 
-## 🔮 Future Enhancements
-
-### Planned Features
-
-- **Time Tracking**: Built-in time tracking for tasks
-- **Task Templates**: Reusable task templates for common workflows
-- **Advanced Dependencies**: Complex dependency graphs with visualization
-- **Team Collaboration**: Multi-user task assignment and collaboration
-- **Reporting Dashboard**: Advanced analytics and progress reporting
-- **GitHub Integration**: Bidirectional sync with GitHub issues
-
-### Experimental Features
-
-- **AI Task Estimation**: Automatic effort estimation based on historical data
-- **Smart Task Suggestions**: AI-powered task recommendations based on code changes
-- **Automated Testing Integration**: Automatic task creation from failing tests
-- **Code Change Tracking**: Link tasks to specific code changes and commits
+Upcoming features include time tracking, task templates, team collaboration, and enhanced GitHub integration.
 
 ---
 

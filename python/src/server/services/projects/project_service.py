@@ -217,3 +217,45 @@ class ProjectService:
         except Exception as e:
             logger.error(f"Error getting project features: {e}")
             return False, {"error": f"Error getting project features: {str(e)}"}
+    
+    def update_project(self, project_id: str, update_fields: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+        """
+        Update a project with specified fields.
+        
+        Returns:
+            Tuple of (success, result_dict)
+        """
+        try:
+            # Build update data
+            update_data = {
+                "updated_at": datetime.now().isoformat()
+            }
+            
+            # Add allowed fields
+            allowed_fields = ["title", "description", "github_repo", "prd", "docs", "features", 
+                            "data", "technical_sources", "business_sources", "pinned", "color", "icon"]
+            
+            for field in allowed_fields:
+                if field in update_fields:
+                    update_data[field] = update_fields[field]
+            
+            # Handle pinning logic - only one project can be pinned at a time
+            if update_fields.get("pinned") is True:
+                # Unpin any other pinned projects
+                self.supabase_client.table("projects").update({"pinned": False}).neq("id", project_id).eq("pinned", True).execute()
+            
+            # Update the project
+            response = self.supabase_client.table("projects").update(update_data).eq("id", project_id).execute()
+            
+            if response.data:
+                project = response.data[0]
+                return True, {
+                    "project": project,
+                    "message": "Project updated successfully"
+                }
+            else:
+                return False, {"error": f"Project with ID {project_id} not found"}
+                
+        except Exception as e:
+            logger.error(f"Error updating project: {e}")
+            return False, {"error": f"Error updating project: {str(e)}"}

@@ -298,18 +298,8 @@ if not results:
 - **Search Latency**: Time from query to results
 - **Cache Hit Rate**: Percentage served from cache
 
-### Monitoring Example
-```python
-with logfire.span("rag_agent_search") as span:
-    span.set_attribute("original_query", query)
-    span.set_attribute("enhanced_query", enhanced_query)
-    span.set_attribute("sources_searched", len(sources))
-    
-    results = await perform_search(enhanced_query)
-    
-    span.set_attribute("results_found", len(results))
-    span.set_attribute("top_score", results[0].score if results else 0)
-```
+### Search Monitoring
+The RAG Agent automatically tracks search performance including original query, enhanced query, and sources searched for each operation.
 
 ## 🎯 Best Practices
 

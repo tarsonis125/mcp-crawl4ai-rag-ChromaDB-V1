@@ -142,14 +142,17 @@ export function ProjectPage({
     // Try WebSocket connection first
     const connectWebSocket = () => {
       console.log('📡 Attempting WebSocket connection for real-time project updates');
-      projectListWebSocket.connect('/api/projects/stream');
+      projectListWebSocket.connect('/').then(() => {
+        // Subscribe to project list updates after connection
+        projectListWebSocket.send({ type: 'subscribe_projects' });
+      });
       
       const handleProjectUpdate = (data: any) => {
         if (!isComponentMounted) return;
         
         if (data.type === 'projects_update') {
           console.log('✅ WebSocket: Received projects update');
-          updateProjectsState(data.data.projects);
+          updateProjectsState(data.projects);
           wsConnected = true;
         }
       };
@@ -238,33 +241,42 @@ export function ProjectPage({
     
     const connectWebSocket = async () => {
       try {
-        await taskUpdateWebSocket.connect(selectedProject.id, {
-          onTaskCreated: () => {
-            console.log('✅ Task created - refreshing counts for all projects');
-            const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
-            loadTaskCountsForAllProjects(projectIds);
-          },
-          onTaskUpdated: () => {
-            console.log('✅ Task updated - refreshing counts for all projects');
-            const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
-            loadTaskCountsForAllProjects(projectIds);
-          },
-          onTaskDeleted: () => {
-            console.log('✅ Task deleted - refreshing counts for all projects');
-            const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
-            loadTaskCountsForAllProjects(projectIds);
-          },
-          onTaskArchived: () => {
-            console.log('✅ Task archived - refreshing counts for all projects');
-            const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
-            loadTaskCountsForAllProjects(projectIds);
-          },
-          onTasksChange: () => {
-            console.log('✅ Tasks changed via MCP - refreshing counts for all projects');
-            const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
-            loadTaskCountsForAllProjects(projectIds);
-          }
-        });
+        await taskUpdateWebSocket.connect('/');
+        
+        // Join the project room after connection
+        taskUpdateWebSocket.send({ type: 'join_project', project_id: selectedProject.id });
+        
+        // Set up event handlers for task updates
+        const handleTaskCreated = () => {
+          console.log('✅ Task created - refreshing counts for all projects');
+          const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
+          loadTaskCountsForAllProjects(projectIds);
+        };
+        
+        const handleTaskUpdated = () => {
+          console.log('✅ Task updated - refreshing counts for all projects');
+          const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
+          loadTaskCountsForAllProjects(projectIds);
+        };
+        
+        const handleTaskDeleted = () => {
+          console.log('✅ Task deleted - refreshing counts for all projects');
+          const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
+          loadTaskCountsForAllProjects(projectIds);
+        };
+        
+        const handleTaskArchived = () => {
+          console.log('✅ Task archived - refreshing counts for all projects');
+          const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
+          loadTaskCountsForAllProjects(projectIds);
+        };
+        
+        // Add event handlers
+        taskUpdateWebSocket.addMessageHandler('task_created', handleTaskCreated);
+        taskUpdateWebSocket.addMessageHandler('task_updated', handleTaskUpdated);
+        taskUpdateWebSocket.addMessageHandler('task_deleted', handleTaskDeleted);
+        taskUpdateWebSocket.addMessageHandler('task_archived', handleTaskArchived);
+        
       } catch (error) {
         console.error('Failed to connect task WebSocket:', error);
       }

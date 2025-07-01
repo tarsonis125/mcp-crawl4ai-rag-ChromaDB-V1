@@ -25,12 +25,12 @@ Archon provides a comprehensive REST API built with FastAPI for knowledge manage
 
 Archon uses a modular FastAPI architecture with separate routers for different functionalities:
 
-- **`knowledge_api.py`**: Knowledge items, web crawling, and document management (891 lines)
-- **`mcp_api.py`**: MCP server control and Socket.IO communications (705 lines)
-- **`settings_api.py`**: Application settings and credential management (345 lines)
-- **`projects_api.py`**: Project and task management (528 lines)
-- **`agent_chat_api.py`**: AI agent chat interface (516 lines)
-- **`tests_api.py`**: Testing endpoints (525 lines)
+- **`knowledge_api.py`**: Knowledge items, web crawling, and document management 
+- **`mcp_api.py`**: MCP server control and Socket.IO communications 
+- **`settings_api.py`**: Application settings and credential management 
+- **`projects_api.py`**: Project and task management (refactored with service layer)
+- **`agent_chat_api.py`**: AI agent chat interface 
+- **`tests_api.py`**: Testing endpoints with real-time streaming
 
 All routers are mounted with the `/api` prefix and provide comprehensive OpenAPI documentation.
 
@@ -768,13 +768,20 @@ Projects in Archon use JSONB fields for flexible document storage:
 - `docs`: Array of project documents
 - `features`: Array of feature specifications
 - `data`: Custom project data
+
+**Service Layer Architecture:**
+- **ProjectService**: Core CRUD operations for projects
+- **TaskService**: Task management with archiving and hierarchical structure
+- **ProjectCreationService**: AI-assisted project creation with GitHub integration
+- **ProgressService**: Real-time progress tracking for long-running operations
+- **SourceLinkingService**: Manages relationships between projects and knowledge sources
 </Admonition>
 
 ### List Projects
 
 **GET** `/api/projects`
 
-Retrieve all projects.
+Retrieve all projects with associated knowledge sources.
 
 #### Query Parameters
 
@@ -783,59 +790,87 @@ None - returns all projects.
 #### Example Response
 
 ```json
-{
-  "success": true,
-  "projects": [
-    {
-      "id": "550e8400-e29b-41d4-a716-446655440000",
-      "title": "Archon Documentation",
-      "github_repo": "https://github.com/user/archon",
-      "created_at": "2024-01-15T10:00:00Z",
-      "updated_at": "2024-01-15T10:45:00Z"
-    }
-  ],
-  "total_count": 1
-}
+[
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "title": "Archon Documentation",
+    "description": "Comprehensive API documentation project",
+    "github_repo": "https://github.com/user/archon",
+    "prd": {
+      "overview": "Documentation project",
+      "goals": ["Complete API docs", "Add examples"]
+    },
+    "features": [],
+    "docs": [],
+    "technical_sources": [
+      {
+        "source_id": "fastapi.tiangolo.com",
+        "title": "FastAPI Documentation"
+      }
+    ],
+    "business_sources": [],
+    "pinned": false,
+    "created_at": "2024-01-15T10:00:00Z",
+    "updated_at": "2024-01-15T10:45:00Z"
+  }
+]
 ```
 
 ### Create Project
 
 **POST** `/api/projects`
 
-Create a new project with optional PRD and GitHub repository.
+Create a new project with AI-assisted setup and optional GitHub repository processing. Returns immediately with a progress ID for real-time updates via Socket.IO.
 
 #### Request Body
 
 ```json
 {
   "title": "New Documentation Project",
+  "description": "A comprehensive documentation project",
+  "github_repo": "https://github.com/user/project",
+  "color": "blue",
+  "icon": "Briefcase",
   "prd": {
     "overview": "Project overview",
     "goals": ["Goal 1", "Goal 2"],
     "requirements": ["Requirement 1", "Requirement 2"]
   },
-  "github_repo": "https://github.com/user/project"
+  "features": [],
+  "technical_sources": ["fastapi.tiangolo.com"],
+  "business_sources": [],
+  "pinned": false
 }
 ```
+
+#### Request Schema
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `title` | string | ✅ | Project title |
+| `description` | string | ❌ | Project description |
+| `github_repo` | string | ❌ | GitHub repository URL for processing |
+| `color` | string | ❌ | Project color (default: 'blue') |
+| `icon` | string | ❌ | Project icon (default: 'Briefcase') |
+| `prd` | object | ❌ | Product Requirements Document |
+| `features` | array | ❌ | Feature specifications |
+| `technical_sources` | array | ❌ | Technical knowledge source IDs |
+| `business_sources` | array | ❌ | Business knowledge source IDs |
+| `pinned` | boolean | ❌ | Pin to top of project list |
 
 #### Example Response
 
 ```json
 {
-  "success": true,
-  "project": {
-    "id": "550e8400-e29b-41d4-a716-446655440000",
-    "title": "New Documentation Project",
-    "github_repo": "https://github.com/user/project",
-    "created_at": "2024-01-15T10:00:00Z"
-  },
-  "default_document": {
-    "id": "doc-uuid-here",
-    "title": "New Documentation Project - Requirements",
-    "document_type": "prd"
-  }
+  "progress_id": "a1b2c3d4e5f6789012345678",
+  "status": "started",
+  "message": "Project creation started. Connect to Socket.IO for progress updates."
 }
 ```
+
+<Admonition type="tip" title="Real-time Progress">
+Connect to Socket.IO to receive real-time progress updates using the returned `progress_id`. The project creation process includes GitHub repository analysis, feature generation, and task creation.
+</Admonition>
 
 ### Get Project Details
 
@@ -974,67 +1009,80 @@ Projects API health check.
 }
 ```
 
-### Socket.IO Project Creation Progress
+### Socket.IO Real-time Updates
 
-**Socket.IO Namespace** `/project`
+**Socket.IO Connection** (Root namespace `/`)
 
-Real-time progress updates for project creation operations.
+<Admonition type="info" title="Simplified 2025 Socket.IO Pattern">
+Archon uses the simplified Socket.IO pattern with direct event handlers on the root namespace. No complex namespaces or classes are used for better performance and maintainability.
+</Admonition>
 
 #### Connection Example
 
 ```javascript
 import { io } from 'socket.io-client';
 
-// Connect to project namespace
-const socket = io('/project');
+// Connect to root namespace 
+const socket = io('http://localhost:8080');
 
-// Subscribe to progress
-const progressId = 'your-progress-id';
-socket.emit('subscribe_progress', { progress_id: progressId });
-
-// Handle progress updates
-socket.on('project_progress', (data) => {
-  console.log(`Progress: ${data.percentage}% - ${data.step}`);
-});
-
-socket.on('project_completed', (data) => {
-  console.log('Project created:', data.project_id);
+socket.on('connect', () => {
+  console.log('Connected to Archon Socket.IO server');
+  
+  // Join project room for updates
+  socket.emit('join_project', { project_id: 'your-project-id' });
+  
+  // Join progress room for operation tracking
+  socket.emit('join_progress', { progress_id: 'your-progress-id' });
 });
 ```
 
-### Socket.IO Task Updates
-
-**Socket.IO Namespace** `/tasks`
-
-Real-time task updates for projects.
-
-#### Connection Example
+#### Progress Updates (Project Creation)
 
 ```javascript
-import { io } from 'socket.io-client';
+// Listen for progress updates during project creation
+socket.on('progress_update', (data) => {
+  console.log(`Progress: ${data.percentage}% - ${data.status}`);
+  console.log(`Message: ${data.message}`);
+});
 
-// Connect to tasks namespace
-const socket = io('/tasks');
+socket.on('progress_complete', (data) => {
+  console.log('Operation completed:', data.result);
+});
 
-// Handle task events
-socket.on('task_created', (task) => {
-  console.log('New task:', task.title);
+socket.on('progress_error', (data) => {
+  console.error('Operation failed:', data.error);
+});
+```
+
+#### Project and Task Updates
+
+```javascript
+// Project-level updates (broadcasted to project room)
+socket.on('project_updated', (project) => {
+  console.log('Project updated:', project.title);
 });
 
 socket.on('task_updated', (task) => {
-  console.log('Task updated:', task.id);
+  console.log('Task updated:', task.title, 'Status:', task.status);
 });
 
-socket.on('task_status_changed', (data) => {
-  console.log(`Task ${data.task_id}: ${data.old_status} → ${data.new_status}`);
+socket.on('projects_list_updated', () => {
+  console.log('Projects list has been updated, refresh your view');
 });
 ```
 
-### Socket.IO Projects Stream
+#### Available Events
 
-**Socket.IO Namespace** `/project`
-
-Real-time updates for all projects.
+| Event | Direction | Description |
+|-------|-----------|-------------|
+| `join_project` | Client → Server | Join project room for updates |
+| `join_progress` | Client → Server | Join progress tracking room |
+| `progress_update` | Server → Client | Progress percentage and status |
+| `progress_complete` | Server → Client | Operation completed successfully |
+| `progress_error` | Server → Client | Operation failed with error |
+| `project_updated` | Server → Client | Project data changed |
+| `task_updated` | Server → Client | Task data changed |
+| `projects_list_updated` | Server → Client | Projects list changed |
 
 ## 📝 Task Management API
 
@@ -1943,22 +1991,27 @@ class ArchonClient {
     return response.json();
   }
 
-  // WebSocket connection for real-time updates
+  // Socket.IO connection for real-time updates
   connectToProgress(progressId, onMessage) {
-    const ws = new WebSocket(`ws://localhost:8080/api/crawl-progress/${progressId}`);
+    import { io } from 'socket.io-client';
+    const socket = io('/crawl');
     
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === 'crawl_progress' || data.type === 'crawl_completed') {
-        onMessage(data.data);
-      }
+    // Subscribe to progress updates
+    socket.emit('subscribe', { progress_id: progressId });
+    
+    socket.on('progress_update', (data) => {
+      onMessage(data);
+    });
+    
+    socket.on('crawl_completed', (data) => {
+      onMessage(data);
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('Socket.IO error:', error);
     };
 
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
-
-    return ws;
+    return socket;
   }
 }
 

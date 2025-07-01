@@ -1,655 +1,152 @@
 ---
-title: Server Monitoring with Logfire
+title: Server Monitoring
 sidebar_position: 6
 ---
 
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
 import Admonition from '@theme/Admonition';
 
-# 🔥 Server Monitoring & Real-Time Debugging with Logfire
+# 📊 Server Monitoring & Health
 
 <div className="hero hero--primary">
   <div className="container">
     <h2 className="hero__subtitle">
-      **Logfire by Pydantic**: Real-time debugging superpowers for your AI knowledge engine
+      **Monitor your Archon services**: Health checks, performance metrics, and troubleshooting tools
     </h2>
   </div>
 </div>
 
-<Admonition type="tip" title="🎯 Why Logfire?">
-  Logfire by Pydantic provides **real-time debugging superpowers** for Archon. See every RAG query, MCP tool call, and Socket.IO connection as it happens - perfect for debugging complex AI workflows across all microservices!
+Archon provides built-in monitoring and health checking across all services to help you maintain optimal performance and quickly troubleshoot issues.
+
+## 🏥 Health Checks
+
+### API Health Endpoints
+
+Each service provides health check endpoints:
+
+```bash
+# Server API health
+curl http://localhost:8080/api/projects/health
+curl http://localhost:8080/api/settings/health
+
+# MCP Server health  
+curl http://localhost:8051/health
+
+# Database health
+curl http://localhost:8080/api/database/metrics
+```
+
+### Service Status
+
+Monitor the status of all Archon services:
+
+| Service | Port | Health Endpoint | Purpose |
+|---------|------|----------------|---------|
+| **Server** | 8080 | `/api/projects/health` | Main API status |
+| **MCP** | 8051 | `/health` | MCP server status |
+| **Frontend** | 3737 | Direct access | Web UI availability |
+| **Docs** | 3838 | Direct access | Documentation site |
+
+## 📈 Performance Monitoring
+
+### Key Metrics
+
+Archon tracks important performance metrics:
+
+- **RAG Query Performance**: Average search times and accuracy
+- **Database Performance**: Connection pool health and query times
+- **Memory Usage**: Adaptive processing based on available resources
+- **API Response Times**: Endpoint performance across all services
+
+### Real-Time Updates
+
+Socket.IO connections provide real-time monitoring:
+
+- **Progress Tracking**: Live updates during document processing
+- **Connection Health**: Automatic reconnection handling
+- **Service Communication**: Inter-service request monitoring
+
+## 🔧 Troubleshooting
+
+<Admonition type="tip" title="Quick Debugging">
+Use the health endpoints and browser developer tools to quickly diagnose issues with your Archon installation.
 </Admonition>
 
-Archon implements comprehensive monitoring and observability through **[Logfire](https://logfire.pydantic.dev/)** by Pydantic. This provides real-time debugging, performance monitoring, and detailed request tracing across all microservices.
+### Common Issues
 
-## 🎯 Key Monitoring Features
+| Symptom | Likely Cause | Solution |
+|---------|--------------|----------|
+| Slow search responses | High memory usage | System automatically adjusts batch sizes |
+| Connection errors | Service startup order | Restart services with `docker-compose restart` |
+| Missing search results | Database connection | Check Supabase configuration |
+| UI not loading | Frontend build issues | Check frontend service logs |
 
-<div className="row">
-  <div className="col col--6">
-    <div className="card">
-      <div className="card__header">
-        <h4>🔍 **Real-Time Debugging**</h4>
-      </div>
-      <div className="card__body">
-        <ul>
-          <li>**RAG Query Debugging**: Monitor embedding generation, vector searches, result ranking</li>
-          <li>**MCP Server Performance**: Track tool execution times and connection health</li>
-          <li>**Socket.IO Monitoring**: Real-time progress tracking with automatic reconnection</li>
-          <li>**Cross-Service Tracing**: Follow requests across API, MCP, and Agents services</li>
-        </ul>
-      </div>
-    </div>
-  </div>
-  <div className="col col--6">
-    <div className="card">
-      <div className="card__header">
-        <h4>📊 **Performance Analytics**</h4>
-      </div>
-      <div className="card__body">
-        <ul>
-          <li>**FastAPI Request Tracing**: Complete request lifecycle with timing</li>
-          <li>**AI Agent Interactions**: Monitor all MCP tool calls from Cursor, Windsurf, Claude</li>
-          <li>**Performance Metrics**: Database query times, embedding generation, API response times</li>
-          <li>**Service Health**: Monitor each microservice independently</li>
-        </ul>
-      </div>
-    </div>
-  </div>
-</div>
+### Docker Logs
 
-## ⚙️ Logfire Configuration
+Monitor service logs:
 
-<Tabs>
-<TabItem value="env" label="🔧 Environment Setup">
+```bash
+# All services
+docker-compose logs -f
 
-```bash title=".env"
-# Required: Logfire authentication token
-LOGFIRE_TOKEN=your_logfire_token_here
-
-# Optional: Service identification  
-LOGFIRE_SERVICE_NAME=archon-mcp-server
-LOGFIRE_PROJECT_NAME=archon-knowledge-engine
+# Specific service
+docker-compose logs -f archon-server
+docker-compose logs -f archon-mcp
 ```
 
-</TabItem>
-<TabItem value="config" label="🐍 Python Configuration">
+### Database Monitoring
 
-```python title="src/config/logfire_config.py"
-import logfire
-import os
-from typing import Optional
+Check database health and metrics:
 
-def setup_logfire(service_name: str = "archon-mcp-server") -> None:
-    """Configure Logfire with proper service identification and settings"""
-    
-    token = os.getenv("LOGFIRE_TOKEN")
-    if not token:
-        print("⚠️  LOGFIRE_TOKEN not set - monitoring disabled")
-        return
-    
-    try:
-        # Configure Logfire with service identification
-        logfire.configure(
-            service_name=service_name,
-            token=token,
-            project_name=os.getenv("LOGFIRE_PROJECT_NAME", "archon"),
-            send_to_logfire=True,
-            console=False,  # Disable console output to avoid conflicts
-        )
-        
-        print(f"🔥 Logfire monitoring active for {service_name}")
-        print(f"📊 Dashboard: https://logfire-us.pydantic.dev/{service_name}")
-        
-    except Exception as e:
-        print(f"❌ Logfire setup failed: {e}")
-        # Continue without monitoring rather than crash
+```bash
+# Database metrics
+curl http://localhost:8080/api/database/metrics
 
-# Global logfire instance for application-wide usage
-logfire_logger = logfire
+# Returns:
+# - Table record counts
+# - Connection status
+# - Performance indicators
 ```
 
-</TabItem>
-</Tabs>
+## 🛠️ Configuration
 
-## 📊 Real-Time RAG Query Monitoring
+### Environment Monitoring
 
-<Admonition type="info" title="🔍 Complete Request Tracing">
-  Every RAG query is traced from start to finish with detailed performance metrics and error handling.
-</Admonition>
+Monitor key environment variables:
 
-Monitor every aspect of RAG operations with detailed spans and metrics:
+```bash
+# Database connectivity
+SUPABASE_URL=your_supabase_url
+SUPABASE_SERVICE_KEY=your_service_key
 
-<Tabs>
-<TabItem value="rag-monitoring" label="🧠 RAG Monitoring">
+# AI services
+OPENAI_API_KEY=your_openai_key
 
-```python title="rag_module.py"
-import logfire
-from src.config.logfire_config import logfire_logger
+# Development & Troubleshooting (Optional)
+LOGFIRE_TOKEN=your_logfire_token
 
-async def perform_rag_query(query: str, source: Optional[str] = None) -> dict:
-    """RAG query with comprehensive Logfire monitoring"""
-    
-    with logfire_logger.span("rag_query", query=query, source=source) as span:
-        try:
-            # 1. Query preprocessing with monitoring
-            with logfire_logger.span("preprocess_query") as preprocess_span:
-                processed_query = preprocess_query_text(query)
-                preprocess_span.set_attribute("processed_length", len(processed_query))
-            
-            # 2. Embedding generation with timing
-            with logfire_logger.span("generate_embeddings") as embedding_span:
-                embeddings = await generate_embeddings(processed_query)
-                embedding_span.set_attribute("embedding_dimension", len(embeddings))
-                embedding_span.set_attribute("model", "text-embedding-3-small")
-            
-            # 3. Vector search with performance metrics
-            with logfire_logger.span("vector_search") as search_span:
-                search_results = await search_documents(
-                    query_embedding=embeddings,
-                    filter_metadata={"source": source} if source else None,
-                    match_count=5
-                )
-                search_span.set_attribute("results_found", len(search_results))
-                search_span.set_attribute("search_type", "vector_similarity")
-            
-            # 4. Result processing and ranking
-            with logfire_logger.span("process_results") as process_span:
-                processed_results = process_search_results(search_results)
-                process_span.set_attribute("final_results", len(processed_results))
-            
-            span.set_attribute("success", True)
-            span.set_attribute("total_results", len(processed_results))
-            
-            return {
-                "results": processed_results,
-                "query": query,
-                "total_results": len(processed_results)
-            }
-            
-        except Exception as e:
-            span.set_attribute("success", False)
-            span.set_attribute("error", str(e))
-            logfire_logger.error(f"RAG query failed: {e}", query=query, source=source)
-            raise
+# Service communication
+API_BASE_URL=http://archon-server:8080
 ```
 
-</TabItem>
-<TabItem value="mcp-monitoring" label="🔌 MCP Server Monitoring">
+### Advanced Debugging with Logfire
 
-```python title="mcp_server.py"
-import logfire
-from src.config.logfire_config import setup_logfire, logfire_logger
+For detailed request tracing and performance debugging, you can optionally enable [Logfire](https://logfire.pydantic.dev/):
 
-class MCPServer:
-    def __init__(self):
-        setup_logfire("archon-mcp-server")
-        self.app = Server("archon-knowledge-engine")
-        self.setup_tools()
-    
-    def setup_tools(self):
-        @self.app.call_tool()
-        async def search_knowledge(query: str, source: Optional[str] = None) -> str:
-            """Search knowledge base with Logfire monitoring"""
-            
-            with logfire_logger.span("mcp_tool_search_knowledge") as span:
-                span.set_attribute("tool", "search_knowledge")
-                span.set_attribute("query", query)
-                span.set_attribute("source", source or "all")
-                
-                try:
-                    # Call the actual RAG function (already monitored)
-                    results = await perform_rag_query(query, source)
-                    
-                    span.set_attribute("success", True)
-                    span.set_attribute("results_count", len(results.get("results", [])))
-                    
-                    return json.dumps(results)
-                    
-                except Exception as e:
-                    span.set_attribute("success", False)
-                    span.set_attribute("error", str(e))
-                    logfire_logger.error(f"MCP search_knowledge failed: {e}")
-                    raise
-        
-        @self.app.call_tool()
-        async def create_task(project_id: str, title: str, description: str) -> str:
-            """Create task with monitoring"""
-            
-            with logfire_logger.span("mcp_tool_create_task") as span:
-                span.set_attribute("tool", "create_task")
-                span.set_attribute("project_id", project_id)
-                span.set_attribute("title", title)
-                
-                # Implementation with monitoring...
-                return json.dumps({"task_id": "created"})
-```
+1. **Get a Logfire token** from [logfire.pydantic.dev](https://logfire.pydantic.dev/)
+2. **Add to your .env file**: `LOGFIRE_TOKEN=your_logfire_token`
+3. **View traces** in the Logfire dashboard for detailed request flows
 
-</TabItem>
-</Tabs>
+This provides real-time debugging for RAG queries, MCP tool calls, and API performance analysis.
 
-## 📡 Socket.IO Real-time Monitoring
+### Resource Management
 
-Monitor real-time Socket.IO connections and progress updates with improved reliability:
+Archon automatically manages resources:
 
-```python title="socketio_progress_manager.py"
-import logfire
-from src.config.logfire_config import logfire_logger
-from src.socketio_app import get_socketio_instance, NAMESPACE_CRAWL
-
-class CrawlProgressManagerSocketIO:
-    def __init__(self):
-        self.sio = get_socketio_instance()
-        self._setup_handlers()
-    
-    @self.sio.on('connect', namespace=NAMESPACE_CRAWL)
-    async def on_connect(self, sid, environ):
-        """Socket.IO connection with Logfire monitoring"""
-        
-        with logfire_logger.span("socketio_connect") as span:
-            span.set_attribute("session_id", sid)
-            span.set_attribute("namespace", NAMESPACE_CRAWL)
-            
-            try:
-                await self.sio.emit('connected', 
-                                   {'message': 'Connected to crawl progress'}, 
-                                   to=sid, namespace=NAMESPACE_CRAWL)
-                
-                span.set_attribute("success", True)
-                logfire_logger.info(f"Socket.IO client connected: {sid}")
-                
-            except Exception as e:
-                span.set_attribute("success", False)
-                span.set_attribute("error", str(e))
-                logfire_logger.error(f"Socket.IO connection failed: {e}")
-                raise
-    
-    @self.sio.on('subscribe', namespace=NAMESPACE_CRAWL)
-    async def on_subscribe(self, sid, data):
-        """Subscribe to progress updates with room-based broadcasting"""
-        
-        with logfire_logger.span("socketio_subscribe") as span:
-            progress_id = data.get('progress_id')
-            span.set_attribute("progress_id", progress_id)
-            span.set_attribute("session_id", sid)
-            
-            # Join Socket.IO room for this progress ID
-            await self.sio.enter_room(sid, progress_id, namespace=NAMESPACE_CRAWL)
-            
-            # Get room size for monitoring
-            room_sessions = self.sio.manager.rooms.get(NAMESPACE_CRAWL, {}).get(progress_id, set())
-            span.set_attribute("room_size", len(room_sessions))
-            
-            logfire_logger.info(f"Client {sid} subscribed to progress {progress_id}")
-    
-    async def broadcast_progress(self, progress_id: str, data: dict):
-        """Broadcast progress using Socket.IO rooms"""
-        
-        with logfire_logger.span("socketio_broadcast") as span:
-            span.set_attribute("progress_id", progress_id)
-            span.set_attribute("data_type", data.get("type", "unknown"))
-            span.set_attribute("progress_percentage", data.get("percentage", 0))
-            
-            # Socket.IO handles room broadcasting and connection management
-            event_type = 'progress_update' if data.get('status') != 'completed' else 'progress_complete'
-            
-            try:
-                await self.sio.emit(
-                    event_type,
-                    data,
-                    room=progress_id,
-                    namespace=NAMESPACE_CRAWL
-                )
-                
-                # Monitor room size
-                room_sessions = self.sio.manager.rooms.get(NAMESPACE_CRAWL, {}).get(progress_id, set())
-                span.set_attribute("broadcast_to", len(room_sessions))
-                span.set_attribute("success", True)
-                
-            except Exception as e:
-                span.set_attribute("success", False)
-                span.set_attribute("error", str(e))
-                logfire_logger.error(f"Socket.IO broadcast failed: {e}")
-```
-
-## 🔗 Logfire Dashboard Access
-
-<div className="hero hero--secondary">
-  <div className="container">
-    <h3>🔗 **Dashboard URL**: `https://logfire-us.pydantic.dev/your-project-name/`</h3>
-  </div>
-</div>
-
-### 📊 Dashboard Features
-
-<div className="row">
-  <div className="col col--4">
-    <div className="card">
-      <div className="card__header">
-        <h4>📊 **Real-Time Spans**</h4>
-      </div>
-      <div className="card__body">
-        See every RAG query, MCP tool call, and Socket.IO connection live
-      </div>
-    </div>
-  </div>
-  <div className="col col--4">
-    <div className="card">
-      <div className="card__header">
-        <h4>⚡ **Performance Metrics**</h4>
-      </div>
-      <div className="card__body">
-        Response times, error rates, and throughput analysis
-      </div>
-    </div>
-  </div>
-  <div className="col col--4">
-    <div className="card">
-      <div className="card__header">
-        <h4>🔍 **Detailed Traces**</h4>
-      </div>
-      <div className="card__body">
-        Drill down into specific requests with full context
-      </div>
-    </div>
-  </div>
-</div>
-
-<div className="row">
-  <div className="col col--4">
-    <div className="card">
-      <div className="card__header">
-        <h4>📈 **Historical Data**</h4>
-      </div>
-      <div className="card__body">
-        Analyze patterns and performance over time
-      </div>
-    </div>
-  </div>
-  <div className="col col--4">
-    <div className="card">
-      <div className="card__header">
-        <h4>🚨 **Error Tracking**</h4>
-      </div>
-      <div className="card__body">
-        Automatic error detection and alerting
-      </div>
-    </div>
-  </div>
-  <div className="col col--4">
-    <div className="card">
-      <div className="card__header">
-        <h4>🔗 **Service Maps**</h4>
-      </div>
-      <div className="card__body">
-        Visualize microservice communication patterns
-      </div>
-    </div>
-  </div>
-</div>
-
-## 🎯 Monitoring Best Practices
-
-### 1. Structured Logging
-
-```python
-# Use structured logging for better searchability
-logfire_logger.info("RAG query completed",
-    query=query,
-    source=source,
-    results_count=len(results),
-    processing_time_ms=processing_time * 1000,
-    embedding_model="text-embedding-3-small"
-)
-```
-
-### 2. Span Hierarchies
-
-```python
-# Create nested spans for detailed tracing
-with logfire_logger.span("document_processing") as parent_span:
-    with logfire_logger.span("chunk_extraction") as child_span:
-        # Chunk extraction logic
-        child_span.set_attribute("chunks_created", len(chunks))
-    
-    with logfire_logger.span("embedding_generation") as child_span:
-        # Embedding generation
-        child_span.set_attribute("embeddings_created", len(embeddings))
-```
-
-### 3. Error Context
-
-```python
-# Always include context in error logging
-try:
-    result = await process_document(doc_id)
-except Exception as e:
-    logfire_logger.error("Document processing failed",
-        error=str(e),
-        error_type=type(e).__name__,
-        doc_id=doc_id,
-        doc_size=doc_size,
-        traceback=traceback.format_exc()
-    )
-    raise
-```
-
-## 📈 Custom Metrics & Alerts
-
-### Service Health Metrics
-
-```python
-# Track service health metrics
-async def health_check():
-    with logfire_logger.span("health_check") as span:
-        # Database health
-        db_healthy = await check_database_connection()
-        span.set_attribute("database_healthy", db_healthy)
-        
-        # API response time
-        api_response_time = await measure_api_response_time()
-        span.set_attribute("api_response_ms", api_response_time)
-        
-        # Memory usage
-        memory_usage = get_memory_usage()
-        span.set_attribute("memory_usage_mb", memory_usage)
-        
-        return {
-            "status": "healthy" if db_healthy else "unhealthy",
-            "database": db_healthy,
-            "api_response_ms": api_response_time,
-            "memory_usage_mb": memory_usage
-        }
-```
-
-### Performance Tracking
-
-```python
-# Track operation performance
-class PerformanceTracker:
-    @staticmethod
-    def track_operation(operation_name: str):
-        def decorator(func):
-            async def wrapper(*args, **kwargs):
-                with logfire_logger.span(f"performance_{operation_name}") as span:
-                    start_time = time.time()
-                    
-                    try:
-                        result = await func(*args, **kwargs)
-                        
-                        duration = (time.time() - start_time) * 1000
-                        span.set_attribute("duration_ms", duration)
-                        span.set_attribute("success", True)
-                        
-                        # Log slow operations
-                        if duration > 1000:  # 1 second
-                            logfire_logger.warning(f"Slow operation detected: {operation_name}",
-                                duration_ms=duration,
-                                args=str(args)[:100]  # Truncate for safety
-                            )
-                        
-                        return result
-                        
-                    except Exception as e:
-                        span.set_attribute("success", False)
-                        span.set_attribute("error", str(e))
-                        raise
-                        
-            return wrapper
-        return decorator
-```
-
-## 🚨 Setting Up Alerts
-
-### 1. High Error Rate Alert
-
-In the Logfire dashboard:
-1. Navigate to Alerts → Create Alert
-2. Set condition: `error_rate > 0.05` (5% error rate)
-3. Set time window: 5 minutes
-4. Configure notification (email, Slack, etc.)
-
-### 2. Slow Response Time Alert
-
-```yaml
-alert: SlowRAGQueries
-condition: avg(span.duration) > 2000  # 2 seconds
-where: span.name = "rag_query"
-window: 5m
-severity: warning
-```
-
-### 3. Service Health Alert
-
-```yaml
-alert: ServiceUnhealthy
-condition: span.attributes.status = "unhealthy"
-where: span.name = "health_check"
-window: 1m
-severity: critical
-```
-
-## 🛠️ Debugging with Logfire
-
-### Finding Slow Queries
-
-```sql
--- In Logfire query explorer
-SELECT 
-    span.name,
-    span.duration_ms,
-    span.attributes.query,
-    span.attributes.source
-FROM spans
-WHERE 
-    span.name = 'rag_query'
-    AND span.duration_ms > 1000
-ORDER BY span.duration_ms DESC
-LIMIT 10
-```
-
-### Tracking Error Patterns
-
-```sql
-SELECT 
-    span.attributes.error_type,
-    COUNT(*) as error_count,
-    AVG(span.duration_ms) as avg_duration
-FROM spans
-WHERE 
-    span.attributes.success = false
-    AND span.timestamp > NOW() - INTERVAL '1 hour'
-GROUP BY span.attributes.error_type
-ORDER BY error_count DESC
-```
-
-### Service Communication Analysis
-
-```sql
-SELECT 
-    span.service_name as from_service,
-    span.attributes.target_service as to_service,
-    COUNT(*) as call_count,
-    AVG(span.duration_ms) as avg_duration
-FROM spans
-WHERE 
-    span.attributes.target_service IS NOT NULL
-GROUP BY from_service, to_service
-ORDER BY call_count DESC
-```
-
-## 🔒 Security Considerations
-
-### 1. Sensitive Data Filtering
-
-```python
-# Filter sensitive data before logging
-def sanitize_for_logging(data: dict) -> dict:
-    """Remove sensitive fields before logging"""
-    sensitive_fields = ['password', 'api_key', 'token', 'secret']
-    
-    sanitized = data.copy()
-    for field in sensitive_fields:
-        if field in sanitized:
-            sanitized[field] = "***REDACTED***"
-    
-    return sanitized
-
-# Usage
-logfire_logger.info("User action", **sanitize_for_logging(user_data))
-```
-
-### 2. PII Protection
-
-```python
-# Hash PII before logging
-import hashlib
-
-def hash_pii(value: str) -> str:
-    """Hash PII data for logging"""
-    return hashlib.sha256(value.encode()).hexdigest()[:8]
-
-# Usage
-logfire_logger.info("User query",
-    user_id_hash=hash_pii(user_id),
-    query=query  # Query text is not PII
-)
-```
-
-## 📊 Monitoring Dashboard Examples
-
-### RAG Performance Dashboard
-
-Create a custom dashboard showing:
-- Average query response time
-- Query volume over time
-- Error rate by source
-- Top slow queries
-- Embedding generation time distribution
-
-### MCP Tool Usage Dashboard
-
-Track:
-- Most used tools
-- Tool execution times
-- Client types (Cursor vs Windsurf vs Claude)
-- Error rates by tool
-- Concurrent connections
-
-### System Health Dashboard
-
-Monitor:
-- Service uptime
-- Memory usage trends
-- Database connection pool status
-- API response times
-- Background job performance
+- **Memory Adaptive Processing**: Adjusts concurrency based on available memory
+- **Rate Limiting**: Prevents API quota exhaustion
+- **Connection Pooling**: Optimizes database performance
+- **Batch Processing**: Efficiently handles large document sets
 
 ---
 
-**Next Steps**: 
-- Set up your [Logfire account](https://logfire.pydantic.dev)
-- Configure alerts for your use case
-- Create custom dashboards
-- Review [Server Deployment](./server-deployment) for production setup
-- Explore [Server Services](./server-services) for detailed monitoring points
+**Need Help?** Check the [Troubleshooting Guide](./troubleshooting) for detailed debugging steps.

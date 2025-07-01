@@ -73,7 +73,7 @@ async def delete_source(ctx: Context, source: str) -> str:
 ### Server Service (Port 8080)
 - FastAPI application
 - REST API endpoints
-- WebSocket/Socket.IO support
+- Socket.IO real-time communication
 - Direct service layer access
 - Business logic implementation
 
@@ -133,22 +133,23 @@ OR
 
 ## Simplified Real-Time Architecture
 
-### Socket.IO Direct Emission
+### Simplified Socket.IO (2025 Pattern)
 ```
-MCP Tools → HTTP API → Services → Socket.IO Rooms → UI
+MCP Tools → HTTP API → Services → @sio.event → Rooms → UI
 ```
 
 Key improvements:
 - **No database polling** - Eliminated 2-second polling system
-- **Direct emission** - Services emit Socket.IO events directly
-- **Room-based targeting** - Updates go to specific project/progress rooms
-- **No callback chains** - Simplified progress tracking
-- **Single communication method** - Only Socket.IO, no dual WebSocket/Socket.IO
+- **Simple @sio.event handlers** - Official Socket.IO 2025 pattern
+- **Direct room management** - `sio.enter_room()` and `sio.emit()` calls
+- **No namespace classes** - Removed complex abstraction layers
+- **Single root namespace** - Everything on `/` namespace for simplicity
 
 ## Important Notes
 
 - **No MCP imports in FastAPI** - Services only
 - **No direct DB access in MCP** - HTTP only
 - **Services are the single source of truth** - All logic here
-- **Direct Socket.IO emission** - Services emit to rooms directly
-- **Socket.IO only** - No WebSocket endpoints, simplified real-time communication
+- **Simple @sio.event handlers** - Official Socket.IO 2025 pattern
+- **Root namespace only** - No complex namespace management
+- **Direct room management** - Simple `sio.enter_room()` and `sio.emit()` calls

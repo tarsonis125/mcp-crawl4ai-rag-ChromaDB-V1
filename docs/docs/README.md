@@ -42,7 +42,7 @@ docs/
 │   ├── server-*.mdx       # Server documentation
 │   ├── api-reference.mdx  # REST API endpoints
 │   ├── mcp-server.mdx     # MCP tools
-│   └── websockets.mdx     # WebSocket events
+│   └── socketio.mdx      # Socket.IO events and real-time communication
 └── guides/                # How-to guides
 ```
 
@@ -58,15 +58,16 @@ docs/
 - Progress callbacks for real-time updates
 - Proper service separation maintained
 
-### Socket.IO Simplification (Latest)
+### Socket.IO Simplification (2025 Pattern)
+- **Official Socket.IO 2025 pattern** - Removed complex namespace classes, using simple @sio.event decorators
 - **Eliminated database polling** - Removed 2-second polling system for task/project changes
-- **Direct Socket.IO emission** - Services emit events directly to rooms (no callback chains)  
-- **Single communication method** - Only Socket.IO, removed dual WebSocket/Socket.IO systems
-- **Room-based targeting** - Updates sent to specific rooms (project_id, progress_id)
-- **Simplified flow**: MCP → HTTP API → Services → Socket.IO Rooms → UI
+- **Direct Socket.IO emission** - Services emit events directly to rooms with `sio.emit()`
+- **Root namespace only** - Everything runs on `/` namespace, no complex namespace management
+- **Simple room management** - Direct `sio.enter_room()` and `sio.leave_room()` calls
+- **Simplified flow**: MCP → HTTP API → Services → @sio.event → Rooms → UI
 
 The documentation now clearly reflects that:
 - **Server contains ALL business logic**
 - **MCP is HTTP-only** (no direct imports)
 - **Services are the single source of truth**
-- **Socket.IO direct emission** - No complex callback chains or polling
+- **Socket.IO follows official 2025 patterns** - Simple, clean, and maintainable

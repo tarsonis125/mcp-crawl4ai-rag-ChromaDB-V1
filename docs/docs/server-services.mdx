@@ -20,12 +20,55 @@ The Server's business logic is organized into modular service classes and functi
 
 ### Project Services (`/services/projects/`)
 
-| Service | Purpose | Key Methods |
-|---------|---------|-------------|
-| **ProjectService** | Project CRUD operations | `create_project()`, `get_project()`, `update_project()`, `delete_project()` |
-| **TaskService** | Task management | `create_task()`, `update_task_status()`, `get_tasks_by_project()` |
-| **DocumentService** | Project documents | `add_document()`, `get_documents()`, `update_document()` |
-| **VersioningService** | JSONB field versioning | `create_version()`, `get_versions()`, `restore_version()` |
+**Recent Refactoring**: The Projects API was refactored from a monolithic 1,690-line file to a clean service layer architecture, reducing the main API file to 868 lines (42% reduction) while extracting business logic into specialized services.
+
+| Service | File | Purpose | Key Methods |
+|---------|------|---------|-------------|
+| **ProjectService** | `project_service.py` | Core project CRUD operations | `create_project()`, `get_project()`, `update_project()`, `delete_project()`, `list_projects()` |
+| **TaskService** | `task_service.py` | Task lifecycle management | `create_task()`, `update_task()`, `archive_task()`, `list_tasks()` |
+| **ProjectCreationService** | `project_creation_service.py` | AI-assisted project creation workflow | `create_project_with_ai()`, `generate_features()`, `process_github_repo()` |
+| **SourceLinkingService** | `source_linking_service.py` | Project-knowledge source relationships | `update_project_sources()`, `format_projects_with_sources()` |
+| **ProgressService** | `progress_service.py` | Real-time operation tracking via Socket.IO | `start_operation()`, `update_progress()`, `complete_operation()`, `error_operation()` |
+| **DocumentService** | `document_service.py` | Project document management | `add_document()`, `get_documents()`, `update_document()` |
+| **VersioningService** | `versioning_service.py` | JSONB field version control | `create_version()`, `get_versions()`, `restore_version()` |
+
+**Service Layer Benefits:**
+- **Separation of Concerns**: Business logic separated from API routing
+- **Reusability**: Services can be used by multiple API endpoints and MCP tools  
+- **Testability**: Each service can be unit tested independently
+- **Socket.IO Integration**: Real-time updates handled at the service layer
+
+**Example Service Coordination:**
+```python
+# projects_api.py - Thin API layer
+@router.post("/projects")
+async def create_project(request: CreateProjectRequest):
+    progress_id = secrets.token_hex(16)
+    
+    # Start progress tracking
+    progress_service.start_operation(progress_id, 'project_creation')
+    
+    # Background task coordinates multiple services
+    asyncio.create_task(_create_project_with_ai(progress_id, request))
+    
+    return {"progress_id": progress_id}
+
+# Background workflow using multiple services
+async def _create_project_with_ai(progress_id: str, request: CreateProjectRequest):
+    creation_service = ProjectCreationService()
+    
+    # AI-assisted creation with real-time updates
+    success, result = await creation_service.create_project_with_ai(
+        progress_id=progress_id,
+        title=request.title,
+        github_repo=request.github_repo
+    )
+    
+    if success:
+        # Broadcast update to Socket.IO clients
+        await broadcast_project_update()
+        await progress_service.complete_operation(progress_id, result)
+```
 
 ### Core Services (`/services/`)
 
@@ -71,55 +114,61 @@ async def delete_source(ctx: Context, source: str) -> str:
         return response.json()
 ```
 
-### Direct Socket.IO Emission Pattern
+### Simplified Socket.IO Emission Pattern (2025)
 ```python
-from ..socketio.progress_utils import update_crawl_progress
+from ..socketio_app import get_socketio_instance
+
+# Get Socket.IO instance
+sio = get_socketio_instance()
 
 async def crawl_with_progress(url: str, progress_id: str):
     crawling_service = CrawlingService(crawler, supabase_client)
     
-    # Services emit Socket.IO events directly - no callback chains
-    await update_crawl_progress(progress_id, {
+    # Simple direct emission - no complex utils
+    await sio.emit('progress_update', {
         'status': 'crawling',
         'percentage': 10,
         'log': f'Starting crawl of {url}'
-    })
+    }, room=progress_id)
     
-    results = await crawling_service.crawl_batch_with_progress(
-        urls=[url],
-        progress_id=progress_id  # Services emit directly
-    )
+    results = await crawling_service.crawl_batch_with_progress(urls=[url])
     return results
 ```
 
 ## Key Service Features
 
-### Simplified Real-Time Communication
+### Simplified Real-Time Communication (2025 Pattern)
 
 **Architecture Changes:**
 - **No database polling** - Eliminated 2-second polling system that checked for task/project changes
-- **Direct Socket.IO emission** - Services emit events directly to Socket.IO rooms
-- **No callback chains** - Removed complex progress callback functions
-- **Room-based targeting** - Updates sent to specific rooms (project_id, progress_id)
-- **Single communication method** - Only Socket.IO, removed dual WebSocket/Socket.IO systems
+- **Simple @sio.event handlers** - Uses official Socket.IO 2025 documentation pattern
+- **No namespace classes** - Removed complex `TasksNamespace` and `ProjectNamespace` classes
+- **Root namespace only** - Everything runs on `/` namespace for simplicity
+- **Direct room management** - Simple `sio.enter_room()` and `sio.emit()` calls
 
-**Socket.IO Integration:**
+**Simplified Socket.IO Integration:**
 ```python
 # Services import and use Socket.IO directly
-from ..socketio_app import get_socketio_instance, NAMESPACE_TASKS
-from ..socketio.progress_utils import update_crawl_progress
+from ..socketio_app import get_socketio_instance
 
 sio = get_socketio_instance()
 
-# Direct emission to rooms
-await sio.emit('task_updated', task_data, room=project_id, namespace=NAMESPACE_TASKS)
-await update_crawl_progress(progress_id, {'status': 'processing', 'percentage': 50})
+# Simple emission to rooms - no namespace complexity
+await sio.emit('task_updated', task_data, room=project_id)
+await sio.emit('progress_update', {'status': 'processing', 'percentage': 50}, room=progress_id)
+
+# Event handlers use simple @sio.event decorators
+@sio.event
+async def join_project(sid, data):
+    await sio.enter_room(sid, data['project_id'])
+    tasks = get_tasks_for_project(data['project_id'])
+    await sio.emit('initial_tasks', tasks, to=sid)
 ```
 
 ### Threading Service
 - Rate limiting for OpenAI API (200k tokens/min)
 - Thread pools for CPU and I/O operations
-- WebSocket-safe batch processing
+- Socket.IO-safe batch processing
 - System metrics monitoring
 
 ### Credential Service
@@ -136,22 +185,31 @@ await update_crawl_progress(progress_id, {'status': 'processing', 'percentage': 
 
 ## Service Dependencies
 
+**Refactored Architecture (2025):**
+
 ```
-FastAPI Endpoints
+FastAPI Endpoints (projects_api.py)
     ↓
-Service Classes (SourceManagementService, etc.)
+Socket.IO Handlers (socketio_handlers.py)
+    ↓
+Service Classes (ProjectService, TaskService, etc.)
     ↓
 Service Functions (add_documents_to_supabase, etc.)
     ↓
 Database (Supabase) / External APIs (OpenAI)
 ```
 
+**Key Architectural Changes:**
+- **Extracted Socket.IO Handlers**: Moved from embedded namespace classes to dedicated `socketio_handlers.py` file (~225 lines)
+- **Service Layer Separation**: Business logic now in separate service classes instead of embedded in API routes
+- **Simplified Socket.IO**: Eliminated complex namespace hierarchy in favor of simple `@sio.event` decorators
+- **Progress Tracking**: Centralized in `ProgressService` with real-time Socket.IO broadcasting
+
 ## Configuration
 
 Services are configured via environment variables:
 - `SUPABASE_URL` - Database URL
-- `SUPABASE_SERVICE_KEY` - Database service key
+- `SUPABASE_SERVICE_KEY` - Database service key  
 - `OPENAI_API_KEY` - For embeddings
-- `LOGFIRE_TOKEN` - For monitoring
 
 All services use dependency injection for testability and flexibility.

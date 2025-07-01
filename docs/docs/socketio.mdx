@@ -1,0 +1,234 @@
+---
+title: Real-time Communication (Socket.IO)
+description: Simple Socket.IO implementation for real-time features
+sidebar_position: 9
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import Admonition from '@theme/Admonition';
+
+# Real-time Communication with Socket.IO
+
+## Overview
+
+Archon uses **Socket.IO** for real-time communication between the frontend and backend. We keep it simple - all events on the root namespace, no complexity.
+
+<Admonition type="success" title="Simple by Design">
+- **One file**: All Socket.IO logic in `projects_api.py`  
+- **One namespace**: Everything on root `/`
+- **Simple events**: Just `@sio.event` decorators
+- **~100 lines total**: For the entire real-time system
+</Admonition>
+
+## Socket.IO Events
+
+All events use simple names on the root namespace:
+
+| Event | Direction | Purpose | Data Format |
+|-------|-----------|---------|-------------|
+| `connect` | Server→Client | Connection established | `{sid: string}` |
+| `disconnect` | Server→Client | Connection closed | None |
+| `join_project` | Client→Server | Join project room for task updates | `{project_id: string}` |
+| `leave_project` | Client→Server | Leave project room | `{project_id: string}` |
+| `subscribe_projects` | Client→Server | Subscribe to project list updates | None |
+| `unsubscribe_projects` | Client→Server | Unsubscribe from project list | None |
+| `subscribe_progress` | Client→Server | Subscribe to creation progress | `{progress_id: string}` |
+| `unsubscribe_progress` | Client→Server | Unsubscribe from progress | `{progress_id: string}` |
+| `crawl_subscribe` | Client→Server | Subscribe to crawl progress | `{progress_id: string}` |
+| `crawl_unsubscribe` | Client→Server | Unsubscribe from crawl | `{progress_id: string}` |
+
+## Broadcast Events
+
+These are emitted by the server to rooms:
+
+| Event | Purpose | Room | Data |
+|-------|---------|------|------|
+| `task_created` | New task created | project_id | Task object |
+| `task_updated` | Task modified | project_id | Task object |
+| `task_deleted` | Task removed | project_id | `{task_id: string}` |
+| `projects_update` | Project list changed | 'project_list' | `{projects: Array}` |
+| `project_progress` | Creation progress | progress_id | Progress data |
+| `crawl_progress` | Crawl progress | progress_id | Progress data |
+
+## Frontend Usage
+
+<Tabs>
+<TabItem value="basic" label="Basic Connection">
+
+```typescript
+import { createWebSocketService } from './services/webSocketService';
+
+// Connect (Socket.IO under the hood)
+const ws = createWebSocketService();
+await ws.connect('/');
+
+// Join a project room
+ws.send({ type: 'join_project', project_id: 'abc123' });
+
+// Subscribe to project list
+ws.send({ type: 'subscribe_projects' });
+
+// Listen for updates
+ws.addMessageHandler('task_created', (task) => {
+  console.log('New task:', task);
+});
+
+ws.addMessageHandler('projects_update', (data) => {
+  console.log('Projects:', data.projects);
+});
+```
+
+</TabItem>
+<TabItem value="progress" label="Progress Tracking">
+
+```typescript
+// Subscribe to progress
+ws.send({ 
+  type: 'subscribe_progress', 
+  progress_id: progressId 
+});
+
+// Or crawl progress
+ws.send({ 
+  type: 'crawl_subscribe', 
+  progress_id: crawlId 
+});
+
+// Handle updates
+ws.addMessageHandler('project_progress', (data) => {
+  updateProgress(data.percentage, data.status);
+});
+
+ws.addMessageHandler('crawl_progress', (data) => {
+  updateCrawlUI(data);
+});
+```
+
+</TabItem>
+</Tabs>
+
+## Backend Implementation
+
+All Socket.IO code lives in `projects_api.py`:
+
+<Tabs>
+<TabItem value="events" label="Event Handlers">
+
+```python
+# Get Socket.IO instance
+from ..socketio_app import get_socketio_instance
+sio = get_socketio_instance()
+
+# Simple event handlers
+@sio.event
+async def connect(sid, environ):
+    print(f'Client connected: {sid}')
+
+@sio.event
+async def join_project(sid, data):
+    project_id = data.get('project_id')
+    if project_id:
+        await sio.enter_room(sid, project_id)
+        # Send initial tasks
+        tasks = await get_project_tasks(project_id)
+        await sio.emit('initial_tasks', tasks, to=sid)
+
+@sio.event
+async def subscribe_projects(sid):
+    await sio.enter_room(sid, 'project_list')
+    # Send current projects
+    projects = await get_all_projects()
+    await sio.emit('projects_update', {'projects': projects}, to=sid)
+
+@sio.event
+async def crawl_subscribe(sid, data):
+    progress_id = data.get('progress_id')
+    if progress_id:
+        await sio.enter_room(sid, progress_id)
+```
+
+</TabItem>
+<TabItem value="broadcast" label="Broadcasting">
+
+```python
+# Simple broadcast helpers
+async def broadcast_task_update(project_id: str, event_type: str, task_data: dict):
+    """Broadcast task updates to project room."""
+    await sio.emit(event_type, task_data, room=project_id)
+
+async def broadcast_project_update():
+    """Broadcast project list to subscribers."""
+    projects = await get_all_projects()
+    await sio.emit('projects_update', {'projects': projects}, room='project_list')
+
+async def broadcast_crawl_progress(progress_id: str, data: dict):
+    """Broadcast crawl progress to subscribers."""
+    await sio.emit('crawl_progress', data, room=progress_id)
+
+# Usage in services
+await broadcast_task_update(project_id, 'task_created', new_task)
+await broadcast_crawl_progress(progress_id, {'percentage': 50, 'status': 'crawling'})
+```
+
+</TabItem>
+</Tabs>
+
+## Server Configuration
+
+The Socket.IO server is configured in `socketio_app.py`:
+
+```python
+import socketio
+
+# Create server with simple settings
+sio = socketio.AsyncServer(
+    async_mode='asgi',
+    cors_allowed_origins="*",
+    logger=False,
+    engineio_logger=False,
+    max_http_buffer_size=1000000,  # 1MB
+    ping_timeout=60,
+    ping_interval=25
+)
+
+# Wrap with FastAPI
+def create_socketio_app(app: FastAPI):
+    return socketio.ASGIApp(sio, other_asgi_app=app)
+```
+
+## Best Practices
+
+<Admonition type="tip" title="Keep It Simple">
+1. **All events in one place** - Easy to find and understand
+2. **Clear event names** - `task_created` not `message` 
+3. **Use rooms for targeting** - Projects and progress IDs as rooms
+4. **Let Socket.IO handle reconnection** - Don't add custom logic
+5. **Broadcast from services** - Keep API endpoints clean
+</Admonition>
+
+## Common Patterns
+
+### Task Updates
+```python
+# In task service
+async def create_task(...):
+    task = await db.create_task(...)
+    await broadcast_task_update(task.project_id, 'task_created', task)
+    return task
+```
+
+### Progress Tracking
+```python
+# In crawl service
+async def update_progress(progress_id: str, percentage: int):
+    await broadcast_crawl_progress(progress_id, {
+        'percentage': percentage,
+        'status': 'crawling',
+        'timestamp': datetime.now().isoformat()
+    })
+```
+
+## That's It!
+
+No namespaces. No complex patterns. No separate Socket.IO services. Just simple events in one file for our two modules. Total complexity: ~100 lines of Socket.IO code.

@@ -100,8 +100,6 @@ export const TasksTab = ({
     console.log('🔌 Setting up WebSocket connection for project:', projectId);
 
     const connectWebSocket = async () => {
-      const endpoint = `/api/projects/${projectId}/tasks/ws`;
-      
       // Clear any existing handlers first
       taskUpdateWebSocket.disconnect();
       
@@ -212,7 +210,11 @@ export const TasksTab = ({
       
       // Connect to WebSocket
       try {
-        await taskUpdateWebSocket.connect(endpoint);
+        await taskUpdateWebSocket.connect('/');
+        
+        // Join the project room after connection
+        taskUpdateWebSocket.send({ type: 'join_project', project_id: projectId });
+        
       } catch (error) {
         console.error('Failed to connect to task updates WebSocket:', error);
         setIsWebSocketConnected(false);

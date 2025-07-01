@@ -250,19 +250,8 @@ except FileTooLargeError:
 - **Success Rate**: Successful vs failed uploads
 - **Tool Usage**: Which MCP tools used most
 
-### Logfire Traces
-```python
-with logfire.span("document_agent_process") as span:
-    span.set_attribute("document_type", doc_type)
-    span.set_attribute("file_size", file_size)
-    span.set_attribute("strategy", strategy_name)
-    
-    # Process document
-    result = await process_workflow()
-    
-    span.set_attribute("chunks_created", result.chunk_count)
-    span.set_attribute("processing_time", result.duration)
-```
+### Processing Traces
+The Document Agent provides detailed processing traces showing document type, file size, and processing strategy for each operation.
 
 ## 🔗 Related Documentation
 

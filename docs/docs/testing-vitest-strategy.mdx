@@ -233,7 +233,7 @@ export class MockSocketIO {
 // Replace global Socket.IO with mock
 global.io = () => new MockSocketIO('') as any
 
-// Enhanced WebSocket service mock
+// Enhanced Socket.IO service mock
 vi.mock('@/services/websocketService', () => ({
   websocketService: {
     connect: vi.fn().mockResolvedValue(undefined),
@@ -354,14 +354,14 @@ describe('TestStatus', () => {
 })
 ```
 
-### 2. Service Testing with WebSocket Safety
+### 2. Service Testing with Socket.IO Safety
 
 ```typescript
 // test/services/websocketService.test.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { websocketService } from '@/services/websocketService'
 
-// CRITICAL: Always mock WebSocket service
+// CRITICAL: Always mock Socket.IO service
 vi.mock('@/services/websocketService', () => ({
   websocketService: {
     connect: vi.fn(),
@@ -372,7 +372,7 @@ vi.mock('@/services/websocketService', () => ({
   }
 }))
 
-describe('WebSocket Service (Mocked)', () => {
+describe('Socket.IO Service (Mocked)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -699,12 +699,12 @@ const TestResultsModal = () => {
 
 ### ⚠️ Critical Safety Rules
 
-1. **NEVER create real WebSocket connections in tests**
+1. **NEVER create real Socket.IO connections in tests**
 2. **ALWAYS mock the websocketService module**
-3. **NEVER include WebSocket functions in useCallback dependencies**
+3. **NEVER include Socket.IO functions in useCallback dependencies**
 4. **ALWAYS clean up subscriptions in afterEach**
 
-### Safe WebSocket Testing Pattern
+### Safe Socket.IO Testing Pattern
 
 ```typescript
 // ✅ CORRECT: Always mock the service
@@ -718,8 +718,8 @@ vi.mock('@/services/websocketService', () => ({
   }
 }))
 
-// ✅ CORRECT: Test WebSocket interactions safely
-it('should handle WebSocket message updates', async () => {
+// ✅ CORRECT: Test Socket.IO interactions safely
+it('should handle Socket.IO message updates', async () => {
   const mockCallback = vi.fn()
   let capturedCallback: Function
 
@@ -728,9 +728,9 @@ it('should handle WebSocket message updates', async () => {
     return vi.fn() // unsubscribe function
   })
 
-  render(<ComponentWithWebSocket />)
+  render(<ComponentWithSocketIO />)
 
-  // Simulate WebSocket message
+  // Simulate Socket.IO message
   act(() => {
     capturedCallback!({ type: 'progress', data: { percent: 50 } })
   })
@@ -740,9 +740,9 @@ it('should handle WebSocket message updates', async () => {
   })
 })
 
-// ❌ WRONG: Never create real WebSocket connections
-it('should connect to real WebSocket', () => {
-  const ws = new WebSocket('ws://localhost:8080') // DON'T DO THIS
+// ❌ WRONG: Never create real Socket.IO connections
+it('should connect to real Socket.IO', () => {
+  const socket = io('http://localhost:8080') // DON'T DO THIS
   // This will break tests and potentially affect running services
 })
 ```
@@ -762,7 +762,7 @@ it('should connect to real WebSocket', () => {
 ### High Priority (Next Phase) 📝
 
 1. **Services Layer** (Critical)
-   - `websocketService.test.ts` - WebSocket connection management
+   - `socketioService.test.ts` - Socket.IO connection management
    - `projectService.test.ts` - Project CRUD operations
    - `testService.test.ts` - Test execution and results
    - `credentialsService.test.ts` - Credentials management
@@ -838,7 +838,7 @@ jobs:
 - [ ] Component/service is implemented and working
 - [ ] Identify critical user paths to test
 - [ ] Plan test scenarios (happy path, error cases, edge cases)
-- [ ] Ensure WebSocket mocking is in place if needed
+- [ ] Ensure Socket.IO mocking is in place if needed
 
 ### Writing Tests
 - [ ] Use descriptive test names (`should do X when Y happens`)
@@ -854,8 +854,8 @@ jobs:
 - [ ] Tests run quickly (under 100ms per test ideally)
 - [ ] Clean up resources in afterEach hooks
 
-### WebSocket-Specific Checklist
-- [ ] WebSocket service is mocked, never real connections
+### Socket.IO-Specific Checklist
+- [ ] Socket.IO service is mocked, never real connections
 - [ ] Subscription cleanup is handled
 - [ ] No function references in useCallback dependencies
 - [ ] Connection state changes are tested
@@ -869,7 +869,7 @@ jobs:
 // Issue: Icons not rendering in tests
 // Solution: Comprehensive Lucide React mocking in setup.ts
 
-// Issue: WebSocket connection errors in tests
+// Issue: Socket.IO connection errors in tests
 // Solution: Always mock websocketService module
 
 // Issue: Async timing issues
@@ -900,7 +900,7 @@ npm run test:coverage -- --reporter=text-summary
 
 - **[Testing Overview](./testing)** - General testing strategy and architecture
 - **[Python Testing Strategy](./testing-python-strategy)** - Backend testing guide
-- **[WebSocket Documentation](./websockets)** - Real-time communication patterns
+- **[Socket.IO Documentation](./socketio)** - Real-time communication patterns
 - **[UI Documentation](./ui)** - Component design and usage guidelines
 
 ---
@@ -908,5 +908,5 @@ npm run test:coverage -- --reporter=text-summary
 **Quick Navigation:**
 - 🚀 [Quick Start](#quick-start) - Get started with testing immediately
 - 🎯 [UI Test Runner Integration](#ui-test-runner-integration) - Use the Settings page test runner
-- 🛠️ [WebSocket Testing](#websocket-testing-best-practices) - Safe WebSocket testing patterns
+- 🛠️ [Socket.IO Testing](#socketio-testing-best-practices) - Safe Socket.IO testing patterns
 - 📊 [Coverage Analysis](#coverage-analysis) - Understanding and improving coverage

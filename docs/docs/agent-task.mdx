@@ -325,18 +325,8 @@ def detect_dependencies(tasks: List[Task]) -> List[Dependency]:
 - **Dependency Detection**: Correctly identified relationships
 - **Assignment Distribution**: Balance across team
 
-### Monitoring Example
-```python
-with logfire.span("task_agent_operation") as span:
-    span.set_attribute("operation_type", operation)
-    span.set_attribute("project_id", project_id)
-    span.set_attribute("tasks_affected", len(tasks))
-    
-    result = await execute_operation()
-    
-    span.set_attribute("success", result.success)
-    span.set_attribute("execution_time", result.duration)
-```
+### Performance Tracking
+The Task Agent automatically tracks operation performance and provides detailed results for each orchestration workflow.
 
 ## 🎯 Best Practices
 

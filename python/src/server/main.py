@@ -25,7 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config.logfire_config import setup_logfire, api_logger
 
 # Import Socket.IO integration
-from .socketio_app import create_socketio_app, register_namespaces
+from .socketio_app import create_socketio_app
 
 # Import modular API routers
 from .fastapi.settings_api import router as settings_router
@@ -155,10 +155,6 @@ async def lifespan(app: FastAPI):
             # Import API modules to register their Socket.IO handlers
             from .fastapi import knowledge_api, projects_api  # agent_chat_api removed - TODO: Fix to use HTTP calls
             api_logger.info("✅ Socket.IO handlers imported from API modules")
-            
-            # Register all namespaces
-            register_namespaces()
-            api_logger.info("✅ Socket.IO namespaces registered")
         except Exception as e:
             api_logger.warning(f"Could not initialize Socket.IO services: {e}")
         

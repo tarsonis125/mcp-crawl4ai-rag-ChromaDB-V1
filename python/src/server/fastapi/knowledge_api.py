@@ -29,26 +29,24 @@ from ..services.rag.crawling_service import CrawlingService
 from ..services.rag.source_management_service import SourceManagementService
 from ..services.rag.search_service import SearchService
 
-# Import Logfire - use logfire directly like other working APIs
+# Import logfire
 from ..config.logfire_config import logfire
 from ..utils.document_processing import extract_text_from_document
-from ..socketio.progress_utils import (
+from .socketio_handlers import (
     start_crawl_progress,
     update_crawl_progress,
     complete_crawl_progress,
     error_crawl_progress
 )
-from ..socketio.crawl_namespace import CrawlNamespace
-from ..socketio_app import get_socketio_instance, NAMESPACE_CRAWL
+from ..socketio_app import get_socketio_instance
 
 import io
 
 # Create router
 router = APIRouter(prefix="/api", tags=["knowledge"])
 
-# Get Socket.IO instance and register namespace
+# Get Socket.IO instance
 sio = get_socketio_instance()
-sio.register_namespace(CrawlNamespace(NAMESPACE_CRAWL))
 
 
 # Get the global crawling context from main.py
@@ -148,34 +146,26 @@ async def get_knowledge_items(
     search: Optional[str] = None
 ):
     """Get knowledge items with pagination and filtering."""
-    with logfire.span("api_get_knowledge_items") as span:
-        span.set_attribute("endpoint", "/api/knowledge-items")
-        span.set_attribute("method", "GET")
-        span.set_attribute("page", page)
-        span.set_attribute("per_page", per_page)
-        span.set_attribute("knowledge_type", knowledge_type)
-        span.set_attribute("has_search", search is not None)
+    try:
+        logfire.info(f"Getting knowledge items | page={page} | per_page={per_page} | knowledge_type={knowledge_type} | search={search}")
         
-        try:
-            logfire.info("Getting knowledge items", page=page, per_page=per_page, knowledge_type=knowledge_type, search=search)
-            
-            # Ensure crawling context is initialized once  
-            crawling_context = get_crawling_context()
-            if not crawling_context._initialized:
-                await crawling_context.initialize()
-            
-            # Get all sources directly 
-            sources_result = await get_available_sources_direct()
-            
-            # Parse the JSON response
-            if isinstance(sources_result, str):
-                sources_data = json.loads(sources_result)
-            else:
-                sources_data = sources_result
-            
-            # Transform the data to match frontend expectations
-            items = []
-            for source in sources_data.get('sources', []):
+        # Ensure crawling context is initialized once  
+        crawling_context = get_crawling_context()
+        if not crawling_context._initialized:
+            await crawling_context.initialize()
+        
+        # Get all sources directly 
+        sources_result = await get_available_sources_direct()
+        
+        # Parse the JSON response
+        if isinstance(sources_result, str):
+            sources_data = json.loads(sources_result)
+        else:
+            sources_data = sources_result
+        
+        # Transform the data to match frontend expectations
+        items = []
+        for source in sources_data.get('sources', []):
                 # Use title and metadata from sources table
                 source_metadata = source.get('metadata', {})
                 source_id = source['source_id']
@@ -239,219 +229,172 @@ async def get_knowledge_items(
                     'updated_at': source.get('updated_at')
                 }
                 items.append(item)
+        
+        # Filter by search term if provided
+        if search:
+            search_lower = search.lower()
+            items = [
+                item for item in items 
+                if search_lower in item['title'].lower() 
+                or search_lower in item['metadata'].get('description', '').lower()
+                or any(search_lower in tag.lower() for tag in item['metadata'].get('tags', []))
+            ]
+        
+        # Filter by knowledge type if provided
+        if knowledge_type:
+            items = [
+                item for item in items 
+                if item['metadata'].get('knowledge_type') == knowledge_type
+            ]
+        
+        # Apply pagination
+        total = len(items)
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        paginated_items = items[start_idx:end_idx]
+        
+        logfire.info(f"Knowledge items retrieved | total={total} | page={page} | filtered_count={len(paginated_items)}")
+        
+        return {
+            'items': paginated_items,
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'pages': (total + per_page - 1) // per_page
+        }
             
-            # Filter by search term if provided
-            if search:
-                search_lower = search.lower()
-                items = [
-                    item for item in items 
-                    if search_lower in item['title'].lower() 
-                    or search_lower in item['metadata'].get('description', '').lower()
-                    or any(search_lower in tag.lower() for tag in item['metadata'].get('tags', []))
-                ]
-            
-            # Filter by knowledge type if provided
-            if knowledge_type:
-                items = [
-                    item for item in items 
-                    if item['metadata'].get('knowledge_type') == knowledge_type
-                ]
-            
-            # Apply pagination
-            total = len(items)
-            start_idx = (page - 1) * per_page
-            end_idx = start_idx + per_page
-            paginated_items = items[start_idx:end_idx]
-            
-            logfire.info("Knowledge items retrieved", total=total, page=page, filtered_count=len(paginated_items))
-            span.set_attribute("total_items", total)
-            span.set_attribute("filtered_items", len(paginated_items))
-            
-            return {
-                'items': paginated_items,
-                'total': total,
-                'page': page,
-                'per_page': per_page,
-                'pages': (total + per_page - 1) // per_page
-            }
-            
-        except Exception as e:
-            logfire.error("Failed to get knowledge items", error=str(e), page=page, per_page=per_page)
-            span.set_attribute("error", str(e))
-            raise HTTPException(status_code=500, detail={'error': str(e)})
+    except Exception as e:
+        logfire.error(f"Failed to get knowledge items | error={str(e)} | page={page} | per_page={per_page}")
+        raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.put("/knowledge-items/{source_id}")
 async def update_knowledge_item(source_id: str, updates: dict):
     """Update a knowledge item's metadata."""
-    with logfire.span("api_update_knowledge_item") as span:
-        span.set_attribute("endpoint", f"/api/knowledge-items/{source_id}")
-        span.set_attribute("method", "PUT")
-        span.set_attribute("source_id", source_id)
-        
-        try:
-            logfire.info("Updating knowledge item", source_id=source_id, updates=updates)
-            
-            # Get Supabase client
-            supabase_client = get_supabase_client()
-            
-            # Prepare the update data
-            update_data = {}
-            
-            # Handle title updates
-            if 'title' in updates:
-                update_data['title'] = updates['title']
-            
-            # Handle description updates (stored in metadata)
-            if 'description' in updates:
-                # Get current metadata first
-                current_response = supabase_client.table("sources").select("metadata").eq("source_id", source_id).execute()
-                
-                if current_response.data:
-                    current_metadata = current_response.data[0].get('metadata', {})
-                    current_metadata['description'] = updates['description']
-                    update_data['metadata'] = current_metadata
-                else:
-                    # If no current metadata, create new
-                    update_data['metadata'] = {'description': updates['description']}
-            
-            # Handle other metadata updates
-            metadata_fields = ['knowledge_type', 'tags', 'status', 'update_frequency']
-            for field in metadata_fields:
-                if field in updates:
-                    if 'metadata' not in update_data:
-                        # Get current metadata first
-                        current_response = supabase_client.table("sources").select("metadata").eq("source_id", source_id).execute()
-                        current_metadata = current_response.data[0].get('metadata', {}) if current_response.data else {}
-                        update_data['metadata'] = current_metadata
-                    
-                    update_data['metadata'][field] = updates[field]
-            
-            # Perform the update
-            result = supabase_client.table("sources").update(update_data).eq("source_id", source_id).execute()
-            
-            if result.data:
-                logfire.info("Knowledge item updated successfully", source_id=source_id)
-                span.set_attribute("success", True)
-                
-                return {
-                    'success': True,
-                    'message': f'Successfully updated knowledge item {source_id}',
-                    'source_id': source_id
-                }
+    try:
+        logfire.info(f"Updating knowledge item | source_id={source_id} | updates={updates}")
+        # Get Supabase client
+        supabase_client = get_supabase_client()
+        # Prepare the update data
+        update_data = {}
+        # Handle title updates
+        if 'title' in updates:
+            update_data['title'] = updates['title']
+        # Handle description updates (stored in metadata)
+        if 'description' in updates:
+            # Get current metadata first
+            current_response = supabase_client.table("sources").select("metadata").eq("source_id", source_id).execute()
+            if current_response.data:
+                current_metadata = current_response.data[0].get('metadata', {})
+                current_metadata['description'] = updates['description']
+                update_data['metadata'] = current_metadata
             else:
-                logfire.error("Knowledge item not found", source_id=source_id)
-                span.set_attribute("success", False)
-                raise HTTPException(status_code=404, detail={'error': f'Knowledge item {source_id} not found'})
-                
-        except Exception as e:
-            logfire.error("Failed to update knowledge item", error=str(e), source_id=source_id)
-            span.set_attribute("error", str(e))
-            raise HTTPException(status_code=500, detail={'error': str(e)})
+                # If no current metadata, create new
+                update_data['metadata'] = {'description': updates['description']}
+        # Handle other metadata updates
+        metadata_fields = ['knowledge_type', 'tags', 'status', 'update_frequency']
+        for field in metadata_fields:
+            if field in updates:
+                if 'metadata' not in update_data:
+                    # Get current metadata first
+                    current_response = supabase_client.table("sources").select("metadata").eq("source_id", source_id).execute()
+                    current_metadata = current_response.data[0].get('metadata', {}) if current_response.data else {}
+                    update_data['metadata'] = current_metadata
+                update_data['metadata'][field] = updates[field]
+        # Perform the update
+        result = supabase_client.table("sources").update(update_data).eq("source_id", source_id).execute()
+        if result.data:
+            logfire.info(f"Knowledge item updated successfully | source_id={source_id}")
+            return {
+                'success': True,
+                'message': f'Successfully updated knowledge item {source_id}',
+                'source_id': source_id
+            }
+        else:
+            logfire.error(f"Knowledge item not found | source_id={source_id}")
+            raise HTTPException(status_code=404, detail={'error': f'Knowledge item {source_id} not found'})
+    except Exception as e:
+        logfire.error(f"Failed to update knowledge item | error={str(e)} | source_id={source_id}")
+        raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.delete("/knowledge-items/{source_id}")
 async def delete_knowledge_item(source_id: str):
     """Delete a knowledge item from the database."""
-    with logfire.span("api_delete_knowledge_item") as span:
-        span.set_attribute("endpoint", f"/api/knowledge-items/{source_id}")
-        span.set_attribute("method", "DELETE")
-        span.set_attribute("source_id", source_id)
+    try:
+        print(f"DEBUG: Starting delete_knowledge_item for source_id: {source_id}")
+        logfire.info(f"Deleting knowledge item | source_id={source_id}")
         
-        try:
-            print(f"DEBUG: Starting delete_knowledge_item for source_id: {source_id}")
-            logfire.info("Deleting knowledge item", source_id=source_id)
+        # Use SourceManagementService directly instead of going through MCP
+        print(f"DEBUG: Creating SourceManagementService...")
+        from ..services.rag.source_management_service import SourceManagementService
+        source_service = SourceManagementService(get_supabase_client())
+        print(f"DEBUG: Successfully created SourceManagementService")
+        
+        print(f"DEBUG: Calling delete_source function...")
+        success, result_data = source_service.delete_source(source_id)
+        print(f"DEBUG: delete_source returned: success={success}, data={result_data}")
+        
+        # Convert to expected format
+        result = {
+            'success': success,
+            'error': result_data.get('error') if not success else None,
+            **result_data
+        }
+        
+        if result.get('success'):
+            logfire.info(f"Knowledge item deleted successfully | source_id={source_id}")
             
-            # Use SourceManagementService directly instead of going through MCP
-            print(f"DEBUG: Creating SourceManagementService...")
-            from ..services.rag.source_management_service import SourceManagementService
-            source_service = SourceManagementService(get_supabase_client())
-            print(f"DEBUG: Successfully created SourceManagementService")
-            
-            print(f"DEBUG: Calling delete_source function...")
-            success, result_data = source_service.delete_source(source_id)
-            print(f"DEBUG: delete_source returned: success={success}, data={result_data}")
-            
-            # Convert to expected format
-            result = {
-                'success': success,
-                'error': result_data.get('error') if not success else None,
-                **result_data
+            return {
+                'success': True,
+                'message': f'Successfully deleted knowledge item {source_id}'
             }
-            
-            if result.get('success'):
-                logfire.info("Knowledge item deleted successfully", source_id=source_id)
-                span.set_attribute("success", True)
+        else:
+            logfire.error(f"Knowledge item deletion failed | source_id={source_id} | error={result.get('error')}")
+            raise HTTPException(status_code=500, detail={'error': result.get('error', 'Deletion failed')})
                 
-                return {
-                    'success': True,
-                    'message': f'Successfully deleted knowledge item {source_id}'
-                }
-            else:
-                logfire.error("Knowledge item deletion failed", source_id=source_id, error=result.get('error'))
-                span.set_attribute("success", False)
-                span.set_attribute("error", result.get('error'))
-                raise HTTPException(status_code=500, detail={'error': result.get('error', 'Deletion failed')})
-                
-        except Exception as e:
-            print(f"ERROR: Exception in delete_knowledge_item: {e}")
-            print(f"ERROR: Exception type: {type(e)}")
-            import traceback
-            print(f"ERROR: Traceback: {traceback.format_exc()}")
-            logfire.error("Failed to delete knowledge item", error=str(e), source_id=source_id)
-            span.set_attribute("error", str(e))
-            raise HTTPException(status_code=500, detail={'error': str(e)})
+    except Exception as e:
+        print(f"ERROR: Exception in delete_knowledge_item: {e}")
+        print(f"ERROR: Exception type: {type(e)}")
+        import traceback
+        print(f"ERROR: Traceback: {traceback.format_exc()}")
+        logfire.error(f"Failed to delete knowledge item | error={str(e)} | source_id={source_id}")
+        raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.post("/knowledge-items/crawl")
 async def crawl_knowledge_item(request: KnowledgeItemRequest):
     """Crawl a URL and add it to the knowledge base with progress tracking."""
-    with logfire.span("api_crawl_knowledge_item") as span:
-        span.set_attribute("endpoint", "/api/knowledge-items/crawl")
-        span.set_attribute("method", "POST")
-        span.set_attribute("url", str(request.url))
-        span.set_attribute("knowledge_type", request.knowledge_type)
-        span.set_attribute("tags_count", len(request.tags))
-        
-        try:
-            logfire.info("Starting knowledge item crawl", url=str(request.url), knowledge_type=request.knowledge_type, tags=request.tags)
-            
-            # Generate unique progress ID
-            progress_id = str(uuid.uuid4())
-            span.set_attribute("progress_id", progress_id)
-            
-            # Start progress tracking with initial state
-            await start_crawl_progress(progress_id, {
-                'progressId': progress_id,
-                'currentUrl': str(request.url),
-                'totalPages': 0,
-                'processedPages': 0,
-                'percentage': 0,
-                'status': 'starting',
-                'logs': [f'Starting crawl of {request.url}'],
-                'eta': 'Calculating...'
-            })
-            
-            # Start background task IMMEDIATELY (like the old API)
-            asyncio.create_task(_perform_crawl_with_progress(progress_id, request))
-            
-            logfire.info("Crawl started successfully", progress_id=progress_id, url=str(request.url))
-            span.set_attribute("success", True)
-            
-            response_data = {
-                "success": True,
-                "progressId": progress_id,
-                "message": "Crawling started",
-                "estimatedDuration": "3-5 minutes"
-            }
-            return response_data
-            
-        except Exception as e:
-            logfire.error("Failed to start crawl", error=str(e), url=str(request.url))
-            span.set_attribute("error", str(e))
-            raise HTTPException(status_code=500, detail=str(e))
+    try:
+        logfire.info(f"Starting knowledge item crawl | url={str(request.url)} | knowledge_type={request.knowledge_type} | tags={request.tags}")
+        # Generate unique progress ID
+        progress_id = str(uuid.uuid4())
+        # Start progress tracking with initial state
+        await start_crawl_progress(progress_id, {
+            'progressId': progress_id,
+            'currentUrl': str(request.url),
+            'totalPages': 0,
+            'processedPages': 0,
+            'percentage': 0,
+            'status': 'starting',
+            'logs': [f'Starting crawl of {request.url}'],
+            'eta': 'Calculating...'
+        })
+        # Start background task IMMEDIATELY (like the old API)
+        asyncio.create_task(_perform_crawl_with_progress(progress_id, request))
+        logfire.info(f"Crawl started successfully | progress_id={progress_id} | url={str(request.url)}")
+        response_data = {
+            "success": True,
+            "progressId": progress_id,
+            "message": "Crawling started",
+            "estimatedDuration": "3-5 minutes"
+        }
+        return response_data
+    except Exception as e:
+        logfire.error(f"Failed to start crawl | error={str(e)} | url={str(request.url)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemRequest):
     """Perform the actual crawl operation with progress tracking using service layer."""
     try:
-        logfire.info("Starting crawl with progress tracking", progress_id=progress_id, url=str(request.url))
+        logfire.info(f"Starting crawl with progress tracking | progress_id={progress_id} | url={str(request.url)}")
         
         # Socket.IO handles connection automatically - no need to wait
         
@@ -471,7 +414,7 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         # Create service instances
         # Get crawler directly from crawling context instead of nested mock objects
         crawler = crawling_context.crawler
-        logfire.info("Crawler status", crawler_exists=(crawler is not None), initialized=crawling_context._initialized)
+        logfire.info(f"Crawler status | crawler_exists={(crawler is not None)} | initialized={crawling_context._initialized}")
         supabase_client = get_supabase_client()
         crawling_service = CrawlingService(crawler=crawler, supabase_client=supabase_client)
         doc_storage_service = DocumentStorageService(supabase_client)
@@ -622,11 +565,11 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         }
         await complete_crawl_progress(progress_id, completion_data)
         
-        logfire.info("Crawl completed successfully", progress_id=progress_id, chunks_stored=chunk_count)
+        logfire.info(f"Crawl completed successfully | progress_id={progress_id} | chunks_stored={chunk_count}")
         
     except Exception as e:
         error_message = f'Crawling failed: {str(e)}'
-        logfire.error("Crawl failed", progress_id=progress_id, error=error_message, exception_type=type(e).__name__)
+        logfire.error(f"Crawl failed | progress_id={progress_id} | error={error_message} | exception_type={type(e).__name__}")
         import traceback
         tb = traceback.format_exc()
         # Ensure the error is visible in Docker logs
@@ -635,7 +578,7 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         print(f"Exception Type: {type(e).__name__}")
         print(f"Traceback:\n{tb}")
         print("=== END CRAWL ERROR ===")
-        logfire.error("Crawl exception traceback", traceback=tb)
+        logfire.error(f"Crawl exception traceback | traceback={tb}")
         await error_crawl_progress(progress_id, error_message)
 
 @router.post("/documents/upload")
@@ -645,62 +588,46 @@ async def upload_document(
     knowledge_type: Optional[str] = Form("technical")
 ):
     """Upload and process a document with progress tracking."""
-    with logfire.span("api_upload_document") as span:
-        span.set_attribute("endpoint", "/api/documents/upload")
-        span.set_attribute("method", "POST")
-        span.set_attribute("filename", file.filename)
-        span.set_attribute("content_type", file.content_type)
-        span.set_attribute("knowledge_type", knowledge_type)
+    try:
+        logfire.info(f"Starting document upload | filename={file.filename} | content_type={file.content_type} | knowledge_type={knowledge_type}")
+            
+        # Generate unique progress ID
+        progress_id = str(uuid.uuid4())
         
-        try:
-            logfire.info("Starting document upload", filename=file.filename, content_type=file.content_type, knowledge_type=knowledge_type)
+        # Parse tags
+        tag_list = json.loads(tags) if tags else []
+        
+        # Read file content immediately to avoid closed file issues
+        file_content = await file.read()
+        file_metadata = {
+            'filename': file.filename,
+            'content_type': file.content_type,
+            'size': len(file_content)
+        }
+        # Start progress tracking
+        await start_crawl_progress(progress_id, {
+            'progressId': progress_id,
+            'status': 'starting',
+            'percentage': 0,
+            'currentUrl': f"file://{file.filename}",
+            'logs': [f'Starting upload of {file.filename}'],
+            'uploadType': 'document',
+            'fileName': file.filename,
+            'fileType': file.content_type
+        })
+        # Start background task for processing with file content and metadata
+        asyncio.create_task(_perform_upload_with_progress(progress_id, file_content, file_metadata, tag_list, knowledge_type))
+        logfire.info(f"Document upload started successfully | progress_id={progress_id} | filename={file.filename}")
+        return {
+            "success": True,
+            "progressId": progress_id,
+            "message": "Document upload started",
+            "filename": file.filename
+        }
             
-            # Generate unique progress ID
-            progress_id = str(uuid.uuid4())
-            span.set_attribute("progress_id", progress_id)
-            
-            # Parse tags
-            tag_list = json.loads(tags) if tags else []
-            span.set_attribute("tags_count", len(tag_list))
-            
-            # Read file content immediately to avoid closed file issues
-            file_content = await file.read()
-            file_metadata = {
-                'filename': file.filename,
-                'content_type': file.content_type,
-                'size': len(file_content)
-            }
-            
-            # Start progress tracking
-            await start_crawl_progress(progress_id, {
-                'progressId': progress_id,
-                'status': 'starting',
-                'percentage': 0,
-                'currentUrl': f"file://{file.filename}",
-                'logs': [f'Starting upload of {file.filename}'],
-                'uploadType': 'document',
-                'fileName': file.filename,
-                'fileType': file.content_type
-            })
-            
-            # Start background task for processing with file content and metadata
-            asyncio.create_task(_perform_upload_with_progress(progress_id, file_content, file_metadata, tag_list, knowledge_type))
-            
-            logfire.info("Document upload started successfully", progress_id=progress_id, filename=file.filename)
-            span.set_attribute("success", True)
-            
-            return {
-                "success": True,
-                "progressId": progress_id,
-                "message": "Document upload started",
-                "filename": file.filename
-            }
-            
-        except Exception as e:
-            logfire.error("Failed to start document upload", error=str(e), filename=file.filename, error_type=type(e).__name__)
-            span.set_attribute("error", str(e))
-            span.set_attribute("error_type", type(e).__name__)
-            raise HTTPException(status_code=500, detail={'error': str(e)})
+    except Exception as e:
+        logfire.error(f"Failed to start document upload | error={str(e)} | filename={file.filename} | error_type={type(e).__name__}")
+        raise HTTPException(status_code=500, detail={'error': str(e)})
 
 async def _perform_upload_with_progress(progress_id: str, file_content: bytes, file_metadata: dict, tag_list: List[str], knowledge_type: str):
     """Perform document upload with progress tracking using service layer."""
@@ -709,10 +636,7 @@ async def _perform_upload_with_progress(progress_id: str, file_content: bytes, f
         content_type = file_metadata['content_type']
         file_size = file_metadata['size']
         
-        logfire.info("Starting document upload with progress tracking", 
-                     progress_id=progress_id, 
-                     filename=filename,
-                     content_type=content_type)
+        logfire.info(f"Starting document upload with progress tracking | progress_id={progress_id} | filename={filename} | content_type={content_type}")
         
         # Socket.IO handles connection automatically - no need to wait
         
@@ -726,10 +650,7 @@ async def _perform_upload_with_progress(progress_id: str, file_content: bytes, f
         
         try:
             extracted_text = extract_text_from_document(file_content, filename, content_type)
-            logfire.info("Document text extracted", 
-                        filename=filename, 
-                        extracted_length=len(extracted_text),
-                        content_type=content_type)
+            logfire.info(f"Document text extracted | filename={filename} | extracted_length={len(extracted_text)} | content_type={content_type}")
         except Exception as e:
             await error_crawl_progress(progress_id, f"Failed to extract text: {str(e)}")
             return
@@ -756,180 +677,127 @@ async def _perform_upload_with_progress(progress_id: str, file_content: bytes, f
                 'log': f'Document upload completed successfully!'
             })
             
-            logfire.info("Document uploaded successfully", 
-                        progress_id=progress_id,
-                        source_id=result.get('source_id'), 
-                        chunks_stored=result.get('chunks_stored'))
+            logfire.info(f"Document uploaded successfully | progress_id={progress_id} | source_id={result.get('source_id')} | chunks_stored={result.get('chunks_stored')}")
         else:
             error_msg = result.get('error', 'Unknown error')
             await error_crawl_progress(progress_id, error_msg)
         
     except Exception as e:
         error_msg = f"Upload failed: {str(e)}"
-        logfire.error("Document upload failed", 
-                     progress_id=progress_id,
-                     filename=file_metadata.get('filename', 'unknown'), 
-                     error=str(e))
+        logfire.error(f"Document upload failed | progress_id={progress_id} | filename={file_metadata.get('filename', 'unknown')} | error={str(e)}")
         await error_crawl_progress(progress_id, error_msg)
 
 @router.post("/rag/query")
 async def perform_rag_query(request: RagQueryRequest):
     """Perform a RAG query on the knowledge base using service layer."""
-    with logfire.span("api_rag_query") as span:
-        span.set_attribute("endpoint", "/api/rag/query")
-        span.set_attribute("method", "POST")
-        span.set_attribute("query_length", len(request.query))
-        span.set_attribute("source", request.source)
-        span.set_attribute("match_count", request.match_count)
+    try:
+        # Use SearchService for RAG query
+        search_service = SearchService(get_supabase_client())
+        success, result = search_service.perform_rag_query(
+            query=request.query,
+            source=request.source,
+            match_count=request.match_count
+        )
         
-        try:
-            # Use SearchService for RAG query
-            search_service = SearchService(get_supabase_client())
-            success, result = search_service.perform_rag_query(
-                query=request.query,
-                source=request.source,
-                match_count=request.match_count
+        if success:
+            # Add success flag to match expected API response format
+            result['success'] = True
+            return result
+        else:
+            raise HTTPException(
+                status_code=500, 
+                detail={'error': result.get('error', 'RAG query failed')}
             )
-            
-            if success:
-                span.set_attribute("results_count", result.get('total_found', 0))
-                span.set_attribute("success", True)
-                
-                # Add success flag to match expected API response format
-                result['success'] = True
-                return result
-            else:
-                span.set_attribute("error", result.get('error'))
-                span.set_attribute("success", False)
-                raise HTTPException(
-                    status_code=500, 
-                    detail={'error': result.get('error', 'RAG query failed')}
-                )
-                
-        except HTTPException:
-            raise
-        except Exception as e:
-            logfire.error("RAG query failed", error=str(e), query=request.query[:50], source=request.source)
-            span.set_attribute("error", str(e))
-            raise HTTPException(status_code=500, detail={'error': f"RAG query failed: {str(e)}"})
+    except HTTPException:
+        raise
+    except Exception as e:
+        logfire.error(f"RAG query failed | error={str(e)} | query={request.query[:50]} | source={request.source}")
+        raise HTTPException(status_code=500, detail={'error': f"RAG query failed: {str(e)}"})
 
 @router.get("/rag/sources")
 async def get_available_sources():
     """Get all available sources for RAG queries."""
-    with logfire.span("api_get_available_sources") as span:
-        span.set_attribute("endpoint", "/api/rag/sources")
-        span.set_attribute("method", "GET")
+    try:
+        # Use the direct function which provides the detailed format expected by frontend
+        # This maintains backward compatibility while we transition to services
+        result = await get_available_sources_direct()
         
-        try:
-            # Use the direct function which provides the detailed format expected by frontend
-            # This maintains backward compatibility while we transition to services
-            result = await get_available_sources_direct()
-            
-            # Parse result if it's a string
-            if isinstance(result, str):
-                result = json.loads(result)
-            
-            sources_count = len(result.get('sources', []))
-            span.set_attribute("sources_count", sources_count)
-            span.set_attribute("success", result.get('success', False))
-            
-            return result
-            
-        except Exception as e:
-            logfire.error("Failed to get available sources", error=str(e))
-            span.set_attribute("error", str(e))
-            raise HTTPException(status_code=500, detail={'error': str(e)})
+        # Parse result if it's a string
+        if isinstance(result, str):
+            result = json.loads(result)
+        
+        sources_count = len(result.get('sources', []))
+        
+        return result
+    except Exception as e:
+        logfire.error(f"Failed to get available sources | error={str(e)}")
+        raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.delete("/sources/{source_id}")
 async def delete_source(source_id: str):
     """Delete a source and all its associated data."""
-    with logfire.span("api_delete_source") as span:
-        span.set_attribute("endpoint", f"/api/sources/{source_id}")
-        span.set_attribute("method", "DELETE")
-        span.set_attribute("source_id", source_id)
+    try:
+        logfire.info(f"Deleting source | source_id={source_id}")
         
-        try:
-            logfire.info("Deleting source", source_id=source_id)
+        # Use SourceManagementService directly
+        from ..services.rag.source_management_service import SourceManagementService
+        source_service = SourceManagementService(get_supabase_client())
+        
+        success, result_data = source_service.delete_source(source_id)
+        
+        if success:
+            logfire.info(f"Source deleted successfully | source_id={source_id}")
             
-            # Use SourceManagementService directly
-            from ..services.rag.source_management_service import SourceManagementService
-            source_service = SourceManagementService(get_supabase_client())
-            
-            success, result_data = source_service.delete_source(source_id)
-            
-            if success:
-                logfire.info("Source deleted successfully", source_id=source_id)
-                span.set_attribute("success", True)
-                
-                return {
-                    'success': True,
-                    'message': f'Successfully deleted source {source_id}',
-                    **result_data
-                }
-            else:
-                logfire.error("Source deletion failed", source_id=source_id, error=result_data.get('error'))
-                span.set_attribute("success", False)
-                span.set_attribute("error", result_data.get('error'))
-                raise HTTPException(status_code=500, detail={'error': result_data.get('error', 'Deletion failed')})
-                
-        except HTTPException:
-            raise
-        except Exception as e:
-            logfire.error("Failed to delete source", error=str(e), source_id=source_id)
-            span.set_attribute("error", str(e))
-            raise HTTPException(status_code=500, detail={'error': str(e)})
+            return {
+                'success': True,
+                'message': f'Successfully deleted source {source_id}',
+                **result_data
+            }
+        else:
+            logfire.error(f"Source deletion failed | source_id={source_id} | error={result_data.get('error')}")
+            raise HTTPException(status_code=500, detail={'error': result_data.get('error', 'Deletion failed')})
+    except HTTPException:
+        raise
+    except Exception as e:
+        logfire.error(f"Failed to delete source | error={str(e)} | source_id={source_id}")
+        raise HTTPException(status_code=500, detail={'error': str(e)})
 
 # WebSocket Endpoints
 
 @router.get("/database/metrics")
 async def get_database_metrics():
     """Get database metrics and statistics."""
-    with logfire.span("api_get_database_metrics") as span:
-        span.set_attribute("endpoint", "/api/database/metrics")
-        span.set_attribute("method", "GET")
+    try:
+        logfire.info("Getting database metrics")
+        supabase_client = get_supabase_client()
         
-        try:
-            logfire.info("Getting database metrics")
-            supabase_client = get_supabase_client()
-            
-            # Get counts from various tables
-            sources_count = supabase_client.table("sources").select("*", count="exact").execute()
-            pages_count = supabase_client.table("crawled_pages").select("*", count="exact").execute()
-            
-            sources_count_val = sources_count.count if sources_count.count else 0
-            pages_count_val = pages_count.count if pages_count.count else 0
-            
-            logfire.info("Database metrics retrieved", 
-                        sources_count=sources_count_val, 
-                        pages_count=pages_count_val)
-            span.set_attribute("sources_count", sources_count_val)
-            span.set_attribute("pages_count", pages_count_val)
-            
-            return {
-                "sources_count": sources_count_val,
-                "pages_count": pages_count_val,
-                "timestamp": datetime.now().isoformat()
-            }
-            
-        except Exception as e:
-            logfire.error("Failed to get database metrics", error=str(e))
-            span.set_attribute("error", str(e))
-            raise HTTPException(status_code=500, detail={'error': str(e)})
+        # Get counts from various tables
+        sources_count = supabase_client.table("sources").select("*", count="exact").execute()
+        pages_count = supabase_client.table("crawled_pages").select("*", count="exact").execute()
+        
+        sources_count_val = sources_count.count if sources_count.count else 0
+        pages_count_val = pages_count.count if pages_count.count else 0
+        
+        logfire.info(f"Database metrics retrieved | sources_count={sources_count_val} | pages_count={pages_count_val}")
+        
+        return {
+            "sources_count": sources_count_val,
+            "pages_count": pages_count_val,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logfire.error(f"Failed to get database metrics | error={str(e)}")
+        raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.get("/health")
 async def knowledge_health():
     """Knowledge API health check."""
-    with logfire.span("api_knowledge_health") as span:
-        span.set_attribute("endpoint", "/api/health")
-        span.set_attribute("method", "GET")
-        
-        # Removed health check logging to reduce console noise
-        result = {
-            "status": "healthy",
-            "service": "knowledge-api",
-            "timestamp": datetime.now().isoformat()
-        }
-        span.set_attribute("status", "healthy")
-        
-        return result 
+    # Removed health check logging to reduce console noise
+    result = {
+        "status": "healthy",
+        "service": "knowledge-api",
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    return result 
 

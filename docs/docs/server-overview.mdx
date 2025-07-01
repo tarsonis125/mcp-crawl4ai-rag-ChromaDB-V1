@@ -44,9 +44,8 @@ services:
 
 ### FastAPI Application
 - REST API endpoints
-- WebSocket/Socket.IO server
+- Socket.IO server for real-time communication
 - Service layer integration
-- Logfire monitoring
 
 ### Service Layer
 All business logic is organized into service modules:
@@ -59,7 +58,6 @@ All business logic is organized into service modules:
 ### External Services
 - **Supabase**: PostgreSQL + pgvector for data storage
 - **OpenAI API**: Embeddings generation
-- **Logfire**: Real-time monitoring and debugging
 
 ## API Structure
 
@@ -83,7 +81,7 @@ SUPABASE_SERVICE_KEY=your_service_key
 # AI Services  
 OPENAI_API_KEY=your_openai_key
 
-# Monitoring
+# Development & Troubleshooting (Optional)
 LOGFIRE_TOKEN=your_logfire_token
 
 # Service URLs (for inter-service communication)

@@ -1,8 +1,8 @@
 """
 Socket.IO Server Integration for Archon
 
-This module provides the core Socket.IO server setup and integration
-with FastAPI for real-time WebSocket communication.
+Simple Socket.IO server setup with FastAPI integration.
+All events are handled in projects_api.py using @sio.event decorators.
 """
 
 import socketio
@@ -24,7 +24,6 @@ sio = socketio.AsyncServer(
     max_http_buffer_size=1000000,  # 1MB
     ping_timeout=60,
     ping_interval=25,
-    # Use default path /socket.io/ for proper proxy support
 )
 
 # Global Socket.IO instance for use across modules
@@ -53,13 +52,11 @@ def create_socketio_app(app: FastAPI) -> socketio.ASGIApp:
                  ping_timeout=60,
                  ping_interval=25)
     
-    # Register global error handlers
+    # Register basic connection handlers
     @sio.event
     async def connect(sid, environ):
         """Handle new Socket.IO connections."""
         client_address = environ.get('REMOTE_ADDR', 'unknown')
-        headers = environ.get('asgi', {}).get('headers', [])
-        
         logfire.info("Socket.IO client connected", 
                      session_id=sid, 
                      client_address=client_address)
@@ -78,41 +75,11 @@ def create_socketio_app(app: FastAPI) -> socketio.ASGIApp:
     async def ping(sid):
         """Handle ping messages for connection health checks."""
         await sio.emit('pong', to=sid)
-        # Removed debug logging to reduce console noise
     
     # Create and return the Socket.IO ASGI app
-    # IMPORTANT: other_asgi_app parameter ensures non-Socket.IO requests are forwarded to FastAPI
     socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
     
     # Store the app reference for later use
     sio.app = app
     
     return socket_app
-
-# Namespace constants
-NAMESPACE_CRAWL = "/crawl"
-NAMESPACE_CHAT = "/chat"
-NAMESPACE_TASKS = "/tasks"
-NAMESPACE_LOGS = "/logs"
-NAMESPACE_TESTS = "/tests"
-NAMESPACE_PROJECT = "/project"
-NAMESPACE_KNOWLEDGE = "/knowledge"
-
-def register_namespaces():
-    """
-    Register all Socket.IO namespaces.
-    This should be called after all services have been initialized.
-    """
-    namespaces = [
-        NAMESPACE_CRAWL,
-        NAMESPACE_CHAT,
-        NAMESPACE_TASKS,
-        NAMESPACE_LOGS,
-        NAMESPACE_TESTS,
-        NAMESPACE_PROJECT,
-        NAMESPACE_KNOWLEDGE
-    ]
-    
-    for namespace in namespaces:
-        logfire.info(f"Registered Socket.IO namespace: {namespace}")
-        logger.info(f"Registered Socket.IO namespace: {namespace}")

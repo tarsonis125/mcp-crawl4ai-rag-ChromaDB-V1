@@ -13,20 +13,17 @@ from src.server.utils import get_supabase_client
 
 logger = logging.getLogger(__name__)
 
-# Import WebSocket broadcasting capability
-_task_update_manager = None
-
-def get_task_update_manager():
-    """Get the global task update manager instance"""
-    global _task_update_manager
-    if _task_update_manager is None:
-        try:
-            from src.api.projects_api import task_update_manager
-            _task_update_manager = task_update_manager
-        except ImportError:
-            logger.warning("TaskUpdateManager not available - WebSocket broadcasting disabled")
-            _task_update_manager = False  # Use False to indicate not available
-    return _task_update_manager if _task_update_manager is not False else None
+# Import Socket.IO broadcasting capability
+try:
+    from src.server.fastapi.projects_api import broadcast_task_update
+    _broadcast_available = True
+except ImportError:
+    logger.warning("Socket.IO broadcasting not available - real-time updates disabled")
+    _broadcast_available = False
+    
+    # Dummy function when broadcasting is not available
+    async def broadcast_task_update(*args, **kwargs):
+        pass
 
 
 class TaskService:
@@ -52,11 +49,11 @@ class TaskService:
         return True, ""
     
     async def create_task(self, project_id: str, title: str, description: str = "", 
-                   assignee: str = "User", task_order: int = 0, feature: str = None,
-                   parent_task_id: str = None, sources: List[Dict[str, Any]] = None,
+                   assignee: str = "User", task_order: int = 0, feature: Optional[str] = None,
+                   parent_task_id: Optional[str] = None, sources: List[Dict[str, Any]] = None,
                    code_examples: List[Dict[str, Any]] = None) -> Tuple[bool, Dict[str, Any]]:
         """
-        Create a new task under a project.
+        Create a new task under a project with automatic reordering.
         
         Returns:
             Tuple of (success, result_dict)
@@ -74,11 +71,34 @@ class TaskService:
             if not is_valid:
                 return False, {"error": error_msg}
             
+            task_status = "todo"
+            
+            # REORDERING LOGIC: If inserting at a specific position, increment existing tasks
+            if task_order > 0:
+                # Get all tasks in the same project and status with task_order >= new task's order
+                existing_tasks_response = self.supabase_client.table("tasks")\
+                    .select("id, task_order")\
+                    .eq("project_id", project_id)\
+                    .eq("status", task_status)\
+                    .gte("task_order", task_order)\
+                    .execute()
+                
+                if existing_tasks_response.data:
+                    logger.info(f"Reordering {len(existing_tasks_response.data)} existing tasks")
+                    
+                    # Increment task_order for all affected tasks
+                    for existing_task in existing_tasks_response.data:
+                        new_order = existing_task["task_order"] + 1
+                        self.supabase_client.table("tasks").update({
+                            "task_order": new_order,
+                            "updated_at": datetime.now().isoformat()
+                        }).eq("id", existing_task["id"]).execute()
+            
             task_data = {
                 "project_id": project_id,
                 "title": title,
                 "description": description,
-                "status": "todo",
+                "status": task_status,
                 "assignee": assignee,
                 "task_order": task_order,
                 "sources": sources or [],
@@ -98,18 +118,17 @@ class TaskService:
             if response.data:
                 task = response.data[0]
                 
-                # Broadcast WebSocket update for new task
-                task_manager = get_task_update_manager()
-                if task_manager:
+                # Broadcast Socket.IO update for new task
+                if _broadcast_available:
                     try:
-                        await task_manager.broadcast_task_update(
+                        await broadcast_task_update(
                             project_id=task["project_id"],
                             event_type="task_created",
                             task_data=task
                         )
-                        logger.info(f"WebSocket broadcast sent for new task {task['id']}")
+                        logger.info(f"Socket.IO broadcast sent for new task {task['id']}")
                     except Exception as ws_error:
-                        logger.warning(f"Failed to broadcast WebSocket update for new task {task['id']}: {ws_error}")
+                        logger.warning(f"Failed to broadcast Socket.IO update for new task {task['id']}: {ws_error}")
                 
                 return True, {
                     "task": {
@@ -262,19 +281,18 @@ class TaskService:
             if response.data:
                 task = response.data[0]
                 
-                # Broadcast WebSocket update
-                task_manager = get_task_update_manager()
-                if task_manager:
+                # Broadcast Socket.IO update
+                if _broadcast_available:
                     try:
-                        await task_manager.broadcast_task_update(
+                        await broadcast_task_update(
                             project_id=task["project_id"],
                             event_type="task_updated",
                             task_data=task
                         )
-                        logger.info(f"WebSocket broadcast sent for task {task_id}")
+                        logger.info(f"Socket.IO broadcast sent for task {task_id}")
                     except Exception as ws_error:
-                        # Don't fail the task update if WebSocket broadcasting fails
-                        logger.warning(f"Failed to broadcast WebSocket update for task {task_id}: {ws_error}")
+                        # Don't fail the task update if Socket.IO broadcasting fails
+                        logger.warning(f"Failed to broadcast Socket.IO update for task {task_id}: {ws_error}")
                 
                 return True, {
                     "task": task,
@@ -324,18 +342,17 @@ class TaskService:
                 if subtasks_count > 0:
                     self.supabase_client.table("tasks").update(archive_data).eq("parent_task_id", task_id).or_("archived.is.null,archived.eq.false").execute()
                 
-                # Broadcast WebSocket update for archived task
-                task_manager = get_task_update_manager()
-                if task_manager:
+                # Broadcast Socket.IO update for archived task
+                if _broadcast_available:
                     try:
-                        await task_manager.broadcast_task_update(
+                        await broadcast_task_update(
                             project_id=task["project_id"],
                             event_type="task_archived",
                             task_data={"id": task_id, "project_id": task["project_id"], "archived_subtasks": subtasks_count}
                         )
-                        logger.info(f"WebSocket broadcast sent for archived task {task_id}")
+                        logger.info(f"Socket.IO broadcast sent for archived task {task_id}")
                     except Exception as ws_error:
-                        logger.warning(f"Failed to broadcast WebSocket update for archived task {task_id}: {ws_error}")
+                        logger.warning(f"Failed to broadcast Socket.IO update for archived task {task_id}: {ws_error}")
                 
                 return True, {
                     "task_id": task_id,
