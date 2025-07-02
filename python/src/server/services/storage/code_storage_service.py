@@ -14,6 +14,20 @@ from ...config.logfire_config import search_logger
 from ..embeddings.embedding_service import create_embeddings_batch, create_embedding
 
 
+def _get_model_choice() -> str:
+    """Get MODEL_CHOICE from credential service cache or fallback to environment."""
+    try:
+        from ..credential_service import credential_service
+        if hasattr(credential_service, '_cache') and credential_service._cache_initialized:
+            cached_value = credential_service._cache.get("MODEL_CHOICE")
+            if cached_value:
+                return str(cached_value)
+    except:
+        pass
+    # Fallback to environment variable
+    return os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
+
+
 def extract_code_blocks(markdown_content: str, min_length: int = 1000) -> List[Dict[str, Any]]:
     """
     Extract code blocks from markdown content along with context.
@@ -108,7 +122,8 @@ def generate_code_example_summary(code: str, context_before: str, context_after:
     Returns:
         A summary of what the code example demonstrates
     """
-    model_choice = os.getenv("MODEL_CHOICE")
+    # Get model choice from credential service (RAG setting)
+    model_choice = _get_model_choice()
     
     # Create the prompt
     prompt = f"""<context_before>

@@ -38,7 +38,7 @@ services:
         BUILDKIT_INLINE_CACHE: 1
     container_name: Archon-MCP
     ports:
-      - "8051:8051"
+      - "8051:8000"  # Map external 8051 to internal 8000 (SSE default)
     environment:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
@@ -55,7 +55,7 @@ services:
       - archon-server
       - archon-agents
     healthcheck:
-      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.connect(('localhost', 8051)); s.close()"]
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.connect(('localhost', 8000)); s.close()"]
       interval: 30s
       timeout: 10s
       retries: 3

@@ -85,7 +85,15 @@ async def add_documents_to_supabase(
                     search_logger.error(f"Error deleting record for URL {url}: {inner_e}")
         
         # Check if contextual embeddings are enabled
-        use_contextual_embeddings = os.getenv("USE_CONTEXTUAL_EMBEDDINGS", "false") == "true"
+        # Fix: Get from credential service instead of environment
+        from ..credential_service import credential_service
+        try:
+            use_contextual_embeddings = await credential_service.get_credential("USE_CONTEXTUAL_EMBEDDINGS", "false", decrypt=True)
+            if isinstance(use_contextual_embeddings, str):
+                use_contextual_embeddings = use_contextual_embeddings.lower() == "true"
+        except:
+            # Fallback to environment variable
+            use_contextual_embeddings = os.getenv("USE_CONTEXTUAL_EMBEDDINGS", "false") == "true"
         
         # Process in batches to avoid memory issues
         for batch_num, i in enumerate(range(0, len(contents), batch_size), 1):

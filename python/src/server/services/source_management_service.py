@@ -31,8 +31,16 @@ def extract_source_summary(source_id: str, content: str, max_length: int = 500) 
     if not content or len(content.strip()) == 0:
         return default_summary
     
-    # Get the model choice from environment variables
-    model_choice = os.getenv("MODEL_CHOICE")
+    # Get the model choice from credential service (RAG setting)
+    try:
+        from .credential_service import credential_service
+        if hasattr(credential_service, '_cache') and credential_service._cache_initialized:
+            cached_value = credential_service._cache.get("MODEL_CHOICE")
+            model_choice = str(cached_value) if cached_value else "gpt-4.1-nano"
+        else:
+            model_choice = os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
+    except:
+        model_choice = os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
     
     # Limit content length to avoid token limits
     truncated_content = content[:25000] if len(content) > 25000 else content

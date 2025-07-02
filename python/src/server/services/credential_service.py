@@ -355,21 +355,26 @@ async def initialize_credentials() -> None:
     """Initialize the credential service by loading all credentials and setting environment variables."""
     await credential_service.load_all_credentials()
     
-    # Set critical credentials as environment variables for child processes
-    critical_credentials = [
-        "OPENAI_API_KEY",
-        "HOST", 
-        "PORT",
-        "MCP_TRANSPORT",  # Renamed from TRANSPORT
-        "MODEL_CHOICE",
-        "USE_CONTEXTUAL_EMBEDDINGS",
-        "CONTEXTUAL_EMBEDDINGS_MAX_WORKERS",
-        "USE_HYBRID_SEARCH", 
-        "USE_AGENTIC_RAG",
-        "USE_RERANKING"
+    # Only set infrastructure/startup credentials as environment variables
+    # RAG settings will be looked up on-demand from the credential service
+    infrastructure_credentials = [
+        "OPENAI_API_KEY",      # Required for API client initialization
+        "HOST",                # Server binding configuration
+        "PORT",                # Server binding configuration
+        "MCP_TRANSPORT",       # Server transport mode
+        "LOGFIRE_ENABLED",     # Logging infrastructure setup
+        "PROJECTS_ENABLED"     # Feature flag for module loading
     ]
     
-    for key in critical_credentials:
+    # RAG settings that should NOT be set as env vars (will be looked up on demand):
+    # - USE_CONTEXTUAL_EMBEDDINGS
+    # - CONTEXTUAL_EMBEDDINGS_MAX_WORKERS
+    # - USE_HYBRID_SEARCH
+    # - USE_AGENTIC_RAG
+    # - USE_RERANKING
+    # - MODEL_CHOICE
+    
+    for key in infrastructure_credentials:
         try:
             value = await credential_service.get_credential(key, decrypt=True)
             if value:
@@ -378,4 +383,4 @@ async def initialize_credentials() -> None:
         except Exception as e:
             logger.warning(f"Failed to set environment variable {key}: {e}")
     
-    logger.info("✅ Credentials loaded and environment variables set") 
+    logger.info("✅ Credentials loaded and infrastructure environment variables set") 

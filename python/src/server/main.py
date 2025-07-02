@@ -91,7 +91,10 @@ class CrawlingContext:
             self.supabase_client = get_supabase_client()
             
             # Initialize cross-encoder model for reranking if enabled
-            if os.getenv("USE_RERANKING", "false") == "true" and CrossEncoder:
+            # Get USE_RERANKING from credential service (RAG setting)
+            from .services.credential_service import credential_service
+            use_reranking = await credential_service.get_credential("USE_RERANKING", "false", decrypt=False)
+            if str(use_reranking).lower() == "true" and CrossEncoder:
                 try:
                     self.reranking_model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
                 except Exception as e:

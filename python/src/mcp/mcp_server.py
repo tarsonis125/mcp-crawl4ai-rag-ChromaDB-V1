@@ -140,11 +140,6 @@ async def lightweight_lifespan(server: FastMCP) -> AsyncIterator[LightweightArch
             service_client = get_mcp_service_client()
             logger.info("✓ Service client initialized")
             
-            # Initialize credentials from database
-            logger.info("🔑 Initializing credentials from database...")
-            from src.server.services.credential_service import initialize_credentials
-            await initialize_credentials()
-            logger.info("✓ Credentials initialized from database")
             
             # Create lightweight context  
             context = LightweightArchonContext(
@@ -351,14 +346,10 @@ async def main():
         mcp_logger.info("🔥 Logfire initialized for lightweight MCP server")
         mcp_logger.info(f"🌟 Starting lightweight MCP server - host={host}, port={port}")
         
-        # Try to run with Streamable HTTP transport, fall back to SSE if not supported
-        try:
-            logger.info("🌐 Starting Streamable HTTP transport")
-            await mcp.run(transport="http", host=host, port=port, path="/mcp")
-        except Exception as e:
-            logger.warning(f"⚠️ Streamable HTTP transport not available: {e}")
-            logger.info("🌐 Falling back to Server-Sent Events (SSE) transport")
-            await mcp.run_sse_async()
+        # Run with SSE transport on default port
+        logger.info("🌐 Starting Server-Sent Events (SSE) transport")
+        logger.info("⚠️ Note: SSE runs on default port 8000, not the configured port")
+        await mcp.run_sse_async()
             
     except Exception as e:
         mcp_logger.error(f"💥 Fatal error in main - error={str(e)}, error_type={type(e).__name__}")

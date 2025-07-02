@@ -39,7 +39,8 @@ def generate_contextual_embedding(full_document: str, chunk: str) -> Tuple[str, 
     # Create OpenAI client with the API key
     client = openai.OpenAI(api_key=api_key)
     
-    model_choice = os.getenv("MODEL_CHOICE")
+    # Get model choice from credential service (RAG setting)
+    model_choice = _get_model_choice()
     
     try:
         # Create the prompt for generating contextual information
@@ -99,12 +100,18 @@ async def generate_contextual_embedding_async(full_document: str, chunk: str) ->
         - The contextual text that situates the chunk within the document
         - Boolean indicating if contextual embedding was performed
     """
+    # API key is infrastructure, so get from environment
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         search_logger.error("No OpenAI API key found in environment")
         return chunk, False
     
-    model_choice = os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
+    # Model choice is a RAG setting, get from credential service
+    from src.server.services.credential_service import credential_service
+    try:
+        model_choice = await credential_service.get_credential("MODEL_CHOICE", "gpt-4.1-nano", decrypt=False)
+    except:
+        model_choice = "gpt-4.1-nano"
     threading_service = get_threading_service()
     
     # Estimate tokens: document preview (5000 chars ≈ 1250 tokens) + chunk + prompt
@@ -181,6 +188,20 @@ async def process_chunk_with_context_async(url: str, content: str, full_document
     return await generate_contextual_embedding_async(full_document, content)
 
 
+def _get_model_choice() -> str:
+    """Get MODEL_CHOICE from credential service cache or fallback to environment."""
+    try:
+        from src.server.services.credential_service import credential_service
+        if hasattr(credential_service, '_cache') and credential_service._cache_initialized:
+            cached_value = credential_service._cache.get("MODEL_CHOICE")
+            if cached_value:
+                return str(cached_value)
+    except:
+        pass
+    # Fallback to environment variable
+    return os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
+
+
 def generate_contextual_embeddings_batch(full_documents: List[str], chunks: List[str]) -> List[Tuple[str, bool]]:
     """
     Generate contextual information for multiple chunks in a single API call to avoid rate limiting.
@@ -194,7 +215,7 @@ def generate_contextual_embeddings_batch(full_documents: List[str], chunks: List
         - The contextual text that situates the chunk within the document
         - Boolean indicating if contextual embedding was performed
     """
-    # Get API key directly from environment
+    # Get API key directly from environment (this is infrastructure, so it's OK)
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         print("Error: No OpenAI API key found in environment")
@@ -202,7 +223,8 @@ def generate_contextual_embeddings_batch(full_documents: List[str], chunks: List
     
     # Create OpenAI client
     client = openai.OpenAI(api_key=api_key)
-    model_choice = os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
+    # Get model choice from credential service (RAG setting)
+    model_choice = _get_model_choice()
     
     try:
         # Build batch prompt

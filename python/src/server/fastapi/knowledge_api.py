@@ -534,7 +534,14 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         })
         
         # Update source information
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        # Get max workers from credential service (defaults to 3 if not set)
+        try:
+            max_workers_str = await credential_service.get_credential("CONTEXTUAL_EMBEDDINGS_MAX_WORKERS", "3", decrypt=False)
+            max_workers = int(max_workers_str)
+        except:
+            max_workers = 3
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             source_summary_args = [(source_id, content) for source_id, content in source_content_map.items()]
             source_summaries = list(executor.map(lambda args: extract_source_summary(args[0], args[1]), source_summary_args))
         
@@ -588,11 +595,82 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
             progress_callback=batch_progress_callback
         )
         
-        # Code storage phase (even if we don't extract code, show the step)
+        # Code storage phase
         await update_crawl_progress(progress_id, {
-            'status': 'code_storage', 'percentage': 95,
+            'status': 'code_storage', 'percentage': 90,
             'log': 'Checking for code examples...'
         })
+        
+        # Check if code extraction is enabled
+        from ..services.credential_service import credential_service
+        try:
+            extract_code_examples = await credential_service.get_credential("USE_AGENTIC_RAG", "false", decrypt=True)
+            if isinstance(extract_code_examples, str):
+                extract_code_examples = extract_code_examples.lower() == "true"
+        except:
+            extract_code_examples = False
+        
+        if extract_code_examples:
+            await update_crawl_progress(progress_id, {
+                'status': 'code_storage', 'percentage': 91,
+                'log': 'Extracting code examples from crawled content...'
+            })
+            
+            # Import code extraction utilities
+            from ..services.storage.code_storage_service import extract_code_blocks
+            from ..services.rag.document_storage_service import DocumentStorageService
+            
+            all_code_examples = []
+            total_docs = len(crawl_results)
+            
+            for idx, doc in enumerate(crawl_results):
+                try:
+                    # Extract code blocks from markdown
+                    code_blocks = extract_code_blocks(doc.get('markdown', ''))
+                    
+                    if code_blocks:
+                        # Get source_id for this document
+                        parsed_url = urlparse(doc['url'])
+                        doc_source_id = parsed_url.netloc or parsed_url.path
+                        
+                        # Add metadata to each code block
+                        for block in code_blocks:
+                            block['url'] = doc['url']
+                            block['source_id'] = doc_source_id
+                            all_code_examples.append(block)
+                    
+                    # Update progress
+                    if idx % 5 == 0:  # Update every 5 documents
+                        progress = 91 + int((idx / total_docs) * 4)  # Progress from 91 to 95
+                        await update_crawl_progress(progress_id, {
+                            'status': 'code_storage', 
+                            'percentage': progress,
+                            'log': f'Extracting code from document {idx + 1}/{total_docs}...'
+                        })
+                        
+                except Exception as e:
+                    safe_logfire_error(f"Error extracting code from document | url={doc.get('url')} | error={str(e)}")
+            
+            # Store code examples if any were found
+            if all_code_examples:
+                await update_crawl_progress(progress_id, {
+                    'status': 'code_storage', 'percentage': 95,
+                    'log': f'Storing {len(all_code_examples)} code examples...'
+                })
+                
+                try:
+                    doc_storage_service = DocumentStorageService(supabase_client)
+                    success, result = doc_storage_service.store_code_examples(all_code_examples)
+                    
+                    if success:
+                        safe_logfire_info(f"Stored {len(all_code_examples)} code examples | progress_id={progress_id}")
+                    else:
+                        safe_logfire_error(f"Failed to store code examples | error={result.get('error')}")
+                        
+                except Exception as e:
+                    safe_logfire_error(f"Error storing code examples | error={str(e)}")
+            else:
+                safe_logfire_info(f"No code examples found in crawled content | progress_id={progress_id}")
         
         # Finalization phase
         await update_crawl_progress(progress_id, {
