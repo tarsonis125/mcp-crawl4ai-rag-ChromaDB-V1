@@ -150,7 +150,9 @@ def register_project_tools(mcp: FastMCP):
         sources: List[Dict[str, Any]] = None,
         code_examples: List[Dict[str, Any]] = None,
         update_fields: Dict[str, Any] = None,
-        include_closed: bool = False
+        include_closed: bool = False,
+        page: int = 1,
+        per_page: int = 50
     ) -> str:
         """
         Unified tool for task management operations.
@@ -171,13 +173,15 @@ def register_project_tools(mcp: FastMCP):
             code_examples: List of code examples (for create)
             update_fields: Dict of fields to update (for update action)
             include_closed: Include done tasks in list (default: False)
+            page: Page number for pagination (default: 1)
+            per_page: Number of items per page (default: 50, max: 100)
         
         Returns:
-            JSON string with operation results
+            JSON string with operation results including pagination info for list operations
         
         Examples:
             Create: manage_task(action="create", project_id="uuid", title="Implement login")
-            List by project: manage_task(action="list", filter_by="project", filter_value="project-uuid")
+            List by project: manage_task(action="list", filter_by="project", filter_value="project-uuid", page=1, per_page=25)
             List by status: manage_task(action="list", filter_by="status", filter_value="todo", project_id="uuid")
             Get: manage_task(action="get", task_id="uuid")
             Update: manage_task(action="update", task_id="uuid", update_fields={"status": "doing"})
@@ -219,7 +223,10 @@ def register_project_tools(mcp: FastMCP):
             
             elif action == "list":
                 # Build URL with query parameters
-                params = {}
+                params = {
+                    "page": page,
+                    "per_page": per_page
+                }
                 
                 if filter_by == "project" and filter_value:
                     url = urljoin(api_url, f"/api/projects/{filter_value}/tasks")
@@ -240,8 +247,22 @@ def register_project_tools(mcp: FastMCP):
                     
                     if response.status_code == 200:
                         result = response.json()
-                        tasks = result if isinstance(result, list) else result.get("tasks", [])
-                        return json.dumps({"success": True, "tasks": tasks})
+                        # Handle both paginated and non-paginated responses
+                        if isinstance(result, dict) and "tasks" in result:
+                            return json.dumps({
+                                "success": True, 
+                                "tasks": result.get("tasks", []),
+                                "pagination": {
+                                    "page": result.get("page", page),
+                                    "per_page": result.get("per_page", per_page),
+                                    "total": result.get("total", len(result.get("tasks", []))),
+                                    "pages": result.get("pages", 1)
+                                }
+                            })
+                        else:
+                            # Backwards compatibility for non-paginated responses
+                            tasks = result if isinstance(result, list) else result.get("tasks", [])
+                            return json.dumps({"success": True, "tasks": tasks})
                     else:
                         return json.dumps({"success": False, "error": "Failed to list tasks"})
             

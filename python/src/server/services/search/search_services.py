@@ -17,7 +17,7 @@ except ImportError:
     CrossEncoder = None
 
 from ...utils import get_supabase_client
-from .vector_search_service import search_documents, search_code_examples
+from .vector_search_service import search_documents, search_code_examples, search_documents_async
 from ...config.logfire_config import safe_span, get_logger
 
 logger = get_logger(__name__)
@@ -93,7 +93,7 @@ class SearchService:
             logger.error(f"Error during reranking: {e}")
             return results
 
-    def perform_rag_query(self, query: str, source: str = None, match_count: int = 5) -> Tuple[bool, Dict[str, Any]]:
+    async def perform_rag_query(self, query: str, source: str = None, match_count: int = 5) -> Tuple[bool, Dict[str, Any]]:
         """
         Perform a RAG (Retrieval Augmented Generation) query on stored content.
         
@@ -124,9 +124,9 @@ class SearchService:
                         logger.debug(f"Built filter metadata for source: {source}")
                         span.set_attribute("filter_applied", True)
                 
-                # Perform vector search
+                # Perform vector search with async
                 with safe_span("vector_search"):
-                    results = search_documents(
+                    results = await search_documents_async(
                         client=self.supabase_client,
                         query=query,
                         match_count=match_count,
@@ -181,7 +181,7 @@ class SearchService:
                     "execution_path": "service_vector_search"
                 }
 
-    async def search_code_examples_service(self, query: str, source_id: str = None, match_count: int = 5) -> Tuple[bool, Dict[str, Any]]:
+    async def search_code_examples_service(self, query: str, source_id: Optional[str] = None, match_count: int = 5) -> Tuple[bool, Dict[str, Any]]:
         """
         Search for code examples relevant to the query.
         
@@ -276,12 +276,13 @@ class SearchService:
                 results = combined_results[:match_count]
                 
             else:
-                # Standard vector search only
+                # Standard vector search only - ACTUALLY search code examples, not documents
                 results = search_code_examples(
                     client=self.supabase_client,
                     query=query,
                     match_count=match_count,
-                    filter_metadata=filter_metadata
+                    filter_metadata=filter_metadata,
+                    source_id=source_id
                 )
             
             # Apply reranking if enabled

@@ -524,7 +524,7 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         for doc in crawl_results:
             source_url = doc['url']
             md = doc['markdown']
-            chunks = doc_storage_service.smart_chunk_markdown(md, chunk_size=5000)
+            chunks = doc_storage_service.smart_chunk_text(md, chunk_size=5000)
             
             parsed_url = urlparse(source_url)
             source_id = parsed_url.netloc or parsed_url.path
@@ -538,7 +538,7 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
                 chunk_numbers.append(i)
                 contents.append(chunk)
                 
-                meta = doc_storage_service.extract_section_info(chunk)
+                meta = doc_storage_service.extract_metadata(chunk)
                 meta.update({
                     "chunk_index": i,
                     "url": source_url,
@@ -880,7 +880,7 @@ async def perform_rag_query(request: RagQueryRequest):
     try:
         # Use SearchService for RAG query
         search_service = SearchService(get_supabase_client())
-        success, result = search_service.perform_rag_query(
+        success, result = await search_service.perform_rag_query(
             query=request.query,
             source=request.source,
             match_count=request.match_count
@@ -900,6 +900,37 @@ async def perform_rag_query(request: RagQueryRequest):
     except Exception as e:
         safe_logfire_error(f"RAG query failed | error={str(e)} | query={request.query[:50]} | source={request.source}")
         raise HTTPException(status_code=500, detail={'error': f"RAG query failed: {str(e)}"})
+
+@router.post("/rag/code-examples")
+async def search_code_examples(request: RagQueryRequest):
+    """Search for code examples relevant to the query using dedicated code examples service."""
+    try:
+        # Use SearchService for code examples search
+        search_service = SearchService(get_supabase_client())
+        success, result = await search_service.search_code_examples_service(
+            query=request.query,
+            source_id=request.source,  # This is Optional[str] which matches the method signature
+            match_count=request.match_count
+        )
+        
+        if success:
+            # Add success flag and reformat to match expected API response format
+            return {
+                'success': True,
+                'results': result.get('results', []),
+                'reranked': result.get('reranking_applied', False),
+                'error': None
+            }
+        else:
+            raise HTTPException(
+                status_code=500, 
+                detail={'error': result.get('error', 'Code examples search failed')}
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        safe_logfire_error(f"Code examples search failed | error={str(e)} | query={request.query[:50]} | source={request.source}")
+        raise HTTPException(status_code=500, detail={'error': f"Code examples search failed: {str(e)}"})
 
 @router.get("/rag/sources")
 async def get_available_sources():

@@ -14,55 +14,28 @@ service modules directly, enabling true microservices architecture.
 
 from mcp.server.fastmcp import FastMCP, Context
 from typing import List, Dict, Any, Optional
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 import json
 import logging
 import os
 from datetime import datetime
 import httpx
 
-# Import the service client for HTTP communication
-from src.server.services.mcp_service_client import get_mcp_service_client
-
-# MCP should use HTTP calls only - no direct database access
-# from src.server.utils import get_supabase_client
+# Import service discovery for HTTP communication
+from src.server.config.service_discovery import get_api_url
 
 logger = logging.getLogger(__name__)
 
 
 def get_setting(key: str, default: str = "false") -> str:
-    """Get a setting from the credential service or fall back to environment variable."""
-    try:
-        # MCP should not access credential service directly
-        # from src.server.services.credential_service import credential_service
-        credential_service = None
-        if hasattr(credential_service, '_cache') and credential_service._cache_initialized:
-            cached_value = credential_service._cache.get(key)
-            if isinstance(cached_value, dict) and cached_value.get("is_encrypted"):
-                encrypted_value = cached_value.get("encrypted_value")
-                if encrypted_value:
-                    try:
-                        return credential_service._decrypt_value(encrypted_value)
-                    except Exception:
-                        pass
-            elif cached_value:
-                return str(cached_value)
-        # Fallback to environment variable
-        return os.getenv(key, default)
-    except Exception:
-        return os.getenv(key, default)
+    """Get a setting from environment variable."""
+    return os.getenv(key, default)
 
 
 def get_bool_setting(key: str, default: bool = False) -> bool:
-    """Get a boolean setting from credential service."""
+    """Get a boolean setting from environment variable."""
     value = get_setting(key, "false" if not default else "true")
     return value.lower() in ("true", "1", "yes", "on")
-
-
-# Note: Old direct service functions removed - now using HTTP-based communication
-
-# OLD CODE BLOCK REMOVED - Lines 64-378 contained old implementation
-# Now using HTTP-based communication via get_mcp_service_client()
 
 
 def register_rag_tools(mcp: FastMCP):
@@ -82,19 +55,47 @@ def register_rag_tools(mcp: FastMCP):
         Returns:
             JSON string with success status and metadata
         """
-        client = get_mcp_service_client()
-        logger.info(f"Crawling single page via HTTP: {url}")
-        
-        result = await client.crawl_url(
-            url,
-            options={
-                "max_depth": 1,
-                "chunk_size": chunk_size,
-                "smart_crawl": False
-            }
-        )
-        
-        return json.dumps(result, indent=2)
+        try:
+            api_url = get_api_url()
+            timeout = httpx.Timeout(300.0, connect=5.0)  # 5 minutes for crawling
+            
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(
+                    urljoin(api_url, "/api/knowledge-items/crawl"),
+                    json={
+                        "url": url,
+                        "knowledge_type": "documentation",
+                        "tags": [],
+                        "update_frequency": 7,
+                        "metadata": {
+                            "max_depth": 1,
+                            "chunk_size": chunk_size,
+                            "smart_crawl": False
+                        }
+                    }
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    return json.dumps({
+                        "success": result.get("success", True),
+                        "progressId": result.get("progressId"),
+                        "message": result.get("message", "Crawling started"),
+                        "error": None
+                    }, indent=2)
+                else:
+                    error_detail = response.text
+                    return json.dumps({
+                        "success": False,
+                        "error": f"HTTP {response.status_code}: {error_detail}"
+                    }, indent=2)
+                    
+        except Exception as e:
+            logger.error(f"Error crawling single page: {e}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, indent=2)
     
     @mcp.tool()
     async def smart_crawl_url(ctx: Context, url: str, max_depth: int = 3, chunk_size: int = 5000) -> str:
@@ -111,56 +112,81 @@ def register_rag_tools(mcp: FastMCP):
         Returns:
             JSON string with crawl results
         """
-        client = get_mcp_service_client()
-        logger.info(f"Smart crawling via HTTP: {url}")
-        
-        result = await client.crawl_url(
-            url,
-            options={
-                "max_depth": max_depth,
-                "chunk_size": chunk_size,
-                "smart_crawl": True
-            }
-        )
-        
-        return json.dumps(result, indent=2)
+        try:
+            api_url = get_api_url()
+            timeout = httpx.Timeout(300.0, connect=5.0)  # 5 minutes for crawling
+            
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(
+                    urljoin(api_url, "/api/knowledge-items/crawl"),
+                    json={
+                        "url": url,
+                        "knowledge_type": "documentation",
+                        "tags": [],
+                        "update_frequency": 7,
+                        "metadata": {
+                            "max_depth": max_depth,
+                            "chunk_size": chunk_size,
+                            "smart_crawl": True
+                        }
+                    }
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    return json.dumps({
+                        "success": result.get("success", True),
+                        "progressId": result.get("progressId"),
+                        "message": result.get("message", "Crawling started"),
+                        "error": None
+                    }, indent=2)
+                else:
+                    error_detail = response.text
+                    return json.dumps({
+                        "success": False,
+                        "error": f"HTTP {response.status_code}: {error_detail}"
+                    }, indent=2)
+                    
+        except Exception as e:
+            logger.error(f"Error smart crawling: {e}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, indent=2)
     
     @mcp.tool()
     async def get_available_sources(ctx: Context) -> str:
         """
         Get list of available sources in the knowledge base.
         
-        This tool uses direct database access for simple read operations.
+        This tool uses HTTP call to the API service.
         
         Returns:
             JSON string with list of sources
         """
         try:
-            # MCP should use HTTP to get sources - commenting out direct DB access
-            # supabase_client = get_supabase_client()
-            # response = supabase_client.table("documents").select("source").execute()
+            api_url = get_api_url()
+            timeout = httpx.Timeout(30.0, connect=5.0)
             
-            # TODO: Implement HTTP call to server API to get sources
-            # For now, return empty list to allow MCP to start
-            response = type('obj', (object,), {'data': []})
-            
-            if response.data:
-                # Extract unique sources
-                sources = list(set(doc["source"] for doc in response.data if doc.get("source")))
-                sources.sort()
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.get(urljoin(api_url, "/api/rag/sources"))
                 
-                return json.dumps({
-                    "success": True,
-                    "sources": sources,
-                    "count": len(sources)
-                }, indent=2)
-            else:
-                return json.dumps({
-                    "success": True,
-                    "sources": [],
-                    "count": 0
-                }, indent=2)
-                
+                if response.status_code == 200:
+                    result = response.json()
+                    sources = result.get("sources", [])
+                    
+                    return json.dumps({
+                        "success": True,
+                        "sources": sources,
+                        "count": len(sources)
+                    }, indent=2)
+                else:
+                    error_detail = response.text
+                    return json.dumps({
+                        "success": False,
+                        "error": f"HTTP {response.status_code}: {error_detail}"
+                    }, indent=2)
+                    
         except Exception as e:
             logger.error(f"Error getting sources: {e}")
             return json.dumps({
@@ -185,27 +211,53 @@ def register_rag_tools(mcp: FastMCP):
         Returns:
             JSON string with search results
         """
-        client = get_mcp_service_client()
-        logger.info(f"Performing RAG query via HTTP: {query}")
-        
-        # Check if reranking is enabled
-        use_reranking = get_bool_setting("USE_RERANKING", False)
-        
-        result = await client.search(
-            query,
-            source_filter=source,
-            match_count=match_count,
-            use_reranking=use_reranking
-        )
-        
-        return json.dumps(result, indent=2)
+        try:
+            api_url = get_api_url()
+            timeout = httpx.Timeout(30.0, connect=5.0)
+            
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                request_data = {
+                    "query": query,
+                    "match_count": match_count
+                }
+                if source:
+                    request_data["source"] = source
+                
+                response = await client.post(
+                    urljoin(api_url, "/api/rag/query"),
+                    json=request_data
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    return json.dumps({
+                        "success": True,
+                        "results": result.get("results", []),
+                        "reranked": result.get("reranked", False),
+                        "error": None
+                    }, indent=2)
+                else:
+                    error_detail = response.text
+                    return json.dumps({
+                        "success": False,
+                        "results": [],
+                        "error": f"HTTP {response.status_code}: {error_detail}"
+                    }, indent=2)
+                    
+        except Exception as e:
+            logger.error(f"Error performing RAG query: {e}")
+            return json.dumps({
+                "success": False,
+                "results": [],
+                "error": str(e)
+            }, indent=2)
     
     @mcp.tool()
     async def delete_source(ctx: Context, source: str) -> str:
         """
         Delete all documents from a specific source.
         
-        This tool uses direct database access for simple operations.
+        This tool uses HTTP call to the API service.
         
         Args:
             source: The source domain to delete
@@ -214,15 +266,12 @@ def register_rag_tools(mcp: FastMCP):
             JSON string with deletion results
         """
         try:
-            # Use HTTP call to server API to delete source
-            client = get_mcp_service_client()
-            logger.info(f"Deleting source via HTTP: {source}")
+            api_url = get_api_url()
+            timeout = httpx.Timeout(30.0, connect=5.0)
             
-            # Call the delete source endpoint
-            async with httpx.AsyncClient() as http_client:
-                response = await http_client.delete(
-                    f"{client.api_url}/api/sources/{source}",
-                    headers=client._get_headers()
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.delete(
+                    urljoin(api_url, f"/api/sources/{source}")
                 )
                 
                 if response.status_code == 200:
@@ -230,16 +279,16 @@ def register_rag_tools(mcp: FastMCP):
                     return json.dumps({
                         "success": True,
                         "source": source,
-                        "message": result.get("message", f"Deleted all documents from source: {source}")
+                        "message": result.get("message", f"Successfully deleted source {source}")
                     }, indent=2)
                 else:
-                    error_detail = response.json() if response.content else {"error": f"HTTP {response.status_code}"}
+                    error_detail = response.text
                     return json.dumps({
                         "success": False,
                         "source": source,
-                        "error": error_detail.get("error", "Failed to delete source")
+                        "error": f"HTTP {response.status_code}: {error_detail}"
                     }, indent=2)
-            
+                    
         except Exception as e:
             logger.error(f"Error deleting source: {e}")
             return json.dumps({
@@ -266,18 +315,47 @@ def register_rag_tools(mcp: FastMCP):
         Returns:
             JSON string with search results
         """
-        # For now, use the same search endpoint with enhanced query
-        client = get_mcp_service_client()
-        logger.info(f"Searching code examples via HTTP: {query}")
-        
-        result = await client.search(
-            f"code example {query}",  # Enhance query for code search
-            source_filter=source_id,
-            match_count=match_count,
-            use_reranking=True  # Code search benefits from reranking
-        )
-        
-        return json.dumps(result, indent=2)
+        try:
+            api_url = get_api_url()
+            timeout = httpx.Timeout(30.0, connect=5.0)
+            
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                request_data = {
+                    "query": query,
+                    "match_count": match_count
+                }
+                if source_id:
+                    request_data["source"] = source_id
+                
+                # Call the dedicated code examples endpoint
+                response = await client.post(
+                    urljoin(api_url, "/api/rag/code-examples"),
+                    json=request_data
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    return json.dumps({
+                        "success": True,
+                        "results": result.get("results", []),
+                        "reranked": result.get("reranked", False),
+                        "error": None
+                    }, indent=2)
+                else:
+                    error_detail = response.text
+                    return json.dumps({
+                        "success": False,
+                        "results": [],
+                        "error": f"HTTP {response.status_code}: {error_detail}"
+                    }, indent=2)
+                    
+        except Exception as e:
+            logger.error(f"Error searching code examples: {e}")
+            return json.dumps({
+                "success": False,
+                "results": [],
+                "error": str(e)
+            }, indent=2)
     
     @mcp.tool()
     async def upload_document(ctx: Context, filename: str, content: str, doc_type: str = "general") -> str:
@@ -294,23 +372,48 @@ def register_rag_tools(mcp: FastMCP):
         Returns:
             JSON string with upload results
         """
-        client = get_mcp_service_client()
-        logger.info(f"Uploading document via HTTP: {filename}")
-        
-        # Prepare document for storage
-        document = {
-            "content": content,
-            "metadata": {
-                "filename": filename,
-                "doc_type": doc_type,
-                "source": "upload",
-                "upload_timestamp": str(datetime.now())
+        try:
+            api_url = get_api_url()
+            timeout = httpx.Timeout(60.0, connect=5.0)
+            
+            # Create multipart form data for file upload
+            files = {
+                'file': (filename, content, 'text/plain')
             }
-        }
-        
-        result = await client.store_documents([document])
-        
-        return json.dumps(result, indent=2)
+            data = {
+                'knowledge_type': doc_type,
+                'tags': json.dumps([]),
+                'update_frequency': '7'
+            }
+            
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(
+                    urljoin(api_url, "/api/documents/upload"),
+                    files=files,
+                    data=data
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    return json.dumps({
+                        "success": True,
+                        "documents_stored": 1,
+                        "chunks_created": result.get("chunks_created", 1),
+                        "message": result.get("message", "Document uploaded successfully")
+                    }, indent=2)
+                else:
+                    error_detail = response.text
+                    return json.dumps({
+                        "success": False,
+                        "error": f"HTTP {response.status_code}: {error_detail}"
+                    }, indent=2)
+                    
+        except Exception as e:
+            logger.error(f"Error uploading document: {e}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, indent=2)
 
     # Log successful registration
     logger.info("✓ RAG tools registered (HTTP-based version)")
