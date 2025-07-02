@@ -26,6 +26,8 @@ from .config.logfire_config import setup_logfire, api_logger
 
 # Import Socket.IO integration
 from .socketio_app import create_socketio_app
+# Import Socket.IO handlers to ensure they're registered
+from .fastapi import socketio_handlers
 
 # Import modular API routers
 from .fastapi.settings_api import router as settings_router

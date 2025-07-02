@@ -148,6 +148,10 @@ export class WebSocketService {
     const connectionUrl = window.location.origin;
     
     try {
+      console.log('🔗 Attempting Socket.IO connection to:', connectionUrl);
+      console.log('🔗 Socket.IO path:', socketPath);
+      console.log('🔗 Session ID:', this.sessionId);
+      
       // Connect to default namespace with explicit origin to ensure proxy usage
       this.socket = io(connectionUrl, {
         reconnection: this.config.enableAutoReconnect,
@@ -162,9 +166,10 @@ export class WebSocketService {
         }
       });
       
+      console.log('🔗 Socket.IO instance created, setting up event handlers...');
       this.setupEventHandlers();
     } catch (error) {
-      console.error('Failed to create Socket.IO connection:', error);
+      console.error('❌ Failed to create Socket.IO connection:', error);
       if (this.connectionRejector) {
         this.connectionRejector(error as Error);
       }
@@ -175,6 +180,7 @@ export class WebSocketService {
     if (!this.socket) return;
 
     this.socket.on('connect', () => {
+      console.log('🔌 Socket.IO connected successfully! Socket ID:', this.socket?.id);
       this.setState(WebSocketState.CONNECTED);
       
       // Resolve connection promise
@@ -206,7 +212,10 @@ export class WebSocketService {
     });
 
     this.socket.on('connect_error', (error: Error) => {
-      console.error('Socket.IO connection error:', error);
+      console.error('❌ Socket.IO connection error:', error);
+      console.error('❌ Error type:', error.type);
+      console.error('❌ Error message:', error.message);
+      console.error('❌ Socket transport:', this.socket?.io?.engine?.transport?.name);
       this.notifyError(error);
       
       // Reject connection promise if still pending

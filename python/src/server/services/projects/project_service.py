@@ -166,20 +166,25 @@ class ProjectService:
             Tuple of (success, result_dict)
         """
         try:
-            # First, get task count for reporting
+            # First, check if project exists
+            check_response = self.supabase_client.table("projects").select("id").eq("id", project_id).execute()
+            if not check_response.data:
+                return False, {"error": f"Project with ID {project_id} not found"}
+            
+            # Get task count for reporting
             tasks_response = self.supabase_client.table("tasks").select("id").eq("project_id", project_id).execute()
             tasks_count = len(tasks_response.data) if tasks_response.data else 0
             
             # Delete the project (tasks will be deleted by cascade)
             response = self.supabase_client.table("projects").delete().eq("id", project_id).execute()
             
-            if response.data:
-                return True, {
-                    "project_id": project_id,
-                    "deleted_tasks": tasks_count
-                }
-            else:
-                return False, {"error": f"Project with ID {project_id} not found"}
+            # For DELETE operations, success is indicated by no error, not by response.data content
+            # response.data will be empty list [] even on successful deletion
+            return True, {
+                "project_id": project_id,
+                "deleted_tasks": tasks_count,
+                "message": "Project deleted successfully"
+            }
                 
         except Exception as e:
             logger.error(f"Error deleting project: {e}")

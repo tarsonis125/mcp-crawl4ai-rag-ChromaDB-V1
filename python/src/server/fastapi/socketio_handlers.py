@@ -50,10 +50,23 @@ async def broadcast_progress_update(progress_id: str, progress_data: dict):
 
 async def broadcast_crawl_progress(progress_id: str, data: dict):
     """Broadcast crawl progress to subscribers."""
+    # Ensure progressId is included in the data
+    data['progressId'] = progress_id
+    
+    # Get room info for debugging
+    try:
+        room_sids = []
+        if hasattr(sio.manager, 'rooms'):
+            room_sids = list(sio.manager.rooms.get('/', {}).get(progress_id, []))
+        print(f"📢 [SOCKETIO DEBUG] Room {progress_id} has {len(room_sids)} subscribers: {room_sids}")
+    except Exception as e:
+        print(f"📢 [SOCKETIO DEBUG] Could not get room info: {e}")
+    
     # Log the room we're broadcasting to
-    logger.debug(f"📢 [SOCKETIO] Broadcasting crawl_progress to room: {progress_id}, data keys: {list(data.keys())}")
+    logger.info(f"📢 [SOCKETIO] Broadcasting crawl_progress to room: {progress_id}, data keys: {list(data.keys())}")
+    print(f"📢 [SOCKETIO DEBUG] Broadcasting data: {data}")
     await sio.emit('crawl_progress', data, room=progress_id)
-    logger.debug(f"✅ [SOCKETIO] Broadcasted crawl progress for {progress_id}")
+    logger.info(f"✅ [SOCKETIO] Broadcasted crawl progress for {progress_id}")
 
 # Crawl progress helper functions for knowledge API
 async def start_crawl_progress(progress_id: str, data: dict):
@@ -83,7 +96,8 @@ async def error_crawl_progress(progress_id: str, error_msg: str):
 async def connect(sid, environ):
     """Handle client connection."""
     client_address = environ.get('REMOTE_ADDR', 'unknown')
-    logger.info(f'🔌 [SOCKETIO] Client connected: {sid} from {client_address}')
+    query_params = environ.get('QUERY_STRING', '')
+    logger.info(f'🔌 [SOCKETIO] Client connected: {sid} from {client_address}, query: {query_params}')
     print(f'🔌 Client connected: {sid} from {client_address}')
 
 @sio.event
@@ -210,14 +224,27 @@ async def unsubscribe_progress(sid, data):
 @sio.event
 async def crawl_subscribe(sid, data):
     """Subscribe to crawl progress updates."""
+    logger.info(f"📥 [SOCKETIO] Received crawl_subscribe from {sid} with data: {data}")
+    print(f"📥 [SOCKETIO DEBUG] crawl_subscribe event - sid: {sid}, data: {data}")
     progress_id = data.get('progress_id')
     if not progress_id:
+        logger.error(f"❌ [SOCKETIO] No progress_id in crawl_subscribe from {sid}")
         await sio.emit('error', {'message': 'progress_id required'}, to=sid)
         return
     
     await sio.enter_room(sid, progress_id)
     logger.info(f"✅ [SOCKETIO] Client {sid} subscribed to crawl progress room: {progress_id}")
     print(f"✅ Client {sid} subscribed to crawl progress {progress_id}")
+    
+    # Get current rooms for this client
+    try:
+        rooms = sio.rooms(sid) if hasattr(sio, 'rooms') else []
+        print(f"📥 [SOCKETIO DEBUG] Client {sid} is now in rooms: {rooms}")
+    except:
+        pass
+    
+    # Send acknowledgment
+    await sio.emit('crawl_subscribe_ack', {'progress_id': progress_id, 'status': 'subscribed'}, to=sid)
 
 @sio.event
 async def crawl_unsubscribe(sid, data):

@@ -211,14 +211,16 @@ class MCPServiceClient:
         }
         
         # Check API service
+        api_health_url = urljoin(self.api_url, "/api/health")
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
-                response = await client.get(
-                    urljoin(self.api_url, "/api/health")
-                )
+                mcp_logger.info(f"Checking API service health at: {api_health_url}")
+                response = await client.get(api_health_url)
                 health_status["api_service"] = response.status_code == 200
-        except Exception:
-            pass
+                mcp_logger.info(f"API service health check: {response.status_code}")
+        except Exception as e:
+            health_status["api_service"] = False
+            mcp_logger.warning(f"API service health check failed: {e}")
         
         # Check Agents service
         try:

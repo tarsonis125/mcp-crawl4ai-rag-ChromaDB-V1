@@ -6,7 +6,9 @@ Handles vector similarity search for documents and code examples.
 from typing import List, Dict, Any, Optional
 from supabase import Client
 
-from ...config.logfire_config import search_logger, safe_span
+from ...config.logfire_config import safe_span, get_logger
+
+logger = get_logger(__name__)
 from ..embeddings.embedding_service import create_embedding
 
 
@@ -40,18 +42,14 @@ def search_documents(
                            threshold=threshold,
                            has_filter=filter_metadata is not None) as span:
         try:
-            search_logger.info("Document search started", 
-                              query=query[:100] + "..." if len(query) > 100 else query,
-                              match_count=match_count,
-                              threshold=threshold,
-                              filter_metadata=filter_metadata)
+            logger.info(f"Document search started - query: {query[:100]}{'...' if len(query) > 100 else ''}, match_count: {match_count}, threshold: {threshold}, filter: {filter_metadata}")
             
             # Create embedding for the query
             with safe_span("create_embedding"):
                 query_embedding = create_embedding(query)
                 
                 if not query_embedding:
-                    search_logger.error("Failed to create embedding for query")
+                    logger.error("Failed to create embedding for query")
                     return []
                 
                 span.set_attribute("embedding_dimensions", len(query_embedding))
@@ -65,7 +63,7 @@ def search_documents(
                 
                 # Add filter to RPC params if provided
                 if filter_metadata:
-                    search_logger.debug("Adding filter to RPC params", filter_metadata=filter_metadata)
+                    logger.debug(f"Adding filter to RPC params: {filter_metadata}")
                     
                     # Check if we have a source filter specifically
                     if "source" in filter_metadata:
@@ -85,9 +83,7 @@ def search_documents(
             
             # Call the RPC function
             with safe_span("supabase_rpc_call"):
-                search_logger.debug("Calling Supabase RPC function", 
-                                  function_name="match_crawled_pages",
-                                  rpc_params_keys=list(rpc_params.keys()))
+                logger.debug(f"Calling Supabase RPC function: match_crawled_pages, params: {list(rpc_params.keys())}")
                 
                 response = client.rpc("match_crawled_pages", rpc_params).execute()
                 span.set_attribute("rpc_success", True)
@@ -98,9 +94,7 @@ def search_documents(
             span.set_attribute("success", True)
             span.set_attribute("final_results_count", results_count)
             
-            search_logger.info("Document search completed", 
-                              query=query[:100] + "..." if len(query) > 100 else query,
-                              results_count=results_count)
+            logger.info(f"Document search completed - query: {query[:100]}{'...' if len(query) > 100 else ''}, results: {results_count}")
             
             return response.data or []
         
@@ -108,10 +102,7 @@ def search_documents(
             span.set_attribute("success", False)
             span.set_attribute("error", str(e))
             
-            search_logger.error("Document search failed", 
-                               query=query[:100] + "..." if len(query) > 100 else query,
-                               error=str(e),
-                               error_type=type(e).__name__)
+            logger.error(f"Document search failed - query: {query[:100]}{'...' if len(query) > 100 else ''}, error: {e} ({type(e).__name__})")
             
             # Return empty list on error
             return []
@@ -164,5 +155,5 @@ def search_code_examples(
         
         return result.data
     except Exception as e:
-        search_logger.error(f"Error searching code examples: {e}")
+        logger.error(f"Error searching code examples: {e}")
         return []

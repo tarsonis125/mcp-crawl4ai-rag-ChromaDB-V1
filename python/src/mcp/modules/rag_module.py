@@ -27,9 +27,6 @@ from src.server.services.mcp_service_client import get_mcp_service_client
 # MCP should use HTTP calls only - no direct database access
 # from src.server.utils import get_supabase_client
 
-# Import Logfire
-from src.server.config.logfire_config import rag_logger, mcp_logger, search_logger
-
 logger = logging.getLogger(__name__)
 
 
@@ -86,7 +83,7 @@ def register_rag_tools(mcp: FastMCP):
             JSON string with success status and metadata
         """
         client = get_mcp_service_client()
-        rag_logger.info(f"Crawling single page via HTTP: {url}")
+        logger.info(f"Crawling single page via HTTP: {url}")
         
         result = await client.crawl_url(
             url,
@@ -115,7 +112,7 @@ def register_rag_tools(mcp: FastMCP):
             JSON string with crawl results
         """
         client = get_mcp_service_client()
-        rag_logger.info(f"Smart crawling via HTTP: {url}")
+        logger.info(f"Smart crawling via HTTP: {url}")
         
         result = await client.crawl_url(
             url,
@@ -165,7 +162,7 @@ def register_rag_tools(mcp: FastMCP):
                 }, indent=2)
                 
         except Exception as e:
-            search_logger.error(f"Error getting sources: {e}")
+            logger.error(f"Error getting sources: {e}")
             return json.dumps({
                 "success": False,
                 "error": str(e)
@@ -189,7 +186,7 @@ def register_rag_tools(mcp: FastMCP):
             JSON string with search results
         """
         client = get_mcp_service_client()
-        rag_logger.info(f"Performing RAG query via HTTP: {query}")
+        logger.info(f"Performing RAG query via HTTP: {query}")
         
         # Check if reranking is enabled
         use_reranking = get_bool_setting("USE_RERANKING", False)
@@ -219,7 +216,7 @@ def register_rag_tools(mcp: FastMCP):
         try:
             # Use HTTP call to server API to delete source
             client = get_mcp_service_client()
-            mcp_logger.info(f"Deleting source via HTTP: {source}")
+            logger.info(f"Deleting source via HTTP: {source}")
             
             # Call the delete source endpoint
             async with httpx.AsyncClient() as http_client:
@@ -244,7 +241,7 @@ def register_rag_tools(mcp: FastMCP):
                     }, indent=2)
             
         except Exception as e:
-            search_logger.error(f"Error deleting source: {e}")
+            logger.error(f"Error deleting source: {e}")
             return json.dumps({
                 "success": False,
                 "error": str(e)
@@ -271,7 +268,7 @@ def register_rag_tools(mcp: FastMCP):
         """
         # For now, use the same search endpoint with enhanced query
         client = get_mcp_service_client()
-        search_logger.info(f"Searching code examples via HTTP: {query}")
+        logger.info(f"Searching code examples via HTTP: {query}")
         
         result = await client.search(
             f"code example {query}",  # Enhance query for code search
@@ -298,7 +295,7 @@ def register_rag_tools(mcp: FastMCP):
             JSON string with upload results
         """
         client = get_mcp_service_client()
-        rag_logger.info(f"Uploading document via HTTP: {filename}")
+        logger.info(f"Uploading document via HTTP: {filename}")
         
         # Prepare document for storage
         document = {
@@ -316,4 +313,4 @@ def register_rag_tools(mcp: FastMCP):
         return json.dumps(result, indent=2)
 
     # Log successful registration
-    mcp_logger.info("✓ RAG tools registered (HTTP-based version)")
+    logger.info("✓ RAG tools registered (HTTP-based version)")

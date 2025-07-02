@@ -26,9 +26,6 @@ from urllib.parse import urljoin
 # Import service discovery for HTTP calls
 from src.server.config.service_discovery import get_api_url
 
-# Import Logfire
-from src.server.config.logfire_config import mcp_logger
-
 logger = logging.getLogger(__name__)
 
 
@@ -63,90 +60,78 @@ def register_project_tools(mcp: FastMCP):
             Get: manage_project(action="get", project_id="uuid-here")
             Delete: manage_project(action="delete", project_id="uuid-here")
         """
-        with mcp_logger.span("mcp_manage_project") as span:
-            span.set_attribute("tool", "manage_project")
-            span.set_attribute("action", action)
+        try:
+            api_url = get_api_url()
+            timeout = httpx.Timeout(30.0, connect=5.0)
             
-            try:
-                api_url = get_api_url()
-                timeout = httpx.Timeout(30.0, connect=5.0)
+            if action == "create":
+                if not title:
+                    return json.dumps({"success": False, "error": "Title is required for create action"})
                 
-                if action == "create":
-                    if not title:
-                        return json.dumps({"success": False, "error": "Title is required for create action"})
+                # Call Server API to create project
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.post(
+                        urljoin(api_url, "/api/projects"),
+                        json={
+                            "title": title,
+                            "prd": prd,
+                            "github_repo": github_repo
+                        }
+                    )
                     
-                    # Call Server API to create project
-                    async with httpx.AsyncClient(timeout=timeout) as client:
-                        response = await client.post(
-                            urljoin(api_url, "/api/projects"),
-                            json={
-                                "title": title,
-                                "prd": prd,
-                                "github_repo": github_repo
-                            }
-                        )
-                        
-                        if response.status_code == 200:
-                            result = response.json()
-                            span.set_attribute("success", True)
-                            span.set_attribute("project_id", result.get("progress_id"))
-                            return json.dumps({"success": True, "project": result})
-                        else:
-                            error_detail = response.json().get("detail", {}).get("error", "Unknown error")
-                            return json.dumps({"success": False, "error": error_detail})
-                
-                elif action == "list":
-                    async with httpx.AsyncClient(timeout=timeout) as client:
-                        response = await client.get(urljoin(api_url, "/api/projects"))
-                        
-                        if response.status_code == 200:
-                            projects = response.json()
-                            span.set_attribute("success", True)
-                            span.set_attribute("project_count", len(projects))
-                            return json.dumps({"success": True, "projects": projects})
-                        else:
-                            return json.dumps({"success": False, "error": "Failed to list projects"})
-                
-                elif action == "get":
-                    if not project_id:
-                        return json.dumps({"success": False, "error": "project_id is required for get action"})
+                    if response.status_code == 200:
+                        result = response.json()
+                        return json.dumps({"success": True, "project": result})
+                    else:
+                        error_detail = response.json().get("detail", {}).get("error", "Unknown error")
+                        return json.dumps({"success": False, "error": error_detail})
+            
+            elif action == "list":
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.get(urljoin(api_url, "/api/projects"))
                     
-                    async with httpx.AsyncClient(timeout=timeout) as client:
-                        response = await client.get(urljoin(api_url, f"/api/projects/{project_id}"))
-                        
-                        if response.status_code == 200:
-                            project = response.json()
-                            span.set_attribute("success", True)
-                            return json.dumps({"success": True, "project": project})
-                        elif response.status_code == 404:
-                            return json.dumps({"success": False, "error": f"Project {project_id} not found"})
-                        else:
-                            return json.dumps({"success": False, "error": "Failed to get project"})
+                    if response.status_code == 200:
+                        projects = response.json()
+                        return json.dumps({"success": True, "projects": projects})
+                    else:
+                        return json.dumps({"success": False, "error": "Failed to list projects"})
+            
+            elif action == "get":
+                if not project_id:
+                    return json.dumps({"success": False, "error": "project_id is required for get action"})
                 
-                elif action == "delete":
-                    if not project_id:
-                        return json.dumps({"success": False, "error": "project_id is required for delete action"})
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.get(urljoin(api_url, f"/api/projects/{project_id}"))
                     
-                    async with httpx.AsyncClient(timeout=timeout) as client:
-                        response = await client.delete(urljoin(api_url, f"/api/projects/{project_id}"))
-                        
-                        if response.status_code == 200:
-                            span.set_attribute("success", True)
-                            return json.dumps({"success": True, "message": "Project deleted successfully"})
-                        else:
-                            return json.dumps({"success": False, "error": "Failed to delete project"})
+                    if response.status_code == 200:
+                        project = response.json()
+                        return json.dumps({"success": True, "project": project})
+                    elif response.status_code == 404:
+                        return json.dumps({"success": False, "error": f"Project {project_id} not found"})
+                    else:
+                        return json.dumps({"success": False, "error": "Failed to get project"})
+            
+            elif action == "delete":
+                if not project_id:
+                    return json.dumps({"success": False, "error": "project_id is required for delete action"})
                 
-                else:
-                    return json.dumps({
-                        "success": False,
-                        "error": f"Invalid action '{action}'. Must be one of: create, list, get, delete"
-                    })
-                
-            except Exception as e:
-                logger.error(f"Error in manage_project: {e}")
-                span.set_attribute("success", False)
-                span.set_attribute("error", str(e))
-                return json.dumps({"success": False, "error": str(e)})
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.delete(urljoin(api_url, f"/api/projects/{project_id}"))
+                    
+                    if response.status_code == 200:
+                        return json.dumps({"success": True, "message": "Project deleted successfully"})
+                    else:
+                        return json.dumps({"success": False, "error": "Failed to delete project"})
+            
+            else:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Invalid action '{action}'. Must be one of: create, list, get, delete"
+                })
+            
+        except Exception as e:
+            logger.error(f"Error in manage_project: {e}")
+            return json.dumps({"success": False, "error": str(e)})
     
     @mcp.tool()
     async def manage_task(
@@ -198,137 +183,124 @@ def register_project_tools(mcp: FastMCP):
             Update: manage_task(action="update", task_id="uuid", update_fields={"status": "doing"})
             Archive: manage_task(action="archive", task_id="uuid")
         """
-        with mcp_logger.span("mcp_manage_task") as span:
-            span.set_attribute("tool", "manage_task")
-            span.set_attribute("action", action)
+        try:
+            api_url = get_api_url()
+            timeout = httpx.Timeout(30.0, connect=5.0)
             
-            try:
-                api_url = get_api_url()
-                timeout = httpx.Timeout(30.0, connect=5.0)
+            if action == "create":
+                if not project_id:
+                    return json.dumps({"success": False, "error": "project_id is required for create action"})
+                if not title:
+                    return json.dumps({"success": False, "error": "title is required for create action"})
                 
-                if action == "create":
-                    if not project_id:
-                        return json.dumps({"success": False, "error": "project_id is required for create action"})
-                    if not title:
-                        return json.dumps({"success": False, "error": "title is required for create action"})
+                # Call Server API to create task
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.post(
+                        urljoin(api_url, "/api/tasks"),
+                        json={
+                            "project_id": project_id,
+                            "title": title,
+                            "description": description,
+                            "assignee": assignee,
+                            "task_order": task_order,
+                            "feature": feature,
+                            "parent_task_id": parent_task_id,
+                            "sources": sources,
+                            "code_examples": code_examples
+                        }
+                    )
                     
-                    # Call Server API to create task
-                    async with httpx.AsyncClient(timeout=timeout) as client:
-                        response = await client.post(
-                            urljoin(api_url, "/api/tasks"),
-                            json={
-                                "project_id": project_id,
-                                "title": title,
-                                "description": description,
-                                "assignee": assignee,
-                                "task_order": task_order,
-                                "feature": feature,
-                                "parent_task_id": parent_task_id,
-                                "sources": sources,
-                                "code_examples": code_examples
-                            }
-                        )
-                        
-                        if response.status_code == 200:
-                            result = response.json()
-                            span.set_attribute("success", True)
-                            span.set_attribute("task_id", result.get("task", {}).get("id"))
-                            return json.dumps({"success": True, "task": result.get("task"), "message": result.get("message")})
-                        else:
-                            error_detail = response.text
-                            return json.dumps({"success": False, "error": error_detail})
-                
-                elif action == "list":
-                    # Build URL with query parameters
-                    params = {}
-                    
-                    if filter_by == "project" and filter_value:
-                        url = urljoin(api_url, f"/api/projects/{filter_value}/tasks")
-                        params["include_archived"] = False
-                        params["include_subtasks"] = include_closed
-                    elif filter_by == "parent" and filter_value:
-                        url = urljoin(api_url, f"/api/tasks/subtasks/{filter_value}")
-                        params["include_closed"] = include_closed
-                    elif project_id:
-                        url = urljoin(api_url, f"/api/projects/{project_id}/tasks")
-                        params["include_archived"] = False
-                        params["include_subtasks"] = include_closed
+                    if response.status_code == 200:
+                        result = response.json()
+                        return json.dumps({"success": True, "task": result.get("task"), "message": result.get("message")})
                     else:
-                        return json.dumps({"success": False, "error": "project_id or filter_value required for list action"})
-                    
-                    async with httpx.AsyncClient(timeout=timeout) as client:
-                        response = await client.get(url, params=params)
-                        
-                        if response.status_code == 200:
-                            result = response.json()
-                            tasks = result if isinstance(result, list) else result.get("tasks", [])
-                            span.set_attribute("success", True)
-                            span.set_attribute("task_count", len(tasks))
-                            return json.dumps({"success": True, "tasks": tasks})
-                        else:
-                            return json.dumps({"success": False, "error": "Failed to list tasks"})
+                        error_detail = response.text
+                        return json.dumps({"success": False, "error": error_detail})
+            
+            elif action == "list":
+                # Build URL with query parameters
+                params = {}
                 
-                elif action == "get":
-                    if not task_id:
-                        return json.dumps({"success": False, "error": "task_id is required for get action"})
-                    
-                    async with httpx.AsyncClient(timeout=timeout) as client:
-                        response = await client.get(urljoin(api_url, f"/api/tasks/{task_id}"))
-                        
-                        if response.status_code == 200:
-                            task = response.json()
-                            span.set_attribute("success", True)
-                            return json.dumps({"success": True, "task": task})
-                        elif response.status_code == 404:
-                            return json.dumps({"success": False, "error": f"Task {task_id} not found"})
-                        else:
-                            return json.dumps({"success": False, "error": "Failed to get task"})
-                
-                elif action == "update":
-                    if not task_id:
-                        return json.dumps({"success": False, "error": "task_id is required for update action"})
-                    if not update_fields:
-                        return json.dumps({"success": False, "error": "update_fields is required for update action"})
-                    
-                    async with httpx.AsyncClient(timeout=timeout) as client:
-                        response = await client.put(
-                            urljoin(api_url, f"/api/tasks/{task_id}"),
-                            json=update_fields
-                        )
-                        
-                        if response.status_code == 200:
-                            result = response.json()
-                            span.set_attribute("success", True)
-                            return json.dumps({"success": True, "task": result.get("task"), "message": result.get("message")})
-                        else:
-                            error_detail = response.text
-                            return json.dumps({"success": False, "error": error_detail})
-                
-                elif action in ["delete", "archive"]:
-                    if not task_id:
-                        return json.dumps({"success": False, "error": "task_id is required for delete/archive action"})
-                    
-                    async with httpx.AsyncClient(timeout=timeout) as client:
-                        response = await client.delete(urljoin(api_url, f"/api/tasks/{task_id}"))
-                        
-                        if response.status_code == 200:
-                            result = response.json()
-                            span.set_attribute("success", True)
-                            return json.dumps({"success": True, "message": result.get("message"), "subtasks_archived": result.get("subtasks_archived", 0)})
-                        else:
-                            return json.dumps({"success": False, "error": "Failed to archive task"})
-                
+                if filter_by == "project" and filter_value:
+                    url = urljoin(api_url, f"/api/projects/{filter_value}/tasks")
+                    params["include_archived"] = False
+                    params["include_subtasks"] = include_closed
+                elif filter_by == "parent" and filter_value:
+                    url = urljoin(api_url, f"/api/tasks/subtasks/{filter_value}")
+                    params["include_closed"] = include_closed
+                elif project_id:
+                    url = urljoin(api_url, f"/api/projects/{project_id}/tasks")
+                    params["include_archived"] = False
+                    params["include_subtasks"] = include_closed
                 else:
-                    return json.dumps({
-                        "success": False,
-                        "error": f"Invalid action '{action}'. Must be one of: create, list, get, update, delete, archive"
-                    })
+                    return json.dumps({"success": False, "error": "project_id or filter_value required for list action"})
                 
-            except Exception as e:
-                logger.error(f"Error in manage_task: {e}")
-                span.set_attribute("success", False)
-                span.set_attribute("error", str(e))
-                return json.dumps({"success": False, "error": str(e)})
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.get(url, params=params)
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        tasks = result if isinstance(result, list) else result.get("tasks", [])
+                        return json.dumps({"success": True, "tasks": tasks})
+                    else:
+                        return json.dumps({"success": False, "error": "Failed to list tasks"})
+            
+            elif action == "get":
+                if not task_id:
+                    return json.dumps({"success": False, "error": "task_id is required for get action"})
+                
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.get(urljoin(api_url, f"/api/tasks/{task_id}"))
+                    
+                    if response.status_code == 200:
+                        task = response.json()
+                        return json.dumps({"success": True, "task": task})
+                    elif response.status_code == 404:
+                        return json.dumps({"success": False, "error": f"Task {task_id} not found"})
+                    else:
+                        return json.dumps({"success": False, "error": "Failed to get task"})
+            
+            elif action == "update":
+                if not task_id:
+                    return json.dumps({"success": False, "error": "task_id is required for update action"})
+                if not update_fields:
+                    return json.dumps({"success": False, "error": "update_fields is required for update action"})
+                
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.put(
+                        urljoin(api_url, f"/api/tasks/{task_id}"),
+                        json=update_fields
+                    )
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        return json.dumps({"success": True, "task": result.get("task"), "message": result.get("message")})
+                    else:
+                        error_detail = response.text
+                        return json.dumps({"success": False, "error": error_detail})
+            
+            elif action in ["delete", "archive"]:
+                if not task_id:
+                    return json.dumps({"success": False, "error": "task_id is required for delete/archive action"})
+                
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.delete(urljoin(api_url, f"/api/tasks/{task_id}"))
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        return json.dumps({"success": True, "message": result.get("message"), "subtasks_archived": result.get("subtasks_archived", 0)})
+                    else:
+                        return json.dumps({"success": False, "error": "Failed to archive task"})
+                
+            else:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Invalid action '{action}'. Must be one of: create, list, get, update, delete, archive"
+                })
+            
+        except Exception as e:
+            logger.error(f"Error in manage_task: {e}")
+            return json.dumps({"success": False, "error": str(e)})
     
     @mcp.tool()
     async def manage_document(
@@ -363,23 +335,117 @@ def register_project_tools(mcp: FastMCP):
             Update: manage_document(action="update", project_id="uuid", doc_id="doc-uuid", content={...})
             Delete: manage_document(action="delete", project_id="uuid", doc_id="doc-uuid")
         """
-        with mcp_logger.span("mcp_manage_document") as span:
-            span.set_attribute("tool", "manage_document")
-            span.set_attribute("action", action)
-            span.set_attribute("project_id", project_id)
+        try:
+            api_url = get_api_url()
+            timeout = httpx.Timeout(30.0, connect=5.0)
             
-            try:
-                # Document management is not yet implemented in the Server API
-                return json.dumps({
-                    "success": False, 
-                    "error": "Document management endpoints are not yet implemented in the Server API"
-                })
+            if action == "add":
+                if not document_type:
+                    return json.dumps({"success": False, "error": "document_type is required for add action"})
+                if not title:
+                    return json.dumps({"success": False, "error": "title is required for add action"})
                 
-            except Exception as e:
-                logger.error(f"Error in manage_document: {e}")
-                span.set_attribute("success", False)
-                span.set_attribute("error", str(e))
-                return json.dumps({"success": False, "error": str(e)})
+                # Call Server API to create document
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.post(
+                        urljoin(api_url, f"/api/projects/{project_id}/docs"),
+                        json={
+                            "document_type": document_type,
+                            "title": title,
+                            "content": content,
+                            "tags": metadata.get("tags") if metadata else None,
+                            "author": metadata.get("author") if metadata else None
+                        }
+                    )
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        return json.dumps({"success": True, "document": result.get("document"), "message": result.get("message")})
+                    else:
+                        error_detail = response.text
+                        return json.dumps({"success": False, "error": error_detail})
+            
+            elif action == "list":
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    url = urljoin(api_url, f"/api/projects/{project_id}/docs")
+                    logger.info(f"Calling document list API: {url}")
+                    response = await client.get(url)
+                    
+                    logger.info(f"Document list API response: {response.status_code}")
+                    if response.status_code == 200:
+                        result = response.json()
+                        return json.dumps({"success": True, **result})
+                    else:
+                        error_text = response.text
+                        logger.error(f"Document list API error: {response.status_code} - {error_text}")
+                        return json.dumps({"success": False, "error": f"HTTP {response.status_code}: {error_text}"})
+            
+            elif action == "get":
+                if not doc_id:
+                    return json.dumps({"success": False, "error": "doc_id is required for get action"})
+                
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.get(urljoin(api_url, f"/api/projects/{project_id}/docs/{doc_id}"))
+                    
+                    if response.status_code == 200:
+                        document = response.json()
+                        return json.dumps({"success": True, "document": document})
+                    elif response.status_code == 404:
+                        return json.dumps({"success": False, "error": f"Document {doc_id} not found"})
+                    else:
+                        return json.dumps({"success": False, "error": "Failed to get document"})
+            
+            elif action == "update":
+                if not doc_id:
+                    return json.dumps({"success": False, "error": "doc_id is required for update action"})
+                
+                # Build update fields
+                update_fields = {}
+                if title is not None:
+                    update_fields["title"] = title
+                if content is not None:
+                    update_fields["content"] = content
+                if metadata:
+                    if "tags" in metadata:
+                        update_fields["tags"] = metadata["tags"]
+                    if "author" in metadata:
+                        update_fields["author"] = metadata["author"]
+                
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.put(
+                        urljoin(api_url, f"/api/projects/{project_id}/docs/{doc_id}"),
+                        json=update_fields
+                    )
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        return json.dumps({"success": True, "document": result.get("document"), "message": result.get("message")})
+                    else:
+                        error_detail = response.text
+                        return json.dumps({"success": False, "error": error_detail})
+            
+            elif action == "delete":
+                if not doc_id:
+                    return json.dumps({"success": False, "error": "doc_id is required for delete action"})
+                
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.delete(urljoin(api_url, f"/api/projects/{project_id}/docs/{doc_id}"))
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        return json.dumps({"success": True, "message": result.get("message")})
+                    else:
+                        return json.dumps({"success": False, "error": "Failed to delete document"})
+            
+            else:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Invalid action '{action}'. Must be one of: add, list, get, update, delete"
+                })
+            
+        except Exception as e:
+            logger.error(f"Error in manage_document: {e}")
+            return json.dumps({"success": False, "error": str(e)})
     
     @mcp.tool()
     async def manage_versions(
@@ -415,24 +481,98 @@ def register_project_tools(mcp: FastMCP):
             Get: manage_versions(action="get", project_id="uuid", field_name="docs", version_number=3)
             Restore: manage_versions(action="restore", project_id="uuid", field_name="docs", version_number=3)
         """
-        with mcp_logger.span("mcp_manage_versions") as span:
-            span.set_attribute("tool", "manage_versions")
-            span.set_attribute("action", action)
-            span.set_attribute("project_id", project_id)
-            span.set_attribute("field_name", field_name)
+        try:
+            api_url = get_api_url()
+            timeout = httpx.Timeout(30.0, connect=5.0)
             
-            try:
-                # Version management is not yet implemented in the Server API
-                return json.dumps({
-                    "success": False, 
-                    "error": "Version management endpoints are not yet implemented in the Server API"
-                })
+            if action == "create":
+                if not content:
+                    return json.dumps({"success": False, "error": "content is required for create action"})
                 
-            except Exception as e:
-                logger.error(f"Error in manage_versions: {e}")
-                span.set_attribute("success", False)
-                span.set_attribute("error", str(e))
-                return json.dumps({"success": False, "error": str(e)})
+                # Call Server API to create version
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.post(
+                        urljoin(api_url, f"/api/projects/{project_id}/versions"),
+                        json={
+                            "field_name": field_name,
+                            "content": content,
+                            "change_summary": change_summary,
+                            "change_type": "manual",
+                            "document_id": document_id,
+                            "created_by": created_by
+                        }
+                    )
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        return json.dumps({"success": True, "version": result.get("version"), "message": result.get("message")})
+                    else:
+                        error_detail = response.text
+                        return json.dumps({"success": False, "error": error_detail})
+            
+            elif action == "list":
+                # Build URL with optional field_name parameter
+                params = {}
+                if field_name:
+                    params["field_name"] = field_name
+                
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.get(
+                        urljoin(api_url, f"/api/projects/{project_id}/versions"),
+                        params=params
+                    )
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        return json.dumps({"success": True, **result})
+                    else:
+                        return json.dumps({"success": False, "error": "Failed to list versions"})
+            
+            elif action == "get":
+                if not version_number:
+                    return json.dumps({"success": False, "error": "version_number is required for get action"})
+                
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.get(
+                        urljoin(api_url, f"/api/projects/{project_id}/versions/{field_name}/{version_number}")
+                    )
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        return json.dumps({"success": True, **result})
+                    elif response.status_code == 404:
+                        return json.dumps({"success": False, "error": f"Version {version_number} not found"})
+                    else:
+                        return json.dumps({"success": False, "error": "Failed to get version"})
+            
+            elif action == "restore":
+                if not version_number:
+                    return json.dumps({"success": False, "error": "version_number is required for restore action"})
+                
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.post(
+                        urljoin(api_url, f"/api/projects/{project_id}/versions/{field_name}/{version_number}/restore"),
+                        json={
+                            "restored_by": created_by
+                        }
+                    )
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        return json.dumps({"success": True, "message": result.get("message")})
+                    else:
+                        error_detail = response.text
+                        return json.dumps({"success": False, "error": error_detail})
+            
+            else:
+                return json.dumps({
+                    "success": False,
+                    "error": f"Invalid action '{action}'. Must be one of: create, list, get, restore"
+                })
+            
+        except Exception as e:
+            logger.error(f"Error in manage_versions: {e}")
+            return json.dumps({"success": False, "error": str(e)})
     
     @mcp.tool()
     async def get_project_features(ctx: Context, project_id: str) -> str:

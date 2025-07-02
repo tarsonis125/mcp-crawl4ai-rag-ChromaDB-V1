@@ -140,6 +140,12 @@ async def lightweight_lifespan(server: FastMCP) -> AsyncIterator[LightweightArch
             service_client = get_mcp_service_client()
             logger.info("✓ Service client initialized")
             
+            # Initialize credentials from database
+            logger.info("🔑 Initializing credentials from database...")
+            from src.server.services.credential_service import initialize_credentials
+            await initialize_credentials()
+            logger.info("✓ Credentials initialized from database")
+            
             # Create lightweight context  
             context = LightweightArchonContext(
                 service_client=service_client
@@ -176,17 +182,16 @@ try:
     logger.info(f"   Description: Lightweight MCP server using HTTP calls")
     logger.info(f"   Host: {server_host}")
     logger.info(f"   Port: {server_port}")
-    logger.info(f"   Mode: SSE-only")
+    logger.info(f"   Mode: Streamable HTTP (with SSE fallback)")
     
     mcp = FastMCP(
         "archon-mcp-server-lightweight",
         description="Lightweight MCP server for Archon - uses HTTP calls to other services",
-        lifespan=lightweight_lifespan,
-        host=server_host,
-        port=server_port
+        lifespan=lightweight_lifespan
     )
     logger.info(f"✓ Lightweight FastMCP server instance created successfully")
-    logger.info(f"   SSE endpoint: http://{server_host}:{server_port}/sse")
+    logger.info(f"   HTTP endpoint: http://{server_host}:{server_port}/mcp")
+    logger.info(f"   SSE endpoint (fallback): http://{server_host}:{server_port}/sse")
     
 except Exception as e:
     logger.error(f"✗ Failed to create FastMCP server: {e}")
@@ -333,22 +338,27 @@ async def main():
         # Initialize Logfire first
         setup_logfire(service_name="archon-mcp-server-lightweight")
         
-        # Fixed configuration for SSE-only mode
+        # Fixed configuration for Streamable HTTP mode
         host = "0.0.0.0"
         port = 8051
         
         logger.info("🚀 Starting Lightweight Archon MCP Server")
-        logger.info(f"   Mode: SSE-only")
+        logger.info(f"   Mode: Streamable HTTP")
         logger.info(f"   Host: {host}")
         logger.info(f"   Port: {port}")
-        logger.info(f"   URL: http://{host}:{port}/sse")
+        logger.info(f"   URL: http://{host}:{port}/mcp")
         
         mcp_logger.info("🔥 Logfire initialized for lightweight MCP server")
         mcp_logger.info(f"🌟 Starting lightweight MCP server - host={host}, port={port}")
         
-        # Run SSE server
-        logger.info("🌐 Starting Server-Sent Events (SSE) transport")
-        await mcp.run_sse_async()
+        # Try to run with Streamable HTTP transport, fall back to SSE if not supported
+        try:
+            logger.info("🌐 Starting Streamable HTTP transport")
+            await mcp.run(transport="http", host=host, port=port, path="/mcp")
+        except Exception as e:
+            logger.warning(f"⚠️ Streamable HTTP transport not available: {e}")
+            logger.info("🌐 Falling back to Server-Sent Events (SSE) transport")
+            await mcp.run_sse_async()
             
     except Exception as e:
         mcp_logger.error(f"💥 Fatal error in main - error={str(e)}, error_type={type(e).__name__}")

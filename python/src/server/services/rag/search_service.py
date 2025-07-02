@@ -16,7 +16,7 @@ except ImportError:
     CrossEncoder = None
 
 from src.server.utils import get_supabase_client, search_documents, search_code_examples
-from src.server.config.logfire_config import rag_logger, search_logger, safe_span
+from src.server.config.logfire_config import safe_span
 
 from ...config.logfire_config import get_logger
 
@@ -111,17 +111,17 @@ class SearchService:
                             match_count=match_count,
                             client_type="service") as span:
             try:
-                rag_logger.info("RAG query started",
-                               query=query[:100] + "..." if len(query) > 100 else query,
-                               source=source,
-                               match_count=match_count)
+                logger.info("RAG query started",
+                           extra={"query": query[:100] + "..." if len(query) > 100 else query,
+                                  "source": source,
+                                  "match_count": match_count})
                 
                 # Build filter metadata if source is provided
                 filter_metadata = None
                 if source:
                     with safe_span("build_filter"):
                         filter_metadata = {"source": source}
-                        rag_logger.debug("Built filter metadata", source=source)
+                        logger.debug(f"Built filter metadata for source: {source}")
                         span.set_attribute("filter_applied", True)
                 
                 # Perform vector search
@@ -147,9 +147,7 @@ class SearchService:
                             }
                             formatted_results.append(formatted_result)
                         except Exception as format_error:
-                            rag_logger.warning("Failed to format result", 
-                                             result_index=i, 
-                                             error=str(format_error))
+                            logger.warning(f"Failed to format result {i}: {format_error}")
                             continue
                 
                 response_data = {
@@ -164,9 +162,7 @@ class SearchService:
                 span.set_attribute("final_results_count", len(formatted_results))
                 span.set_attribute("success", True)
                 
-                rag_logger.info("RAG query completed successfully",
-                               results_count=len(formatted_results),
-                               execution_path="service_vector_search")
+                logger.info(f"RAG query completed successfully - {len(formatted_results)} results found")
                 
                 return True, response_data
                 
@@ -175,11 +171,7 @@ class SearchService:
                 span.set_attribute("success", False)
                 span.set_attribute("error_type", type(e).__name__)
                 
-                rag_logger.exception("RAG query failed",
-                                    error=str(e),
-                                    error_type=type(e).__name__,
-                                    query=query[:50],
-                                    source=source)
+                logger.error(f"RAG query failed: {e} (type: {type(e).__name__}) for query: {query[:50]}")
                 
                 return False, {
                     "error": str(e),

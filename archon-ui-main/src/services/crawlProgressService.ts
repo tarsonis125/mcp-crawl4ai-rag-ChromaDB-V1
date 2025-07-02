@@ -5,7 +5,7 @@
  * and improved connection management.
  */
 
-import { createWebSocketService, WebSocketService } from './socketIOService';
+import { knowledgeSocketIO, WebSocketService } from './socketIOService';
 
 // Define types for crawl progress
 export interface WorkerProgress {
@@ -84,8 +84,10 @@ interface StreamProgressOptions {
 type ProgressCallback = (data: any) => void;
 
 class CrawlProgressService {
-  private wsService: WebSocketService | null = null;
+  private wsService: WebSocketService = knowledgeSocketIO;
   private activeSubscriptions: Map<string, () => void> = new Map();
+  private messageHandlers: Map<string, ProgressCallback> = new Map();
+  private isConnected: boolean = false;
 
   /**
    * Stream crawl progress with Socket.IO
@@ -95,56 +97,82 @@ class CrawlProgressService {
     onMessage: ProgressCallback,
     options: StreamProgressOptions = {}
   ): Promise<void> {
-    // Starting Socket.IO progress stream
+    console.log(`🚀 Starting Socket.IO progress stream for ${progressId}`);
 
     try {
-      // Create WebSocket service if not exists
-      if (!this.wsService) {
-        this.wsService = createWebSocketService({
-          enableAutoReconnect: options.autoReconnect ?? true,
-          reconnectInterval: options.reconnectDelay ?? 1000
-        });
+      // Ensure we're connected to Socket.IO
+      if (!this.isConnected) {
+        console.log('📡 Connecting to Socket.IO server...');
+        // Connect to the base Socket.IO endpoint (not a specific path)
+        await this.wsService.connect('/socket.io');
+        this.isConnected = true;
+        console.log('✅ Connected to Socket.IO server');
       }
 
-      // Connect to crawl progress endpoint
-      const endpoint = `/api/crawl-progress/${progressId}`;
-      await this.wsService.connect(endpoint);
+      // Wait for connection to be fully established
+      await this.wsService.waitForConnection(5000);
+      console.log('✅ Socket.IO connection verified');
+
+      // Create a specific handler for this progressId
+      const progressHandler = (message: any) => {
+        console.log(`📨 Raw message received:`, message);
+        const data = message.data || message;
+        console.log(`📨 Extracted data:`, data);
+        console.log(`📨 Data progressId: ${data.progressId}, Expected: ${progressId}`);
+        
+        // Only process messages for this specific progressId
+        if (data.progressId === progressId) {
+          console.log(`✅ Progress match! Processing message for ${progressId}`);
+          onMessage(data);
+        } else {
+          console.log(`❌ Progress ID mismatch: got ${data.progressId}, expected ${progressId}`);
+        }
+      };
+
+      // Store the handler so we can remove it later
+      this.messageHandlers.set(progressId, progressHandler);
 
       // Add message handlers
-      this.wsService.addMessageHandler('crawl_progress', (message) => {
-        const data = message.data || message;
-        // Crawl progress update received
-        onMessage(data);
-      });
+      this.wsService.addMessageHandler('crawl_progress', progressHandler);
 
       // Also listen for legacy event names for backward compatibility
-      this.wsService.addMessageHandler('progress_update', (message) => {
-        const data = message.data || message;
-        // Progress update (legacy) received
-        onMessage(data);
-      });
+      this.wsService.addMessageHandler('progress_update', progressHandler);
 
       this.wsService.addMessageHandler('crawl_complete', (message) => {
         const data = message.data || message;
-        // Crawl completed
-        onMessage({ ...data, completed: true });
+        console.log(`✅ Crawl completed for ${progressId}`);
+        if (data.progressId === progressId) {
+          onMessage({ ...data, completed: true });
+        }
       });
 
       this.wsService.addMessageHandler('crawl_error', (message) => {
-        // Crawl error
-        onMessage({ 
-          progressId,
-          status: 'error',
-          error: message.data?.message || message.error || 'Unknown error',
-          percentage: 0
-        });
+        console.error(`❌ Crawl error for ${progressId}:`, message);
+        if (message.data?.progressId === progressId || message.progressId === progressId) {
+          onMessage({ 
+            progressId,
+            status: 'error',
+            error: message.data?.message || message.error || 'Unknown error',
+            percentage: 0
+          });
+        }
+      });
+
+      // Listen for subscription acknowledgment
+      this.wsService.addMessageHandler('crawl_subscribe_ack', (message) => {
+        const data = message.data || message;
+        console.log(`✅ Subscription acknowledged for ${data.progress_id}`);
       });
 
       // Subscribe to the crawl progress
-      this.wsService.send({
+      console.log(`📤 Sending crawl_subscribe for ${progressId}`);
+      const subscribeMessage = {
         type: 'crawl_subscribe',
         data: { progress_id: progressId }
-      });
+      };
+      console.log('📤 Subscribe message:', JSON.stringify(subscribeMessage));
+      const sent = this.wsService.send(subscribeMessage);
+      console.log(`📤 Message sent successfully: ${sent}`);
 
       // Store cleanup function
       this.activeSubscriptions.set(progressId, () => {
@@ -152,7 +180,7 @@ class CrawlProgressService {
       });
 
     } catch (error) {
-      // Failed to start progress stream
+      console.error(`❌ Failed to start progress stream for ${progressId}:`, error);
       throw error;
     }
   }
@@ -161,14 +189,22 @@ class CrawlProgressService {
    * Stop streaming progress for a specific ID
    */
   stopStreaming(progressId: string): void {
-    // Stopping progress stream
+    console.log(`🛑 Stopping progress stream for ${progressId}`);
     
-    if (this.wsService) {
-      // Send unsubscribe message
+    // Send unsubscribe message
+    if (this.isConnected) {
       this.wsService.send({
         type: 'crawl_unsubscribe',
         data: { progress_id: progressId }
       });
+    }
+    
+    // Remove the specific handler for this progressId
+    const handler = this.messageHandlers.get(progressId);
+    if (handler) {
+      this.wsService.removeMessageHandler('crawl_progress', handler);
+      this.wsService.removeMessageHandler('progress_update', handler);
+      this.messageHandlers.delete(progressId);
     }
     
     // Remove from active subscriptions
@@ -179,18 +215,18 @@ class CrawlProgressService {
    * Stop all active streams
    */
   stopAllStreams(): void {
-    // Stopping all progress streams
+    console.log('🛑 Stopping all progress streams');
     
     // Stop each active subscription
     for (const [progressId] of this.activeSubscriptions) {
       this.stopStreaming(progressId);
     }
     
-    // Disconnect WebSocket
-    if (this.wsService) {
-      this.wsService.disconnect();
-      this.wsService = null;
-    }
+    // Clear all handlers
+    this.messageHandlers.clear();
+    
+    // Note: We don't disconnect the shared Socket.IO connection
+    // as it may be used by other services
   }
 
   /**
@@ -203,20 +239,17 @@ class CrawlProgressService {
   /**
    * Get connection state
    */
-  isConnected(): boolean {
-    return this.wsService?.isConnected() ?? false;
+  getConnectionState(): boolean {
+    return this.isConnected && this.wsService.isConnected();
   }
 
   /**
    * Manually trigger reconnection
    */
   async reconnect(): Promise<void> {
-    if (!this.wsService) {
-      this.wsService = createWebSocketService({
-        enableAutoReconnect: true
-      });
-    }
-    // Connection happens when streaming starts
+    console.log('🔄 Reconnecting to Socket.IO server...');
+    this.isConnected = false;
+    // The next streamProgress call will reconnect
   }
 
   /**
@@ -266,10 +299,11 @@ class CrawlProgressService {
    * Disconnect the WebSocket service
    */
   disconnect(): void {
-    if (this.wsService) {
-      this.wsService.disconnect();
-      this.wsService = null;
-    }
+    console.log('🔌 Disconnecting crawl progress service');
+    this.stopAllStreams();
+    this.isConnected = false;
+    // Note: We don't disconnect the shared Socket.IO connection
+    // as it may be used by other services
     this.activeSubscriptions.clear();
   }
 }
