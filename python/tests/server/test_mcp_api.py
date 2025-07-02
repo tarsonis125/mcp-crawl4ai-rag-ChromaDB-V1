@@ -11,7 +11,7 @@ async def test_mcp_status(async_client):
 
 @pytest.mark.asyncio
 async def test_start_server_endpoint(async_client):
-    with patch('src.api.mcp_api.mcp_manager.start_server', new=AsyncMock(return_value={'success': True, 'status': 'running', 'message': 'ok', 'pid': 1})) as mock_start:
+    with patch('src.server.fastapi.mcp_api.mcp_manager.start_server', new=AsyncMock(return_value={'success': True, 'status': 'running', 'message': 'ok', 'pid': 1})) as mock_start:
         resp = await async_client.post('/api/mcp/start')
         assert resp.status_code == 200
         assert resp.json()['status'] == 'running'
@@ -20,7 +20,7 @@ async def test_start_server_endpoint(async_client):
 
 @pytest.mark.asyncio
 async def test_stop_server_endpoint(async_client):
-    with patch('src.api.mcp_api.mcp_manager.stop_server', new=AsyncMock(return_value={'success': True, 'status': 'stopped', 'message': 'stopped'})) as mock_stop:
+    with patch('src.server.fastapi.mcp_api.mcp_manager.stop_server', new=AsyncMock(return_value={'success': True, 'status': 'stopped', 'message': 'stopped'})) as mock_stop:
         resp = await async_client.post('/api/mcp/stop')
         assert resp.status_code == 200
         assert resp.json()['status'] == 'stopped'

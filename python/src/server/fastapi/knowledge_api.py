@@ -22,7 +22,12 @@ from pathlib import Path
 import traceback
 
 from ..services.client_manager import get_supabase_client
-from ..services.storage import add_documents_to_supabase
+from ..services.storage import (
+    add_documents_to_supabase,
+    extract_code_blocks,
+    generate_code_example_summary,
+    add_code_examples_to_supabase
+)
 from ..services.source_management_service import extract_source_summary
 from ..services.rag.document_storage_service import DocumentStorageService
 from ..services.rag.crawling_service import CrawlingService
@@ -640,27 +645,56 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
                 'log': 'Extracting code examples from crawled content...'
             })
             
-            # Import code extraction utilities
-            from ..services.storage.code_storage_service import extract_code_blocks
+            # Code extraction utilities are already imported at the top
             
-            all_code_examples = []
+            # Prepare arrays for code examples storage
+            code_urls = []
+            code_chunk_numbers = []
+            code_examples = []
+            code_summaries = []
+            code_metadatas = []
             total_docs = len(crawl_results)
             
+            # Process each document for code examples
             for idx, doc in enumerate(crawl_results):
                 try:
+                    source_url = doc['url']
+                    md = doc.get('markdown', '')
+                    
                     # Extract code blocks from markdown
-                    code_blocks = extract_code_blocks(doc.get('markdown', ''))
+                    code_blocks = extract_code_blocks(md)
                     
                     if code_blocks:
                         # Get source_id for this document
-                        parsed_url = urlparse(doc['url'])
-                        doc_source_id = parsed_url.netloc or parsed_url.path
+                        parsed_url = urlparse(source_url)
+                        source_id = parsed_url.netloc or parsed_url.path
                         
-                        # Add metadata to each code block
+                        # Generate summaries for each code block
                         for block in code_blocks:
-                            block['url'] = doc['url']
-                            block['source_id'] = doc_source_id
-                            all_code_examples.append(block)
+                            # Generate summary using AI
+                            summary = generate_code_example_summary(
+                                block['code'], 
+                                block['context_before'], 
+                                block['context_after']
+                            )
+                            
+                            # Add to arrays
+                            code_urls.append(source_url)
+                            code_chunk_numbers.append(len(code_examples))  # Use global code example index
+                            code_examples.append(block['code'])
+                            code_summaries.append(summary)
+                            
+                            # Create metadata for code example
+                            code_meta = {
+                                "chunk_index": len(code_examples) - 1,
+                                "url": source_url,
+                                "source": source_id,
+                                "source_id": source_id,
+                                "language": block.get('language', ''),
+                                "char_count": len(block['code']),
+                                "word_count": len(block['code'].split())
+                            }
+                            code_metadatas.append(code_meta)
                     
                     # Update progress
                     if idx % 5 == 0:  # Update every 5 documents
@@ -668,30 +702,36 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
                         await update_crawl_progress(progress_id, {
                             'status': 'code_storage', 
                             'percentage': progress,
-                            'log': f'Extracting code from document {idx + 1}/{total_docs}...'
+                            'log': f'Processing code from document {idx + 1}/{total_docs}...'
                         })
                         
                 except Exception as e:
-                    safe_logfire_error(f"Error extracting code from document | url={doc.get('url')} | error={str(e)}")
+                    safe_logfire_error(f"Error processing code from document | url={doc.get('url')} | error={str(e)}")
             
-            # Store code examples if any were found
-            if all_code_examples:
+            # Store all code examples if any were found
+            if code_examples:
                 await update_crawl_progress(progress_id, {
                     'status': 'code_storage', 'percentage': 95,
-                    'log': f'Storing {len(all_code_examples)} code examples...'
+                    'log': f'Storing {len(code_examples)} code examples...'
                 })
                 
                 try:
-                    doc_storage_service = DocumentStorageService(supabase_client)
-                    success, result = doc_storage_service.store_code_examples(all_code_examples)
+                    # Use the proper storage function with correct parameters
+                    add_code_examples_to_supabase(
+                        client=supabase_client,
+                        urls=code_urls,
+                        chunk_numbers=code_chunk_numbers,
+                        code_examples=code_examples,
+                        summaries=code_summaries,
+                        metadatas=code_metadatas,
+                        batch_size=20
+                    )
                     
-                    if success:
-                        safe_logfire_info(f"Stored {len(all_code_examples)} code examples | progress_id={progress_id}")
-                    else:
-                        safe_logfire_error(f"Failed to store code examples | error={result.get('error')}")
-                        
+                    safe_logfire_info(f"Successfully stored {len(code_examples)} code examples | progress_id={progress_id}")
+                    
                 except Exception as e:
                     safe_logfire_error(f"Error storing code examples | error={str(e)}")
+                    
             else:
                 safe_logfire_info(f"No code examples found in crawled content | progress_id={progress_id}")
         
@@ -705,13 +745,14 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         completion_data = {
             'chunksStored': chunk_count,
             'wordCount': sum(source_word_counts.values()),
+            'codeExamplesStored': len(code_examples) if extract_code_examples else 0,
             'log': 'All processing completed successfully',
             'processedPages': len(crawl_results),
             'totalPages': len(crawl_results)
         }
         await complete_crawl_progress(progress_id, completion_data)
         
-        safe_logfire_info(f"Crawl completed successfully | progress_id={progress_id} | chunks_stored={chunk_count}")
+        safe_logfire_info(f"Crawl completed successfully | progress_id={progress_id} | chunks_stored={chunk_count} | code_examples_stored={len(code_examples) if extract_code_examples else 0}")
         
     except Exception as e:
         error_message = f'Crawling failed: {str(e)}'

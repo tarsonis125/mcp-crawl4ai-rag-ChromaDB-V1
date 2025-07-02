@@ -143,7 +143,7 @@ async def execute_mcp_tests(execution_id: str) -> TestExecution:
             "-v",  # verbose output
             "-s",  # don't capture stdout, allows real-time output
             "--tb=short",  # shorter traceback format
-            "tests/",  # run all tests in tests directory
+            "tests/server/",  # run server tests specifically
             "--no-header",  # cleaner output
             "--disable-warnings"  # cleaner output
         ]

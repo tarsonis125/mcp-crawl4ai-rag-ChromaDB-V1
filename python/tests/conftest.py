@@ -8,9 +8,8 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_DIR = os.path.join(BASE_DIR, 'src')
 sys.path.insert(0, SRC_DIR)
 
-# Import the FastAPI application from the current codebase
-# Use the package path so relative imports inside the module work
-from src.main import app
+# Import the FastAPI application from the server module
+from src.server.main import app
 
 @pytest_asyncio.fixture
 async def async_client():

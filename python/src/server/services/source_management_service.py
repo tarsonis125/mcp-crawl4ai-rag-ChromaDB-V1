@@ -2,13 +2,19 @@
 Source Management Service
 
 Handles source metadata, summaries, and management.
+Consolidates both utility functions and class-based service.
 """
 import os
+import json
 from typing import List, Dict, Any, Tuple, Optional
+from datetime import datetime
 import openai
 from supabase import Client
 
-from ..config.logfire_config import search_logger
+from ..config.logfire_config import search_logger, get_logger
+from ..utils import get_supabase_client
+
+logger = get_logger(__name__)
 
 
 def extract_source_summary(source_id: str, content: str, max_length: int = 500) -> str:
