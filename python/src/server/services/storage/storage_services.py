@@ -1,8 +1,8 @@
 """
-Document Storage Service for RAG - File Upload Handling
+Storage Services
 
-This service extends BaseStorageService to handle document uploads (PDF, Word, Markdown)
-with WebSocket progress reporting and document-specific processing.
+This module contains all storage service classes that handle document and data storage operations.
+These services extend the base storage functionality with specific implementations.
 """
 
 import os
@@ -12,7 +12,9 @@ from urllib.parse import urlparse
 
 from fastapi import WebSocket
 
-from ..storage import BaseStorageService, add_documents_to_supabase, add_code_examples_to_supabase
+from .base_storage_service import BaseStorageService
+from .document_storage_service import add_documents_to_supabase
+from .code_storage_service import add_code_examples_to_supabase
 from ...utils import update_source_info, extract_source_summary
 from ...config.logfire_config import search_logger, get_logger, safe_span
 

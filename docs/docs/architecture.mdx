@@ -38,7 +38,10 @@ Database (Supabase/pgvector)
 
 | Service Category | Services | Purpose |
 |-----------------|----------|---------|
-| **RAG Services** | `SourceManagementService`<br/>`CrawlingService`<br/>`SearchService`<br/>`DocumentStorageService` | Knowledge base operations |
+| **RAG Services** | `CrawlingService` | Web crawling operations |
+| **Storage Services** | `DocumentStorageService`<br/>`BaseStorageService` | Document storage and processing |
+| **Search Services** | `SearchService` | Vector search and RAG queries |
+| **Core Services** | `SourceManagementService` | Knowledge source management |
 | **Project Services** | `ProjectService`<br/>`TaskService`<br/>`DocumentService`<br/>`VersioningService` | Project management |
 | **Core Services** | `CredentialService`<br/>`PromptService`<br/>`ThreadingService` | System utilities |
 | **Storage Services** | `add_documents_to_supabase`<br/>`extract_code_blocks`<br/>`add_code_examples_to_supabase` | Data persistence |
@@ -48,7 +51,7 @@ Database (Supabase/pgvector)
 
 ```python
 # FastAPI Endpoint - Direct Service Usage
-from ..services.rag.source_management_service import SourceManagementService
+from ..services.source_management_service import SourceManagementService
 
 @router.delete("/sources/{source_id}")
 async def delete_source(source_id: str):
@@ -97,7 +100,7 @@ async def delete_source(ctx: Context, source: str) -> str:
 ```
 1. User clicks delete in UI
 2. UI calls DELETE /api/knowledge-items/{id}
-3. FastAPI endpoint uses SourceManagementService.delete_source()
+3. FastAPI endpoint uses SourceManagementService.delete_source() from `/services/`
 4. Service deletes from database
 5. Response sent to UI
 
@@ -105,7 +108,7 @@ OR
 
 1. AI client calls MCP delete_source tool
 2. MCP makes HTTP DELETE to /api/sources/{id}
-3. Server endpoint uses SourceManagementService.delete_source()
+3. Server endpoint uses SourceManagementService.delete_source() from `/services/`
 4. Service deletes from database
 5. Response sent through MCP to AI client
 ```
@@ -118,7 +121,7 @@ OR
    - Uses CrawlingService to detect URL type
    - Calls appropriate crawl method
    - Services emit Socket.IO progress directly to rooms
-   - Uses DocumentStorageService for chunking
+   - Uses DocumentStorageService from `/services/storage/` for chunking
 4. UI listens to Socket.IO room for real-time updates
 ```
 

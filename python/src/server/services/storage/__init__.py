@@ -10,15 +10,19 @@ from .code_storage_service import (
     generate_code_example_summary,
     add_code_examples_to_supabase
 )
+from .storage_services import DocumentStorageService
 
 __all__ = [
     # Base service
     'BaseStorageService',
     
-    # Document storage
+    # Service classes
+    'DocumentStorageService',
+    
+    # Document storage utilities
     'add_documents_to_supabase',
     
-    # Code storage
+    # Code storage utilities
     'extract_code_blocks',
     'generate_code_example_summary',
     'add_code_examples_to_supabase'

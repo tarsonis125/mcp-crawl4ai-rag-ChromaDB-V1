@@ -1,24 +1,24 @@
 """
-Search Service Module for Archon RAG
+Search Services
 
-This module provides core search functionality including RAG queries,
-code example search, hybrid search, and reranking capabilities.
+This module contains all search service classes that handle search and retrieval operations.
+These services provide high-level search functionality including RAG queries, code search,
+hybrid search, and reranking capabilities.
 """
 
 import json
-# Removed direct logging import - using unified config
 import os
 from typing import List, Dict, Any, Optional, Tuple
+
 # Import CrossEncoder for reranking if available
 try:
     from sentence_transformers import CrossEncoder
 except ImportError:
     CrossEncoder = None
 
-from src.server.utils import get_supabase_client, search_documents, search_code_examples
-from src.server.config.logfire_config import safe_span
-
-from ...config.logfire_config import get_logger
+from ...utils import get_supabase_client
+from .vector_search_service import search_documents, search_code_examples
+from ...config.logfire_config import safe_span, get_logger
 
 logger = get_logger(__name__)
 
@@ -34,7 +34,7 @@ class SearchService:
     def get_setting(self, key: str, default: str = "false") -> str:
         """Get a setting from the credential service or fall back to environment variable."""
         try:
-            from src.server.services.credential_service import credential_service
+            from ..credential_service import credential_service
             if hasattr(credential_service, '_cache') and credential_service._cache_initialized:
                 cached_value = credential_service._cache.get(key)
                 if isinstance(cached_value, dict) and cached_value.get("is_encrypted"):

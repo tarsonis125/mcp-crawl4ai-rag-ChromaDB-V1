@@ -5,13 +5,14 @@ Handles extraction and storage of code examples from documents.
 """
 import os
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from urllib.parse import urlparse
 import openai
 from supabase import Client
 
 from ...config.logfire_config import search_logger
 from ..embeddings.embedding_service import create_embeddings_batch, create_embedding
+from ..embeddings.contextual_embedding_service import generate_contextual_embeddings_batch
 
 
 def _get_model_choice() -> str:
@@ -173,7 +174,8 @@ def add_code_examples_to_supabase(
     code_examples: List[str],
     summaries: List[str],
     metadatas: List[Dict[str, Any]],
-    batch_size: int = 20
+    batch_size: int = 20,
+    url_to_full_document: Optional[Dict[str, str]] = None
 ):
     """
     Add code examples to the Supabase code_examples table in batches.
@@ -198,16 +200,64 @@ def add_code_examples_to_supabase(
         except Exception as e:
             search_logger.error(f"Error deleting existing code examples for {url}: {e}")
     
+    # Check if contextual embeddings are enabled
+    try:
+        from ..credential_service import credential_service
+        use_contextual_embeddings = credential_service._cache.get("USE_CONTEXTUAL_EMBEDDINGS")
+        if isinstance(use_contextual_embeddings, str):
+            use_contextual_embeddings = use_contextual_embeddings.lower() == "true"
+        elif isinstance(use_contextual_embeddings, dict) and use_contextual_embeddings.get("is_encrypted"):
+            # Handle encrypted value
+            encrypted_value = use_contextual_embeddings.get("encrypted_value")
+            if encrypted_value:
+                try:
+                    decrypted = credential_service._decrypt_value(encrypted_value)
+                    use_contextual_embeddings = decrypted.lower() == "true"
+                except:
+                    use_contextual_embeddings = False
+            else:
+                use_contextual_embeddings = False
+        else:
+            use_contextual_embeddings = bool(use_contextual_embeddings)
+    except:
+        # Fallback to environment variable
+        use_contextual_embeddings = os.getenv("USE_CONTEXTUAL_EMBEDDINGS", "false").lower() == "true"
+    
+    search_logger.info(f"Using contextual embeddings for code examples: {use_contextual_embeddings}")
+    
     # Process in batches
     total_items = len(urls)
     for i in range(0, total_items, batch_size):
         batch_end = min(i + batch_size, total_items)
         batch_texts = []
+        batch_metadatas_for_batch = metadatas[i:batch_end]
         
         # Create combined texts for embedding (code + summary)
+        combined_texts = []
         for j in range(i, batch_end):
             combined_text = f"{code_examples[j]}\n\nSummary: {summaries[j]}"
-            batch_texts.append(combined_text)
+            combined_texts.append(combined_text)
+        
+        # Apply contextual embeddings if enabled
+        if use_contextual_embeddings and url_to_full_document:
+            # Get full documents for context
+            full_documents = []
+            for j in range(i, batch_end):
+                url = urls[j]
+                full_doc = url_to_full_document.get(url, "")
+                full_documents.append(full_doc)
+            
+            # Generate contextual embeddings
+            contextual_results = generate_contextual_embeddings_batch(full_documents, combined_texts)
+            
+            # Process results
+            for j, (contextual_text, success) in enumerate(contextual_results):
+                batch_texts.append(contextual_text)
+                if success and j < len(batch_metadatas_for_batch):
+                    batch_metadatas_for_batch[j]["contextual_embedding"] = True
+        else:
+            # Use original combined texts
+            batch_texts = combined_texts
         
         # Create embeddings for the batch
         embeddings = create_embeddings_batch(batch_texts)

@@ -28,11 +28,10 @@ from ..services.storage import (
     generate_code_example_summary,
     add_code_examples_to_supabase
 )
-from ..services.source_management_service import extract_source_summary
-from ..services.rag.document_storage_service import DocumentStorageService
+from ..services.source_management_service import extract_source_summary, SourceManagementService
+from ..services.storage import DocumentStorageService
 from ..services.rag.crawling_service import CrawlingService
-from ..services.rag.source_management_service import SourceManagementService
-from ..services.rag.search_service import SearchService
+from ..services.search import SearchService
 
 # Import unified logging
 from ..config.logfire_config import safe_logfire_info, safe_logfire_error
@@ -354,7 +353,7 @@ async def delete_knowledge_item(source_id: str):
         
         # Use SourceManagementService directly instead of going through MCP
         print(f"DEBUG: Creating SourceManagementService...")
-        from ..services.rag.source_management_service import SourceManagementService
+        from ..services.source_management_service import SourceManagementService
         source_service = SourceManagementService(get_supabase_client())
         print(f"DEBUG: Successfully created SourceManagementService")
         
@@ -724,7 +723,8 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
                         code_examples=code_examples,
                         summaries=code_summaries,
                         metadatas=code_metadatas,
-                        batch_size=20
+                        batch_size=20,
+                        url_to_full_document=url_to_full_document
                     )
                     
                     safe_logfire_info(f"Successfully stored {len(code_examples)} code examples | progress_id={progress_id}")
@@ -927,7 +927,7 @@ async def delete_source(source_id: str):
         safe_logfire_info(f"Deleting source | source_id={source_id}")
         
         # Use SourceManagementService directly
-        from ..services.rag.source_management_service import SourceManagementService
+        from ..services.source_management_service import SourceManagementService
         source_service = SourceManagementService(get_supabase_client())
         
         success, result_data = source_service.delete_source(source_id)

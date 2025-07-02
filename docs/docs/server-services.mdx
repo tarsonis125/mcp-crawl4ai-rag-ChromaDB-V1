@@ -9,14 +9,27 @@ The Server's business logic is organized into modular service classes and functi
 
 ## Service Organization
 
+### Storage Services (`/services/storage/`)
+
+| Service/Module | Purpose | Key Components |
+|---------|---------|-------------|
+| **BaseStorageService** | Abstract base class for storage operations | `smart_chunk_text()`, `extract_metadata()`, `batch_process_with_progress()` |
+| **DocumentStorageService** | Document upload & processing service | `upload_document()`, `store_documents()`, `process_document()` |
+| **document_storage_service.py** | Storage utility functions | `add_documents_to_supabase()`, `add_documents_to_supabase_parallel()` |
+| **code_storage_service.py** | Code extraction utilities | `extract_code_blocks()`, `generate_code_example_summary()`, `add_code_examples_to_supabase()` |
+
+### Search Services (`/services/search/`)
+
+| Service/Module | Purpose | Key Components |
+|---------|---------|-------------|
+| **SearchService** | High-level search operations | `perform_rag_query()`, `search_code_examples_service()`, `rerank_results()` |
+| **vector_search_service.py** | Vector search utilities | `search_documents()`, `search_code_examples()` |
+
 ### RAG Services (`/services/rag/`)
 
 | Service | Purpose | Key Methods |
 |---------|---------|-------------|
-| **SourceManagementService** | Manage knowledge sources | `get_available_sources()`, `delete_source()` |
 | **CrawlingService** | Web crawling operations | `crawl_single_page()`, `crawl_batch_with_progress()`, `crawl_recursive_with_progress()` |
-| **DocumentStorageService** | Document chunking & storage | `smart_chunk_markdown()`, `extract_section_info()` |
-| **SearchService** | Vector search operations | `search_documents()`, `search_code_examples()` |
 
 ### Project Services (`/services/projects/`)
 
@@ -74,30 +87,38 @@ async def _create_project_with_ai(progress_id: str, request: CreateProjectReques
 
 | Service | Purpose | Key Methods |
 |---------|---------|-------------|
+| **SourceManagementService** | Manage knowledge sources | `get_available_sources()`, `delete_source()`, `update_source_metadata()` |
 | **CredentialService** | Secure credential storage | `get_credential()`, `set_credential()` |
 | **PromptService** | AI prompt management | `get_prompt()`, `reload_prompts()` |
 | **ThreadingService** | Threading & rate limiting | `batch_process()`, `rate_limited_operation()` |
 | **MCPServiceClient** | HTTP client for MCP | `crawl_url()`, `search()`, `delete_source()` |
+| **ClientManager** | Database client management | `get_supabase_client()` |
+| **MCPSessionManager** | MCP session management | `create_session()`, `validate_session()`, `cleanup_expired()` |
 
-### Storage Functions (`/services/storage/`)
+### Modular Architecture Pattern
 
-| Module | Key Functions |
-|--------|---------------|
-| **document_storage_service.py** | `add_documents_to_supabase()`, `add_documents_to_supabase_parallel()` |
-| **code_storage_service.py** | `extract_code_blocks()`, `add_code_examples_to_supabase()` |
+The services follow a clear architectural pattern:
 
-### Embedding Functions (`/services/embeddings/`)
+- **Utility Modules**: Low-level functions for specific operations (e.g., `vector_search_service.py`, `document_storage_service.py`)
+- **Service Classes**: High-level orchestration of utilities (e.g., `SearchService`, `DocumentStorageService`)
+- **Base Classes**: Abstract implementations for extensibility (e.g., `BaseStorageService`)
+- **Single Responsibility**: Each module has a focused purpose
 
-| Module | Key Functions |
-|--------|---------------|
-| **embedding_service.py** | `create_embeddings_batch()`, `create_embeddings_batch_async()` |
-| **contextual_embedding_service.py** | `generate_contextual_embedding()`, `generate_contextual_embeddings_batch()` |
+### Embedding Services (`/services/embeddings/`)
+
+| Module | Purpose | Key Functions |
+|--------|---------|---------------|
+| **embedding_service.py** | OpenAI embedding creation | `create_embeddings_batch()`, `create_embeddings_batch_async()` |
+| **contextual_embedding_service.py** | Context-aware embeddings | `generate_contextual_embedding()`, `generate_contextual_embeddings_batch()` |
 
 ## Service Usage Patterns
 
 ### Direct Service Usage (FastAPI)
 ```python
-from ..services.rag.source_management_service import SourceManagementService
+# Import from new locations
+from ..services.source_management_service import SourceManagementService
+from ..services.storage import DocumentStorageService
+from ..services.search import SearchService
 
 @router.delete("/sources/{source_id}")
 async def delete_source(source_id: str):
@@ -205,11 +226,32 @@ Database (Supabase) / External APIs (OpenAI)
 - **Simplified Socket.IO**: Eliminated complex namespace hierarchy in favor of simple `@sio.event` decorators
 - **Progress Tracking**: Centralized in `ProgressService` with real-time Socket.IO broadcasting
 
+## Architecture Benefits
+
+### Improved Code Organization
+- **Clear Separation**: Utilities vs. service classes are clearly separated
+- **Single Responsibility**: Each module has one focused purpose
+- **Reduced Duplication**: Common functionality in base classes
+- **Better Maintainability**: Easy to find and update specific functionality
+
+### Enhanced Extensibility
+- **Base Classes**: New storage services can extend `BaseStorageService`
+- **Modular Design**: Easy to add new search algorithms or storage backends
+- **Service Composition**: Services can be composed for complex operations
+
+### Testing & Development
+- **Isolated Testing**: Each service can be unit tested independently
+- **Mock Injection**: Services accept clients via dependency injection
+- **Clear Interfaces**: Well-defined service contracts
+
 ## Configuration
 
 Services are configured via environment variables:
 - `SUPABASE_URL` - Database URL
 - `SUPABASE_SERVICE_KEY` - Database service key  
 - `OPENAI_API_KEY` - For embeddings
+- `USE_CONTEXTUAL_EMBEDDINGS` - Enable contextual embeddings
+- `USE_HYBRID_SEARCH` - Enable hybrid search mode
+- `USE_RERANKING` - Enable search result reranking
 
 All services use dependency injection for testability and flexibility.
