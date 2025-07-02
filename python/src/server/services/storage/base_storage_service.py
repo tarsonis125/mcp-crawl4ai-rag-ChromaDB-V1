@@ -14,7 +14,6 @@ from typing import List, Dict, Any, Optional, Callable
 from abc import ABC, abstractmethod
 from urllib.parse import urlparse
 
-from ...utils import get_supabase_client, get_utils_threading_service
 from ...config.logfire_config import get_logger, search_logger, safe_span
 
 logger = get_logger(__name__)
@@ -25,7 +24,14 @@ class BaseStorageService(ABC):
     
     def __init__(self, supabase_client=None):
         """Initialize with optional supabase client and threading service."""
-        self.supabase_client = supabase_client or get_supabase_client()
+        # Lazy import to avoid circular dependency
+        if supabase_client is None:
+            from ...utils import get_supabase_client
+            supabase_client = get_supabase_client()
+        self.supabase_client = supabase_client
+        
+        # Lazy import threading service
+        from ...utils import get_utils_threading_service
         self.threading_service = get_utils_threading_service()
     
     def smart_chunk_text(self, text: str, chunk_size: int = 5000) -> List[str]:

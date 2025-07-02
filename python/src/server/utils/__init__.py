@@ -28,17 +28,10 @@ from ..services.embeddings import (
     process_chunk_with_context_async
 )
 
-from ..services.storage import (
-    add_documents_to_supabase,
-    extract_code_blocks,
-    generate_code_example_summary,
-    add_code_examples_to_supabase
-)
-
-from ..services.search import (
-    search_documents,
-    search_code_examples
-)
+# Note: storage and search imports removed to avoid circular dependency
+# Import these directly from their modules when needed:
+# from ..services.storage import add_documents_to_supabase, extract_code_blocks, etc.
+# from ..services.search import search_documents, search_code_examples
 
 from ..services.source_management_service import (
     extract_source_summary,
@@ -114,18 +107,8 @@ __all__ = [
     'process_chunk_with_context',
     'process_chunk_with_context_async',
     
-    # Document storage functions
-    'add_documents_to_supabase',
-    'add_documents_to_supabase_parallel',
-    
-    # Code storage functions
-    'extract_code_blocks',
-    'generate_code_example_summary',
-    'add_code_examples_to_supabase',
-    
-    # Search functions
-    'search_documents',
-    'search_code_examples',
+    # Note: Document storage and search functions not exported from utils
+    # to avoid circular dependencies. Import directly from services modules.
     
     # Source management functions
     'extract_source_summary',

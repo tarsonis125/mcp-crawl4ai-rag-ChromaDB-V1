@@ -15,7 +15,6 @@ from fastapi import WebSocket
 from .base_storage_service import BaseStorageService
 from .document_storage_service import add_documents_to_supabase
 from .code_storage_service import add_code_examples_to_supabase
-from ...utils import update_source_info, extract_source_summary
 from ...config.logfire_config import search_logger, get_logger, safe_span
 
 logger = get_logger(__name__)
@@ -116,6 +115,7 @@ class DocumentStorageService(BaseStorageService):
                 url_to_full_document = {doc_url: file_content}
                 
                 # Update source information
+                from ...utils import extract_source_summary, update_source_info
                 source_summary = await self.threading_service.run_cpu_intensive(
                     extract_source_summary, source_id, file_content[:5000]
                 )

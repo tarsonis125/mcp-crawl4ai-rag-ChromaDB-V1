@@ -12,7 +12,7 @@ import openai
 from supabase import Client
 
 from ..config.logfire_config import search_logger, get_logger
-from ..utils import get_supabase_client
+from .client_manager import get_supabase_client
 
 logger = get_logger(__name__)
 
