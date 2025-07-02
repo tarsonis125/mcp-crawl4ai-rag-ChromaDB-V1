@@ -138,6 +138,30 @@ async def get_available_sources_direct() -> Dict[str, Any]:
             "error": str(e)
         }
 
+@router.get("/test-socket-progress/{progress_id}")
+async def test_socket_progress(progress_id: str):
+    """Test endpoint to verify Socket.IO crawl progress is working."""
+    try:
+        # Send a test progress update
+        test_data = {
+            'progressId': progress_id,
+            'status': 'testing',
+            'percentage': 50,
+            'message': 'Test progress update from API',
+            'currentStep': 'Testing Socket.IO connection',
+            'logs': ['Test log entry 1', 'Test log entry 2']
+        }
+        
+        await update_crawl_progress(progress_id, test_data)
+        
+        return {
+            'success': True,
+            'message': f'Test progress sent to room {progress_id}',
+            'data': test_data
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
 @router.get("/knowledge-items")
 async def get_knowledge_items(
     page: int = 1,
@@ -618,7 +642,6 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
             
             # Import code extraction utilities
             from ..services.storage.code_storage_service import extract_code_blocks
-            from ..services.rag.document_storage_service import DocumentStorageService
             
             all_code_examples = []
             total_docs = len(crawl_results)

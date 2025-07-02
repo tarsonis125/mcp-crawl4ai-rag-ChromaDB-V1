@@ -101,31 +101,56 @@ class CrawlProgressService {
 
     try {
       // Ensure we're connected to Socket.IO
-      if (!this.isConnected) {
+      if (!this.wsService.isConnected()) {
         console.log('📡 Connecting to Socket.IO server...');
-        // Connect to the base Socket.IO endpoint (not a specific path)
-        await this.wsService.connect('/socket.io');
-        this.isConnected = true;
+        // Connect to the base endpoint - the service will handle the correct path
+        await this.wsService.connect(`/crawl-progress/${progressId}`);
         console.log('✅ Connected to Socket.IO server');
       }
 
-      // Wait for connection to be fully established
-      await this.wsService.waitForConnection(5000);
-      console.log('✅ Socket.IO connection verified');
+      // Wait for connection to be fully established with increased timeout
+      console.log('⏳ Waiting for connection to be fully established...');
+      await this.wsService.waitForConnection(10000); // Increased timeout
+      this.isConnected = this.wsService.isConnected();
+      console.log(`✅ Socket.IO connection verified, connected: ${this.isConnected}`);
+
+      // Set up acknowledgment promise
+      let subscriptionAcknowledged = false;
+      const ackPromise = new Promise<void>((resolve, reject) => {
+        const ackTimeout = setTimeout(() => {
+          if (!subscriptionAcknowledged) {
+            reject(new Error('Subscription acknowledgment timeout'));
+          }
+        }, 5000); // 5 second timeout for acknowledgment
+
+        // Listen for subscription acknowledgment
+        const ackHandler = (message: any) => {
+          const data = message.data || message;
+          console.log(`📨 Received acknowledgment:`, data);
+          if (data.progress_id === progressId && data.status === 'subscribed') {
+            console.log(`✅ Subscription acknowledged for ${progressId}`);
+            subscriptionAcknowledged = true;
+            clearTimeout(ackTimeout);
+            this.wsService.removeMessageHandler('crawl_subscribe_ack', ackHandler);
+            resolve();
+          }
+        };
+        this.wsService.addMessageHandler('crawl_subscribe_ack', ackHandler);
+      });
 
       // Create a specific handler for this progressId
       const progressHandler = (message: any) => {
-        console.log(`📨 Raw message received:`, message);
+        console.log(`📨 [${progressId}] Raw message received:`, message);
         const data = message.data || message;
-        console.log(`📨 Extracted data:`, data);
-        console.log(`📨 Data progressId: ${data.progressId}, Expected: ${progressId}`);
+        console.log(`📨 [${progressId}] Extracted data:`, data);
+        console.log(`📨 [${progressId}] Data progressId: ${data.progressId}, Expected: ${progressId}`);
         
         // Only process messages for this specific progressId
         if (data.progressId === progressId) {
-          console.log(`✅ Progress match! Processing message for ${progressId}`);
+          console.log(`✅ [${progressId}] Progress match! Processing message`);
           onMessage(data);
         } else {
-          console.log(`❌ Progress ID mismatch: got ${data.progressId}, expected ${progressId}`);
+          console.log(`❌ [${progressId}] Progress ID mismatch: got ${data.progressId}`);
         }
       };
 
@@ -158,21 +183,40 @@ class CrawlProgressService {
         }
       });
 
-      // Listen for subscription acknowledgment
-      this.wsService.addMessageHandler('crawl_subscribe_ack', (message) => {
-        const data = message.data || message;
-        console.log(`✅ Subscription acknowledged for ${data.progress_id}`);
-      });
-
-      // Subscribe to the crawl progress
+      // Subscribe to the crawl progress with retry logic
       console.log(`📤 Sending crawl_subscribe for ${progressId}`);
       const subscribeMessage = {
         type: 'crawl_subscribe',
         data: { progress_id: progressId }
       };
       console.log('📤 Subscribe message:', JSON.stringify(subscribeMessage));
-      const sent = this.wsService.send(subscribeMessage);
+      
+      // Send subscription with retry
+      let sent = false;
+      let retries = 0;
+      while (!sent && retries < 3) {
+        sent = this.wsService.send(subscribeMessage);
+        if (!sent) {
+          console.warn(`⚠️ Failed to send subscription, retrying... (attempt ${retries + 1})`);
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+          retries++;
+        }
+      }
+      
+      if (!sent) {
+        throw new Error('Failed to send subscription after 3 attempts');
+      }
+      
       console.log(`📤 Message sent successfully: ${sent}`);
+
+      // Wait for acknowledgment
+      try {
+        await ackPromise;
+        console.log(`✅ Subscription confirmed for ${progressId}`);
+      } catch (ackError) {
+        console.error(`❌ Subscription acknowledgment failed:`, ackError);
+        // Continue anyway - the subscription might still work
+      }
 
       // Store cleanup function
       this.activeSubscriptions.set(progressId, () => {
@@ -181,6 +225,7 @@ class CrawlProgressService {
 
     } catch (error) {
       console.error(`❌ Failed to start progress stream for ${progressId}:`, error);
+      this.isConnected = false;
       throw error;
     }
   }
@@ -249,7 +294,35 @@ class CrawlProgressService {
   async reconnect(): Promise<void> {
     console.log('🔄 Reconnecting to Socket.IO server...');
     this.isConnected = false;
-    // The next streamProgress call will reconnect
+    
+    // Disconnect existing connection
+    this.wsService.disconnect();
+    
+    // Resubscribe all active subscriptions
+    const activeProgressIds = Array.from(this.activeSubscriptions.keys());
+    if (activeProgressIds.length > 0) {
+      console.log(`🔄 Resubscribing to ${activeProgressIds.length} active progress streams...`);
+      
+      // Store handlers temporarily
+      const tempHandlers = new Map(this.messageHandlers);
+      
+      // Clear current state
+      this.activeSubscriptions.clear();
+      this.messageHandlers.clear();
+      
+      // Reconnect and resubscribe
+      for (const progressId of activeProgressIds) {
+        const handler = tempHandlers.get(progressId);
+        if (handler) {
+          try {
+            await this.streamProgress(progressId, handler);
+            console.log(`✅ Resubscribed to ${progressId}`);
+          } catch (error) {
+            console.error(`❌ Failed to resubscribe to ${progressId}:`, error);
+          }
+        }
+      }
+    }
   }
 
   /**

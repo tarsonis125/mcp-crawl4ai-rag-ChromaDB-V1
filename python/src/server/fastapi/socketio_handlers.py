@@ -53,18 +53,48 @@ async def broadcast_crawl_progress(progress_id: str, data: dict):
     # Ensure progressId is included in the data
     data['progressId'] = progress_id
     
-    # Get room info for debugging
+    # Get detailed room info for debugging
     try:
         room_sids = []
+        all_rooms = {}
         if hasattr(sio.manager, 'rooms'):
-            room_sids = list(sio.manager.rooms.get('/', {}).get(progress_id, []))
+            # Get all rooms for all namespaces
+            for namespace in sio.manager.rooms:
+                all_rooms[namespace] = {}
+                for room, sids in sio.manager.rooms[namespace].items():
+                    all_rooms[namespace][room] = list(sids)
+                    if namespace == '/' and room == progress_id:
+                        room_sids = list(sids)
+        
+        print(f"📢 [SOCKETIO DEBUG] Broadcasting to room '{progress_id}'")
         print(f"📢 [SOCKETIO DEBUG] Room {progress_id} has {len(room_sids)} subscribers: {room_sids}")
+        print(f"📢 [SOCKETIO DEBUG] All rooms in namespace '/': {list(all_rooms.get('/', {}).keys())}")
+        
+        # Log if the room doesn't exist
+        if not room_sids:
+            print(f"⚠️  [SOCKETIO DEBUG] WARNING: Room '{progress_id}' has no subscribers!")
+            logger.warning(f"Room '{progress_id}' has no subscribers when broadcasting crawl progress")
+            
     except Exception as e:
         print(f"📢 [SOCKETIO DEBUG] Could not get room info: {e}")
+        import traceback
+        traceback.print_exc()
     
-    # Log the room we're broadcasting to
-    logger.info(f"📢 [SOCKETIO] Broadcasting crawl_progress to room: {progress_id}, data keys: {list(data.keys())}")
-    print(f"📢 [SOCKETIO DEBUG] Broadcasting data: {data}")
+    # Log the data we're broadcasting
+    logger.info(f"📢 [SOCKETIO] Broadcasting crawl_progress to room: {progress_id}")
+    logger.info(f"📢 [SOCKETIO] Data keys: {list(data.keys())}")
+    logger.info(f"📢 [SOCKETIO] Progress percentage: {data.get('percentage', 'N/A')}")
+    logger.info(f"📢 [SOCKETIO] Status: {data.get('status', 'N/A')}")
+    
+    # Detailed debug logging
+    print(f"📢 [SOCKETIO DEBUG] Full broadcast data:")
+    for key, value in data.items():
+        if key in ['logs', 'workers']:  # Truncate long lists
+            print(f"  - {key}: {type(value).__name__} with {len(value) if isinstance(value, (list, dict)) else 'N/A'} items")
+        else:
+            print(f"  - {key}: {value}")
+    
+    # Emit the event
     await sio.emit('crawl_progress', data, room=progress_id)
     logger.info(f"✅ [SOCKETIO] Broadcasted crawl progress for {progress_id}")
 
@@ -97,8 +127,36 @@ async def connect(sid, environ):
     """Handle client connection."""
     client_address = environ.get('REMOTE_ADDR', 'unknown')
     query_params = environ.get('QUERY_STRING', '')
-    logger.info(f'🔌 [SOCKETIO] Client connected: {sid} from {client_address}, query: {query_params}')
-    print(f'🔌 Client connected: {sid} from {client_address}')
+    headers = {k: v for k, v in environ.items() if k.startswith('HTTP_')}
+    
+    logger.info(f'🔌 [SOCKETIO] Client connected: {sid} from {client_address}')
+    logger.info(f'🔌 [SOCKETIO] Query params: {query_params}')
+    logger.info(f'🔌 [SOCKETIO] User-Agent: {headers.get("HTTP_USER_AGENT", "unknown")}')
+    
+    print(f'🔌 [SOCKETIO DEBUG] New connection:')
+    print(f'  - SID: {sid}')
+    print(f'  - Address: {client_address}')
+    print(f'  - Query: {query_params}')
+    print(f'  - Transport: {headers.get("HTTP_UPGRADE", "unknown")}')
+    
+    # Parse query params to check for session_id
+    if query_params:
+        import urllib.parse
+        params = urllib.parse.parse_qs(query_params)
+        session_id = params.get('session_id', [None])[0]
+        if session_id:
+            print(f'  - Session ID: {session_id}')
+    
+    # Log total connected clients
+    try:
+        if hasattr(sio.manager, 'rooms'):
+            all_sids = set()
+            for namespace_rooms in sio.manager.rooms.values():
+                for room_sids in namespace_rooms.values():
+                    all_sids.update(room_sids)
+            print(f'📊 [SOCKETIO DEBUG] Total connected clients: {len(all_sids)}')
+    except:
+        pass
 
 @sio.event
 async def disconnect(sid):
@@ -232,19 +290,53 @@ async def crawl_subscribe(sid, data):
         await sio.emit('error', {'message': 'progress_id required'}, to=sid)
         return
     
+    # Enter the room
     await sio.enter_room(sid, progress_id)
     logger.info(f"✅ [SOCKETIO] Client {sid} subscribed to crawl progress room: {progress_id}")
     print(f"✅ Client {sid} subscribed to crawl progress {progress_id}")
     
-    # Get current rooms for this client
+    # Verify room membership
     try:
-        rooms = sio.rooms(sid) if hasattr(sio, 'rooms') else []
-        print(f"📥 [SOCKETIO DEBUG] Client {sid} is now in rooms: {rooms}")
-    except:
-        pass
+        # Get all rooms for this client
+        client_rooms = []
+        if hasattr(sio, 'rooms') and callable(sio.rooms):
+            client_rooms = list(sio.rooms(sid))
+        elif hasattr(sio.manager, 'rooms'):
+            # Alternative method to check rooms
+            for room, sids in sio.manager.rooms.get('/', {}).items():
+                if sid in sids:
+                    client_rooms.append(room)
+        
+        print(f"📥 [SOCKETIO DEBUG] Client {sid} is now in rooms: {client_rooms}")
+        print(f"📥 [SOCKETIO DEBUG] Room '{progress_id}' membership confirmed: {progress_id in client_rooms}")
+        
+        # Double-check room membership by listing all members
+        if hasattr(sio.manager, 'rooms'):
+            room_members = list(sio.manager.rooms.get('/', {}).get(progress_id, []))
+            print(f"📥 [SOCKETIO DEBUG] Room '{progress_id}' now has {len(room_members)} members: {room_members}")
+            print(f"📥 [SOCKETIO DEBUG] Client {sid} is in room: {sid in room_members}")
+            
+    except Exception as e:
+        print(f"📥 [SOCKETIO DEBUG] Error checking room membership: {e}")
+        import traceback
+        traceback.print_exc()
     
     # Send acknowledgment
-    await sio.emit('crawl_subscribe_ack', {'progress_id': progress_id, 'status': 'subscribed'}, to=sid)
+    ack_data = {'progress_id': progress_id, 'status': 'subscribed'}
+    print(f"📤 [SOCKETIO DEBUG] Sending acknowledgment: {ack_data}")
+    await sio.emit('crawl_subscribe_ack', ack_data, to=sid)
+    logger.info(f"📤 [SOCKETIO] Sent subscription acknowledgment to {sid} for {progress_id}")
+    
+    # Test broadcast to the room immediately
+    print(f"🧪 [SOCKETIO DEBUG] Testing broadcast to room '{progress_id}'...")
+    test_data = {
+        'progressId': progress_id,
+        'status': 'subscribed',
+        'message': f'Test broadcast after subscription',
+        'percentage': 0
+    }
+    await sio.emit('crawl_progress', test_data, room=progress_id)
+    print(f"🧪 [SOCKETIO DEBUG] Test broadcast sent to room '{progress_id}'")
 
 @sio.event
 async def crawl_unsubscribe(sid, data):

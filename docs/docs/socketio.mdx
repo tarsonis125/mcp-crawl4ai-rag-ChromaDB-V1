@@ -212,6 +212,8 @@ async def broadcast_project_update():
 
 async def broadcast_crawl_progress(progress_id: str, data: dict):
     """Broadcast crawl progress to subscribers."""
+    # Include the progress_id in data for client-side filtering
+    data['progressId'] = progress_id
     await sio.emit('crawl_progress', data, room=progress_id)
 
 # Usage in services
