@@ -14,7 +14,7 @@ import openai
 from supabase import Client
 
 from ...config.logfire_config import search_logger
-from ..embeddings.embedding_service import create_embeddings_batch, create_embedding, create_embeddings_batch_async
+from ..embeddings.embedding_service import create_embeddings_batch, create_embedding, create_embeddings_batch_async, create_embedding_async
 from ..embeddings.contextual_embedding_service import generate_contextual_embeddings_batch
 
 
@@ -321,7 +321,7 @@ async def generate_code_summaries_batch(code_blocks: List[Dict[str, Any]], max_w
         return fallback_summaries
 
 
-def add_code_examples_to_supabase(
+async def add_code_examples_to_supabase(
     client: Client,
     urls: List[str],
     chunk_numbers: List[int],
@@ -422,7 +422,7 @@ def add_code_examples_to_supabase(
             batch_texts = combined_texts
         
         # Create embeddings for the batch
-        embeddings = create_embeddings_batch(batch_texts)
+        embeddings = await create_embeddings_batch_async(batch_texts)
         
         # Check if embeddings are valid (not all zeros)
         valid_embeddings = []
@@ -431,8 +431,8 @@ def add_code_examples_to_supabase(
                 valid_embeddings.append(embedding)
             else:
                 search_logger.warning("Zero or invalid embedding detected, creating new one...")
-                # Try to create a single embedding as fallback
-                single_embedding = create_embedding(batch_texts[idx])
+                # Try to create a single embedding as fallback using async version
+                single_embedding = await create_embedding_async(batch_texts[idx])
                 valid_embeddings.append(single_embedding)
         
         # Prepare batch data

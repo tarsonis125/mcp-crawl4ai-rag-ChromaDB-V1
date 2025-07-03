@@ -756,7 +756,7 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
                 
                 try:
                     # Use the proper storage function with correct parameters
-                    add_code_examples_to_supabase(
+                    await add_code_examples_to_supabase(
                         client=supabase_client,
                         urls=code_urls,
                         chunk_numbers=code_chunk_numbers,

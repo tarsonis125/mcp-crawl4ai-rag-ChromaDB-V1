@@ -45,14 +45,14 @@ def create_embedding(text: str) -> List[float]:
         List of floats representing the embedding
     """
     try:
-        # Use asyncio.run to call the async version
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # If we're already in an async context, create a task
-            future = asyncio.ensure_future(create_embedding_async(text))
-            return loop.run_until_complete(future)
-        else:
-            # If no event loop is running, use asyncio.run
+        # Check if we're in an async context
+        try:
+            loop = asyncio.get_running_loop()
+            # If we're already in an async context, we can't run sync - return zero embedding
+            search_logger.warning("create_embedding called from async context - returning zero embedding")
+            return [0.0] * 1536
+        except RuntimeError:
+            # No running loop, safe to use asyncio.run
             return asyncio.run(create_embedding_async(text))
     except Exception as e:
         search_logger.error(f"Error creating embedding: {e}")
@@ -94,14 +94,14 @@ def create_embeddings_batch(texts: List[str]) -> List[List[float]]:
         return []
     
     try:
-        # Use asyncio.run to call the async version
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # If we're already in an async context, create a task
-            future = asyncio.ensure_future(create_embeddings_batch_async(texts))
-            return loop.run_until_complete(future)
-        else:
-            # If no event loop is running, use asyncio.run
+        # Check if we're in an async context
+        try:
+            loop = asyncio.get_running_loop()
+            # If we're already in an async context, we can't run sync - return zero embeddings
+            search_logger.warning("create_embeddings_batch called from async context - returning zero embeddings")
+            return [[0.0] * 1536 for _ in texts]
+        except RuntimeError:
+            # No running loop, safe to use asyncio.run
             return asyncio.run(create_embeddings_batch_async(texts))
     except Exception as e:
         search_logger.error(f"Error creating batch embeddings: {e}")
