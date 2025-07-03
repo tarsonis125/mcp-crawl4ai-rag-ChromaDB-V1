@@ -128,6 +128,22 @@ async def create_embeddings_batch_async(
     if not texts:
         return []
     
+    # Validate that all items in texts are strings
+    validated_texts = []
+    for i, text in enumerate(texts):
+        if not isinstance(text, str):
+            search_logger.error(f"Invalid text type at index {i}: {type(text)}, value: {text}")
+            # Try to convert to string
+            try:
+                validated_texts.append(str(text))
+            except Exception as e:
+                search_logger.error(f"Failed to convert text at index {i} to string: {e}")
+                validated_texts.append("")  # Use empty string as fallback
+        else:
+            validated_texts.append(text)
+    
+    texts = validated_texts
+    
     threading_service = get_threading_service()
     
     with safe_span("create_embeddings_batch_async", 
@@ -135,32 +151,80 @@ async def create_embeddings_batch_async(
                            total_chars=sum(len(t) for t in texts)) as span:
         
         try:
-            # Estimate token usage for rate limiting
-            estimated_tokens = sum(len(text.split()) for text in texts) * 1.3  # Rough estimate
-            
-            async with threading_service.rate_limited_operation(estimated_tokens):
-                async with get_openai_client() as client:
-                    # Split into smaller batches if needed
-                    batch_size = 20  # OpenAI's batch limit
-                    all_embeddings = []
+            async with get_openai_client() as client:
+                # Split into smaller batches if needed
+                batch_size = 20  # OpenAI's batch limit
+                all_embeddings = []
+                total_tokens_used = 0
+                
+                for i in range(0, len(texts), batch_size):
+                    batch = texts[i:i + batch_size]
                     
-                    for i in range(0, len(texts), batch_size):
-                        batch = texts[i:i + batch_size]
+                    # Estimate tokens for this specific batch
+                    batch_tokens = sum(len(text.split()) for text in batch) * 1.3  # Rough estimate
+                    total_tokens_used += batch_tokens
+                    
+                    # Rate limit each batch individually
+                    async with threading_service.rate_limited_operation(batch_tokens):
+                        retry_count = 0
+                        max_retries = 3
                         
-                        # Create embeddings for this batch
-                        response = await client.embeddings.create(
-                            model="text-embedding-3-small",
-                            input=batch
-                        )
+                        while retry_count < max_retries:
+                            try:
+                                # Create embeddings for this batch
+                                response = await client.embeddings.create(
+                                    model="text-embedding-3-small",
+                                    input=batch
+                                )
+                                
+                                batch_embeddings = [item.embedding for item in response.data]
+                                all_embeddings.extend(batch_embeddings)
+                                break  # Success, exit retry loop
+                                
+                            except openai.RateLimitError as e:
+                                error_message = str(e)
+                                if "insufficient_quota" in error_message:
+                                    # Calculate approximate cost
+                                    tokens_so_far = total_tokens_used - batch_tokens
+                                    cost_so_far = (tokens_so_far / 1_000_000) * 0.02  # $0.02 per 1M tokens for text-embedding-3-small
+                                    
+                                    search_logger.error(
+                                        f"⚠️ OpenAI BILLING QUOTA EXHAUSTED! You need to add more credits to your OpenAI account.\n"
+                                        f"Tokens used so far: {tokens_so_far:,} (≈${cost_so_far:.4f})\n"
+                                        f"Error: {error_message}"
+                                    )
+                                    span.set_attribute("quota_exhausted", True)
+                                    span.set_attribute("tokens_used_before_quota", tokens_so_far)
+                                    
+                                    # Return zero embeddings for remaining texts
+                                    remaining = len(texts) - len(all_embeddings)
+                                    all_embeddings.extend([[0.0] * 1536 for _ in range(remaining)])
+                                    
+                                    # Notify via progress callback
+                                    if progress_callback:
+                                        await progress_callback(
+                                            f"❌ QUOTA EXHAUSTED - Add credits to OpenAI account! (used {tokens_so_far:,} tokens ≈${cost_so_far:.4f})",
+                                            100
+                                        )
+                                    
+                                    return all_embeddings
+                                else:
+                                    retry_count += 1
+                                    if retry_count < max_retries:
+                                        wait_time = 2 ** retry_count  # Exponential backoff
+                                        search_logger.warning(f"Rate limit hit (not quota), waiting {wait_time}s before retry {retry_count}/{max_retries}")
+                                        await asyncio.sleep(wait_time)
+                                    else:
+                                        search_logger.error(f"Max retries exceeded for batch {i//batch_size + 1}")
+                                        # Add zero embeddings for this batch
+                                        all_embeddings.extend([[0.0] * 1536 for _ in batch])
                         
-                        batch_embeddings = [item.embedding for item in response.data]
-                        all_embeddings.extend(batch_embeddings)
-                        
-                        # Progress reporting
+                        # Progress reporting with cost estimation
                         if progress_callback:
                             progress = ((i + len(batch)) / len(texts)) * 100
+                            cost_estimate = (total_tokens_used / 1_000_000) * 0.02  # $0.02 per 1M tokens
                             await progress_callback(
-                                f"Created embeddings for {i + len(batch)}/{len(texts)} texts",
+                                f"Created embeddings for {i + len(batch)}/{len(texts)} texts (tokens: {total_tokens_used:,} ≈${cost_estimate:.4f})",
                                 progress
                             )
                         
@@ -170,16 +234,18 @@ async def create_embeddings_batch_async(
                                 "type": "embedding_progress",
                                 "processed": i + len(batch),
                                 "total": len(texts),
-                                "percentage": progress
+                                "percentage": progress,
+                                "tokens_used": total_tokens_used
                             })
                         
                         # Yield control for WebSocket health
                         await asyncio.sleep(0.1)
-                    
-                    span.set_attribute("embeddings_created", len(all_embeddings))
-                    span.set_attribute("success", True)
-                    
-                    return all_embeddings
+                
+                span.set_attribute("embeddings_created", len(all_embeddings))
+                span.set_attribute("success", True)
+                span.set_attribute("total_tokens_used", total_tokens_used)
+                
+                return all_embeddings
                     
         except Exception as e:
             span.set_attribute("success", False)

@@ -107,10 +107,12 @@ async def generate_contextual_embedding_async(full_document: str, chunk: str) ->
         return chunk, False
     
     # Model choice is a RAG setting, get from credential service
-    from src.server.services.credential_service import credential_service
+    from ..credential_service import credential_service
     try:
         model_choice = await credential_service.get_credential("MODEL_CHOICE", "gpt-4.1-nano", decrypt=False)
-    except:
+        search_logger.info(f"Retrieved MODEL_CHOICE from credential service (async): {model_choice}")
+    except Exception as e:
+        search_logger.warning(f"Error accessing credential service for MODEL_CHOICE (async): {e}")
         model_choice = "gpt-4.1-nano"
     threading_service = get_threading_service()
     
@@ -191,15 +193,19 @@ async def process_chunk_with_context_async(url: str, content: str, full_document
 def _get_model_choice() -> str:
     """Get MODEL_CHOICE from credential service cache or fallback to environment."""
     try:
-        from src.server.services.credential_service import credential_service
+        from ..credential_service import credential_service
         if hasattr(credential_service, '_cache') and credential_service._cache_initialized:
             cached_value = credential_service._cache.get("MODEL_CHOICE")
             if cached_value:
-                return str(cached_value)
-    except:
-        pass
+                model = str(cached_value)
+                print(f"Retrieved MODEL_CHOICE from credential service: {model}")
+                return model
+    except Exception as e:
+        print(f"Error accessing credential service for MODEL_CHOICE: {e}")
     # Fallback to environment variable
-    return os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
+    model = os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
+    print(f"Using MODEL_CHOICE from environment: {model}")
+    return model
 
 
 def generate_contextual_embeddings_batch(full_documents: List[str], chunks: List[str]) -> List[Tuple[str, bool]]:
@@ -226,56 +232,81 @@ def generate_contextual_embeddings_batch(full_documents: List[str], chunks: List
     # Get model choice from credential service (RAG setting)
     model_choice = _get_model_choice()
     
-    try:
-        # Build batch prompt
-        batch_prompt = "Process the following chunks and provide contextual information for each:\n\n"
+    # Process in smaller batches to avoid token limits
+    MAX_CHUNKS_PER_BATCH = 5  # Reduced from processing all at once
+    results = []
+    
+    for batch_start in range(0, len(chunks), MAX_CHUNKS_PER_BATCH):
+        batch_end = min(batch_start + MAX_CHUNKS_PER_BATCH, len(chunks))
+        batch_chunks = chunks[batch_start:batch_end]
+        batch_docs = full_documents[batch_start:batch_end]
         
-        for i, (doc, chunk) in enumerate(zip(full_documents, chunks)):
-            batch_prompt += f"CHUNK {i+1}:\n"
-            batch_prompt += f"<document>\n{doc[:5000]}\n</document>\n"
-            batch_prompt += f"<chunk>\n{chunk}\n</chunk>\n\n"
-        
-        batch_prompt += "For each chunk, provide a short succinct context to situate it within the overall document for improving search retrieval. Format your response as:\nCHUNK 1: [context]\nCHUNK 2: [context]\netc."
-        
-        # Make single API call for all chunks
-        response = client.chat.completions.create(
-            model=model_choice,
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant that generates contextual information for document chunks."},
-                {"role": "user", "content": batch_prompt}
-            ],
-            temperature=0
-        )
-        
-        # Parse response
-        response_text = response.choices[0].message.content
-        results = []
-        
-        # Extract contexts from response
-        lines = response_text.strip().split('\n')
-        chunk_contexts = {}
-        
-        for line in lines:
-            if line.strip().startswith("CHUNK"):
-                parts = line.split(":", 1)
-                if len(parts) == 2:
-                    chunk_num = int(parts[0].strip().split()[1]) - 1
-                    context = parts[1].strip()
-                    chunk_contexts[chunk_num] = context
-        
-        # Build results
-        for i, chunk in enumerate(chunks):
-            if i in chunk_contexts:
-                contextual_text = chunk_contexts[i] + "\n\n" + chunk
-                results.append((contextual_text, True))
+        try:
+            # Build batch prompt with reduced document context
+            batch_prompt = "Process the following chunks and provide contextual information for each:\n\n"
+            
+            for i, (doc, chunk) in enumerate(zip(batch_docs, batch_chunks)):
+                # Use only 2000 chars of document context instead of 5000 to save tokens
+                doc_preview = doc[:2000] if len(doc) > 2000 else doc
+                batch_prompt += f"CHUNK {i+1}:\n"
+                batch_prompt += f"<document_preview>\n{doc_preview}\n</document_preview>\n"
+                batch_prompt += f"<chunk>\n{chunk[:500]}\n</chunk>\n\n"  # Also limit chunk preview
+            
+            batch_prompt += "For each chunk, provide a short succinct context to situate it within the overall document for improving search retrieval. Format your response as:\nCHUNK 1: [context]\nCHUNK 2: [context]\netc."
+            
+            # Make single API call for this batch
+            response = client.chat.completions.create(
+                model=model_choice,
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant that generates contextual information for document chunks."},
+                    {"role": "user", "content": batch_prompt}
+                ],
+                temperature=0,
+                max_tokens=100 * len(batch_chunks)  # Limit response size
+            )
+            
+            # Parse response
+            response_text = response.choices[0].message.content
+            
+            # Extract contexts from response
+            lines = response_text.strip().split('\n')
+            chunk_contexts = {}
+            
+            for line in lines:
+                if line.strip().startswith("CHUNK"):
+                    parts = line.split(":", 1)
+                    if len(parts) == 2:
+                        chunk_num = int(parts[0].strip().split()[1]) - 1
+                        context = parts[1].strip()
+                        chunk_contexts[chunk_num] = context
+            
+            # Build results for this batch
+            for i, chunk in enumerate(batch_chunks):
+                if i in chunk_contexts:
+                    # Combine context with full chunk (not truncated)
+                    contextual_text = chunk_contexts[i] + "\n\n" + chunk
+                    results.append((contextual_text, True))
+                else:
+                    results.append((chunk, False))
+                    
+        except openai.RateLimitError as e:
+            if "insufficient_quota" in str(e):
+                print(f"⚠️ QUOTA EXHAUSTED in contextual embeddings: {e}")
+                # Return non-contextual for remaining chunks
+                for chunk in chunks[batch_start:]:
+                    results.append((chunk, False))
+                break  # Exit the batch loop
             else:
+                print(f"Rate limit hit in contextual embeddings batch: {e}")
+                # Add non-contextual for this batch
+                for chunk in batch_chunks:
+                    results.append((chunk, False))
+                time.sleep(2)  # Wait before next batch
+                
+        except Exception as e:
+            print(f"Error in contextual embedding batch: {e}")
+            # Add non-contextual for this batch
+            for chunk in batch_chunks:
                 results.append((chunk, False))
-        
-        return results
-        
-    except Exception as e:
-        if "rate_limit_exceeded" in str(e) or "429" in str(e):
-            print(f"RATE LIMIT HIT in batch contextual embedding: {e}")
-        else:
-            print(f"Error in batch contextual embedding: {e}")
-        return [(chunk, False) for chunk in chunks]
+    
+    return results

@@ -25,11 +25,15 @@ def _get_model_choice() -> str:
         if hasattr(credential_service, '_cache') and credential_service._cache_initialized:
             cached_value = credential_service._cache.get("MODEL_CHOICE")
             if cached_value:
-                return str(cached_value)
-    except:
-        pass
+                model = str(cached_value)
+                search_logger.info(f"Retrieved MODEL_CHOICE from credential service: {model}")
+                return model
+    except Exception as e:
+        search_logger.warning(f"Error accessing credential service for MODEL_CHOICE: {e}")
     # Fallback to environment variable
-    return os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
+    model = os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
+    search_logger.info(f"Using MODEL_CHOICE from environment: {model}")
+    return model
 
 
 def _get_max_workers() -> int:
@@ -173,12 +177,15 @@ Format your response as JSON:
         # Get API key
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
+            search_logger.error("No OpenAI API key found - returning default values")
             return {
                 "example_name": f"Code Example{f' ({language})' if language else ''}",
                 "summary": "Code example for demonstration purposes."
             }
         
         client = openai.OpenAI(api_key=api_key)
+        
+        search_logger.debug(f"Calling OpenAI API with model: {model_choice}, language: {language}, code length: {len(code)}")
         
         response = client.chat.completions.create(
             model=model_choice,
@@ -191,27 +198,45 @@ Format your response as JSON:
             response_format={"type": "json_object"}
         )
         
-        result = json.loads(response.choices[0].message.content.strip())
-        return {
+        response_content = response.choices[0].message.content.strip()
+        search_logger.debug(f"OpenAI API response: {response_content[:200]}...")
+        
+        result = json.loads(response_content)
+        
+        # Validate the response has the required fields
+        if not result.get("example_name") or not result.get("summary"):
+            search_logger.warning(f"Incomplete response from OpenAI: {result}")
+        
+        final_result = {
             "example_name": result.get("example_name", f"Code Example{f' ({language})' if language else ''}"),
             "summary": result.get("summary", "Code example for demonstration purposes.")
         }
+        
+        search_logger.info(f"Generated code example summary - Name: '{final_result['example_name']}', Summary length: {len(final_result['summary'])}")
+        return final_result
     
+    except json.JSONDecodeError as e:
+        search_logger.error(f"Failed to parse JSON response from OpenAI: {e}, Response: {response_content if 'response_content' in locals() else 'No response'}")
+        return {
+            "example_name": f"Code Example{f' ({language})' if language else ''}",
+            "summary": "Code example for demonstration purposes."
+        }
     except Exception as e:
-        search_logger.error(f"Error generating code example summary: {e}")
+        search_logger.error(f"Error generating code example summary: {e}, Model: {model_choice}")
         return {
             "example_name": f"Code Example{f' ({language})' if language else ''}",
             "summary": "Code example for demonstration purposes."
         }
 
 
-async def generate_code_summaries_batch(code_blocks: List[Dict[str, Any]], max_workers: int = 3) -> List[Dict[str, str]]:
+async def generate_code_summaries_batch(code_blocks: List[Dict[str, Any]], max_workers: int = 3, progress_callback = None) -> List[Dict[str, str]]:
     """
     Generate summaries for multiple code blocks with rate limiting and proper worker management.
     
     Args:
         code_blocks: List of code block dictionaries
         max_workers: Maximum number of concurrent API requests
+        progress_callback: Optional callback for progress updates (async function)
         
     Returns:
         List of summary dictionaries
@@ -223,15 +248,18 @@ async def generate_code_summaries_batch(code_blocks: List[Dict[str, Any]], max_w
     
     # Semaphore to limit concurrent requests
     semaphore = asyncio.Semaphore(max_workers)
+    completed_count = 0
+    lock = asyncio.Lock()
     
     async def generate_single_summary_with_limit(block: Dict[str, Any]) -> Dict[str, str]:
+        nonlocal completed_count
         async with semaphore:
             # Add delay between requests to avoid rate limiting
             await asyncio.sleep(0.5)  # 500ms delay between requests
             
             # Run the synchronous function in a thread
             loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(
+            result = await loop.run_in_executor(
                 None,
                 generate_code_example_summary,
                 block['code'],
@@ -239,6 +267,20 @@ async def generate_code_summaries_batch(code_blocks: List[Dict[str, Any]], max_w
                 block['context_after'],
                 block.get('language', '')
             )
+            
+            # Update progress
+            async with lock:
+                completed_count += 1
+                if progress_callback:
+                    # Calculate progress from 93 to 95 (2% of total progress for summary generation)
+                    progress_percentage = 93 + int((completed_count / len(code_blocks)) * 2)
+                    await progress_callback({
+                        'status': 'code_storage', 
+                        'percentage': progress_percentage,
+                        'log': f'Generating code summaries: {completed_count}/{len(code_blocks)} completed...'
+                    })
+            
+            return result
     
     # Process all blocks concurrently but with rate limiting
     try:
@@ -347,7 +389,15 @@ def add_code_examples_to_supabase(
         # Create combined texts for embedding (code + summary)
         combined_texts = []
         for j in range(i, batch_end):
-            combined_text = f"{code_examples[j]}\n\nSummary: {summaries[j]}"
+            # Validate inputs
+            code = code_examples[j] if isinstance(code_examples[j], str) else str(code_examples[j])
+            summary = summaries[j] if isinstance(summaries[j], str) else str(summaries[j])
+            
+            if not code:
+                search_logger.warning(f"Empty code at index {j}, skipping...")
+                continue
+                
+            combined_text = f"{code}\n\nSummary: {summary}"
             combined_texts.append(combined_text)
         
         # Apply contextual embeddings if enabled
@@ -376,13 +426,13 @@ def add_code_examples_to_supabase(
         
         # Check if embeddings are valid (not all zeros)
         valid_embeddings = []
-        for embedding in embeddings:
+        for idx, embedding in enumerate(embeddings):
             if embedding and not all(v == 0.0 for v in embedding):
                 valid_embeddings.append(embedding)
             else:
                 search_logger.warning("Zero or invalid embedding detected, creating new one...")
                 # Try to create a single embedding as fallback
-                single_embedding = create_embedding(batch_texts[len(valid_embeddings)])
+                single_embedding = create_embedding(batch_texts[idx])
                 valid_embeddings.append(single_embedding)
         
         # Prepare batch data

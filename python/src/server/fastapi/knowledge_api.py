@@ -711,7 +711,11 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
                 code_blocks_for_summaries = [item['block'] for item in all_code_blocks]
                 
                 # Generate summaries in batches with rate limiting
-                summary_results = await generate_code_summaries_batch(code_blocks_for_summaries, max_workers)
+                summary_results = await generate_code_summaries_batch(
+                    code_blocks_for_summaries, 
+                    max_workers,
+                    progress_callback=lambda update_data: update_crawl_progress(progress_id, update_data)
+                )
                 
                 # Third pass: Combine results and prepare for storage
                 for idx, (code_item, summary_result) in enumerate(zip(all_code_blocks, summary_results)):
