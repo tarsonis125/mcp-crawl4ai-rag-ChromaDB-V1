@@ -224,7 +224,7 @@ async def get_knowledge_items(
                 code_examples = []
                 try:
                     code_examples_response = supabase_client.from_('code_examples')\
-                        .select('id, summary, metadata')\
+                        .select('id, content, summary, metadata')\
                         .eq('source_id', source_id)\
                         .execute()
                     
@@ -652,9 +652,10 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
             code_examples = []
             code_summaries = []
             code_metadatas = []
+            all_code_blocks = []  # Store all code blocks with their metadata
             total_docs = len(crawl_results)
             
-            # Process each document for code examples
+            # First pass: Extract all code blocks from all documents
             for idx, doc in enumerate(crawl_results):
                 try:
                     source_url = doc['url']
@@ -668,44 +669,79 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
                         parsed_url = urlparse(source_url)
                         source_id = parsed_url.netloc or parsed_url.path
                         
-                        # Generate summaries for each code block
+                        # Store code blocks with their metadata for batch processing
                         for block in code_blocks:
-                            # Generate summary using AI
-                            summary = generate_code_example_summary(
-                                block['code'], 
-                                block['context_before'], 
-                                block['context_after']
-                            )
-                            
-                            # Add to arrays
-                            code_urls.append(source_url)
-                            code_chunk_numbers.append(len(code_examples))  # Use global code example index
-                            code_examples.append(block['code'])
-                            code_summaries.append(summary)
-                            
-                            # Create metadata for code example
-                            code_meta = {
-                                "chunk_index": len(code_examples) - 1,
-                                "url": source_url,
-                                "source": source_id,
-                                "source_id": source_id,
-                                "language": block.get('language', ''),
-                                "char_count": len(block['code']),
-                                "word_count": len(block['code'].split())
-                            }
-                            code_metadatas.append(code_meta)
+                            all_code_blocks.append({
+                                'block': block,
+                                'source_url': source_url,
+                                'source_id': source_id
+                            })
                     
-                    # Update progress
-                    if idx % 5 == 0:  # Update every 5 documents
-                        progress = 91 + int((idx / total_docs) * 4)  # Progress from 91 to 95
+                    # Update progress during extraction
+                    if idx % 10 == 0:  # Update every 10 documents
+                        progress = 91 + int((idx / total_docs) * 2)  # Progress from 91 to 93
                         await update_crawl_progress(progress_id, {
                             'status': 'code_storage', 
                             'percentage': progress,
-                            'log': f'Processing code from document {idx + 1}/{total_docs}...'
+                            'log': f'Extracting code from document {idx + 1}/{total_docs}...'
                         })
                         
                 except Exception as e:
                     safe_logfire_error(f"Error processing code from document | url={doc.get('url')} | error={str(e)}")
+            
+            # Second pass: Generate summaries for all code blocks using rate-limited batch processing
+            if all_code_blocks:
+                await update_crawl_progress(progress_id, {
+                    'status': 'code_storage', 
+                    'percentage': 93,
+                    'log': f'Generating summaries for {len(all_code_blocks)} code examples...'
+                })
+                
+                # Get max workers from credential service
+                try:
+                    max_workers_str = await credential_service.get_credential("CONTEXTUAL_EMBEDDINGS_MAX_WORKERS", "3", decrypt=False)
+                    max_workers = int(max_workers_str)
+                except:
+                    max_workers = 3
+                
+                # Import the new batch function
+                from ..services.storage.code_storage_service import generate_code_summaries_batch
+                
+                # Extract just the code blocks for batch processing
+                code_blocks_for_summaries = [item['block'] for item in all_code_blocks]
+                
+                # Generate summaries in batches with rate limiting
+                summary_results = await generate_code_summaries_batch(code_blocks_for_summaries, max_workers)
+                
+                # Third pass: Combine results and prepare for storage
+                for idx, (code_item, summary_result) in enumerate(zip(all_code_blocks, summary_results)):
+                    block = code_item['block']
+                    source_url = code_item['source_url']
+                    source_id = code_item['source_id']
+                    
+                    # Extract summary and example_name
+                    summary = summary_result.get('summary', 'Code example for demonstration purposes.')
+                    example_name = summary_result.get('example_name', 'Code Example')
+                    
+                    # Add to arrays
+                    code_urls.append(source_url)
+                    code_chunk_numbers.append(len(code_examples))  # Use global code example index
+                    code_examples.append(block['code'])
+                    code_summaries.append(summary)
+                    
+                    # Create metadata for code example
+                    code_meta = {
+                        "chunk_index": len(code_examples) - 1,
+                        "url": source_url,
+                        "source": source_id,
+                        "source_id": source_id,
+                        "language": block.get('language', ''),
+                        "char_count": len(block['code']),
+                        "word_count": len(block['code'].split()),
+                        "example_name": example_name,
+                        "title": example_name  # Also store as title for compatibility
+                    }
+                    code_metadatas.append(code_meta)
             
             # Store all code examples if any were found
             if code_examples:
@@ -931,6 +967,12 @@ async def search_code_examples(request: RagQueryRequest):
     except Exception as e:
         safe_logfire_error(f"Code examples search failed | error={str(e)} | query={request.query[:50]} | source={request.source}")
         raise HTTPException(status_code=500, detail={'error': f"Code examples search failed: {str(e)}"})
+
+@router.post("/code-examples")
+async def search_code_examples_simple(request: RagQueryRequest):
+    """Search for code examples - simplified endpoint at /api/code-examples."""
+    # Delegate to the existing endpoint handler
+    return await search_code_examples(request)
 
 @router.get("/rag/sources")
 async def get_available_sources():

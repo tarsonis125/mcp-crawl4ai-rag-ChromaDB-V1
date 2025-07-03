@@ -5,13 +5,16 @@ Handles extraction and storage of code examples from documents.
 """
 import os
 import re
+import json
+import asyncio
+import time
 from typing import List, Dict, Any, Optional
 from urllib.parse import urlparse
 import openai
 from supabase import Client
 
 from ...config.logfire_config import search_logger
-from ..embeddings.embedding_service import create_embeddings_batch, create_embedding
+from ..embeddings.embedding_service import create_embeddings_batch, create_embedding, create_embeddings_batch_async
 from ..embeddings.contextual_embedding_service import generate_contextual_embeddings_batch
 
 
@@ -27,6 +30,19 @@ def _get_model_choice() -> str:
         pass
     # Fallback to environment variable
     return os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
+
+
+def _get_max_workers() -> int:
+    """Get max workers from credential service, defaulting to 3."""
+    try:
+        from ..credential_service import credential_service
+        if hasattr(credential_service, '_cache') and credential_service._cache_initialized:
+            cached_value = credential_service._cache.get("CONTEXTUAL_EMBEDDINGS_MAX_WORKERS", "3")
+            return int(cached_value)
+    except:
+        pass
+    # Fallback to environment variable
+    return int(os.getenv("CONTEXTUAL_EMBEDDINGS_MAX_WORKERS", "3"))
 
 
 def extract_code_blocks(markdown_content: str, min_length: int = 1000) -> List[Dict[str, Any]]:
@@ -111,17 +127,18 @@ def extract_code_blocks(markdown_content: str, min_length: int = 1000) -> List[D
     return code_blocks
 
 
-def generate_code_example_summary(code: str, context_before: str, context_after: str) -> str:
+def generate_code_example_summary(code: str, context_before: str, context_after: str, language: str = "") -> Dict[str, str]:
     """
-    Generate a summary for a code example using its surrounding context.
+    Generate a summary and name for a code example using its surrounding context.
     
     Args:
         code: The code example
         context_before: Context before the code
         context_after: Context after the code
+        language: The code language (if known)
         
     Returns:
-        A summary of what the code example demonstrates
+        A dictionary with 'summary' and 'example_name'
     """
     # Get model choice from credential service (RAG setting)
     model_choice = _get_model_choice()
@@ -131,7 +148,7 @@ def generate_code_example_summary(code: str, context_before: str, context_after:
 {context_before[-500:] if len(context_before) > 500 else context_before}
 </context_before>
 
-<code_example>
+<code_example language="{language}">
 {code[:1500] if len(code) > 1500 else code}
 </code_example>
 
@@ -139,32 +156,127 @@ def generate_code_example_summary(code: str, context_before: str, context_after:
 {context_after[:500] if len(context_after) > 500 else context_after}
 </context_after>
 
-Based on the code example and its surrounding context, provide a concise summary (2-3 sentences) that describes what this code example demonstrates and its purpose. Focus on the practical application and key concepts illustrated.
+Based on the code example and its surrounding context, provide:
+1. A concise, action-oriented name (1-4 words) that describes what this code DOES, not what it is. Focus on the action or purpose.
+   Good examples: "Parse JSON Response", "Validate Email Format", "Connect PostgreSQL", "Handle File Upload", "Sort Array Items", "Fetch User Data"
+   Bad examples: "Function Example", "Code Snippet", "JavaScript Code", "API Code"
+2. A summary (2-3 sentences) that describes what this code example demonstrates and its purpose
+
+Format your response as JSON:
+{{
+  "example_name": "Action-oriented name (1-4 words)",
+  "summary": "2-3 sentence description of what the code demonstrates"
+}}
 """
     
     try:
         # Get API key
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
-            return "Code example for demonstration purposes."
+            return {
+                "example_name": f"Code Example{f' ({language})' if language else ''}",
+                "summary": "Code example for demonstration purposes."
+            }
         
         client = openai.OpenAI(api_key=api_key)
         
         response = client.chat.completions.create(
             model=model_choice,
             messages=[
-                {"role": "system", "content": "You are a helpful assistant that provides concise code example summaries."},
+                {"role": "system", "content": "You are a helpful assistant that analyzes code examples and provides JSON responses with example names and summaries."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
-            max_tokens=100
+            max_tokens=150,
+            response_format={"type": "json_object"}
         )
         
-        return response.choices[0].message.content.strip()
+        result = json.loads(response.choices[0].message.content.strip())
+        return {
+            "example_name": result.get("example_name", f"Code Example{f' ({language})' if language else ''}"),
+            "summary": result.get("summary", "Code example for demonstration purposes.")
+        }
     
     except Exception as e:
         search_logger.error(f"Error generating code example summary: {e}")
-        return "Code example for demonstration purposes."
+        return {
+            "example_name": f"Code Example{f' ({language})' if language else ''}",
+            "summary": "Code example for demonstration purposes."
+        }
+
+
+async def generate_code_summaries_batch(code_blocks: List[Dict[str, Any]], max_workers: int = 3) -> List[Dict[str, str]]:
+    """
+    Generate summaries for multiple code blocks with rate limiting and proper worker management.
+    
+    Args:
+        code_blocks: List of code block dictionaries
+        max_workers: Maximum number of concurrent API requests
+        
+    Returns:
+        List of summary dictionaries
+    """
+    if not code_blocks:
+        return []
+    
+    search_logger.info(f"Generating summaries for {len(code_blocks)} code blocks with max_workers={max_workers}")
+    
+    # Semaphore to limit concurrent requests
+    semaphore = asyncio.Semaphore(max_workers)
+    
+    async def generate_single_summary_with_limit(block: Dict[str, Any]) -> Dict[str, str]:
+        async with semaphore:
+            # Add delay between requests to avoid rate limiting
+            await asyncio.sleep(0.5)  # 500ms delay between requests
+            
+            # Run the synchronous function in a thread
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(
+                None,
+                generate_code_example_summary,
+                block['code'],
+                block['context_before'],
+                block['context_after'],
+                block.get('language', '')
+            )
+    
+    # Process all blocks concurrently but with rate limiting
+    try:
+        summaries = await asyncio.gather(
+            *[generate_single_summary_with_limit(block) for block in code_blocks],
+            return_exceptions=True
+        )
+        
+        # Handle any exceptions in the results
+        final_summaries = []
+        for i, summary in enumerate(summaries):
+            if isinstance(summary, Exception):
+                search_logger.error(f"Error generating summary for code block {i}: {summary}")
+                # Use fallback summary
+                language = code_blocks[i].get('language', '')
+                fallback = {
+                    "example_name": f"Code Example{f' ({language})' if language else ''}",
+                    "summary": "Code example for demonstration purposes."
+                }
+                final_summaries.append(fallback)
+            else:
+                final_summaries.append(summary)
+        
+        search_logger.info(f"Successfully generated {len(final_summaries)} code summaries")
+        return final_summaries
+    
+    except Exception as e:
+        search_logger.error(f"Error in batch summary generation: {e}")
+        # Return fallback summaries for all blocks
+        fallback_summaries = []
+        for block in code_blocks:
+            language = block.get('language', '')
+            fallback = {
+                "example_name": f"Code Example{f' ({language})' if language else ''}",
+                "summary": "Code example for demonstration purposes."
+            }
+            fallback_summaries.append(fallback)
+        return fallback_summaries
 
 
 def add_code_examples_to_supabase(
@@ -294,7 +406,7 @@ def add_code_examples_to_supabase(
         
         # Insert batch into Supabase with retry logic
         max_retries = 3
-        retry_delay = 1.0  # Start with 1 second delay
+        retry_delay = 1.0
         
         for retry in range(max_retries):
             try:
@@ -323,4 +435,5 @@ def add_code_examples_to_supabase(
                     
                     if successful_inserts > 0:
                         search_logger.info(f"Successfully inserted {successful_inserts}/{len(batch_data)} records individually")
+
         search_logger.info(f"Inserted batch {i//batch_size + 1} of {(total_items + batch_size - 1)//batch_size} code examples")
