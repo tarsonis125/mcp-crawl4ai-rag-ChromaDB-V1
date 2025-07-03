@@ -111,6 +111,13 @@ The services follow a clear architectural pattern:
 | **embedding_service.py** | OpenAI embedding creation | `create_embeddings_batch()`, `create_embeddings_batch_async()` |
 | **contextual_embedding_service.py** | Context-aware embeddings | `generate_contextual_embedding()`, `generate_contextual_embeddings_batch()` |
 
+<Admonition type="tip" title="Async/Sync Boundaries">
+The embedding service provides both sync and async versions:
+- Use `create_embeddings_batch_async()` in async contexts (recommended)
+- Sync versions exist for backward compatibility but will return zero embeddings if called from async context
+- Always prefer async versions for better performance and proper event loop handling
+</Admonition>
+
 ## Service Usage Patterns
 
 ### Direct Service Usage (FastAPI)

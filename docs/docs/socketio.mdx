@@ -357,6 +357,22 @@ async def update_progress(progress_id: str, percentage: int):
     })
 ```
 
+### Async Progress Callbacks
+
+<Admonition type="warning" title="Critical: Async Callback Pattern">
+When passing progress callbacks to services, ensure proper async handling:
+
+```python
+# ❌ WRONG - Creates unawaited coroutine
+progress_callback=lambda data: update_crawl_progress(progress_id, data)
+
+# ✅ CORRECT - Properly schedules async execution
+progress_callback=lambda data: asyncio.create_task(update_crawl_progress(progress_id, data))
+```
+
+This pattern is essential when services need to report progress through async Socket.IO broadcasts.
+</Admonition>
+
 ## Room-Based Architecture Summary
 
 <Admonition type="info" title="2025 Socket.IO Best Practices">
