@@ -11,10 +11,12 @@ The agents use MCP tools for all data operations.
 
 import os
 import logging
+import json
 from contextlib import asynccontextmanager
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, AsyncGenerator
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 
@@ -150,13 +152,72 @@ async def list_agents():
 @app.post("/agents/{agent_type}/stream")
 async def stream_agent(agent_type: str, request: AgentRequest):
     """
-    Stream responses from an agent (for real-time interactions).
+    Stream responses from an agent using Server-Sent Events (SSE).
     
-    Note: This is a placeholder for streaming functionality.
+    This endpoint streams the agent's response in real-time, allowing
+    for a more interactive experience.
     """
-    raise HTTPException(
-        status_code=501,
-        detail="Streaming not yet implemented"
+    # Get the requested agent
+    if agent_type not in app.state.agents:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown agent type: {agent_type}"
+        )
+    
+    agent = app.state.agents[agent_type]
+    
+    async def generate() -> AsyncGenerator[str, None]:
+        try:
+            # Prepare dependencies for the agent
+            deps = {
+                "context": request.context or {},
+                "options": request.options or {},
+                "mcp_endpoint": os.getenv("MCP_SERVICE_URL", "http://archon-mcp:8051")
+            }
+            
+            # Use PydanticAI's run_stream method
+            # run_stream returns an async context manager directly
+            async with agent.run_stream(request.prompt, deps) as stream:
+                # Stream text chunks as they arrive
+                async for chunk in stream.stream_text():
+                    event_data = json.dumps({
+                        'type': 'stream_chunk',
+                        'content': chunk
+                    })
+                    yield f"data: {event_data}\n\n"
+                
+                # Get the final structured result
+                try:
+                    final_result = await stream.get_data()
+                    event_data = json.dumps({
+                        'type': 'stream_complete',
+                        'content': final_result
+                    })
+                    yield f"data: {event_data}\n\n"
+                except Exception as e:
+                    # If we can't get structured data, just send completion
+                    event_data = json.dumps({
+                        'type': 'stream_complete',
+                        'content': ""
+                    })
+                    yield f"data: {event_data}\n\n"
+                    
+        except Exception as e:
+            logger.error(f"Error streaming {agent_type} agent: {e}")
+            event_data = json.dumps({
+                'type': 'error',
+                'error': str(e)
+            })
+            yield f"data: {event_data}\n\n"
+    
+    # Return SSE response
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # Disable Nginx buffering
+        }
     )
 
 # Main entry point

@@ -42,13 +42,25 @@ module.exports = {
       ],
     },
     
+    // AGENTS & AI
+    {
+      type: 'category',
+      label: 'AI Agents',
+      items: [
+        'agents-overview',
+        'agent-rag',
+        'agent-document',
+        'agent-task',
+        'agent-chat',
+      ],
+    },
+    
     // GUIDES
     {
       type: 'category',
       label: 'Guides',
       items: [
         'ui',
-        'agents-overview',
         'server-monitoring',
       ],
     },

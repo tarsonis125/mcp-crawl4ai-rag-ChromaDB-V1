@@ -212,9 +212,9 @@ class BaseAgent(ABC, Generic[DepsT, OutputT]):
             self.logger.error(f"Agent {self.name} failed: {str(e)}")
             raise
     
-    async def run_stream(self, user_prompt: str, deps: DepsT):
+    def run_stream(self, user_prompt: str, deps: DepsT):
         """
-        Run the agent with streaming output and rate limiting.
+        Run the agent with streaming output.
         
         Args:
             user_prompt: The user's input prompt
@@ -223,12 +223,11 @@ class BaseAgent(ABC, Generic[DepsT, OutputT]):
         Returns:
             Async context manager for streaming results
         """
-        if self.rate_limiter:
-            return await self.rate_limiter.execute_with_rate_limit(
-                self._agent.run_stream, user_prompt, deps=deps
-            )
-        else:
-            return self._agent.run_stream(user_prompt, deps=deps)
+        # Note: Rate limiting not supported for streaming to avoid complexity
+        # The async context manager pattern doesn't work well with rate limiting
+        self.logger.info(f"Starting streaming for agent {self.name}")
+        # run_stream returns an async context manager directly, not a coroutine
+        return self._agent.run_stream(user_prompt, deps=deps)
     
     def add_tool(self, func, **tool_kwargs):
         """

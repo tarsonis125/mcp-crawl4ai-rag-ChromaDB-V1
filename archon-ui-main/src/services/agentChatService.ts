@@ -366,24 +366,25 @@ class AgentChatService {
     message: string,
     context?: Record<string, any>
   ): Promise<void> {
-    const chatRequest: ChatRequest = {
-      message,
-      context,
-    };
+    const ws = this.wsConnections.get(sessionId);
+    if (!ws || !ws.isConnected()) {
+      throw new Error('WebSocket not connected');
+    }
 
-    const response = await fetch(
-      `${this.baseUrl}/api/agent-chat/sessions/${sessionId}/messages`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(chatRequest),
+    console.log(`📤 Sending message via Socket.IO for session ${sessionId}:`, message);
+    
+    // Send message via Socket.IO event
+    const success = ws.send({
+      type: 'chat_message',
+      data: {
+        session_id: sessionId,
+        message: message,
+        context: context || {}
       }
-    );
+    });
 
-    if (!response.ok) {
-      throw new Error(`Failed to send message: ${response.statusText}`);
+    if (!success) {
+      throw new Error('Failed to send message via WebSocket');
     }
   }
 
@@ -486,6 +487,14 @@ class AgentChatService {
       const endpoint = `/api/agent-chat/sessions/${sessionId}/ws`;
       console.log(`🔌 Attempting to connect WebSocket to: ${endpoint}`);
       await wsService.connect(endpoint);
+      
+      // Join the chat room after successful connection
+      console.log(`🏠 Joining chat room for session ${sessionId}`);
+      wsService.send({
+        type: 'join_chat',
+        data: { session_id: sessionId }
+      });
+      
     } catch (error) {
       console.error(`❌ Failed to connect WebSocket for session ${sessionId}:`, error);
       throw error;

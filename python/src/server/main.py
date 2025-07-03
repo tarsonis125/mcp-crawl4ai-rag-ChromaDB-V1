@@ -35,7 +35,7 @@ from .fastapi.mcp_api import router as mcp_router
 from .fastapi.knowledge_api import router as knowledge_router  
 from .fastapi.projects_api import router as projects_router
 from .fastapi.tests_api import router as tests_router
-# from .fastapi.agent_chat_api import router as agent_chat_router  # TODO: Fix to use HTTP calls to agents service
+from .fastapi.agent_chat_api import router as agent_chat_router
 
 # Import utilities and core classes
 from .services.credential_service import initialize_credentials
@@ -160,7 +160,7 @@ async def lifespan(app: FastAPI):
         # Initialize Socket.IO services
         try:
             # Import API modules to register their Socket.IO handlers
-            from .fastapi import knowledge_api, projects_api  # agent_chat_api removed - TODO: Fix to use HTTP calls
+            from .fastapi import knowledge_api, projects_api, agent_chat_api
             api_logger.info("✅ Socket.IO handlers imported from API modules")
         except Exception as e:
             api_logger.warning(f"Could not initialize Socket.IO services: {e}")
@@ -243,7 +243,7 @@ app.include_router(mcp_router)
 app.include_router(knowledge_router)
 app.include_router(projects_router)
 app.include_router(tests_router)
-# app.include_router(agent_chat_router)  # TODO: Fix to use HTTP calls to agents service
+app.include_router(agent_chat_router)
 # app.include_router(internal_router)  # Removed - internal API deleted
 
 # Root endpoint
