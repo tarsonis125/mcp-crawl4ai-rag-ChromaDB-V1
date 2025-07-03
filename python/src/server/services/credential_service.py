@@ -366,6 +366,15 @@ async def initialize_credentials() -> None:
         "PROJECTS_ENABLED"     # Feature flag for module loading
     ]
     
+    # LLM provider credentials (for sync client support)
+    provider_credentials = [
+        "openrouter_api_key",  # OpenRouter API key
+        "google_api_key",      # Google Gemini API key
+        "LLM_PROVIDER",        # Selected provider
+        "LLM_BASE_URL",        # Ollama base URL
+        "EMBEDDING_MODEL"      # Custom embedding model
+    ]
+    
     # RAG settings that should NOT be set as env vars (will be looked up on demand):
     # - USE_CONTEXTUAL_EMBEDDINGS
     # - CONTEXTUAL_EMBEDDINGS_MAX_WORKERS
@@ -374,6 +383,7 @@ async def initialize_credentials() -> None:
     # - USE_RERANKING
     # - MODEL_CHOICE
     
+    # Set infrastructure credentials
     for key in infrastructure_credentials:
         try:
             value = await credential_service.get_credential(key, decrypt=True)
@@ -383,4 +393,17 @@ async def initialize_credentials() -> None:
         except Exception as e:
             logger.warning(f"Failed to set environment variable {key}: {e}")
     
-    logger.info("✅ Credentials loaded and infrastructure environment variables set") 
+    # Set provider credentials with proper environment variable names
+    for key in provider_credentials:
+        try:
+            value = await credential_service.get_credential(key, decrypt=True)
+            if value:
+                # Map credential keys to environment variable names
+                env_key = key.upper()  # Convert to uppercase for env vars
+                os.environ[env_key] = str(value)
+                logger.info(f"Set environment variable: {env_key}")
+        except Exception as e:
+            # This is expected for optional credentials
+            logger.debug(f"Optional credential not set: {key}")
+    
+    logger.info("✅ Credentials loaded and environment variables set") 

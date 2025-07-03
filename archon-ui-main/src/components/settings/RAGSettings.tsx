@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Settings, Check, Save, Loader } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Input } from '../ui/Input';
+import { Select } from '../ui/Select';
 import { Button } from '../ui/Button';
 import { useToast } from '../../contexts/ToastContext';
 import { credentialsService } from '../../services/credentialsService';
@@ -14,6 +15,9 @@ interface RAGSettingsProps {
     USE_HYBRID_SEARCH: boolean;
     USE_AGENTIC_RAG: boolean;
     USE_RERANKING: boolean;
+    LLM_PROVIDER?: string;
+    LLM_BASE_URL?: string;
+    EMBEDDING_MODEL?: string;
   };
   setRagSettings: (settings: any) => void;
 }
@@ -38,20 +42,39 @@ export const RAGSettings = ({
           knowledge retrieval.
         </p>
         
-        {/* First row: LLM Model (3/4) and Save Settings (1/4) */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <div className="col-span-2">
-            <Input 
-              label="LLM Model - LLM for summaries and contextual embeddings" 
-              value={ragSettings.MODEL_CHOICE} 
+        {/* Provider Selection Row */}
+        <div className="grid grid-cols-3 gap-4 mb-4">
+          <div>
+            <Select
+              label="LLM Provider"
+              value={ragSettings.LLM_PROVIDER || 'openai'}
               onChange={e => setRagSettings({
                 ...ragSettings,
-                MODEL_CHOICE: e.target.value
-              })} 
-              placeholder="e.g., gpt-4.1-nano"
-              accentColor="green" 
+                LLM_PROVIDER: e.target.value
+              })}
+              accentColor="green"
+              options={[
+                { value: 'openai', label: 'OpenAI' },
+                { value: 'openrouter', label: 'OpenRouter' },
+                { value: 'ollama', label: 'Ollama (Local)' },
+                { value: 'google', label: 'Google Gemini' }
+              ]}
             />
           </div>
+          {ragSettings.LLM_PROVIDER === 'ollama' && (
+            <div>
+              <Input
+                label="Ollama Base URL"
+                value={ragSettings.LLM_BASE_URL || 'http://localhost:11434/v1'}
+                onChange={e => setRagSettings({
+                  ...ragSettings,
+                  LLM_BASE_URL: e.target.value
+                })}
+                placeholder="http://localhost:11434/v1"
+                accentColor="green"
+              />
+            </div>
+          )}
           <div className="flex items-end">
             <Button 
               variant="outline" 
@@ -75,6 +98,34 @@ export const RAGSettings = ({
             >
               {saving ? 'Saving...' : 'Save Settings'}
             </Button>
+          </div>
+        </div>
+
+        {/* Model Settings Row */}
+        <div className="grid grid-cols-2 gap-4 mb-6">
+          <div>
+            <Input 
+              label="Chat Model" 
+              value={ragSettings.MODEL_CHOICE} 
+              onChange={e => setRagSettings({
+                ...ragSettings,
+                MODEL_CHOICE: e.target.value
+              })} 
+              placeholder={getModelPlaceholder(ragSettings.LLM_PROVIDER || 'openai')}
+              accentColor="green" 
+            />
+          </div>
+          <div>
+            <Input
+              label="Embedding Model"
+              value={ragSettings.EMBEDDING_MODEL || ''}
+              onChange={e => setRagSettings({
+                ...ragSettings,
+                EMBEDDING_MODEL: e.target.value
+              })}
+              placeholder={getEmbeddingPlaceholder(ragSettings.LLM_PROVIDER || 'openai')}
+              accentColor="green"
+            />
           </div>
         </div>
         
@@ -214,6 +265,37 @@ export const RAGSettings = ({
       </Card>
     </div>;
 };
+
+// Helper functions for model placeholders
+function getModelPlaceholder(provider: string): string {
+  switch (provider) {
+    case 'openai':
+      return 'e.g., gpt-4o-mini';
+    case 'openrouter':
+      return 'e.g., openai/gpt-4o-mini';
+    case 'ollama':
+      return 'e.g., llama2, mistral';
+    case 'google':
+      return 'e.g., gemini-1.5-flash';
+    default:
+      return 'e.g., gpt-4o-mini';
+  }
+}
+
+function getEmbeddingPlaceholder(provider: string): string {
+  switch (provider) {
+    case 'openai':
+      return 'Default: text-embedding-3-small';
+    case 'openrouter':
+      return 'e.g., openai/text-embedding-3-small';
+    case 'ollama':
+      return 'e.g., nomic-embed-text';
+    case 'google':
+      return 'e.g., text-embedding-004';
+    default:
+      return 'Default: text-embedding-3-small';
+  }
+}
 
 interface CustomCheckboxProps {
   id: string;

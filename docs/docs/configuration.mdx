@@ -129,6 +129,23 @@ LOGFIRE_TOKEN=your_token
 - 📊 **Consistent**: Same log format and structure in both modes
 - 🚀 **Zero Dependencies**: Standard logging requires no external services
 
+### LLM Provider Configuration
+
+Archon supports multiple LLM providers through the Settings UI:
+
+- **OpenAI** (default) - Uses your existing OpenAI API key
+- **OpenRouter** - Access multiple models with one API key  
+- **Ollama** - Run models locally (free)
+- **Google Gemini** - Google's latest models
+
+Configure in **Settings → RAG Settings → LLM Provider**
+
+<Admonition type="tip" title="Provider Setup">
+- **API Keys**: Add provider-specific keys in Settings → API Keys
+- **Ollama**: Requires local installation and custom base URL
+- **Models**: Each provider has different model naming conventions
+</Admonition>
+
 ### Socket.IO Configuration
 
 Archon uses Socket.IO for all real-time features. The default configuration works out of the box:

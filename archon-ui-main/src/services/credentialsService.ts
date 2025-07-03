@@ -17,6 +17,9 @@ export interface RagSettings {
   USE_AGENTIC_RAG: boolean;
   USE_RERANKING: boolean;
   MODEL_CHOICE: string;
+  LLM_PROVIDER?: string;
+  LLM_BASE_URL?: string;
+  EMBEDDING_MODEL?: string;
 }
 
 class CredentialsService {
@@ -48,7 +51,7 @@ class CredentialsService {
     // Convert to array format expected by frontend
     if (result.credentials && typeof result.credentials === 'object') {
       return Object.entries(result.credentials).map(([key, value]: [string, any]) => {
-        if (typeof value === 'object' && value.is_encrypted) {
+        if (value && typeof value === 'object' && value.is_encrypted) {
           return {
             key,
             value: undefined,
@@ -95,14 +98,17 @@ class CredentialsService {
       USE_HYBRID_SEARCH: false,
       USE_AGENTIC_RAG: false,
       USE_RERANKING: false,
-      MODEL_CHOICE: 'gpt-4.1-nano'
+      MODEL_CHOICE: 'gpt-4.1-nano',
+      LLM_PROVIDER: 'openai',
+      LLM_BASE_URL: '',
+      EMBEDDING_MODEL: ''
     };
 
     // Map credentials to settings
     [...ragCredentials, ...apiKeysCredentials].forEach(cred => {
       if (cred.key in settings) {
-        if (cred.key === 'MODEL_CHOICE') {
-          settings[cred.key] = cred.value || 'gpt-4.1-nano';
+        if (cred.key === 'MODEL_CHOICE' || cred.key === 'LLM_PROVIDER' || cred.key === 'LLM_BASE_URL' || cred.key === 'EMBEDDING_MODEL') {
+          (settings as any)[cred.key] = cred.value || '';
         } else if (cred.key === 'CONTEXTUAL_EMBEDDINGS_MAX_WORKERS') {
           settings[cred.key] = parseInt(cred.value || '3', 10);
         } else {

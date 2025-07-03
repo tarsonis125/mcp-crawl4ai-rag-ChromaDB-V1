@@ -10,42 +10,23 @@ import asyncio
 import time
 from typing import List, Dict, Any, Optional
 from urllib.parse import urlparse
-import openai
 from supabase import Client
 
 from ...config.logfire_config import search_logger
 from ..embeddings.embedding_service import create_embeddings_batch, create_embedding, create_embeddings_batch_async, create_embedding_async
 from ..embeddings.contextual_embedding_service import generate_contextual_embeddings_batch
+from ..llm_provider_service import get_llm_client_sync
 
 
 def _get_model_choice() -> str:
-    """Get MODEL_CHOICE from credential service cache or fallback to environment."""
-    try:
-        from ..credential_service import credential_service
-        if hasattr(credential_service, '_cache') and credential_service._cache_initialized:
-            cached_value = credential_service._cache.get("MODEL_CHOICE")
-            if cached_value:
-                model = str(cached_value)
-                search_logger.info(f"Retrieved MODEL_CHOICE from credential service: {model}")
-                return model
-    except Exception as e:
-        search_logger.warning(f"Error accessing credential service for MODEL_CHOICE: {e}")
-    # Fallback to environment variable
+    """Get MODEL_CHOICE from environment."""
     model = os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
-    search_logger.info(f"Using MODEL_CHOICE from environment: {model}")
+    search_logger.debug(f"Using MODEL_CHOICE: {model}")
     return model
 
 
 def _get_max_workers() -> int:
-    """Get max workers from credential service, defaulting to 3."""
-    try:
-        from ..credential_service import credential_service
-        if hasattr(credential_service, '_cache') and credential_service._cache_initialized:
-            cached_value = credential_service._cache.get("CONTEXTUAL_EMBEDDINGS_MAX_WORKERS", "3")
-            return int(cached_value)
-    except:
-        pass
-    # Fallback to environment variable
+    """Get max workers from environment, defaulting to 3."""
     return int(os.getenv("CONTEXTUAL_EMBEDDINGS_MAX_WORKERS", "3"))
 
 
@@ -174,16 +155,15 @@ Format your response as JSON:
 """
     
     try:
-        # Get API key
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            search_logger.error("No OpenAI API key found - returning default values")
+        # Get LLM client using the provider service
+        try:
+            client = get_llm_client_sync()
+        except Exception as e:
+            search_logger.error(f"Failed to create LLM client: {e} - returning default values")
             return {
                 "example_name": f"Code Example{f' ({language})' if language else ''}",
                 "summary": "Code example for demonstration purposes."
             }
-        
-        client = openai.OpenAI(api_key=api_key)
         
         search_logger.debug(f"Calling OpenAI API with model: {model_choice}, language: {language}, code length: {len(code)}")
         

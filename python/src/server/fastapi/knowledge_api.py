@@ -575,7 +575,16 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         
         for (source_id, _), summary in zip(source_summary_args, source_summaries):
             word_count = source_word_counts.get(source_id, 0)
-            update_source_info(supabase_client, source_id, summary, word_count)
+            update_source_info(
+                supabase_client, 
+                source_id, 
+                summary, 
+                word_count, 
+                source_content_map.get(source_id, "")[:5000],  # content sample
+                request.knowledge_type,  # knowledge_type
+                request.tags,  # tags from the crawl request
+                request.update_frequency  # update_frequency
+            )
         
         # Source creation phase
         await update_crawl_progress(progress_id, {

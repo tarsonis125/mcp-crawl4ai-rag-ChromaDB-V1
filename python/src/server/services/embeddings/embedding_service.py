@@ -12,24 +12,11 @@ from contextlib import asynccontextmanager
 
 from ...config.logfire_config import search_logger, safe_span
 from ..threading_service import get_threading_service
+from ..llm_provider_service import get_llm_client, get_llm_client_sync, get_embedding_model, get_embedding_model_sync
 
 
-@asynccontextmanager
-async def get_openai_client():
-    """
-    Create an async OpenAI client context manager.
-    """
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise ValueError("OpenAI API key not found in environment")
-    
-    client = openai.AsyncOpenAI(api_key=api_key)
-    
-    try:
-        yield client
-    finally:
-        # Cleanup if needed
-        pass
+# Use the new provider-aware client factory
+get_openai_client = get_llm_client
 
 
 def create_embedding(text: str) -> List[float]:
@@ -172,8 +159,9 @@ async def create_embeddings_batch_async(
                         while retry_count < max_retries:
                             try:
                                 # Create embeddings for this batch
+                                embedding_model = await get_embedding_model()
                                 response = await client.embeddings.create(
-                                    model="text-embedding-3-small",
+                                    model=embedding_model,
                                     input=batch
                                 )
                                 
@@ -184,9 +172,9 @@ async def create_embeddings_batch_async(
                             except openai.RateLimitError as e:
                                 error_message = str(e)
                                 if "insufficient_quota" in error_message:
-                                    # Calculate approximate cost
+                                    # Calculate approximate cost (using OpenAI pricing as estimate)
                                     tokens_so_far = total_tokens_used - batch_tokens
-                                    cost_so_far = (tokens_so_far / 1_000_000) * 0.02  # $0.02 per 1M tokens for text-embedding-3-small
+                                    cost_so_far = (tokens_so_far / 1_000_000) * 0.02  # Estimated cost
                                     
                                     search_logger.error(
                                         f"⚠️ OpenAI BILLING QUOTA EXHAUSTED! You need to add more credits to your OpenAI account.\n"
@@ -222,7 +210,7 @@ async def create_embeddings_batch_async(
                         # Progress reporting with cost estimation
                         if progress_callback:
                             progress = ((i + len(batch)) / len(texts)) * 100
-                            cost_estimate = (total_tokens_used / 1_000_000) * 0.02  # $0.02 per 1M tokens
+                            cost_estimate = (total_tokens_used / 1_000_000) * 0.02  # Estimated cost
                             await progress_callback(
                                 f"Created embeddings for {i + len(batch)}/{len(texts)} texts (tokens: {total_tokens_used:,} ≈${cost_estimate:.4f})",
                                 progress

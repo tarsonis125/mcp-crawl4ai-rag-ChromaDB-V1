@@ -8,13 +8,20 @@ import os
 import json
 from typing import List, Dict, Any, Tuple, Optional
 from datetime import datetime
-import openai
 from supabase import Client
 
 from ..config.logfire_config import search_logger, get_logger
 from .client_manager import get_supabase_client
+from .llm_provider_service import get_llm_client_sync
 
 logger = get_logger(__name__)
+
+
+def _get_model_choice() -> str:
+    """Get MODEL_CHOICE from environment."""
+    model = os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
+    logger.debug(f"Using MODEL_CHOICE: {model}")
+    return model
 
 
 def extract_source_summary(source_id: str, content: str, max_length: int = 500) -> str:
@@ -38,15 +45,7 @@ def extract_source_summary(source_id: str, content: str, max_length: int = 500) 
         return default_summary
     
     # Get the model choice from credential service (RAG setting)
-    try:
-        from .credential_service import credential_service
-        if hasattr(credential_service, '_cache') and credential_service._cache_initialized:
-            cached_value = credential_service._cache.get("MODEL_CHOICE")
-            model_choice = str(cached_value) if cached_value else "gpt-4.1-nano"
-        else:
-            model_choice = os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
-    except:
-        model_choice = os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
+    model_choice = _get_model_choice()
     
     # Limit content length to avoid token limits
     truncated_content = content[:25000] if len(content) > 25000 else content
@@ -60,12 +59,12 @@ The above content is from the documentation for '{source_id}'. Please provide a 
 """
     
     try:
-        # Get API key
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
+        # Get LLM client using the provider service
+        try:
+            client = get_llm_client_sync()
+        except Exception as e:
+            search_logger.error(f"Failed to create LLM client: {e}")
             return default_summary
-        
-        client = openai.OpenAI(api_key=api_key)
         
         # Call the OpenAI API to generate the summary
         response = client.chat.completions.create(
@@ -116,36 +115,40 @@ def generate_source_title_and_metadata(
     # Try to generate a better title from content
     if content and len(content.strip()) > 100:
         try:
-            # Get API key
-            api_key = os.getenv("OPENAI_API_KEY")
-            if api_key:
-                client = openai.OpenAI(api_key=api_key)
-                model_choice = os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
+            # Get LLM client using the provider service
+            try:
+                client = get_llm_client_sync()
+            except Exception as e:
+                search_logger.error(f"Failed to create LLM client for title generation: {e}")
+                # Don't proceed if client creation fails
+                raise
                 
-                # Limit content for prompt
-                sample_content = content[:3000] if len(content) > 3000 else content
-                
-                prompt = f"""Based on this content from {source_id}, generate a concise, descriptive title (3-6 words) that captures what this source is about:
+            model_choice = _get_model_choice()
+            
+            # Limit content for prompt
+            sample_content = content[:3000] if len(content) > 3000 else content
+            
+            prompt = f"""Based on this content from {source_id}, generate a concise, descriptive title (3-6 words) that captures what this source is about:
 
 {sample_content}
 
 Provide only the title, nothing else."""
-                
-                response = client.chat.completions.create(
-                    model=model_choice,
-                    messages=[
-                        {"role": "system", "content": "You are a helpful assistant that generates concise titles."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.3,
-                    max_tokens=20
-                )
-                
-                generated_title = response.choices[0].message.content.strip()
-                # Clean up the title
-                generated_title = generated_title.strip('"\'')
-                if len(generated_title) < 50:  # Sanity check
-                    title = generated_title
+            
+            response = client.chat.completions.create(
+                model=model_choice,
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant that generates concise titles."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=20
+            )
+            
+            generated_title = response.choices[0].message.content.strip()
+            # Clean up the title
+            generated_title = generated_title.strip('"\'')
+            if len(generated_title) < 50:  # Sanity check
+                title = generated_title
                     
         except Exception as e:
             search_logger.error(f"Error generating title for {source_id}: {e}")

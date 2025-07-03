@@ -1338,6 +1338,14 @@ Retrieve all stored credentials.
     "is_encrypted": true,
     "category": "api_keys",
     "description": "GitHub personal access token"
+  },
+  {
+    "key": "openrouter_api_key",
+    "value": null,
+    "encrypted_value": "encrypted_base64_string",
+    "is_encrypted": true,
+    "category": "api_keys",
+    "description": "OpenRouter API Key for multiple models"
   }
 ]
 ```
@@ -1478,6 +1486,38 @@ Reload credentials from database.
   "message": "Credentials reloaded from database"
 }
 ```
+
+### RAG Settings
+
+**GET** `/api/credentials/categories/rag_strategy`
+
+Retrieve all RAG configuration settings including LLM provider options.
+
+#### Example Response
+
+```json
+{
+  "credentials": {
+    "MODEL_CHOICE": "gpt-4o-mini",
+    "USE_CONTEXTUAL_EMBEDDINGS": "true",
+    "USE_HYBRID_SEARCH": "true",
+    "USE_AGENTIC_RAG": "true",
+    "USE_RERANKING": "true",
+    "LLM_PROVIDER": "openai",
+    "LLM_BASE_URL": null,
+    "EMBEDDING_MODEL": null
+  }
+}
+```
+
+#### Available Settings
+
+| Setting | Type | Description |
+|---------|------|-------------|
+| `LLM_PROVIDER` | string | Provider choice: `openai`, `openrouter`, `ollama`, `google` |
+| `LLM_BASE_URL` | string | Custom base URL (required for Ollama) |
+| `EMBEDDING_MODEL` | string | Override default embedding model |
+| `MODEL_CHOICE` | string | Chat model for summaries and contextual embeddings |
 
 ## 💬 Agent Chat API
 

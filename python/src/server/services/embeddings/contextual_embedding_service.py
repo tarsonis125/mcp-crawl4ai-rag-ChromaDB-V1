@@ -12,6 +12,7 @@ import openai
 
 from ...config.logfire_config import search_logger
 from ..threading_service import get_threading_service
+from ..llm_provider_service import get_llm_client, get_llm_client_sync
 
 
 def generate_contextual_embedding(full_document: str, chunk: str) -> Tuple[str, bool]:
@@ -30,14 +31,12 @@ def generate_contextual_embedding(full_document: str, chunk: str) -> Tuple[str, 
         - The contextual text that situates the chunk within the document
         - Boolean indicating if contextual embedding was performed
     """
-    # Get API key directly from environment (loaded at startup)
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        print("Error: No OpenAI API key found in environment")
+    # Create LLM client using the provider service
+    try:
+        client = get_llm_client_sync()
+    except Exception as e:
+        print(f"Error: Failed to create LLM client: {e}")
         return chunk, False
-    
-    # Create OpenAI client with the API key
-    client = openai.OpenAI(api_key=api_key)
     
     # Get model choice from credential service (RAG setting)
     model_choice = _get_model_choice()
@@ -100,20 +99,10 @@ async def generate_contextual_embedding_async(full_document: str, chunk: str) ->
         - The contextual text that situates the chunk within the document
         - Boolean indicating if contextual embedding was performed
     """
-    # API key is infrastructure, so get from environment
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        search_logger.error("No OpenAI API key found in environment")
-        return chunk, False
+    # Model choice is a RAG setting, get from environment
+    model_choice = os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
+    search_logger.debug(f"Using MODEL_CHOICE: {model_choice}")
     
-    # Model choice is a RAG setting, get from credential service
-    from ..credential_service import credential_service
-    try:
-        model_choice = await credential_service.get_credential("MODEL_CHOICE", "gpt-4.1-nano", decrypt=False)
-        search_logger.info(f"Retrieved MODEL_CHOICE from credential service (async): {model_choice}")
-    except Exception as e:
-        search_logger.warning(f"Error accessing credential service for MODEL_CHOICE (async): {e}")
-        model_choice = "gpt-4.1-nano"
     threading_service = get_threading_service()
     
     # Estimate tokens: document preview (5000 chars ≈ 1250 tokens) + chunk + prompt
@@ -122,9 +111,8 @@ async def generate_contextual_embedding_async(full_document: str, chunk: str) ->
     try:
         # Use rate limiting before making the API call
         async with threading_service.rate_limited_operation(estimated_tokens):
-            client = openai.AsyncOpenAI(api_key=api_key)
-            
-            prompt = f"""<document> 
+            async with get_llm_client() as client:
+                prompt = f"""<document> 
 {full_document[:5000]} 
 </document>
 Here is the chunk we want to situate within the whole document 
@@ -133,20 +121,20 @@ Here is the chunk we want to situate within the whole document
 </chunk> 
 Please give a short succinct context to situate this chunk within the overall document for the purposes of improving search retrieval of the chunk. Answer only with the succinct context and nothing else."""
 
-            response = await client.chat.completions.create(
-                model=model_choice,
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant that provides concise contextual information."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.3,
-                max_tokens=200
-            )
-            
-            context = response.choices[0].message.content.strip()
-            contextual_text = f"{context}\n---\n{chunk}"
-            
-            return contextual_text, True
+                response = await client.chat.completions.create(
+                    model=model_choice,
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant that provides concise contextual information."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.3,
+                    max_tokens=200
+                )
+                
+                context = response.choices[0].message.content.strip()
+                contextual_text = f"{context}\n---\n{chunk}"
+                
+                return contextual_text, True
             
     except Exception as e:
         if "rate_limit_exceeded" in str(e) or "429" in str(e):
@@ -191,20 +179,9 @@ async def process_chunk_with_context_async(url: str, content: str, full_document
 
 
 def _get_model_choice() -> str:
-    """Get MODEL_CHOICE from credential service cache or fallback to environment."""
-    try:
-        from ..credential_service import credential_service
-        if hasattr(credential_service, '_cache') and credential_service._cache_initialized:
-            cached_value = credential_service._cache.get("MODEL_CHOICE")
-            if cached_value:
-                model = str(cached_value)
-                print(f"Retrieved MODEL_CHOICE from credential service: {model}")
-                return model
-    except Exception as e:
-        print(f"Error accessing credential service for MODEL_CHOICE: {e}")
-    # Fallback to environment variable
+    """Get MODEL_CHOICE from environment."""
     model = os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
-    print(f"Using MODEL_CHOICE from environment: {model}")
+    search_logger.debug(f"Using MODEL_CHOICE: {model}")
     return model
 
 
@@ -221,14 +198,12 @@ def generate_contextual_embeddings_batch(full_documents: List[str], chunks: List
         - The contextual text that situates the chunk within the document
         - Boolean indicating if contextual embedding was performed
     """
-    # Get API key directly from environment (this is infrastructure, so it's OK)
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        print("Error: No OpenAI API key found in environment")
+    # Create LLM client using the provider service
+    try:
+        client = get_llm_client_sync()
+    except Exception as e:
+        print(f"Error: Failed to create LLM client: {e}")
         return [(chunk, False) for chunk in chunks]
-    
-    # Create OpenAI client
-    client = openai.OpenAI(api_key=api_key)
     # Get model choice from credential service (RAG setting)
     model_choice = _get_model_choice()
     
