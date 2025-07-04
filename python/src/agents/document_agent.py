@@ -6,6 +6,7 @@ natural conversation. It uses the established Pydantic AI patterns and integrate
 with our existing MCP project management tools.
 """
 
+import os
 import logging
 import json
 import uuid
@@ -51,9 +52,13 @@ class DocumentAgent(BaseAgent[DocumentDependencies, DocumentOperation]):
     - Version control tracking
     """
     
-    def __init__(self, **kwargs):
+    def __init__(self, model: str = None, **kwargs):
+        # Use provided model or fall back to default
+        if model is None:
+            model = os.getenv("DOCUMENT_AGENT_MODEL", "openai:gpt-4o")
+            
         super().__init__(
-            model="openai:gpt-4o-mini",
+            model=model,
             name="DocumentAgent",
             retries=3,
             enable_rate_limiting=True,

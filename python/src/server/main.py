@@ -36,6 +36,7 @@ from .fastapi.knowledge_api import router as knowledge_router
 from .fastapi.projects_api import router as projects_router
 from .fastapi.tests_api import router as tests_router
 from .fastapi.agent_chat_api import router as agent_chat_router
+from .fastapi.internal_api import router as internal_router
 
 # Import utilities and core classes
 from .services.credential_service import initialize_credentials
@@ -244,7 +245,7 @@ app.include_router(knowledge_router)
 app.include_router(projects_router)
 app.include_router(tests_router)
 app.include_router(agent_chat_router)
-# app.include_router(internal_router)  # Removed - internal API deleted
+app.include_router(internal_router)
 
 # Root endpoint
 @app.get("/")

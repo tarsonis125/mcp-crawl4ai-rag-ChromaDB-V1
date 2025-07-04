@@ -14,6 +14,8 @@ import logging
 import json
 from contextlib import asynccontextmanager
 from typing import Dict, Any, Optional, AsyncGenerator
+import httpx
+import asyncio
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
@@ -50,18 +52,70 @@ AVAILABLE_AGENTS = {
     "rag": RagAgent,
 }
 
+# Global credentials storage
+AGENT_CREDENTIALS = {}
+
+async def fetch_credentials_from_server():
+    """Fetch credentials from the server's internal API."""
+    max_retries = 30  # Try for up to 5 minutes (30 * 10 seconds)
+    retry_delay = 10  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient() as client:
+                # Call the server's internal credentials endpoint
+                response = await client.get(
+                    "http://archon-server:8080/internal/credentials/agents",
+                    timeout=10.0
+                )
+                response.raise_for_status()
+                credentials = response.json()
+                
+                # Set credentials as environment variables
+                for key, value in credentials.items():
+                    if value is not None:
+                        os.environ[key] = str(value)
+                        logger.info(f"Set credential: {key}")
+                
+                # Store credentials globally for agent initialization
+                global AGENT_CREDENTIALS
+                AGENT_CREDENTIALS = credentials
+                
+                logger.info(f"Successfully fetched {len(credentials)} credentials from server")
+                return credentials
+                
+        except (httpx.HTTPError, httpx.RequestError) as e:
+            if attempt < max_retries - 1:
+                logger.warning(f"Failed to fetch credentials (attempt {attempt + 1}/{max_retries}): {e}")
+                logger.info(f"Retrying in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+            else:
+                logger.error(f"Failed to fetch credentials after {max_retries} attempts")
+                raise Exception("Could not fetch credentials from server")
+
 # Lifespan context manager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize and cleanup resources"""
     logger.info("Starting Agents service...")
     
-    # Initialize agents
+    # Fetch credentials from server first
+    try:
+        await fetch_credentials_from_server()
+    except Exception as e:
+        logger.error(f"Failed to fetch credentials: {e}")
+        # Continue with defaults if we can't get credentials
+    
+    # Initialize agents with fetched credentials
     app.state.agents = {}
     for name, agent_class in AVAILABLE_AGENTS.items():
         try:
-            app.state.agents[name] = agent_class()
-            logger.info(f"Initialized {name} agent")
+            # Pass model configuration from credentials
+            model_key = f"{name.upper()}_AGENT_MODEL"
+            model = AGENT_CREDENTIALS.get(model_key, f"openai:gpt-4o-mini")
+            
+            app.state.agents[name] = agent_class(model=model)
+            logger.info(f"Initialized {name} agent with model: {model}")
         except Exception as e:
             logger.error(f"Failed to initialize {name} agent: {e}")
     
@@ -168,12 +222,25 @@ async def stream_agent(agent_type: str, request: AgentRequest):
     
     async def generate() -> AsyncGenerator[str, None]:
         try:
-            # Prepare dependencies for the agent
-            deps = {
-                "context": request.context or {},
-                "options": request.options or {},
-                "mcp_endpoint": os.getenv("MCP_SERVICE_URL", "http://archon-mcp:8051")
-            }
+            # Prepare dependencies based on agent type
+            # Import dependency classes
+            if agent_type == "rag":
+                from .rag_agent import RagDependencies
+                deps = RagDependencies(
+                    source_filter=request.context.get("source_filter") if request.context else None,
+                    match_count=request.context.get("match_count", 5) if request.context else 5,
+                    project_id=request.context.get("project_id") if request.context else None
+                )
+            elif agent_type == "document":
+                from .document_agent import DocumentDependencies
+                deps = DocumentDependencies(
+                    project_id=request.context.get("project_id") if request.context else None,
+                    user_id=request.context.get("user_id") if request.context else None
+                )
+            else:
+                # Default dependencies
+                from .base_agent import ArchonDependencies
+                deps = ArchonDependencies()
             
             # Use PydanticAI's run_stream method
             # run_stream returns an async context manager directly

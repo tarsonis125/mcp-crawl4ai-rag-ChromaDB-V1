@@ -1,10 +1,11 @@
 import { useState, useMemo } from 'react';
-import { Link as LinkIcon, Upload, Trash2, RefreshCw, X, Code, FileText, Brain, BoxIcon, Globe, ChevronRight } from 'lucide-react';
+import { Link as LinkIcon, Upload, Trash2, RefreshCw, X, Code, FileText, Brain, BoxIcon, Globe, ChevronRight, Pencil } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
 import { KnowledgeItem, KnowledgeItemMetadata } from '../../services/knowledgeBaseService';
 import { useCardTilt } from '../../hooks/useCardTilt';
 import { CodeViewerModal, CodeExample } from '../code/CodeViewerModal';
+import { EditKnowledgeItemModal } from './EditKnowledgeItemModal';
 import '../../styles/card-animations.css';
 
 // Define GroupedKnowledgeItem interface locally
@@ -136,11 +137,13 @@ const DeleteConfirmModal = ({
 interface GroupedKnowledgeItemCardProps {
   groupedItem: GroupedKnowledgeItem;
   onDelete: (sourceId: string) => void;
+  onUpdate?: () => void;
 }
 
 export const GroupedKnowledgeItemCard = ({
   groupedItem,
-  onDelete
+  onDelete,
+  onUpdate
 }: GroupedKnowledgeItemCardProps) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showTooltip, setShowTooltip] = useState(false);
@@ -149,6 +152,7 @@ export const GroupedKnowledgeItemCard = ({
   const [activeCardIndex, setActiveCardIndex] = useState(0);
   const [isShuffling, setIsShuffling] = useState(false);
   const [showCodeModal, setShowCodeModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   const isGrouped = groupedItem.items.length > 1;
   const activeItem = groupedItem.items[activeCardIndex];
@@ -298,6 +302,16 @@ export const GroupedKnowledgeItemCard = ({
           )}
         </div>
         <div className="flex items-center gap-1">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowEditModal(true);
+            }}
+            className="p-1 text-gray-500 hover:text-blue-500"
+            title="Edit"
+          >
+            <Pencil className="w-3 h-3" />
+          </button>
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -591,6 +605,17 @@ export const GroupedKnowledgeItemCard = ({
               ? `Are you sure you want to delete all ${groupedItem.items.length} sources from ${groupedItem.domain}? This action cannot be undone.`
               : 'Are you sure you want to delete this knowledge item? This action cannot be undone.'
           }
+        />
+      )}
+      
+      {/* Edit Modal - edits the active item */}
+      {showEditModal && activeItem && (
+        <EditKnowledgeItemModal
+          item={activeItem}
+          onClose={() => setShowEditModal(false)}
+          onUpdate={() => {
+            if (onUpdate) onUpdate();
+          }}
         />
       )}
     </div>

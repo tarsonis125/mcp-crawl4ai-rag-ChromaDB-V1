@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Link as LinkIcon, Upload, Trash2, RefreshCw, X, Code, FileText, Brain, BoxIcon } from 'lucide-react';
+import { Link as LinkIcon, Upload, Trash2, RefreshCw, X, Code, FileText, Brain, BoxIcon, Pencil } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
 import { KnowledgeItem } from '../../services/knowledgeBaseService';
 import { useCardTilt } from '../../hooks/useCardTilt';
 import { CodeViewerModal, CodeExample } from '../code/CodeViewerModal';
+import { EditKnowledgeItemModal } from './EditKnowledgeItemModal';
 import '../../styles/card-animations.css';
 
 // Helper function to guess language from title
@@ -125,16 +126,19 @@ const DeleteConfirmModal = ({
 interface KnowledgeItemCardProps {
   item: KnowledgeItem;
   onDelete: (sourceId: string) => void;
+  onUpdate?: () => void;
 }
 
 export const KnowledgeItemCard = ({
   item,
-  onDelete
+  onDelete,
+  onUpdate
 }: KnowledgeItemCardProps) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showCodeModal, setShowCodeModal] = useState(false);
   const [showCodeTooltip, setShowCodeTooltip] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   const statusColorMap = {
     active: 'green',
@@ -245,6 +249,16 @@ export const KnowledgeItemCard = ({
               {item.title}
             </h3>
             <div className="flex items-center gap-1">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowEditModal(true);
+                }}
+                className="p-1 text-gray-500 hover:text-blue-500"
+                title="Edit"
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -385,6 +399,17 @@ export const KnowledgeItemCard = ({
           onCancel={() => setShowDeleteConfirm(false)}
           title="Delete Knowledge Item"
           message="Are you sure you want to delete this knowledge item? This action cannot be undone."
+        />
+      )}
+      
+      {/* Edit Modal */}
+      {showEditModal && (
+        <EditKnowledgeItemModal
+          item={item}
+          onClose={() => setShowEditModal(false)}
+          onUpdate={() => {
+            if (onUpdate) onUpdate();
+          }}
         />
       )}
     </div>

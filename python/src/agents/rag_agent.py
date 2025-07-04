@@ -6,6 +6,7 @@ It uses the perform_rag_query functionality to retrieve relevant content and pro
 intelligent responses based on the retrieved information.
 """
 
+import os
 import logging
 import json
 from typing import Optional, Dict, Any, List, Union
@@ -52,9 +53,13 @@ class RagAgent(BaseAgent[RagDependencies, str]):
     - Explain concepts found in documentation
     """
     
-    def __init__(self, **kwargs):
+    def __init__(self, model: str = None, **kwargs):
+        # Use provided model or fall back to default
+        if model is None:
+            model = os.getenv("RAG_AGENT_MODEL", "openai:gpt-4o-mini")
+            
         super().__init__(
-            model="openai:gpt-4o-mini",
+            model=model,
             name="RagAgent",
             retries=3,
             enable_rate_limiting=True,

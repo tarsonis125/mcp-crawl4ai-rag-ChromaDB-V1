@@ -16,5 +16,6 @@ from .knowledge_api import router as knowledge_router
 from .projects_api import router as projects_router
 from .tests_api import router as tests_router
 from .agent_chat_api import router as agent_chat_router
+from .internal_api import router as internal_router
 
-__all__ = ['settings_router', 'mcp_router', 'knowledge_router', 'projects_router', 'tests_router', 'agent_chat_router'] 
+__all__ = ['settings_router', 'mcp_router', 'knowledge_router', 'projects_router', 'tests_router', 'agent_chat_router', 'internal_router'] 

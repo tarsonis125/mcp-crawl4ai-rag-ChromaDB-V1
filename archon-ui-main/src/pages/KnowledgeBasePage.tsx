@@ -526,7 +526,8 @@ export const KnowledgeBasePage = () => {
                     <motion.div key={groupedItem.id} variants={contentItemVariants}>
                       <GroupedKnowledgeItemCard 
                         groupedItem={groupedItem} 
-                        onDelete={handleDeleteItem} 
+                        onDelete={handleDeleteItem}
+                        onUpdate={loadKnowledgeItems} 
                       />
                     </motion.div>
                   )) : (progressItems.length === 0 && (
@@ -538,7 +539,7 @@ export const KnowledgeBasePage = () => {
                   // List view - use individual items
                   filteredItems.length > 0 ? filteredItems.map(item => (
                     <motion.div key={item.id} variants={contentItemVariants}>
-                      <KnowledgeItemCard item={item} onDelete={handleDeleteItem} />
+                      <KnowledgeItemCard item={item} onDelete={handleDeleteItem} onUpdate={loadKnowledgeItems} />
                     </motion.div>
                   )) : (progressItems.length === 0 && (
                     <motion.div variants={contentItemVariants} className="col-span-full py-10 text-center text-gray-500 dark:text-zinc-400">
