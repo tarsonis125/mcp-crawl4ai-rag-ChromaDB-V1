@@ -30,17 +30,21 @@ def _get_max_workers() -> int:
     return int(os.getenv("CONTEXTUAL_EMBEDDINGS_MAX_WORKERS", "3"))
 
 
-def extract_code_blocks(markdown_content: str, min_length: int = 1000) -> List[Dict[str, Any]]:
+def extract_code_blocks(markdown_content: str, min_length: int = None) -> List[Dict[str, Any]]:
     """
     Extract code blocks from markdown content along with context.
     
     Args:
         markdown_content: The markdown content to extract code blocks from
-        min_length: Minimum length of code blocks to extract (default: 1000 characters)
+        min_length: Minimum length of code blocks to extract (default: 50 characters)
         
     Returns:
         List of dictionaries containing code blocks and their context
     """
+    if min_length is None:
+        min_length = 50  # Default to 50, caller should pass from credential service
+    
+    search_logger.debug(f"Extracting code blocks with minimum length: {min_length} characters")
     code_blocks = []
     
     # Skip if content starts with triple backticks (edge case for files wrapped in backticks)

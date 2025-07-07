@@ -92,18 +92,36 @@ class CrawlingService:
         for attempt in range(retry_count):
             try:
                 if not self.crawler:
+                    logger.error(f"No crawler instance available for URL: {url}")
                     return {
                         "success": False,
-                        "error": "No crawler instance available"
+                        "error": "No crawler instance available - crawler initialization may have failed"
                     }
                 
                 # Use ENABLED cache mode for better performance, BYPASS only on retries
                 cache_mode = CacheMode.BYPASS if attempt > 0 else CacheMode.ENABLED
+                
+                # Enhanced configuration for JavaScript-rendered content
                 crawl_config = CrawlerRunConfig(
                     cache_mode=cache_mode, 
                     stream=False,
                     wait_for="networkidle",  # Wait for network to be idle
-                    timeout=30000  # 30 second timeout
+                    # Wait for code blocks to be rendered
+                    js_code="""
+                    // Wait for code blocks to be visible
+                    const codeBlocks = document.querySelectorAll('pre code, pre, code, .code-block, .language-bash, .language-typescript, .language-javascript');
+                    if (codeBlocks.length > 0) {
+                        // Ensure code blocks are visible
+                        for (const block of codeBlocks) {
+                            if (block.offsetHeight > 0) {
+                                return true;
+                            }
+                        }
+                    }
+                    // Also check for common code highlighting libraries
+                    const highlightedCode = document.querySelectorAll('[class*="language-"], [class*="hljs"], .prism-code');
+                    return highlightedCode.length > 0;
+                    """
                 )
                 
                 logger.info(f"Crawling {url} (attempt {attempt + 1}/{retry_count})")
@@ -159,7 +177,12 @@ class CrawlingService:
         """Crawl a .txt or markdown file with comprehensive error handling."""
         try:
             logger.info(f"Crawling markdown file: {url}")
-            crawl_config = CrawlerRunConfig()
+            # Use consistent configuration even for text files
+            crawl_config = CrawlerRunConfig(
+                cache_mode=CacheMode.ENABLED,
+                stream=False,
+                wait_for="networkidle"
+            )
 
             result = await self.crawler.arun(url=url, config=crawl_config)
             if result.success and result.markdown:
@@ -177,7 +200,23 @@ class CrawlingService:
                                        progress_callback=None, start_progress: int = 15, 
                                        end_progress: int = 60) -> List[Dict[str, Any]]:
         """Batch crawl multiple URLs in parallel with progress reporting."""
-        crawl_config = CrawlerRunConfig(cache_mode=CacheMode.BYPASS, stream=False)
+        if not self.crawler:
+            logger.error("No crawler instance available for batch crawling")
+            if progress_callback:
+                await progress_callback('error', 0, 'Crawler not available')
+            return []
+            
+        # Enhanced configuration for JavaScript-rendered content
+        crawl_config = CrawlerRunConfig(
+            cache_mode=CacheMode.BYPASS, 
+            stream=False,
+            wait_for="networkidle",
+            # Wait for code blocks to be rendered
+            js_code="""
+            const codeBlocks = document.querySelectorAll('pre code, pre, code, .code-block, [class*="language-"], [class*="hljs"], .prism-code');
+            return codeBlocks.length > 0;
+            """
+        )
         dispatcher = MemoryAdaptiveDispatcher(
             memory_threshold_percent=70.0,
             check_interval=1.0,
@@ -228,7 +267,23 @@ class CrawlingService:
                                           max_concurrent: int = 10, progress_callback=None, 
                                           start_progress: int = 10, end_progress: int = 60) -> List[Dict[str, Any]]:
         """Recursively crawl internal links from start URLs up to a maximum depth with progress reporting."""
-        run_config = CrawlerRunConfig(cache_mode=CacheMode.BYPASS, stream=False)
+        if not self.crawler:
+            logger.error("No crawler instance available for recursive crawling")
+            if progress_callback:
+                await progress_callback('error', 0, 'Crawler not available')
+            return []
+            
+        # Enhanced configuration for JavaScript-rendered content
+        run_config = CrawlerRunConfig(
+            cache_mode=CacheMode.BYPASS, 
+            stream=False,
+            wait_for="networkidle",
+            # Wait for code blocks to be rendered
+            js_code="""
+            const codeBlocks = document.querySelectorAll('pre code, pre, code, .code-block, [class*="language-"], [class*="hljs"], .prism-code');
+            return codeBlocks.length > 0;
+            """
+        )
         dispatcher = MemoryAdaptiveDispatcher(
             memory_threshold_percent=70.0,
             check_interval=1.0,

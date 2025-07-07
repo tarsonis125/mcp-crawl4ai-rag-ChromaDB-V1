@@ -41,6 +41,7 @@ from .fastapi.internal_api import router as internal_router
 # Import utilities and core classes
 from .services.credential_service import initialize_credentials
 from .utils import get_supabase_client
+from .services.crawler_manager import initialize_crawler, cleanup_crawler
 
 # Import missing dependencies that the modular APIs need
 try:
@@ -62,68 +63,7 @@ import uvicorn.logging
 uvicorn_logger = logging.getLogger("uvicorn.access")
 uvicorn_logger.setLevel(logging.WARNING)  # Only log warnings and errors, not every request
 
-class CrawlingContext:
-    """Context for direct crawling function calls."""
-    
-    def __init__(self):
-        self.crawler: Optional[Any] = None
-        self.supabase_client: Optional[Any] = None
-        self.reranking_model: Optional[Any] = None
-        self._initialized = False
-    
-    async def initialize(self):
-        """Initialize the crawling context."""
-        if self._initialized:
-            return
-        
-        try:
-            # Create browser configuration if crawl4ai is available
-            if AsyncWebCrawler and BrowserConfig:
-                browser_config = BrowserConfig(
-                    headless=True,
-                    verbose=False
-                )
-                
-                # Initialize the crawler
-                self.crawler = AsyncWebCrawler(config=browser_config)
-                await self.crawler.__aenter__()
-            
-            # Initialize Supabase client
-            self.supabase_client = get_supabase_client()
-            
-            # Initialize cross-encoder model for reranking if enabled
-            # Get USE_RERANKING from credential service (RAG setting)
-            from .services.credential_service import credential_service
-            use_reranking = await credential_service.get_credential("USE_RERANKING", "false", decrypt=False)
-            if str(use_reranking).lower() == "true" and CrossEncoder:
-                try:
-                    self.reranking_model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
-                except Exception as e:
-                    logger.warning(f"Failed to load reranking model: {e}")
-                    self.reranking_model = None
-            
-            self._initialized = True
-            logger.info("✅ Crawling context initialized")
-            
-        except Exception as e:
-            logger.error(f"Error initializing crawling context: {e}")
-            # Don't raise - allow startup to continue without full crawling functionality
-    
-    async def cleanup(self):
-        """Clean up the crawling context."""
-        if self.crawler:
-            try:
-                await self.crawler.__aexit__(None, None, None)
-            except Exception as e:
-                logger.warning(f"Error cleaning up crawler: {e}")
-            finally:
-                self.crawler = None
-        
-        self._initialized = False
-    
-
-# Global crawling context instance
-crawling_context = CrawlingContext()
+# CrawlingContext has been replaced by CrawlerManager in services/crawler_manager.py
 
 # Global flag to track if initialization is complete
 _initialization_complete = False
@@ -151,12 +91,12 @@ async def lifespan(app: FastAPI):
         
         # Initialize crawling context
         try:
-            await crawling_context.initialize()
+            await initialize_crawler()
         except Exception as e:
             api_logger.warning("Could not fully initialize crawling context", error=str(e))
         
         # Make crawling context available to modules
-        app.state.crawling_context = crawling_context
+        # Crawler is now managed by CrawlerManager
         
         # Initialize Socket.IO services
         try:
@@ -196,7 +136,7 @@ async def lifespan(app: FastAPI):
         
         # Cleanup crawling context
         try:
-            await crawling_context.cleanup()
+            await cleanup_crawler()
         except Exception as e:
             api_logger.warning("Could not cleanup crawling context", error=str(e))
         
