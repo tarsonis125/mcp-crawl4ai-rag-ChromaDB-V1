@@ -221,6 +221,32 @@ class CrawlOrchestrationService:
             source_metadatas.append(metadata)
             source_word_counts[source_id] = source_word_counts.get(source_id, 0) + word_count
         
+        # Create/update source record FIRST before storing documents
+        if markdown_docs and source_metadatas:
+            # Get the primary source info (usually from the first document)
+            primary_metadata = source_metadatas[0]
+            source_id = primary_metadata['source_id']
+            
+            # Get combined content for summary generation (first 3 docs for context)
+            combined_content = ' '.join(markdown_docs[:3])
+            
+            # Generate summary
+            summary = extract_source_summary(source_id, combined_content)
+            
+            # Update source info in database BEFORE storing documents
+            update_source_info(
+                client=self.supabase_client,
+                source_id=source_id,
+                summary=summary,
+                word_count=sum(source_word_counts.values()),
+                content=combined_content,
+                knowledge_type=request.get('knowledge_type', 'technical'),
+                tags=request.get('tags', []),
+                update_frequency=request.get('update_frequency', 7)
+            )
+            
+            safe_logfire_info(f"Created/updated source record for {source_id}")
+        
         # Store documents
         if self.progress_id:
             await update_crawl_progress(self.progress_id, {
@@ -284,37 +310,13 @@ class CrawlOrchestrationService:
         # Calculate chunk count (for now, one chunk per document)
         chunk_count = len(markdown_docs)
         
-        # Create/update source record in database
-        if markdown_docs and source_metadatas:
-            # Get the primary source info (usually from the first document)
-            primary_metadata = source_metadatas[0]
-            source_id = primary_metadata['source_id']
-            
-            # Get combined content for summary generation (first 3 docs for context)
-            combined_content = ' '.join(markdown_docs[:3])
-            
-            # Generate summary
-            summary = extract_source_summary(source_id, combined_content)
-            
-            # Update source info in database
-            update_source_info(
-                client=self.supabase_client,
-                source_id=source_id,
-                summary=summary,
-                word_count=sum(source_word_counts.values()),
-                content=combined_content,
-                knowledge_type=request.get('knowledge_type', 'technical'),
-                tags=request.get('tags', []),
-                update_frequency=request.get('update_frequency', 7)
-            )
-            
-            # Progress update
-            if self.progress_id:
-                await update_crawl_progress(self.progress_id, {
-                    'status': 'source_update',
-                    'percentage': 80,
-                    'log': f'Updated source record for {source_id}'
-                })
+        # Progress update - source already created above
+        if self.progress_id:
+            await update_crawl_progress(self.progress_id, {
+                'status': 'source_update',
+                'percentage': 80,
+                'log': f'Source record and documents stored successfully'
+            })
         
         return {
             'chunk_count': chunk_count,

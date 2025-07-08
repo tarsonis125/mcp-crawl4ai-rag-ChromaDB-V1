@@ -10,8 +10,8 @@ from unittest.mock import Mock, AsyncMock, patch
 from datetime import datetime
 
 # Import the modules to test
-from src.api.knowledge_api import CrawlProgressManager
-from src.services.rag.crawling_service import CrawlingService
+from src.server.fastapi.knowledge_api import CrawlProgressManager
+from src.server.services.rag.crawling_service import CrawlingService
 
 
 class TestCrawlProgressManager:

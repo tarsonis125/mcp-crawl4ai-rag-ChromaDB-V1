@@ -89,27 +89,34 @@ LOGFIRE_TOKEN=your-logfire-token    # Only required when LOGFIRE_ENABLED=true
 archon-mcp:
   build: ./python
   ports:
-    - "8051:8051"
+    - "8051:8000"
   environment:
     - API_BASE_URL=http://archon-server:8080
-  command: ["python", "-m", "src.mcp.server", "--transport", "sse"]
+  command: ["python", "-m", "src.mcp.mcp_server"]
 ```
 
 ## Client Configuration
 
+Archon MCP server uses **SSE (Server-Sent Events) transport only**.
+
 ### Cursor IDE
 
-Add to `.cursorrules`:
+Add to MCP settings:
 
 ```json
 {
   "mcpServers": {
     "archon": {
-      "command": "docker",
-      "args": ["exec", "-i", "archon-mcp", "python", "-m", "src.mcp.server", "--transport", "stdio"]
+      "uri": "http://localhost:8051/sse"
     }
   }
 }
+```
+
+### Claude Code
+
+```bash
+claude mcp add --transport sse archon http://localhost:8051/sse
 ```
 
 ### Windsurf IDE

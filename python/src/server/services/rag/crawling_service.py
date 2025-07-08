@@ -16,6 +16,7 @@ import requests
 import traceback
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, MemoryAdaptiveDispatcher
+from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 from src.server.utils import get_supabase_client
 from ...config.logfire_config import get_logger
 
@@ -25,10 +26,54 @@ logger = get_logger(__name__)
 class CrawlingService:
     """Service class for web crawling operations"""
     
+    # Common code block selectors for various editors and documentation frameworks
+    CODE_BLOCK_SELECTORS = [
+        # Milkdown
+        ".milkdown-code-block pre",
+        
+        # Monaco Editor
+        ".monaco-editor .view-lines",
+        
+        # CodeMirror
+        ".cm-editor .cm-content",
+        ".cm-line",
+        
+        # Prism.js (used by Docusaurus, Docsify, Gatsby)
+        "pre[class*='language-']",
+        "code[class*='language-']",
+        ".prism-code",
+        
+        # highlight.js
+        "pre code.hljs",
+        ".hljs",
+        
+        # Shiki (used by VitePress, Nextra)
+        ".shiki",
+        "div[class*='language-'] pre",
+        ".astro-code",
+        
+        # Generic patterns
+        "pre code",
+        ".code-block",
+        ".codeblock",
+        ".highlight pre"
+    ]
+    
     def __init__(self, crawler=None, supabase_client=None):
         """Initialize with optional crawler and supabase client"""
         self.crawler = crawler
         self.supabase_client = supabase_client or get_supabase_client()
+    
+    def _get_markdown_generator(self):
+        """Get markdown generator that preserves code blocks."""
+        return DefaultMarkdownGenerator(
+            content_source="raw_html",  # Use raw HTML to avoid cleaning
+            options={
+                "mark_code": True,         # Mark code blocks properly
+                "handle_code_in_pre": True,  # Handle <pre><code> tags
+                "body_width": 0            # No line wrapping
+            }
+        )
     
     def is_sitemap(self, url: str) -> bool:
         """Check if a URL is a sitemap with error handling."""
@@ -101,27 +146,27 @@ class CrawlingService:
                 # Use ENABLED cache mode for better performance, BYPASS only on retries
                 cache_mode = CacheMode.BYPASS if attempt > 0 else CacheMode.ENABLED
                 
-                # Enhanced configuration for JavaScript-rendered content
+                # Configuration for web crawling with code block detection
+                wait_for_code = f"css:{', '.join(self.CODE_BLOCK_SELECTORS)}"
+                
                 crawl_config = CrawlerRunConfig(
                     cache_mode=cache_mode, 
                     stream=False,
-                    wait_for="networkidle",  # Wait for network to be idle
-                    # Wait for code blocks to be rendered
-                    js_code="""
-                    // Wait for code blocks to be visible
-                    const codeBlocks = document.querySelectorAll('pre code, pre, code, .code-block, .language-bash, .language-typescript, .language-javascript');
-                    if (codeBlocks.length > 0) {
-                        // Ensure code blocks are visible
-                        for (const block of codeBlocks) {
-                            if (block.offsetHeight > 0) {
-                                return true;
-                            }
-                        }
-                    }
-                    // Also check for common code highlighting libraries
-                    const highlightedCode = document.querySelectorAll('[class*="language-"], [class*="hljs"], .prism-code');
-                    return highlightedCode.length > 0;
-                    """
+                    wait_for=wait_for_code,
+                    js_code=[
+                        # Click any tabs that might hide code
+                        """
+                        document.querySelectorAll('[role=tab], .tab-button, .code-tab, button[class*="tab"]').forEach(tab => {
+                            if (tab.offsetParent !== null) tab.click();
+                        });
+                        """,
+                        # Scroll to load lazy content
+                        "window.scrollTo(0, document.body.scrollHeight/2);",
+                        # Small delay to let syntax highlighters finish
+                        "await new Promise(resolve => setTimeout(resolve, 2000));"
+                    ],
+                    page_timeout=60000,  # 60 second timeout
+                    markdown_generator=self._get_markdown_generator()
                 )
                 
                 logger.info(f"Crawling {url} (attempt {attempt + 1}/{retry_count})")
@@ -145,11 +190,21 @@ class CrawlingService:
                         await asyncio.sleep(2 ** attempt)
                     continue
                 
-                # Success!
+                # Success! Return both markdown AND HTML
+                # Debug logging to see what we got
+                markdown_sample = result.markdown[:1000] if result.markdown else "NO MARKDOWN"
+                has_triple_backticks = '```' in result.markdown if result.markdown else False
+                backtick_count = result.markdown.count('```') if result.markdown else 0
+                
+                logger.info(f"Crawl result for {url} | has_markdown={bool(result.markdown)} | markdown_length={len(result.markdown) if result.markdown else 0} | has_triple_backticks={has_triple_backticks} | backtick_count={backtick_count}")
+                if 'getting-started' in url:
+                    logger.info(f"Markdown sample for getting-started: {markdown_sample}")
+                
                 return {
                     "success": True,
                     "url": url,
                     "markdown": result.markdown,
+                    "html": result.cleaned_html or result.html,  # Return HTML for code extraction
                     "title": result.title or "Untitled",
                     "links": result.links,
                     "content_length": len(result.markdown)
@@ -180,14 +235,13 @@ class CrawlingService:
             # Use consistent configuration even for text files
             crawl_config = CrawlerRunConfig(
                 cache_mode=CacheMode.ENABLED,
-                stream=False,
-                wait_for="networkidle"
+                stream=False
             )
 
             result = await self.crawler.arun(url=url, config=crawl_config)
             if result.success and result.markdown:
                 logger.info(f"Successfully crawled markdown file: {url}")
-                return [{'url': url, 'markdown': result.markdown}]
+                return [{'url': url, 'markdown': result.markdown, 'html': result.cleaned_html or result.html}]
             else:
                 logger.error(f"Failed to crawl {url}: {result.error_message}")
                 return []
@@ -206,16 +260,26 @@ class CrawlingService:
                 await progress_callback('error', 0, 'Crawler not available')
             return []
             
-        # Enhanced configuration for JavaScript-rendered content
+        # Configuration for batch crawling with code block detection
+        wait_for_code = f"css:{', '.join(self.CODE_BLOCK_SELECTORS)}"
+        
         crawl_config = CrawlerRunConfig(
             cache_mode=CacheMode.BYPASS, 
             stream=False,
-            wait_for="networkidle",
-            # Wait for code blocks to be rendered
-            js_code="""
-            const codeBlocks = document.querySelectorAll('pre code, pre, code, .code-block, [class*="language-"], [class*="hljs"], .prism-code');
-            return codeBlocks.length > 0;
-            """
+            wait_for=wait_for_code,
+            js_code=[
+                # Click tabs and scroll for each page
+                """
+                document.querySelectorAll('[role=tab], .tab-button, .code-tab, button[class*="tab"]').forEach(tab => {
+                    if (tab.offsetParent !== null) tab.click();
+                });
+                """,
+                "window.scrollTo(0, document.body.scrollHeight/2);",
+                # Small delay to let syntax highlighters finish
+                "await new Promise(resolve => setTimeout(resolve, 1500));"
+            ],
+            page_timeout=30000,  # 30 second timeout per page
+            markdown_generator=self._get_markdown_generator()
         )
         dispatcher = MemoryAdaptiveDispatcher(
             memory_threshold_percent=70.0,
@@ -252,7 +316,11 @@ class CrawlingService:
             for j, result in enumerate(batch_results):
                 processed += 1
                 if result.success and result.markdown:
-                    successful_results.append({'url': result.url, 'markdown': result.markdown})
+                    successful_results.append({
+                        'url': result.url, 
+                        'markdown': result.markdown,
+                        'html': result.cleaned_html or result.html
+                    })
                 
                 # Report individual URL progress with smooth increments
                 progress_percentage = start_progress + int((processed / total_urls) * (end_progress - start_progress))
@@ -273,16 +341,26 @@ class CrawlingService:
                 await progress_callback('error', 0, 'Crawler not available')
             return []
             
-        # Enhanced configuration for JavaScript-rendered content
+        # Configuration for recursive crawling with code block detection
+        wait_for_code = f"css:{', '.join(self.CODE_BLOCK_SELECTORS)}"
+        
         run_config = CrawlerRunConfig(
             cache_mode=CacheMode.BYPASS, 
             stream=False,
-            wait_for="networkidle",
-            # Wait for code blocks to be rendered
-            js_code="""
-            const codeBlocks = document.querySelectorAll('pre code, pre, code, .code-block, [class*="language-"], [class*="hljs"], .prism-code');
-            return codeBlocks.length > 0;
-            """
+            wait_for=wait_for_code,
+            js_code=[
+                # Click tabs and scroll for each page
+                """
+                document.querySelectorAll('[role=tab], .tab-button, .code-tab, button[class*="tab"]').forEach(tab => {
+                    if (tab.offsetParent !== null) tab.click();
+                });
+                """,
+                "window.scrollTo(0, document.body.scrollHeight/2);",
+                # Small delay to let syntax highlighters finish
+                "await new Promise(resolve => setTimeout(resolve, 1500));"
+            ],
+            page_timeout=30000,  # 30 second timeout per page
+            markdown_generator=self._get_markdown_generator()
         )
         dispatcher = MemoryAdaptiveDispatcher(
             memory_threshold_percent=70.0,
@@ -347,7 +425,11 @@ class CrawlingService:
                     total_processed += 1
                     
                     if result.success and result.markdown:
-                        results_all.append({'url': result.url, 'markdown': result.markdown})
+                        results_all.append({
+                            'url': result.url, 
+                            'markdown': result.markdown,
+                            'html': result.cleaned_html or result.html
+                        })
                         depth_successful += 1
                         
                         # Find internal links for next depth

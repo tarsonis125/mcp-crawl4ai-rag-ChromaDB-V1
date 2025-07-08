@@ -101,36 +101,74 @@ class CodeExtractionService:
         for idx, doc in enumerate(crawl_results):
             try:
                 source_url = doc['url']
+                html_content = doc.get('html', '')
                 md = doc.get('markdown', '')
                 
-                if not md:
-                    safe_logfire_info(f"No markdown content for code extraction | url={source_url}")
-                    continue
+                # Debug logging
+                safe_logfire_info(f"Document content check | url={source_url} | has_html={bool(html_content)} | has_markdown={bool(md)} | html_len={len(html_content) if html_content else 0} | md_len={len(md) if md else 0}")
                 
-                # Log markdown content info for debugging
-                safe_logfire_info(f"Extracting code from document | url={source_url} | markdown_length={len(md)}")
-                
-                # Debug: Check if markdown contains code blocks
-                has_backticks = '```' in md
-                backtick_count = md.count('```')
                 # Use a lower threshold to catch more code blocks
                 min_length = 20  # Much lower to ensure we catch code examples
-                safe_logfire_info(f"Code block debug | url={source_url} | has_backticks={has_backticks} | backtick_count={backtick_count} | min_length={min_length}")
                 
-                # Extract code blocks from markdown WITH the min_length parameter
-                code_blocks = extract_code_blocks(md, min_length=min_length)
-                safe_logfire_info(f"Found {len(code_blocks)} code blocks | url={source_url}")
+                # Check markdown first to see if it has code blocks
+                if md:
+                    has_backticks = '```' in md
+                    backtick_count = md.count('```')
+                    safe_logfire_info(f"Markdown check | url={source_url} | has_backticks={has_backticks} | backtick_count={backtick_count}")
+                    
+                    if 'getting-started' in source_url and md:
+                        # Log a sample of the markdown
+                        sample = md[:500]
+                        safe_logfire_info(f"Markdown sample for getting-started: {sample}...")
                 
-                # Fallback: If no code blocks found, try to extract from HTML patterns
-                if len(code_blocks) == 0:
-                    safe_logfire_info(f"No markdown code blocks found, attempting HTML extraction | url={source_url}")
-                    html_code_blocks = self._extract_html_code_blocks(md, min_length)
-                    if html_code_blocks:
-                        safe_logfire_info(f"Found {len(html_code_blocks)} code blocks from HTML patterns | url={source_url}")
-                        code_blocks = html_code_blocks
+                # Decide whether to use markdown or HTML based on content
+                code_blocks = []
                 
-                # Debug: If no code blocks found but backticks exist, log sample
-                if len(code_blocks) == 0 and has_backticks:
+                # Check if markdown looks corrupted (e.g., starts with ```K` or has only 2 backticks total)
+                markdown_looks_corrupted = False
+                if md:
+                    # Check for signs of corrupted markdown
+                    if md.strip().startswith('```K') or (backtick_count == 2 and len(md) > 1000):
+                        markdown_looks_corrupted = True
+                        safe_logfire_info(f"Markdown appears corrupted (starts with ```K or only 2 backticks for large content) | url={source_url}")
+                
+                # If markdown has triple backticks and doesn't look corrupted, try markdown extraction
+                if md and '```' in md and not markdown_looks_corrupted:
+                    safe_logfire_info(f"Using markdown extraction (found backticks) | url={source_url}")
+                    code_blocks = extract_code_blocks(md, min_length=min_length)
+                    safe_logfire_info(f"Found {len(code_blocks)} code blocks from markdown | url={source_url}")
+                    
+                    # If we only found 1 huge code block that's nearly the entire content, it's probably corrupted
+                    if len(code_blocks) == 1 and len(code_blocks[0]['code']) > len(md) * 0.8:
+                        safe_logfire_info(f"Single code block is {len(code_blocks[0]['code'])} chars ({len(code_blocks[0]['code'])/len(md)*100:.0f}% of content) - likely corrupted markdown | url={source_url}")
+                        code_blocks = []  # Clear it to try HTML
+                
+                # If no code blocks from markdown or markdown was corrupted, try HTML
+                if len(code_blocks) == 0 and html_content:
+                    safe_logfire_info(f"Trying HTML extraction | url={source_url} | html_length={len(html_content)} | reason={'markdown_corrupted' if markdown_looks_corrupted else 'no_blocks_in_markdown'}")
+                    
+                    # Debug: Log a sample of HTML to see what we're getting
+                    if 'getting-started' in source_url:
+                        # Look for any code-related patterns
+                        sample = html_content[:2000]
+                        has_pre = '<pre' in html_content
+                        has_code = '<code' in html_content
+                        has_language_class = 'language-' in html_content
+                        safe_logfire_info(f"HTML debug | has_pre={has_pre} | has_code={has_code} | has_language_class={has_language_class}")
+                        safe_logfire_info(f"HTML sample: {sample[:500]}...")
+                    
+                    code_blocks = self._extract_html_code_blocks(html_content, min_length)
+                    safe_logfire_info(f"Found {len(code_blocks)} code blocks from HTML | url={source_url}")
+                
+                # If still no code blocks and we have markdown without backticks, try it anyway
+                if len(code_blocks) == 0 and md and '```' not in md:
+                    safe_logfire_info(f"Last resort: trying markdown without backticks | url={source_url}")
+                    # Maybe the markdown has some other format?
+                    code_blocks = extract_code_blocks(md, min_length=min_length)
+                    safe_logfire_info(f"Found {len(code_blocks)} code blocks from markdown without backticks | url={source_url}")
+                
+                # Debug: If no code blocks found from markdown but backticks exist, log sample
+                if len(code_blocks) == 0 and not html_content and md and '```' in md:
                     # Find first code block for debugging
                     start_idx = md.find('```')
                     if start_idx != -1:
@@ -184,35 +222,130 @@ class CodeExtractionService:
         import re
         
         code_blocks = []
+        extracted_positions = set()  # Track already extracted code block positions
         
-        # Pattern 1: <pre><code>...</code></pre>
-        pre_code_pattern = r'<pre[^>]*>\s*<code[^>]*>(.*?)</code>\s*</pre>'
-        matches = re.finditer(pre_code_pattern, content, re.DOTALL | re.IGNORECASE)
-        
-        for match in matches:
-            code_content = match.group(1).strip()
-            # Clean up HTML entities
-            code_content = self._decode_html_entities(code_content)
+        # Comprehensive patterns for various code block formats
+        # Order matters - more specific patterns first
+        patterns = [
+            # Milkdown - look for the specific structure
+            (r'<div[^>]*class=["\'][^"\']*milkdown-code-block[^"\']*["\'][^>]*>.*?<pre[^>]*><code[^>]*>(.*?)</code></pre>', 'milkdown'),
             
-            if len(code_content) >= min_length:
-                # Try to extract language from class attribute
-                full_match = match.group(0)
-                lang_match = re.search(r'class=["\'].*?language-(\w+)', full_match)
-                language = lang_match.group(1) if lang_match else ""
+            # Monaco Editor - capture all view-lines content
+            (r'<div[^>]*class=["\'][^"\']*monaco-editor[^"\']*["\'][^>]*>.*?<div[^>]*class=["\'][^"\']*view-lines[^"\']*[^>]*>(.*?)</div>(?=.*?</div>.*?</div>)', 'monaco'),
+            
+            # CodeMirror - capture cm-content
+            (r'<div[^>]*class=["\'][^"\']*cm-content[^"\']*["\'][^>]*>(.*?)</div>(?=\s*</div>)', 'codemirror'),
+            
+            # Prism.js with language - must be before generic pre
+            (r'<pre[^>]*class=["\'][^"\']*language-(\w+)[^"\']*["\'][^>]*>\s*<code[^>]*>(.*?)</code>\s*</pre>', 'prism'),
+            
+            # highlight.js - must be before generic pre/code
+            (r'<pre[^>]*><code[^>]*class=["\'][^"\']*hljs(?:\s+language-(\w+))?[^"\']*["\'][^>]*>(.*?)</code></pre>', 'hljs'),
+            
+            # Shiki patterns
+            (r'<pre[^>]*class=["\'][^"\']*shiki[^"\']*["\'][^>]*>\s*<code[^>]*>(.*?)</code>\s*</pre>', 'shiki'),
+            (r'<pre[^>]*class=["\'][^"\']*astro-code[^"\']*["\'][^>]*>(.*?)</pre>', 'astro-shiki'),
+            
+            # VitePress/Vue patterns
+            (r'<div[^>]*class=["\'][^"\']*language-(\w+)[^"\']*["\'][^>]*>.*?<pre[^>]*>(.*?)</pre>', 'vitepress'),
+            
+            # Standard pre/code patterns - should be near the end
+            (r'<pre[^>]*><code[^>]*class=["\'][^"\']*language-(\w+)[^"\']*["\'][^>]*>(.*?)</code></pre>', 'standard-lang'),
+            (r'<pre[^>]*>\s*<code[^>]*>(.*?)</code>\s*</pre>', 'standard'),
+            
+            # Generic patterns - should be last
+            (r'<div[^>]*class=["\'][^"\']*code-block[^"\']*["\'][^>]*>.*?<pre[^>]*>(.*?)</pre>', 'generic-div'),
+            (r'<div[^>]*class=["\'][^"\']*codeblock[^"\']*["\'][^>]*>(.*?)</div>', 'generic-codeblock'),
+            (r'<div[^>]*class=["\'][^"\']*highlight[^"\']*["\'][^>]*>.*?<pre[^>]*>(.*?)</pre>', 'highlight')
+        ]
+        
+        for pattern_tuple in patterns:
+            pattern_str, source_type = pattern_tuple
+            matches = re.finditer(pattern_str, content, re.DOTALL | re.IGNORECASE)
+            
+            for match in matches:
+                # Extract code content based on pattern type
+                if source_type in ['standard-lang', 'prism', 'vitepress', 'hljs']:
+                    # These patterns capture language in group 1, code in group 2
+                    if match.lastindex and match.lastindex >= 2:
+                        language = match.group(1)
+                        code_content = match.group(2).strip()
+                    else:
+                        code_content = match.group(1).strip()
+                        language = ""
+                else:
+                    # Most patterns have code in group 1
+                    code_content = match.group(1).strip()
+                    # Try to extract language from the full match
+                    full_match = match.group(0)
+                    lang_match = re.search(r'class=["\'].*?language-(\w+)', full_match)
+                    language = lang_match.group(1) if lang_match else ""
                 
-                # Extract context
-                start_pos = match.start()
-                end_pos = match.end()
-                context_before = content[max(0, start_pos - 1000):start_pos].strip()
-                context_after = content[end_pos:min(len(content), end_pos + 1000)].strip()
+                # Clean up HTML entities
+                code_content = self._decode_html_entities(code_content)
                 
-                code_blocks.append({
-                    'code': code_content,
-                    'language': language,
-                    'context_before': context_before,
-                    'context_after': context_after,
-                    'full_context': f"{context_before}\n\n{code_content}\n\n{context_after}"
-                })
+                # For CodeMirror, extract text from cm-lines
+                if source_type == 'codemirror':
+                    # Extract text from each cm-line div
+                    cm_lines = re.findall(r'<div[^>]*class=["\'][^"\']*cm-line[^"\']*["\'][^>]*>(.*?)</div>', code_content, re.DOTALL)
+                    if cm_lines:
+                        # Clean each line and join
+                        cleaned_lines = []
+                        for line in cm_lines:
+                            # Remove span tags but keep content
+                            line = re.sub(r'<span[^>]*>', '', line)
+                            line = re.sub(r'</span>', '', line)
+                            # Remove other HTML tags
+                            line = re.sub(r'<[^>]+>', '', line)
+                            cleaned_lines.append(line)
+                        code_content = '\n'.join(cleaned_lines)
+                    else:
+                        # Fallback: just clean HTML
+                        code_content = re.sub(r'<span[^>]*>', '', code_content)
+                        code_content = re.sub(r'</span>', '', code_content)
+                        code_content = re.sub(r'<[^>]+>', '\n', code_content)
+                
+                # For Monaco, extract text from nested divs
+                if source_type == 'monaco':
+                    # Extract actual code from Monaco's complex structure
+                    code_content = re.sub(r'<div[^>]*>', '\n', code_content)
+                    code_content = re.sub(r'</div>', '', code_content)
+                    code_content = re.sub(r'<span[^>]*>', '', code_content)
+                    code_content = re.sub(r'</span>', '', code_content)
+                
+                # Skip if too short after cleaning
+                if len(code_content) >= min_length:
+                    # Extract position info for deduplication
+                    start_pos = match.start()
+                    end_pos = match.end()
+                    
+                    # Check if we've already extracted code from this position
+                    position_key = (start_pos, end_pos)
+                    overlapping = False
+                    for existing_start, existing_end in extracted_positions:
+                        # Check if this match overlaps with an existing extraction
+                        if not (end_pos <= existing_start or start_pos >= existing_end):
+                            overlapping = True
+                            break
+                    
+                    if not overlapping:
+                        extracted_positions.add(position_key)
+                        
+                        # Extract context
+                        context_before = content[max(0, start_pos - 1000):start_pos].strip()
+                        context_after = content[end_pos:min(len(content), end_pos + 1000)].strip()
+                        
+                        # Log successful extraction
+                        safe_logfire_info(f"Extracted code block | source_type={source_type} | language={language} | length={len(code_content)}")
+                        
+                        code_blocks.append({
+                            'code': code_content,
+                            'language': language,
+                            'context_before': context_before,
+                            'context_after': context_after,
+                            'full_context': f"{context_before}\n\n{code_content}\n\n{context_after}",
+                            'source_type': source_type  # Track which pattern matched
+                        })
         
         # Pattern 2: <code>...</code> (standalone)
         if not code_blocks:  # Only if we didn't find pre/code blocks

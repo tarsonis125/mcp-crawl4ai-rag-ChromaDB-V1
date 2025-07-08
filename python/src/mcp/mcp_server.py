@@ -346,9 +346,9 @@ async def main():
         mcp_logger.info("🔥 Logfire initialized for lightweight MCP server")
         mcp_logger.info(f"🌟 Starting lightweight MCP server - host={host}, port={port}")
         
-        # Run with SSE transport on default port
+        # Run with SSE transport - FastMCP handles binding internally
         logger.info("🌐 Starting Server-Sent Events (SSE) transport")
-        logger.info("⚠️ Note: SSE runs on default port 8000, not the configured port")
+        logger.info("📍 FastMCP will bind to 0.0.0.0:8000 by default")
         await mcp.run_sse_async()
             
     except Exception as e:

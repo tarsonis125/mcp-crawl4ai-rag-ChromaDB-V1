@@ -16,22 +16,52 @@ The Server's business logic is organized into modular service classes and functi
 | Service/Module | Purpose | Key Components |
 |---------|---------|-------------|
 | **BaseStorageService** | Abstract base class for storage operations | `smart_chunk_text()`, `extract_metadata()`, `batch_process_with_progress()` |
-| **DocumentStorageService** | Document upload & processing service | `upload_document()`, `store_documents()`, `process_document()` |
+| **storage_services.py** | Contains DocumentStorageService class | `upload_document()`, `store_documents()`, `process_document()` |
 | **document_storage_service.py** | Storage utility functions | `add_documents_to_supabase()`, `add_documents_to_supabase_parallel()` |
 | **code_storage_service.py** | Code extraction utilities | `extract_code_blocks()`, `generate_code_example_summary()`, `add_code_examples_to_supabase()` |
+
+<Admonition type="info" title="Storage Module Organization">
+The storage module has both service classes and utility functions:
+- **storage_services.py** contains the `DocumentStorageService` class that extends `BaseStorageService`
+- **document_storage_service.py** and **code_storage_service.py** contain standalone utility functions
+- This separation allows both object-oriented and functional approaches as needed
+</Admonition>
 
 ### Search Services (`/services/search/`)
 
 | Service/Module | Purpose | Key Components |
 |---------|---------|-------------|
-| **SearchService** | High-level search operations | `perform_rag_query()`, `search_code_examples_service()`, `rerank_results()` |
-| **vector_search_service.py** | Vector search utilities | `search_documents()`, `search_code_examples()` |
+| **search_services.py** | Contains SearchService class | `perform_rag_query()`, `search_code_examples_service()`, `rerank_results()` |
+| **vector_search_service.py** | Vector search utilities | `search_documents()`, `search_code_examples()`, `search_documents_async()` |
+
+<Admonition type="info" title="Search Module Organization">
+- **search_services.py** contains the `SearchService` class for high-level search operations
+- **vector_search_service.py** contains low-level vector search utility functions
+- The SearchService uses vector search utilities internally
+</Admonition>
 
 ### RAG Services (`/services/rag/`)
 
 | Service | Purpose | Key Methods |
 |---------|---------|-------------|
 | **CrawlingService** | Web crawling operations | `crawl_single_page()`, `crawl_batch_with_progress()`, `crawl_recursive_with_progress()` |
+
+### Knowledge Services (`/services/knowledge/`)
+
+**Recent Refactoring**: The Knowledge API was refactored from a 1,076-line monolith to a 550-line API layer (49% reduction) by extracting business logic into specialized services.
+
+| Service | Purpose | Key Methods |
+|---------|---------|-------------|
+| **CrawlOrchestrationService** | Orchestrates entire crawl workflow | `orchestrate_crawl()`, `set_progress_id()` |
+| **KnowledgeItemService** | CRUD operations for knowledge items | `list_items()`, `update_item()`, `get_available_sources()` |
+| **CodeExtractionService** | Code block extraction and processing | `extract_and_store_code_examples()`, `extract_code_blocks_from_html()` |
+| **DatabaseMetricsService** | Database statistics and metrics | `get_metrics()` |
+
+**Service Layer Benefits:**
+- **Separation of Concerns**: Business logic separated from API routing
+- **Testability**: Services can be unit tested without Socket.IO dependencies
+- **Reusability**: Services used by both API endpoints and MCP tools
+- **Progress Tracking**: Integrated with ProgressTracker utility
 
 ### Project Services (`/services/projects/`)
 
@@ -96,15 +126,32 @@ async def _create_project_with_ai(progress_id: str, request: CreateProjectReques
 | **MCPServiceClient** | HTTP client for MCP | `crawl_url()`, `search()`, `delete_source()` |
 | **ClientManager** | Database client management | `get_supabase_client()` |
 | **MCPSessionManager** | MCP session management | `create_session()`, `validate_session()`, `cleanup_expired()` |
+| **CrawlerManager** | Global crawler instance management | `get_crawler()`, `initialize()`, `cleanup()` |
+| **LLMProviderService** | Multi-provider LLM support | `get_llm_client()`, `get_llm_client_sync()`, `get_embedding_model()` |
 
 ### Modular Architecture Pattern
 
 The services follow a clear architectural pattern:
 
-- **Utility Modules**: Low-level functions for specific operations (e.g., `vector_search_service.py`, `document_storage_service.py`)
-- **Service Classes**: High-level orchestration of utilities (e.g., `SearchService`, `DocumentStorageService`)
-- **Base Classes**: Abstract implementations for extensibility (e.g., `BaseStorageService`)
-- **Single Responsibility**: Each module has a focused purpose
+- **Utility Modules**: Low-level functions for specific operations
+  - `vector_search_service.py` - Vector database operations
+  - `document_storage_service.py` - Document storage functions
+  - `code_storage_service.py` - Code extraction functions
+  
+- **Service Classes**: High-level orchestration of utilities
+  - `SearchService` in `search_services.py`
+  - `DocumentStorageService` in `storage_services.py`
+  - Knowledge services in `/services/knowledge/`
+  - Project services in `/services/projects/`
+  
+- **Base Classes**: Abstract implementations for extensibility
+  - `BaseStorageService` - Common storage patterns
+  
+- **Manager Classes**: Singleton instances for global resources
+  - `CrawlerManager` - Global crawler instance
+  - `MCPSessionManager` - Session management
+  
+- **Single Responsibility**: Each module has one focused purpose
 
 ### Embedding Services (`/services/embeddings/`)
 
@@ -112,6 +159,12 @@ The services follow a clear architectural pattern:
 |--------|---------|---------------|
 | **embedding_service.py** | OpenAI embedding creation | `create_embeddings_batch()`, `create_embeddings_batch_async()` |
 | **contextual_embedding_service.py** | Context-aware embeddings | `generate_contextual_embedding()`, `generate_contextual_embeddings_batch()` |
+
+### Utility Classes (`/utils/progress/`)
+
+| Utility | Purpose | Key Methods |
+|---------|---------|-------------|
+| **ProgressTracker** | Consolidated Socket.IO progress tracking | `start()`, `update()`, `complete()`, `error()`, `update_batch_progress()`, `update_crawl_stats()` |
 
 <Admonition type="tip" title="Async/Sync Boundaries">
 The embedding service provides both sync and async versions:
@@ -128,7 +181,18 @@ The embedding service provides both sync and async versions:
 from ..services.source_management_service import SourceManagementService
 from ..services.storage import DocumentStorageService
 from ..services.search import SearchService
+from ..services.knowledge import CrawlOrchestrationService, KnowledgeItemService
+from ..services.crawler_manager import get_crawler
 
+# Example: Knowledge item crawling
+@router.post("/knowledge-items/crawl")
+async def crawl_knowledge_item(request: KnowledgeItemRequest):
+    crawler = await get_crawler()
+    orchestration_service = CrawlOrchestrationService(crawler, get_supabase_client())
+    result = await orchestration_service.orchestrate_crawl(request.dict())
+    return result
+
+# Example: Source deletion
 @router.delete("/sources/{source_id}")
 async def delete_source(source_id: str):
     service = SourceManagementService(get_supabase_client())
@@ -163,6 +227,33 @@ async def crawl_with_progress(url: str, progress_id: str):
     
     results = await crawling_service.crawl_batch_with_progress(urls=[url])
     return results
+```
+
+### ProgressTracker Utility Pattern
+```python
+from ..utils.progress import ProgressTracker
+
+# Create tracker for an operation
+tracker = ProgressTracker(sio, progress_id, 'crawl')
+
+# Start tracking
+await tracker.start({
+    'currentUrl': url,
+    'totalPages': 0,
+    'processedPages': 0
+})
+
+# Update progress
+await tracker.update('crawling', 25, 'Processing page 1 of 4')
+await tracker.update_crawl_stats(1, 4, 'https://example.com/page1')
+
+# Complete or error
+await tracker.complete({
+    'chunksStored': 150,
+    'wordCount': 5000
+})
+# OR
+await tracker.error('Failed to crawl: Network timeout')
 ```
 
 ## Key Service Features
@@ -213,6 +304,18 @@ async def join_project(sid, data):
 - Automatic embedding generation
 - Batch operations for efficiency
 
+### Crawler Manager
+- Singleton pattern for global crawler instance
+- Automatic Docker environment detection
+- Proper initialization and cleanup
+- Prevents circular imports
+
+### LLM Provider Service
+- Supports multiple providers: OpenAI, OpenRouter, Ollama, Google Gemini
+- OpenAI-compatible interface for all providers
+- Automatic provider detection from environment
+- Both async and sync client creation
+
 ## Service Dependencies
 
 **Refactored Architecture (2025):**
@@ -242,23 +345,72 @@ Database (Supabase) / External APIs (OpenAI)
 - **Single Responsibility**: Each module has one focused purpose
 - **Reduced Duplication**: Common functionality in base classes
 - **Better Maintainability**: Easy to find and update specific functionality
+- **Service Layers**: Business logic separated from API routing (knowledge, projects)
 
 ### Enhanced Extensibility
 - **Base Classes**: New storage services can extend `BaseStorageService`
 - **Modular Design**: Easy to add new search algorithms or storage backends
 - **Service Composition**: Services can be composed for complex operations
+- **Provider Flexibility**: Easy to add new LLM providers via LLMProviderService
 
 ### Testing & Development
 - **Isolated Testing**: Each service can be unit tested independently
 - **Mock Injection**: Services accept clients via dependency injection
 - **Clear Interfaces**: Well-defined service contracts
+- **Progress Tracking**: Centralized progress management via ProgressTracker
+
+## Service Directory Summary
+
+Complete listing of all service modules organized by functionality:
+
+```
+services/
+├── storage/                    # Document and code storage
+│   ├── base_storage_service.py # Abstract base class
+│   ├── storage_services.py     # DocumentStorageService class
+│   ├── document_storage_service.py # Storage utilities
+│   └── code_storage_service.py # Code extraction utilities
+├── search/                     # Search and retrieval
+│   ├── search_services.py      # SearchService class
+│   └── vector_search_service.py # Vector search utilities
+├── knowledge/                  # Knowledge management (refactored)
+│   ├── crawl_orchestration_service.py
+│   ├── knowledge_item_service.py
+│   ├── code_extraction_service.py
+│   └── database_metrics_service.py
+├── projects/                   # Project management (refactored)
+│   ├── project_service.py
+│   ├── task_service.py
+│   ├── project_creation_service.py
+│   ├── source_linking_service.py
+│   ├── progress_service.py
+│   ├── document_service.py
+│   └── versioning_service.py
+├── rag/                        # RAG operations
+│   └── crawling_service.py     # Web crawling
+├── embeddings/                 # Embedding generation
+│   ├── embedding_service.py
+│   └── contextual_embedding_service.py
+└── (core services)             # Infrastructure services
+    ├── client_manager.py       # Database client
+    ├── crawler_manager.py      # Crawler instance
+    ├── credential_service.py   # Credentials
+    ├── prompt_service.py       # Prompts
+    ├── threading_service.py    # Threading/rate limiting
+    ├── mcp_service_client.py   # MCP HTTP client
+    ├── mcp_session_manager.py  # MCP sessions
+    ├── source_management_service.py # Sources
+    └── llm_provider_service.py # LLM providers
+```
 
 ## Configuration
 
 Services are configured via environment variables:
 - `SUPABASE_URL` - Database URL
 - `SUPABASE_SERVICE_KEY` - Database service key  
-- `OPENAI_API_KEY` - For embeddings
+- `OPENAI_API_KEY` - For embeddings (or other provider keys)
+- `LLM_PROVIDER` - LLM provider selection (openai, openrouter, ollama, google)
+- `CODE_BLOCK_MIN_LENGTH` - Minimum code block length (default: 50)
 - `USE_CONTEXTUAL_EMBEDDINGS` - Enable contextual embeddings
 - `USE_HYBRID_SEARCH` - Enable hybrid search mode
 - `USE_RERANKING` - Enable search result reranking

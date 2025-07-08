@@ -161,34 +161,28 @@ Connect your AI client to Archon's knowledge base:
 2. Configure your AI client (Cursor, Windsurf, etc.)
 3. Begin using 14 comprehensive tools
 
-**For Cursor (One-Click Install):**
-```
-cursor://anysphere.cursor-deeplink/mcp/install?name=archon&config=BASE64_CONFIG
-```
-
-**For Cursor (Manual Config):**
-```json title="~/.cursor/mcp.json"
+**For Cursor:**
+```json title="MCP Settings"
 {
   "mcpServers": {
     "archon": {
-      "url": "http://localhost:8051/sse"
+      "uri": "http://localhost:8051/sse"
     }
   }
 }
 ```
 
-**For Claude Code (CLI):**
+**For Claude Code:**
 ```bash
 claude mcp add --transport sse archon http://localhost:8051/sse
 ```
 
-**For Windsurf (UI Config):**
+**For Windsurf:**
 ```json
 {
-  "mcpServers": {
+  "mcp.servers": {
     "archon": {
-      "command": "npx",
-      "args": ["mcp-remote", "http://localhost:8051/sse"]
+      "uri": "http://localhost:8051/sse"
     }
   }
 }
