@@ -2,8 +2,6 @@
  * Knowledge Base service for managing documentation sources
  */
 
-import { crawlSinglePage, smartCrawlUrl, uploadDocument as apiUploadDocument } from './api'
-
 // Types
 export interface KnowledgeItemMetadata {
   knowledge_type?: 'technical' | 'business'
@@ -70,35 +68,65 @@ export interface SearchOptions {
   limit?: number
 }
 
-// Dynamic API base URL that works with different hosts
-const getApiBaseUrl = () => {
-  const protocol = window.location.protocol;
-  const host = window.location.hostname;
-  const port = '8080'; // Backend API port
-  return `${protocol}//${host}:${port}/api`;
-};
+// Use relative URL to go through Vite proxy
+const API_BASE_URL = '/api';
 
-const API_BASE_URL = getApiBaseUrl();
-
-// Helper function for API requests
+// Helper function for API requests with timeout
 async function apiRequest<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers
-    },
-    ...options
-  })
+  const url = `${API_BASE_URL}${endpoint}`;
+  console.log(`🔍 [KnowledgeBase] Starting API request to: ${url}`);
+  console.log(`🔍 [KnowledgeBase] Request method: ${options.method || 'GET'}`);
+  console.log(`🔍 [KnowledgeBase] API_BASE_URL: "${API_BASE_URL}"`);
+  
+  // Create an AbortController for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    console.error(`⏰ [KnowledgeBase] Request timeout after 10 seconds for: ${url}`);
+    controller.abort();
+  }, 10000); // 10 second timeout
+  
+  try {
+    console.log(`🚀 [KnowledgeBase] Sending fetch request...`);
+    const response = await fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+      },
+      ...options,
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+    console.log(`✅ [KnowledgeBase] Response received:`, response.status, response.statusText);
+    console.log(`✅ [KnowledgeBase] Response headers:`, response.headers);
 
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.error || `HTTP ${response.status}`)
+    if (!response.ok) {
+      console.error(`❌ [KnowledgeBase] Response not OK: ${response.status} ${response.statusText}`);
+      const error = await response.json();
+      console.error(`❌ [KnowledgeBase] API error response:`, error);
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log(`✅ [KnowledgeBase] Response data received, type: ${typeof data}`);
+    return data;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    console.error(`❌ [KnowledgeBase] Request failed:`, error);
+    console.error(`❌ [KnowledgeBase] Error name: ${error instanceof Error ? error.name : 'Unknown'}`);
+    console.error(`❌ [KnowledgeBase] Error message: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(`❌ [KnowledgeBase] Error stack:`, error instanceof Error ? error.stack : 'No stack');
+    
+    // Check if it's a timeout error
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Request timed out after 10 seconds');
+    }
+    
+    throw error;
   }
-
-  return response.json()
 }
 
 class KnowledgeBaseService {
@@ -106,6 +134,8 @@ class KnowledgeBaseService {
    * Get knowledge items with optional filtering
    */
   async getKnowledgeItems(filter: KnowledgeItemsFilter = {}): Promise<KnowledgeItemsResponse> {
+    console.log('📋 [KnowledgeBase] Getting knowledge items with filter:', filter);
+    
     const params = new URLSearchParams()
     
     // Add default pagination
@@ -117,6 +147,10 @@ class KnowledgeBaseService {
     if (filter.tags && filter.tags.length > 0) params.append('tags', filter.tags.join(','))
     if (filter.source_type) params.append('source_type', filter.source_type)
     if (filter.search) params.append('search', filter.search)
+    
+    const queryString = params.toString();
+    console.log('📋 [KnowledgeBase] Query string:', queryString);
+    console.log('📋 [KnowledgeBase] Full endpoint:', `/knowledge-items?${queryString}`);
     
     return apiRequest<KnowledgeItemsResponse>(`/knowledge-items?${params}`)
   }

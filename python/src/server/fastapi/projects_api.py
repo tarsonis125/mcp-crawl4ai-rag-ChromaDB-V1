@@ -439,10 +439,32 @@ async def get_project_features(project_id: str):
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.get("/projects/{project_id}/tasks")
-async def list_project_tasks(project_id: str, include_archived: bool = False, include_subtasks: bool = False):
-    """List all tasks for a specific project. By default, filters out archived tasks and subtasks."""
+async def list_project_tasks(
+    project_id: str, 
+    include_archived: bool = False, 
+    include_subtasks: bool = False,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=100),
+    exclude_large_fields: bool = True,
+    paginated: bool = False  # New parameter for backward compatibility
+):
+    """
+    List tasks for a specific project.
+    
+    Args:
+        project_id: UUID of the project
+        include_archived: Include archived tasks (default: False)
+        include_subtasks: Include subtasks (default: False)
+        page: Page number (default: 1)
+        per_page: Items per page (default: 50, max: 100)
+        exclude_large_fields: Exclude sources and code_examples fields to reduce response size (default: True)
+        paginated: Return paginated response format (default: False for backward compatibility)
+    
+    Returns:
+        Direct array of tasks (default) or paginated response (if paginated=True)
+    """
     try:
-        logfire.info(f"Listing project tasks | project_id={project_id} | include_archived={include_archived} | include_subtasks={include_subtasks}")
+        logfire.info(f"Listing project tasks | project_id={project_id} | include_archived={include_archived} | include_subtasks={include_subtasks} | page={page} | per_page={per_page} | paginated={paginated}")
         
         # Use TaskService to list tasks
         task_service = TaskService()
@@ -467,16 +489,140 @@ async def list_project_tasks(project_id: str, include_archived: bool = False, in
             if not include_subtasks and task.get("parent_task_id"):
                 continue
             
-            filtered_tasks.append(task)
+            # Optionally exclude large fields to reduce response size
+            if exclude_large_fields:
+                task_copy = task.copy()
+                # Replace large fields with summary info
+                if "sources" in task_copy:
+                    task_copy["sources_count"] = len(task_copy.get("sources", []))
+                    task_copy.pop("sources", None)
+                if "code_examples" in task_copy:
+                    task_copy["code_examples_count"] = len(task_copy.get("code_examples", []))
+                    task_copy.pop("code_examples", None)
+                filtered_tasks.append(task_copy)
+            else:
+                filtered_tasks.append(task)
         
-        logfire.info(f"Project tasks retrieved | project_id={project_id} | task_count={len(filtered_tasks)}")
-        
-        return filtered_tasks
+        # Return format based on paginated parameter
+        if paginated:
+            # Calculate pagination for paginated response
+            total_tasks = len(filtered_tasks)
+            total_pages = (total_tasks + per_page - 1) // per_page
+            start_idx = (page - 1) * per_page
+            end_idx = start_idx + per_page
+            
+            # Get paginated tasks
+            paginated_tasks = filtered_tasks[start_idx:end_idx]
+            
+            logfire.info(f"Project tasks retrieved (paginated) | project_id={project_id} | total={total_tasks} | page={page} | returned={len(paginated_tasks)}")
+            
+            return {
+                "tasks": paginated_tasks,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "total": total_tasks,
+                    "pages": total_pages,
+                    "has_next": page < total_pages,
+                    "has_prev": page > 1
+                }
+            }
+        else:
+            # Return direct array for backward compatibility (UI expects this)
+            logfire.info(f"Project tasks retrieved (direct array) | project_id={project_id} | returned={len(filtered_tasks)}")
+            return filtered_tasks
             
     except HTTPException:
         raise
     except Exception as e:
         logfire.error(f"Failed to list project tasks | error={str(e)} | project_id={project_id}")
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
+@router.get("/tasks")
+async def list_all_tasks(
+    status: Optional[str] = None,
+    project_id: Optional[str] = None,
+    parent_task_id: Optional[str] = None,
+    include_closed: bool = False,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=100),
+    exclude_large_fields: bool = True
+):
+    """
+    List tasks with pagination and filtering.
+    
+    Args:
+        status: Filter by task status
+        project_id: Filter by project
+        parent_task_id: Filter by parent task
+        include_closed: Include done tasks (default: False)
+        page: Page number (default: 1)
+        per_page: Items per page (default: 50, max: 100)
+        exclude_large_fields: Exclude sources and code_examples fields (default: True)
+    
+    Returns:
+        Paginated task list with metadata
+    """
+    try:
+        logfire.info(f"Listing all tasks | status={status} | project_id={project_id} | parent_task_id={parent_task_id} | page={page} | per_page={per_page}")
+        
+        # Use TaskService to list tasks
+        task_service = TaskService()
+        success, result = task_service.list_tasks(
+            project_id=project_id,
+            parent_task_id=parent_task_id,
+            status=status,
+            include_closed=include_closed
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail=result)
+        
+        tasks = result.get("tasks", [])
+        
+        # Process tasks to exclude large fields if requested
+        processed_tasks = []
+        for task in tasks:
+            if exclude_large_fields:
+                task_copy = task.copy()
+                # Replace large fields with summary info
+                if "sources" in task_copy:
+                    task_copy["sources_count"] = len(task_copy.get("sources", []))
+                    task_copy.pop("sources", None)
+                if "code_examples" in task_copy:
+                    task_copy["code_examples_count"] = len(task_copy.get("code_examples", []))
+                    task_copy.pop("code_examples", None)
+                processed_tasks.append(task_copy)
+            else:
+                processed_tasks.append(task)
+        
+        # Calculate pagination
+        total_tasks = len(processed_tasks)
+        total_pages = (total_tasks + per_page - 1) // per_page
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        
+        # Get paginated tasks
+        paginated_tasks = processed_tasks[start_idx:end_idx]
+        
+        logfire.info(f"Tasks retrieved | total={total_tasks} | page={page} | returned={len(paginated_tasks)}")
+        
+        return {
+            "tasks": paginated_tasks,
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total": total_tasks,
+                "pages": total_pages,
+                "has_next": page < total_pages,
+                "has_prev": page > 1
+            }
+        }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logfire.error(f"Failed to list tasks | error={str(e)}")
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.post("/tasks")

@@ -246,6 +246,13 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
         # Orchestrate the crawl
         result = await orchestration_service.orchestrate_crawl(request_dict)
         
+        # Finalization step (95-100%)
+        await update_crawl_progress(progress_id, {
+            'status': 'finalization',
+            'percentage': 98,
+            'log': 'Finalizing crawl results...'
+        })
+        
         # Complete the crawl with final data
         await complete_crawl_progress(progress_id, {
             'chunksStored': result['chunks_stored'],
@@ -388,7 +395,7 @@ async def perform_rag_query(request: RagQueryRequest):
         search_service = SearchService(get_supabase_client())
         success, result = await search_service.perform_rag_query(
             query=request.query,
-            source=request.source if request.source else None,
+            source=request.source,
             match_count=request.match_count
         )
         

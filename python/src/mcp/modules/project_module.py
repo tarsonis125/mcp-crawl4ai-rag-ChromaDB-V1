@@ -166,7 +166,7 @@ def register_project_tools(mcp: FastMCP):
             title: Task title (required for create)
             description: Task description (for create)
             assignee: One of 'User', 'Archon', 'AI IDE Agent' (for create)
-            task_order: Order/priority (for create)
+            task_order: Priority within status - higher number = higher priority (e.g., 10 is higher priority than 1)
             feature: Feature label (for create)
             parent_task_id: Parent task for subtasks (for create)
             sources: List of source metadata (for create)
@@ -222,49 +222,66 @@ def register_project_tools(mcp: FastMCP):
                         return json.dumps({"success": False, "error": error_detail})
             
             elif action == "list":
-                # Build URL with query parameters
+                # Build URL with query parameters based on filter type
                 params = {
                     "page": page,
-                    "per_page": per_page
+                    "per_page": per_page,
+                    "exclude_large_fields": True,  # Always exclude large fields in MCP responses
                 }
                 
+                # Use different endpoints based on filter type for proper parameter handling
                 if filter_by == "project" and filter_value:
+                    # Use project-specific endpoint for project filtering
                     url = urljoin(api_url, f"/api/projects/{filter_value}/tasks")
-                    params["include_archived"] = False
-                    params["include_subtasks"] = include_closed
+                    params["include_archived"] = False  # For backward compatibility
+                    params["include_subtasks"] = False  # Don't include subtasks by default
+                    
+                    # Only add include_closed logic for project filtering
+                    if not include_closed:
+                        # This endpoint handles done task filtering differently
+                        pass  # Let the endpoint handle it
+                elif filter_by == "status" and filter_value:
+                    # Use generic tasks endpoint for status filtering
+                    url = urljoin(api_url, "/api/tasks")
+                    params["status"] = filter_value
+                    params["include_closed"] = include_closed
                 elif filter_by == "parent" and filter_value:
+                    # Use subtasks endpoint for parent filtering
                     url = urljoin(api_url, f"/api/tasks/subtasks/{filter_value}")
                     params["include_closed"] = include_closed
-                elif project_id:
-                    url = urljoin(api_url, f"/api/projects/{project_id}/tasks")
-                    params["include_archived"] = False
-                    params["include_subtasks"] = include_closed
                 else:
-                    return json.dumps({"success": False, "error": "project_id or filter_value required for list action"})
+                    # Default to generic tasks endpoint
+                    url = urljoin(api_url, "/api/tasks")
+                    params["include_closed"] = include_closed
                 
+                # Make the API call
                 async with httpx.AsyncClient(timeout=timeout) as client:
                     response = await client.get(url, params=params)
+                    response.raise_for_status()
                     
-                    if response.status_code == 200:
-                        result = response.json()
-                        # Handle both paginated and non-paginated responses
-                        if isinstance(result, dict) and "tasks" in result:
-                            return json.dumps({
-                                "success": True, 
-                                "tasks": result.get("tasks", []),
-                                "pagination": {
-                                    "page": result.get("page", page),
-                                    "per_page": result.get("per_page", per_page),
-                                    "total": result.get("total", len(result.get("tasks", []))),
-                                    "pages": result.get("pages", 1)
-                                }
-                            })
-                        else:
-                            # Backwards compatibility for non-paginated responses
-                            tasks = result if isinstance(result, list) else result.get("tasks", [])
-                            return json.dumps({"success": True, "tasks": tasks})
+                    result = response.json()
+                    
+                    # Handle both direct array and paginated response formats
+                    if isinstance(result, list):
+                        # Direct array response
+                        tasks = result
+                        pagination_info = None
                     else:
-                        return json.dumps({"success": False, "error": "Failed to list tasks"})
+                        # Paginated response or object with tasks property
+                        if "tasks" in result:
+                            tasks = result.get("tasks", [])
+                            pagination_info = result.get("pagination", {})
+                        else:
+                            # Direct array in object form
+                            tasks = result if isinstance(result, list) else []
+                            pagination_info = None
+                    
+                    return json.dumps({
+                        "success": True, 
+                        "tasks": tasks,
+                        "pagination": pagination_info,
+                        "total_count": len(tasks) if pagination_info is None else pagination_info.get("total", len(tasks))
+                    })
             
             elif action == "get":
                 if not task_id:

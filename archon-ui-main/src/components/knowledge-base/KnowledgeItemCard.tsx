@@ -137,6 +137,7 @@ export const KnowledgeItemCard = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showCodeModal, setShowCodeModal] = useState(false);
   const [showCodeTooltip, setShowCodeTooltip] = useState(false);
+  const [showPageTooltip, setShowPageTooltip] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
 
@@ -315,21 +316,16 @@ export const KnowledgeItemCard = ({
                       {codeExamplesCount}
                     </span>
                   </div>
-                  {/* Code Examples Tooltip */}
+                  {/* Code Examples Tooltip - positioned relative to the badge */}
                   {showCodeTooltip && (
                     <div className="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-black dark:bg-zinc-800 text-white text-xs rounded-lg py-2 px-3 shadow-lg z-50 max-w-xs">
-                      <div className="font-semibold text-pink-300 mb-1">
-                        Code Examples:
+                      <div className="font-semibold text-pink-300 mb-2">
+                        Click for Code Browser
                       </div>
-                      <div className="max-h-48 overflow-y-auto">
+                      <div className="max-h-32 overflow-y-auto">
                         {codeExamples.map((example, index) => (
-                          <div key={index} className="mb-2 last:mb-0">
-                            <div className="text-pink-200 font-medium">
-                              {example.title}
-                            </div>
-                            <div className="text-gray-300 text-xs">
-                              {example.description}
-                            </div>
+                          <div key={index} className="mb-1 last:mb-0 text-pink-200">
+                            • {example.title}
                           </div>
                         ))}
                       </div>
@@ -340,8 +336,12 @@ export const KnowledgeItemCard = ({
               )}
               
               {/* Page count - orange neon container */}
-              <div className="relative group card-3d-layer-3">
-                <div className="flex items-center gap-1 px-2 py-1 bg-orange-500/20 border border-orange-500/40 rounded-full backdrop-blur-sm shadow-[0_0_15px_rgba(251,146,60,0.3)] transition-all duration-300 cursor-help">
+              <div
+                className="relative card-3d-layer-3"
+                onMouseEnter={() => setShowPageTooltip(true)}
+                onMouseLeave={() => setShowPageTooltip(false)}
+              >
+                <div className="flex items-center gap-1 px-2 py-1 bg-orange-500/20 border border-orange-500/40 rounded-full backdrop-blur-sm shadow-[0_0_15px_rgba(251,146,60,0.3)] transition-all duration-300">
                   <FileText className="w-3 h-3 text-orange-400" />
                   <span className="text-xs text-orange-400 font-medium">
                     {Math.ceil(
@@ -349,28 +349,23 @@ export const KnowledgeItemCard = ({
                     ).toLocaleString()}
                   </span>
                 </div>
-                {/* Tooltip */}
-                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 z-50">
-                  <div className="bg-black dark:bg-zinc-800 text-white text-xs px-3 py-2 rounded-lg shadow-lg whitespace-nowrap">
+                {/* Page count tooltip - positioned relative to the badge */}
+                {showPageTooltip && (
+                  <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 bg-black dark:bg-zinc-800 text-white text-xs px-3 py-2 rounded-lg shadow-lg z-50 whitespace-nowrap">
                     <div className="font-medium mb-1">
-                      {item.metadata.word_count?.toLocaleString() || 0} words
+                      {(item.metadata.word_count || 0).toLocaleString()} words
                     </div>
                     <div className="text-gray-300 space-y-0.5">
                       <div>
-                        ={' '}
-                        {Math.ceil(
-                          (item.metadata.word_count || 0) / 250,
-                        ).toLocaleString()}{' '}
-                        pages
+                        = {Math.ceil((item.metadata.word_count || 0) / 250).toLocaleString()} pages
                       </div>
                       <div>
-                        = {((item.metadata.word_count || 0) / 80000).toFixed(1)}{' '}
-                        average novels
+                        = {((item.metadata.word_count || 0) / 80000).toFixed(1)} average novels
                       </div>
                     </div>
                     <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-black dark:border-t-zinc-800"></div>
                   </div>
-                </div>
+                )}
               </div>
               
               <Badge

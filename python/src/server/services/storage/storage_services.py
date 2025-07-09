@@ -139,7 +139,6 @@ class DocumentStorageService(BaseStorageService):
                     metadatas=metadatas,
                     url_to_full_document=url_to_full_document,
                     batch_size=15,
-                    websocket=websocket,
                     progress_callback=progress_callback,
                     enable_parallel_batches=True
                 )

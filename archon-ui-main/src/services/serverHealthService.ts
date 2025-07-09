@@ -29,19 +29,27 @@ class ServerHealthService {
 
   async checkHealth(): Promise<boolean> {
     try {
+      console.log('🏥 [Health] Checking server health at /api/health');
       // Use the proxied /api/health endpoint which works in both dev and Docker
       const response = await fetch('/api/health', {
         method: 'GET',
         signal: AbortSignal.timeout(5000) // 5 second timeout
       });
       
+      console.log('🏥 [Health] Response:', response.status, response.statusText);
+      
       if (response.ok) {
         const data = await response.json();
+        console.log('🏥 [Health] Health data:', data);
         // Accept healthy, online, or initializing (server is starting up)
-        return data.status === 'healthy' || data.status === 'online' || data.status === 'initializing';
+        const isHealthy = data.status === 'healthy' || data.status === 'online' || data.status === 'initializing';
+        console.log('🏥 [Health] Is healthy:', isHealthy);
+        return isHealthy;
       }
+      console.error('🏥 [Health] Response not OK:', response.status);
       return false;
     } catch (error) {
+      console.error('🏥 [Health] Health check failed:', error);
       // Health check failed
       return false;
     }

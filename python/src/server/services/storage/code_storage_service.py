@@ -8,7 +8,7 @@ import re
 import json
 import asyncio
 import time
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 from urllib.parse import urlparse
 from supabase import Client
 
@@ -36,13 +36,13 @@ def extract_code_blocks(markdown_content: str, min_length: int = None) -> List[D
     
     Args:
         markdown_content: The markdown content to extract code blocks from
-        min_length: Minimum length of code blocks to extract (default: 50 characters)
+        min_length: Minimum length of code blocks to extract (default: 1000 characters)
         
     Returns:
         List of dictionaries containing code blocks and their context
     """
     if min_length is None:
-        min_length = 50  # Default to 50, caller should pass from credential service
+        min_length = 1000  # Default to 1000 to ensure only substantial code blocks are extracted
     
     search_logger.debug(f"Extracting code blocks with minimum length: {min_length} characters")
     code_blocks = []
@@ -50,8 +50,21 @@ def extract_code_blocks(markdown_content: str, min_length: int = None) -> List[D
     # Skip if content starts with triple backticks (edge case for files wrapped in backticks)
     content = markdown_content.strip()
     start_offset = 0
+    
+    # Check for corrupted markdown (entire content wrapped in code block)
     if content.startswith('```'):
-        # Skip the first triple backticks
+        first_line = content.split('\n')[0] if '\n' in content else content[:10]
+        # If it's ```K` or similar single-letter "language", skip the entire content
+        if re.match(r'^```[A-Z]`?$', first_line):
+            search_logger.warning(f"Detected corrupted markdown with fake language: {first_line}")
+            # Try to find actual code blocks within the corrupted content
+            # Look for nested triple backticks
+            # Skip the outer ```K and closing ```
+            inner_content = content[4:-3] if content.endswith('```') else content[4:]
+            # Now extract normally from inner content
+            search_logger.info(f"Attempting to extract from inner content (length: {len(inner_content)})")
+            return extract_code_blocks(inner_content, min_length)
+        # Otherwise, skip the first triple backticks as before
         start_offset = 3
         print("Skipping initial triple backticks")
     
@@ -256,12 +269,14 @@ async def generate_code_summaries_batch(code_blocks: List[Dict[str, Any]], max_w
             async with lock:
                 completed_count += 1
                 if progress_callback:
-                    # Calculate progress from 93 to 95 (2% of total progress for summary generation)
-                    progress_percentage = 93 + int((completed_count / len(code_blocks)) * 2)
+                    # Simple progress based on summaries completed
+                    progress_percentage = int((completed_count / len(code_blocks)) * 100)
                     await progress_callback({
-                        'status': 'code_storage', 
+                        'status': 'code_summary_generation', 
                         'percentage': progress_percentage,
-                        'log': f'Generating code summaries: {completed_count}/{len(code_blocks)} completed...'
+                        'log': f'Generated {completed_count}/{len(code_blocks)} code summaries',
+                        'completed_summaries': completed_count,
+                        'total_summaries': len(code_blocks)
                     })
             
             return result
@@ -313,7 +328,8 @@ async def add_code_examples_to_supabase(
     summaries: List[str],
     metadatas: List[Dict[str, Any]],
     batch_size: int = 20,
-    url_to_full_document: Optional[Dict[str, str]] = None
+    url_to_full_document: Optional[Dict[str, str]] = None,
+    progress_callback: Optional[Callable] = None
 ):
     """
     Add code examples to the Supabase code_examples table in batches.
@@ -326,6 +342,8 @@ async def add_code_examples_to_supabase(
         summaries: List of code example summaries
         metadatas: List of metadata dictionaries
         batch_size: Size of each batch for insertion
+        url_to_full_document: Optional mapping of URLs to full document content
+        progress_callback: Optional async callback for progress updates
     """
     if not urls:
         return
@@ -471,3 +489,16 @@ async def add_code_examples_to_supabase(
                         search_logger.info(f"Successfully inserted {successful_inserts}/{len(batch_data)} records individually")
 
         search_logger.info(f"Inserted batch {i//batch_size + 1} of {(total_items + batch_size - 1)//batch_size} code examples")
+        
+        # Report progress if callback provided
+        if progress_callback:
+            batch_num = i//batch_size + 1
+            total_batches = (total_items + batch_size - 1)//batch_size
+            progress_percentage = int((batch_num / total_batches) * 100)
+            await progress_callback({
+                'status': 'code_storage',
+                'percentage': progress_percentage,
+                'log': f'Stored batch {batch_num}/{total_batches} of code examples',
+                'batch_number': batch_num,
+                'total_batches': total_batches
+            })

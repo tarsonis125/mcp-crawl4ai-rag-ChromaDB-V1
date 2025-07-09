@@ -30,6 +30,10 @@ import Admonition from '@theme/Admonition';
 - **Smart Chunking**: Intelligent text splitting preserving context
 - **Contextual Embeddings**: Enhanced embeddings for better retrieval
 - **Code Extraction**: Automatic detection and indexing of code examples
+  - Only extracts substantial code blocks (≥ 1000 characters by default)
+  - Supports markdown code blocks (triple backticks)
+  - Falls back to HTML extraction for `<pre>` and `<code>` tags
+  - Generates AI summaries for each code example
 - **Metadata Extraction**: Headers, sections, and document structure
 - **Source Management**: Track and manage content sources
 
@@ -165,6 +169,23 @@ import Admonition from '@theme/Admonition';
 - **Search Analytics**: Track popular queries
 - **Content Analytics**: Usage patterns
 - **Performance Metrics**: Query times, throughput
+
+### Debugging Tips
+
+#### Code Extraction Not Working?
+1. **Check code block size**: Only blocks ≥ 1000 characters are extracted
+2. **Verify markdown format**: Code must be in triple backticks (```)
+3. **Check crawl results**: Look for `backtick_count` in logs
+4. **HTML fallback**: System will try HTML if markdown has no code blocks
+
+#### Crawling Issues?
+1. **Timeouts**: The system uses simple crawling without complex waits
+2. **JavaScript sites**: Content should render without special interactions
+3. **Progress stuck**: Check logs for batch processing updates
+4. **Different content types**: 
+   - `.txt` files: Direct text extraction
+   - `sitemap.xml`: Batch crawl all URLs
+   - Regular URLs: Recursive crawl with depth limit
 
 ## 📊 Usage Examples
 

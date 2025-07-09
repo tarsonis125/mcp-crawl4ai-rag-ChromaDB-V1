@@ -17,6 +17,7 @@ import { WebSocketState } from '../services/socketIOService';
 import { KnowledgeTable } from '../components/knowledge-base/KnowledgeTable';
 import { KnowledgeItemCard } from '../components/knowledge-base/KnowledgeItemCard';
 import { GroupedKnowledgeItemCard } from '../components/knowledge-base/GroupedKnowledgeItemCard';
+import { KnowledgeGridSkeleton, KnowledgeTableSkeleton } from '../components/knowledge-base/KnowledgeItemSkeleton';
 
 const extractDomain = (url: string): string => {
   try {
@@ -105,7 +106,7 @@ export const KnowledgeBasePage = () => {
   const [loading, setLoading] = useState(true);
   const [, setTotalItems] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
-  const [loadingStrategy, setLoadingStrategy] = useState<'websocket' | 'rest' | 'complete'>('websocket');
+  const [loadingStrategy, setLoadingStrategy] = useState<'websocket' | 'rest' | 'complete'>('rest');
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
   const loadTimeoutRef = useRef<NodeJS.Timeout>();
   
@@ -113,6 +114,9 @@ export const KnowledgeBasePage = () => {
 
   // Single consolidated loading function
   const loadKnowledgeItems = async (options = {}) => {
+    const startTime = Date.now();
+    console.log('📊 Starting knowledge items API request...');
+    
     try {
       setLoading(true);
       const response = await knowledgeBaseService.getKnowledgeItems({
@@ -123,11 +127,16 @@ export const KnowledgeBasePage = () => {
         ...options
       });
       
+      const loadTime = Date.now() - startTime;
+      console.log(`📊 API request completed successfully in ${loadTime}ms`);
+      console.log(`📊 Loaded ${response.items.length} items out of ${response.total} total`);
+      
       setKnowledgeItems(response.items);
       setTotalItems(response.total);
       setLoadingStrategy('complete');
     } catch (error) {
-      console.error('Failed to load knowledge items:', error);
+      const loadTime = Date.now() - startTime;
+      console.error(`📊 API request failed after ${loadTime}ms:`, error);
       showToast('Failed to load knowledge items', 'error');
       setKnowledgeItems([]);
       setLoadingStrategy('complete');
@@ -136,75 +145,16 @@ export const KnowledgeBasePage = () => {
     }
   };
 
-  // Consolidated initialization effect - handles both WebSocket and fallback loading
+  // Initialize knowledge items on mount - load via REST API immediately
   useEffect(() => {
-    let isComponentMounted = true;
-    let wsConnected = false;
-    let fallbackExecuted = false;
-
-    console.log('🚀 KnowledgeBasePage: Initializing data loading strategy');
-
-    // Clear any existing timeouts
-    if (loadTimeoutRef.current) {
-      clearTimeout(loadTimeoutRef.current);
-    }
-
-    // Try WebSocket connection first
-    const connectWebSocket = () => {
-      console.log('📡 Attempting WebSocket connection for real-time updates');
-      knowledgeSocketIO.connect('/api/knowledge-items/stream');
-      
-      const handleKnowledgeUpdate = (data: any) => {
-        if (!isComponentMounted) return;
-        
-        if (data.type === 'knowledge_items_update') {
-          console.log('✅ WebSocket: Received knowledge items update');
-          setKnowledgeItems(data.data.items);
-          setTotalItems(data.data.total);
-          setLoading(false);
-          setLoadingStrategy('websocket');
-          wsConnected = true;
-        } else if (data.type === 'crawl_completed') {
-          console.log('✅ WebSocket: Received crawl completion');
-          if (data.data.success) {
-            showToast('Crawling completed successfully', 'success');
-          } else {
-            showToast('Crawling failed', 'error');
-          }
-          // Reload items to show the new content
-          loadKnowledgeItems();
-        }
-      };
-      
-      knowledgeSocketIO.addMessageHandler('knowledge_items_update', handleKnowledgeUpdate);
-      
-      // Set fallback timeout - only execute if WebSocket hasn't connected and component is still mounted
-      loadTimeoutRef.current = setTimeout(() => {
-        if (isComponentMounted && !wsConnected && !fallbackExecuted) {
-          console.log('⏰ WebSocket fallback: Loading via REST API after timeout');
-          fallbackExecuted = true;
-          loadKnowledgeItems();
-        }
-      }, 2000); // Reduced from 3000ms to 2000ms for better UX
-      
-      return () => {
-        knowledgeSocketIO.removeMessageHandler('knowledge_items_update', handleKnowledgeUpdate);
-      };
-    };
-
-    const cleanup = connectWebSocket();
+    console.log('🚀 KnowledgeBasePage: Loading knowledge items via REST API');
+    
+    // Load items immediately via REST API
+    loadKnowledgeItems();
     
     return () => {
-      console.log('🧹 KnowledgeBasePage: Cleaning up data loading');
-      isComponentMounted = false;
-      if (loadTimeoutRef.current) {
-        clearTimeout(loadTimeoutRef.current);
-      }
-      cleanup();
-      knowledgeSocketIO.disconnect();
-      
-      // Clean up any active crawl progress connections
-      // Disconnecting crawl progress service
+      console.log('🧹 KnowledgeBasePage: Cleaning up');
+      // Clean up any active crawl progress connections if they exist
       crawlProgressService.disconnect();
     };
   }, []); // Only run once on mount
@@ -489,12 +439,7 @@ export const KnowledgeBasePage = () => {
       {/* Main Content */}
       <div className="relative">
         {loading ? (
-          <div className="flex flex-col justify-center items-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500 mb-3"></div>
-            <p className="text-sm text-gray-500 dark:text-zinc-400">
-              {loadingStrategy === 'websocket' ? 'Connecting to live updates...' : 'Loading knowledge items...'}
-            </p>
-          </div>
+          viewMode === 'table' ? <KnowledgeTableSkeleton /> : <KnowledgeGridSkeleton />
         ) : viewMode === 'table' ? (
           <KnowledgeTable 
             items={filteredItems} 

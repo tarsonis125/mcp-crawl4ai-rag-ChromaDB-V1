@@ -6,8 +6,8 @@ Keeps the main projects_api.py file focused on REST endpoints.
 """
 
 # Removed direct logging import - using unified config
+import asyncio
 from ..socketio_app import get_socketio_instance
-from ..utils import get_supabase_client
 from ..services.projects import ProjectService, TaskService, SourceLinkingService
 
 from ..config.logfire_config import get_logger
@@ -96,6 +96,8 @@ async def broadcast_crawl_progress(progress_id: str, data: dict):
     
     # Emit the event
     await sio.emit('crawl_progress', data, room=progress_id)
+    # Yield control to event loop to help with Socket.IO delivery
+    await asyncio.sleep(0)
     logger.info(f"✅ [SOCKETIO] Broadcasted crawl progress for {progress_id}")
 
 # Crawl progress helper functions for knowledge API
@@ -111,6 +113,7 @@ async def update_crawl_progress(progress_id: str, data: dict):
 async def complete_crawl_progress(progress_id: str, data: dict):
     """Complete crawl progress tracking."""
     data['status'] = 'completed'
+    data['percentage'] = 100  # Ensure we show 100% when complete
     await broadcast_crawl_progress(progress_id, data)
 
 async def error_crawl_progress(progress_id: str, error_msg: str):
@@ -280,11 +283,11 @@ async def unsubscribe_progress(sid, data):
         print(f"🛑 Client {sid} unsubscribed from progress {progress_id}")
 
 @sio.event
-async def crawl_subscribe(sid, data):
+async def crawl_subscribe(sid, data=None):
     """Subscribe to crawl progress updates."""
     logger.info(f"📥 [SOCKETIO] Received crawl_subscribe from {sid} with data: {data}")
     print(f"📥 [SOCKETIO DEBUG] crawl_subscribe event - sid: {sid}, data: {data}")
-    progress_id = data.get('progress_id')
+    progress_id = data.get('progress_id') if data else None
     if not progress_id:
         logger.error(f"❌ [SOCKETIO] No progress_id in crawl_subscribe from {sid}")
         await sio.emit('error', {'message': 'progress_id required'}, to=sid)
@@ -300,7 +303,20 @@ async def crawl_subscribe(sid, data):
         # Get all rooms for this client
         client_rooms = []
         if hasattr(sio, 'rooms') and callable(sio.rooms):
-            client_rooms = list(sio.rooms(sid))
+            try:
+                rooms_result = sio.rooms(sid)
+                # Handle different return types from rooms()
+                if rooms_result is None:
+                    client_rooms = []
+                elif isinstance(rooms_result, (list, set, tuple)):
+                    client_rooms = list(rooms_result)
+                elif isinstance(rooms_result, dict):
+                    client_rooms = list(rooms_result.keys())
+                else:
+                    # Assume it's a single room ID
+                    client_rooms = [str(rooms_result)]
+            except Exception as e:
+                logger.debug(f"Could not get rooms for sid {sid}: {e}")
         elif hasattr(sio.manager, 'rooms'):
             # Alternative method to check rooms
             for room, sids in sio.manager.rooms.get('/', {}).items():

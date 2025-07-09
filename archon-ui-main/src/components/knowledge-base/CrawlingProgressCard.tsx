@@ -155,6 +155,9 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
     const currentStatus = progressData.status;
     const currentPercentage = progressData.percentage || 0;
 
+    // Normalize status to handle backend/frontend naming differences
+    const normalizedStatus = currentStatus === 'code_extraction' ? 'code_storage' : currentStatus;
+
     // Define step order for completion tracking
     const stepOrder = isUpload 
       ? ['reading', 'extracting', 'chunking', 'creating_source', 'summarizing', 'storing']
@@ -163,7 +166,7 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
     // Update step progress based on current status
     steps.forEach((step) => {
       const stepIndex = stepOrder.indexOf(step.id);
-      const currentStepIndex = stepOrder.indexOf(currentStatus);
+      const currentStepIndex = stepOrder.indexOf(normalizedStatus);
       
       if (currentStatus === 'error') {
         if (stepIndex <= currentStepIndex) {
@@ -176,22 +179,22 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
       } else if (currentStatus === 'completed') {
         step.status = 'completed';
         step.percentage = 100;
-      } else if (step.id === currentStatus) {
+      } else if (step.id === normalizedStatus) {
         // This is the active step
         step.status = 'active';
         // Calculate phase-specific percentage based on overall progress
         // Each phase has a range in the overall progress:
-        // analyzing: 0-5%, crawling: 5-25%, processing: 25-35%, 
-        // source_creation: 35-45%, document_storage: 45-90%, 
-        // code_storage: 90-99%, finalization: 99-100%
+        // analyzing: 0-5%, crawling: 5-20%, processing/source_creation: 10-20%, 
+        // document_storage: 20-85%, code_storage: 85-95%, finalization: 95-100%
         const phaseRanges = {
           'analyzing': { start: 0, end: 5 },
-          'crawling': { start: 5, end: 25 },
-          'processing': { start: 25, end: 35 },
-          'source_creation': { start: 35, end: 45 },
-          'document_storage': { start: 45, end: 90 },
-          'code_storage': { start: 90, end: 99 },
-          'finalization': { start: 99, end: 100 }
+          'crawling': { start: 5, end: 20 },
+          'processing': { start: 10, end: 15 },
+          'source_creation': { start: 15, end: 20 },
+          'document_storage': { start: 20, end: 85 },
+          'code_storage': { start: 85, end: 95 },
+          'code_extraction': { start: 85, end: 95 },
+          'finalization': { start: 95, end: 100 }
         };
         
         const range = phaseRanges[step.id as keyof typeof phaseRanges];
@@ -269,6 +272,25 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
                 break;
             }
           }
+        }
+      } else if (step.status === 'completed' && step.percentage === 100 && currentPercentage < 95) {
+        // Add message for completed steps when overall progress is still ongoing
+        const isTextFile = progressData.currentUrl && 
+          (progressData.currentUrl.endsWith('.txt') || progressData.currentUrl.endsWith('.md'));
+        
+        switch (step.id) {
+          case 'crawling':
+            step.message = isTextFile ? 'Text file fetched, processing content...' : 'Crawling complete, processing...';
+            break;
+          case 'analyzing':
+            step.message = 'Analysis complete';
+            break;
+          case 'processing':
+            step.message = 'Processing complete';
+            break;
+          case 'source_creation':
+            step.message = 'Source created';
+            break;
         }
       }
     });
@@ -352,6 +374,7 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
           icon: <Database className="w-4 h-4" />
         };
       case 'code_storage':
+      case 'code_extraction':
         return {
           text: 'Processing code examples...',
           color: 'blue' as const,
@@ -379,10 +402,12 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
     return num.toLocaleString();
   };
 
-  const getStepStatusColor = (stepStatus: string) => {
+  const getStepStatusColor = (stepStatus: string, isProcessingContinuing: boolean = false) => {
     switch (stepStatus) {
       case 'completed':
-        return 'text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-500/10';
+        return isProcessingContinuing 
+          ? 'text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-500/10 animate-pulse'
+          : 'text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-500/10';
       case 'active':
         return 'text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-500/10';
       case 'error':
@@ -458,6 +483,18 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
         </div>
       )}
 
+      {/* Show info when crawling is complete but processing continues */}
+      {progressData.status === 'document_storage' && progressData.percentage < 30 && progressData.status !== 'completed' && (
+        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-md">
+          <div className="flex items-center gap-2">
+            <Cpu className="w-4 h-4 text-blue-600 dark:text-blue-400 animate-pulse" />
+            <span className="text-sm text-blue-700 dark:text-blue-400">
+              Content fetched successfully. Processing and storing documents...
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Detailed Progress Toggle */}
       {progressData.status !== 'completed' && progressData.status !== 'error' && (
         <div className="mb-4">
@@ -487,8 +524,11 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
               {progressSteps.map((step) => (
                 <div key={step.id}>
                   <div className="flex items-center gap-3">
-                    <div className={`p-1.5 rounded-md ${getStepStatusColor(step.status)}`}>
-                      {step.status === 'active' ? (
+                    <div className={`p-1.5 rounded-md ${getStepStatusColor(
+                      step.status, 
+                      false // Never pulse for step icons - only the active step should animate via rotation
+                    )}`}>
+                      {step.status === 'active' && progressData.status !== 'completed' ? (
                         <motion.div
                           animate={{ rotate: 360 }}
                           transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
@@ -530,7 +570,7 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
                   </div>
                   
                   {/* Show simplified batch progress for document_storage step */}
-                  {step.id === 'document_storage' && (step.status === 'active' || progressData.status === 'document_storage') && 
+                  {step.id === 'document_storage' && (step.status === 'active' || step.status === 'completed') && 
                    progressData.total_batches && progressData.total_batches > 0 && (
                     <motion.div
                       initial={{ height: 0, opacity: 0 }}

@@ -353,10 +353,10 @@ export const projectService = {
    */
   async getTasksByProject(projectId: string): Promise<Task[]> {
     try {
-      const tasks = await callAPI<Task[]>(`/api/projects/${projectId}/tasks`);
+      const response = await callAPI<{tasks: Task[], pagination: any}>(`/api/projects/${projectId}/tasks`);
       
       // Convert database tasks to UI tasks with status mapping
-      return tasks.map((task: Task) => dbTaskToUITask(task));
+      return (response.tasks || []).map((task: Task) => dbTaskToUITask(task));
     } catch (error) {
       console.error(`Failed to get tasks for project ${projectId}:`, error);
       throw error;

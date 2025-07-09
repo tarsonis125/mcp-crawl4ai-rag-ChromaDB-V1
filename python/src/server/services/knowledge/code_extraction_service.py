@@ -4,6 +4,7 @@ Code Extraction Service
 Handles extraction, processing, and storage of code examples from documents.
 """
 import asyncio
+import re
 from typing import List, Dict, Any, Optional, Callable
 from urllib.parse import urlparse
 
@@ -13,7 +14,6 @@ from ..storage.code_storage_service import (
     generate_code_summaries_batch,
     add_code_examples_to_supabase
 )
-from ..credential_service import credential_service
 
 
 class CodeExtractionService:
@@ -34,7 +34,9 @@ class CodeExtractionService:
         self,
         crawl_results: List[Dict[str, Any]],
         url_to_full_document: Dict[str, str],
-        progress_callback: Optional[Callable] = None
+        progress_callback: Optional[Callable] = None,
+        start_progress: int = 0,
+        end_progress: int = 100
     ) -> int:
         """
         Extract code examples from crawled documents and store them.
@@ -43,17 +45,34 @@ class CodeExtractionService:
             crawl_results: List of crawled documents with url and markdown content
             url_to_full_document: Mapping of URLs to full document content
             progress_callback: Optional async callback for progress updates
+            start_progress: Starting progress percentage (default: 0)
+            end_progress: Ending progress percentage (default: 100)
             
         Returns:
             Number of code examples stored
         """
+        # Divide the progress range into phases:
+        # - Extract code blocks: start_progress to 40% of range
+        # - Generate summaries: 40% to 80% of range  
+        # - Store examples: 80% to end_progress
+        progress_range = end_progress - start_progress
+        extract_end = start_progress + int(progress_range * 0.4)
+        summary_end = start_progress + int(progress_range * 0.8)
+        
         # Extract code blocks from all documents
         all_code_blocks = await self._extract_code_blocks_from_documents(
-            crawl_results, progress_callback
+            crawl_results, progress_callback, start_progress, extract_end
         )
         
         if not all_code_blocks:
             safe_logfire_info("No code examples found in any crawled documents")
+            # Still report completion when no code examples found
+            if progress_callback:
+                await progress_callback({
+                    'status': 'code_extraction',
+                    'percentage': end_progress,
+                    'log': 'No code examples found to extract'
+                })
             return 0
         
         # Log what we found
@@ -62,9 +81,9 @@ class CodeExtractionService:
             block = block_data['block']
             safe_logfire_info(f"Sample code block {i+1} | language={block.get('language', 'none')} | code_length={len(block.get('code', ''))}")
         
-        # Generate summaries for code blocks
+        # Generate summaries for code blocks with mapped progress
         summary_results = await self._generate_code_summaries(
-            all_code_blocks, progress_callback
+            all_code_blocks, progress_callback, extract_end, summary_end
         )
         
         # Prepare code examples for storage
@@ -72,15 +91,17 @@ class CodeExtractionService:
             all_code_blocks, summary_results
         )
         
-        # Store code examples in database
+        # Store code examples in database with final phase progress
         return await self._store_code_examples(
-            storage_data, url_to_full_document, progress_callback
+            storage_data, url_to_full_document, progress_callback, summary_end, end_progress
         )
     
     async def _extract_code_blocks_from_documents(
         self,
         crawl_results: List[Dict[str, Any]],
-        progress_callback: Optional[Callable] = None
+        progress_callback: Optional[Callable] = None,
+        start_progress: int = 0,
+        end_progress: int = 100
     ) -> List[Dict[str, Any]]:
         """
         Extract code blocks from all documents.
@@ -88,15 +109,11 @@ class CodeExtractionService:
         Returns:
             List of code blocks with metadata
         """
-        if progress_callback:
-            await progress_callback({
-                'status': 'code_storage',
-                'percentage': 91,
-                'log': 'Extracting code examples from crawled content...'
-            })
+        # Progress will be reported during the loop below
         
         all_code_blocks = []
         total_docs = len(crawl_results)
+        completed_docs = 0
         
         for idx, doc in enumerate(crawl_results):
             try:
@@ -107,8 +124,8 @@ class CodeExtractionService:
                 # Debug logging
                 safe_logfire_info(f"Document content check | url={source_url} | has_html={bool(html_content)} | has_markdown={bool(md)} | html_len={len(html_content) if html_content else 0} | md_len={len(md) if md else 0}")
                 
-                # Use a lower threshold to catch more code blocks
-                min_length = 20  # Much lower to ensure we catch code examples
+                # Use a reasonable threshold to ensure we only extract substantial code blocks
+                min_length = 1000  # Only extract code blocks >= 1000 characters to avoid snippets
                 
                 # Check markdown first to see if it has code blocks
                 if md:
@@ -121,51 +138,20 @@ class CodeExtractionService:
                         sample = md[:500]
                         safe_logfire_info(f"Markdown sample for getting-started: {sample}...")
                 
-                # Decide whether to use markdown or HTML based on content
+                # Simple extraction logic - try markdown first, then HTML as fallback
                 code_blocks = []
                 
-                # Check if markdown looks corrupted (e.g., starts with ```K` or has only 2 backticks total)
-                markdown_looks_corrupted = False
-                if md:
-                    # Check for signs of corrupted markdown
-                    if md.strip().startswith('```K') or (backtick_count == 2 and len(md) > 1000):
-                        markdown_looks_corrupted = True
-                        safe_logfire_info(f"Markdown appears corrupted (starts with ```K or only 2 backticks for large content) | url={source_url}")
-                
-                # If markdown has triple backticks and doesn't look corrupted, try markdown extraction
-                if md and '```' in md and not markdown_looks_corrupted:
+                # If markdown has triple backticks, extract code blocks from it
+                if md and '```' in md:
                     safe_logfire_info(f"Using markdown extraction (found backticks) | url={source_url}")
                     code_blocks = extract_code_blocks(md, min_length=min_length)
                     safe_logfire_info(f"Found {len(code_blocks)} code blocks from markdown | url={source_url}")
-                    
-                    # If we only found 1 huge code block that's nearly the entire content, it's probably corrupted
-                    if len(code_blocks) == 1 and len(code_blocks[0]['code']) > len(md) * 0.8:
-                        safe_logfire_info(f"Single code block is {len(code_blocks[0]['code'])} chars ({len(code_blocks[0]['code'])/len(md)*100:.0f}% of content) - likely corrupted markdown | url={source_url}")
-                        code_blocks = []  # Clear it to try HTML
                 
-                # If no code blocks from markdown or markdown was corrupted, try HTML
+                # If no code blocks from markdown, try HTML extraction as fallback
                 if len(code_blocks) == 0 and html_content:
-                    safe_logfire_info(f"Trying HTML extraction | url={source_url} | html_length={len(html_content)} | reason={'markdown_corrupted' if markdown_looks_corrupted else 'no_blocks_in_markdown'}")
-                    
-                    # Debug: Log a sample of HTML to see what we're getting
-                    if 'getting-started' in source_url:
-                        # Look for any code-related patterns
-                        sample = html_content[:2000]
-                        has_pre = '<pre' in html_content
-                        has_code = '<code' in html_content
-                        has_language_class = 'language-' in html_content
-                        safe_logfire_info(f"HTML debug | has_pre={has_pre} | has_code={has_code} | has_language_class={has_language_class}")
-                        safe_logfire_info(f"HTML sample: {sample[:500]}...")
-                    
+                    safe_logfire_info(f"No code blocks in markdown, trying HTML extraction | url={source_url} | html_length={len(html_content)}")
                     code_blocks = self._extract_html_code_blocks(html_content, min_length)
                     safe_logfire_info(f"Found {len(code_blocks)} code blocks from HTML | url={source_url}")
-                
-                # If still no code blocks and we have markdown without backticks, try it anyway
-                if len(code_blocks) == 0 and md and '```' not in md:
-                    safe_logfire_info(f"Last resort: trying markdown without backticks | url={source_url}")
-                    # Maybe the markdown has some other format?
-                    code_blocks = extract_code_blocks(md, min_length=min_length)
-                    safe_logfire_info(f"Found {len(code_blocks)} code blocks from markdown without backticks | url={source_url}")
                 
                 # Debug: If no code blocks found from markdown but backticks exist, log sample
                 if len(code_blocks) == 0 and not html_content and md and '```' in md:
@@ -193,13 +179,18 @@ class CodeExtractionService:
                             'source_id': source_id
                         })
                 
-                # Update progress during extraction
-                if progress_callback and idx % 5 == 0:
-                    progress = 91 + int((idx / total_docs) * 2)
+                # Update progress only after completing document extraction
+                completed_docs += 1
+                if progress_callback and total_docs > 0:
+                    # Calculate progress within the specified range
+                    raw_progress = (completed_docs / total_docs)
+                    mapped_progress = start_progress + int(raw_progress * (end_progress - start_progress))
                     await progress_callback({
-                        'status': 'code_storage',
-                        'percentage': progress,
-                        'log': f'Extracting code from document {idx + 1}/{total_docs}...'
+                        'status': 'code_extraction',
+                        'percentage': mapped_progress,
+                        'log': f'Extracted code from {completed_docs}/{total_docs} documents',
+                        'completed_documents': completed_docs,
+                        'total_documents': total_docs
                     })
                     
             except Exception as e:
@@ -221,14 +212,39 @@ class CodeExtractionService:
         """
         import re
         
+        # Add detailed logging
+        safe_logfire_info(f"Processing HTML of length {len(content)} for code extraction")
+        
+        # Check if we have actual content
+        if len(content) < 1000:
+            safe_logfire_info(f"Warning: HTML content seems too short, first 500 chars: {content[:500]}")
+        
+        # Look for specific indicators of code blocks
+        has_prism = 'prism' in content.lower()
+        has_highlight = 'highlight' in content.lower()
+        has_shiki = 'shiki' in content.lower()
+        has_codemirror = 'codemirror' in content.lower() or 'cm-' in content
+        safe_logfire_info(f"Code library indicators | prism={has_prism} | highlight={has_highlight} | shiki={has_shiki} | codemirror={has_codemirror}")
+        
+        # Check for any pre tags with different attributes
+        pre_matches = re.findall(r'<pre[^>]*>', content[:5000], re.IGNORECASE)
+        if pre_matches:
+            safe_logfire_info(f"Found {len(pre_matches)} <pre> tags in first 5000 chars")
+            for i, pre_tag in enumerate(pre_matches[:3]):  # Show first 3
+                safe_logfire_info(f"Pre tag {i+1}: {pre_tag}")
+        
         code_blocks = []
         extracted_positions = set()  # Track already extracted code block positions
         
         # Comprehensive patterns for various code block formats
         # Order matters - more specific patterns first
         patterns = [
-            # Milkdown - look for the specific structure
-            (r'<div[^>]*class=["\'][^"\']*milkdown-code-block[^"\']*["\'][^>]*>.*?<pre[^>]*><code[^>]*>(.*?)</code></pre>', 'milkdown'),
+            # Milkdown specific patterns - check their actual HTML structure
+            (r'<pre[^>]*><code[^>]*class=["\'][^"\']*language-(\w+)[^"\']*["\'][^>]*>(.*?)</code></pre>', 'milkdown-typed'),
+            (r'<div[^>]*class=["\'][^"\']*code-wrapper[^"\']*["\'][^>]*>.*?<pre[^>]*>(.*?)</pre>', 'milkdown-wrapper'),
+            (r'<pre[^>]*class=["\'][^"\']*code-block[^"\']*["\'][^>]*><code[^>]*>(.*?)</code></pre>', 'milkdown'),
+            (r'<div[^>]*data-code-block[^>]*>.*?<pre[^>]*>(.*?)</pre>', 'milkdown-alt'),
+            (r'<div[^>]*class=["\'][^"\']*milkdown[^"\']*["\'][^>]*>.*?<pre[^>]*><code[^>]*>(.*?)</code></pre>', 'milkdown-div'),
             
             # Monaco Editor - capture all view-lines content
             (r'<div[^>]*class=["\'][^"\']*monaco-editor[^"\']*["\'][^>]*>.*?<div[^>]*class=["\'][^"\']*view-lines[^"\']*[^>]*>(.*?)</div>(?=.*?</div>.*?</div>)', 'monaco'),
@@ -261,11 +277,15 @@ class CodeExtractionService:
         
         for pattern_tuple in patterns:
             pattern_str, source_type = pattern_tuple
-            matches = re.finditer(pattern_str, content, re.DOTALL | re.IGNORECASE)
+            matches = list(re.finditer(pattern_str, content, re.DOTALL | re.IGNORECASE))
+            
+            # Log pattern matches for Milkdown patterns
+            if matches and ('milkdown' in source_type or 'milkdown' in content[:1000].lower()):
+                safe_logfire_info(f"Pattern {source_type} found {len(matches)} matches")
             
             for match in matches:
                 # Extract code content based on pattern type
-                if source_type in ['standard-lang', 'prism', 'vitepress', 'hljs']:
+                if source_type in ['standard-lang', 'prism', 'vitepress', 'hljs', 'milkdown-typed']:
                     # These patterns capture language in group 1, code in group 2
                     if match.lastindex and match.lastindex >= 2:
                         language = match.group(1)
@@ -396,7 +416,9 @@ class CodeExtractionService:
     async def _generate_code_summaries(
         self,
         all_code_blocks: List[Dict[str, Any]],
-        progress_callback: Optional[Callable] = None
+        progress_callback: Optional[Callable] = None,
+        start_progress: int = 0,
+        end_progress: int = 100
     ) -> List[Dict[str, str]]:
         """
         Generate summaries for all code blocks.
@@ -404,12 +426,7 @@ class CodeExtractionService:
         Returns:
             List of summary results
         """
-        if progress_callback:
-            await progress_callback({
-                'status': 'code_storage',
-                'percentage': 93,
-                'log': f'Generating summaries for {len(all_code_blocks)} code examples...'
-            })
+        # Progress is handled by generate_code_summaries_batch
         
         # Use default max workers
         max_workers = 3
@@ -417,10 +434,22 @@ class CodeExtractionService:
         # Extract just the code blocks for batch processing
         code_blocks_for_summaries = [item['block'] for item in all_code_blocks]
         
-        # Generate summaries with progress tracking
+        # Generate summaries with mapped progress tracking
         summary_progress_callback = None
         if progress_callback:
-            summary_progress_callback = lambda data: asyncio.create_task(progress_callback(data))
+            # Create a wrapper that maps the progress to the correct range
+            async def mapped_callback(data: dict):
+                # Map the percentage from generate_code_summaries_batch (0-100) to our range
+                if 'percentage' in data:
+                    raw_percentage = data['percentage']
+                    # Map from 0-100 to start_progress-end_progress
+                    mapped_percentage = start_progress + int((raw_percentage / 100) * (end_progress - start_progress))
+                    data['percentage'] = mapped_percentage
+                    # Change the status to match what the orchestration expects
+                    data['status'] = 'code_extraction'
+                await progress_callback(data)
+            
+            summary_progress_callback = mapped_callback
         
         return await generate_code_summaries_batch(
             code_blocks_for_summaries,
@@ -483,7 +512,9 @@ class CodeExtractionService:
         self,
         storage_data: Dict[str, List[Any]],
         url_to_full_document: Dict[str, str],
-        progress_callback: Optional[Callable] = None
+        progress_callback: Optional[Callable] = None,
+        start_progress: int = 0,
+        end_progress: int = 100
     ) -> int:
         """
         Store code examples in the database.
@@ -491,12 +522,31 @@ class CodeExtractionService:
         Returns:
             Number of code examples stored
         """
+        # Create mapped progress callback for storage phase
+        storage_progress_callback = None
         if progress_callback:
-            await progress_callback({
-                'status': 'code_storage',
-                'percentage': 95,
-                'log': f'Storing {len(storage_data["examples"])} code examples...'
-            })
+            async def mapped_storage_callback(data: dict):
+                # Extract values from the dictionary
+                message = data.get('log', '')
+                percentage = data.get('percentage', 0)
+                
+                # Map storage progress (0-100) to our range (start_progress to end_progress)
+                mapped_percentage = start_progress + int((percentage / 100) * (end_progress - start_progress))
+                
+                update_data = {
+                    'status': 'code_storage',
+                    'percentage': mapped_percentage,
+                    'log': message
+                }
+                
+                # Pass through any additional batch info
+                if 'batch_number' in data:
+                    update_data['batch_number'] = data['batch_number']
+                if 'total_batches' in data:
+                    update_data['total_batches'] = data['total_batches']
+                
+                await progress_callback(update_data)
+            storage_progress_callback = mapped_storage_callback
         
         try:
             await add_code_examples_to_supabase(
@@ -507,7 +557,8 @@ class CodeExtractionService:
                 summaries=storage_data['summaries'],
                 metadatas=storage_data['metadatas'],
                 batch_size=20,
-                url_to_full_document=url_to_full_document
+                url_to_full_document=url_to_full_document,
+                progress_callback=storage_progress_callback
             )
             
             safe_logfire_info(f"Successfully stored {len(storage_data['examples'])} code examples")

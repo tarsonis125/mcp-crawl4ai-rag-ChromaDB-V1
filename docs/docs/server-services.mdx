@@ -410,9 +410,47 @@ Services are configured via environment variables:
 - `SUPABASE_SERVICE_KEY` - Database service key  
 - `OPENAI_API_KEY` - For embeddings (or other provider keys)
 - `LLM_PROVIDER` - LLM provider selection (openai, openrouter, ollama, google)
-- `CODE_BLOCK_MIN_LENGTH` - Minimum code block length (default: 50)
+- `CODE_BLOCK_MIN_LENGTH` - Minimum code block length in characters (default: 1000)
 - `USE_CONTEXTUAL_EMBEDDINGS` - Enable contextual embeddings
 - `USE_HYBRID_SEARCH` - Enable hybrid search mode
 - `USE_RERANKING` - Enable search result reranking
 
 All services use dependency injection for testability and flexibility.
+
+## Troubleshooting
+
+### Code Extraction Issues
+
+If code blocks are not being extracted properly:
+
+1. **Check the minimum length**: The default `CODE_BLOCK_MIN_LENGTH` is 1000 characters. This ensures only substantial code blocks are extracted, not small snippets.
+   
+2. **Verify markdown format**: Code blocks must be wrapped in triple backticks (```) to be recognized.
+
+3. **HTML fallback**: If markdown doesn't contain code blocks, the system will try to extract from HTML using `<pre>` and `<code>` tags.
+
+### Crawling Performance
+
+The crawling service uses simple configurations for reliability:
+
+- No complex JavaScript waiting by default
+- No forced element clicking
+- Straightforward markdown extraction
+
+If you need advanced crawling features for specific sites:
+
+1. Consider implementing site-specific handlers
+2. Use the `js_code` parameter only when necessary
+3. Avoid `wait_for` selectors unless you're certain the elements exist
+
+### Progress Tracking
+
+Progress updates during crawling:
+
+- **0-45%**: Crawling pages
+- **45-50%**: Processing crawl results  
+- **50-75%**: Storing documents with real-time batch updates
+- **75-90%**: Extracting and storing code examples
+- **90-100%**: Finalizing and cleanup
+
+If progress appears stuck, check the logs for batch processing updates.

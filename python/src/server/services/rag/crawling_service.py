@@ -67,11 +67,13 @@ class CrawlingService:
     def _get_markdown_generator(self):
         """Get markdown generator that preserves code blocks."""
         return DefaultMarkdownGenerator(
-            content_source="raw_html",  # Use raw HTML to avoid cleaning
+            content_source="cleaned_html",  # Keep using cleaned_html as before
             options={
                 "mark_code": True,         # Mark code blocks properly
                 "handle_code_in_pre": True,  # Handle <pre><code> tags
-                "body_width": 0            # No line wrapping
+                "body_width": 0,            # No line wrapping
+                "skip_internal_links": True,  # Add to reduce noise
+                "include_raw_html": False     # Prevent HTML in markdown
             }
         )
     
@@ -146,26 +148,10 @@ class CrawlingService:
                 # Use ENABLED cache mode for better performance, BYPASS only on retries
                 cache_mode = CacheMode.BYPASS if attempt > 0 else CacheMode.ENABLED
                 
-                # Configuration for web crawling with code block detection
-                wait_for_code = f"css:{', '.join(self.CODE_BLOCK_SELECTORS)}"
-                
+                # Simple configuration for web crawling - like the original working implementation
                 crawl_config = CrawlerRunConfig(
                     cache_mode=cache_mode, 
                     stream=False,
-                    wait_for=wait_for_code,
-                    js_code=[
-                        # Click any tabs that might hide code
-                        """
-                        document.querySelectorAll('[role=tab], .tab-button, .code-tab, button[class*="tab"]').forEach(tab => {
-                            if (tab.offsetParent !== null) tab.click();
-                        });
-                        """,
-                        # Scroll to load lazy content
-                        "window.scrollTo(0, document.body.scrollHeight/2);",
-                        # Small delay to let syntax highlighters finish
-                        "await new Promise(resolve => setTimeout(resolve, 2000));"
-                    ],
-                    page_timeout=60000,  # 60 second timeout
                     markdown_generator=self._get_markdown_generator()
                 )
                 
@@ -197,6 +183,11 @@ class CrawlingService:
                 backtick_count = result.markdown.count('```') if result.markdown else 0
                 
                 logger.info(f"Crawl result for {url} | has_markdown={bool(result.markdown)} | markdown_length={len(result.markdown) if result.markdown else 0} | has_triple_backticks={has_triple_backticks} | backtick_count={backtick_count}")
+                
+                # Log markdown info for debugging if needed
+                if backtick_count > 0:
+                    logger.info(f"Markdown has {backtick_count} code blocks for {url}")
+                
                 if 'getting-started' in url:
                     logger.info(f"Markdown sample for getting-started: {markdown_sample}")
                 
@@ -204,7 +195,7 @@ class CrawlingService:
                     "success": True,
                     "url": url,
                     "markdown": result.markdown,
-                    "html": result.cleaned_html or result.html,  # Return HTML for code extraction
+                    "html": result.html,  # Use raw HTML instead of cleaned_html for code extraction
                     "title": result.title or "Untitled",
                     "links": result.links,
                     "content_length": len(result.markdown)
@@ -228,10 +219,21 @@ class CrawlingService:
             "error": last_error or f"Failed to crawl {url} after {retry_count} attempts"
         }
 
-    async def crawl_markdown_file(self, url: str) -> List[Dict[str, Any]]:
-        """Crawl a .txt or markdown file with comprehensive error handling."""
+    async def crawl_markdown_file(self, url: str, progress_callback=None, 
+                                 start_progress: int = 10, end_progress: int = 20) -> List[Dict[str, Any]]:
+        """Crawl a .txt or markdown file with comprehensive error handling and progress reporting."""
         try:
             logger.info(f"Crawling markdown file: {url}")
+            
+            # Define local report_progress helper like in other methods
+            async def report_progress(percentage: int, message: str):
+                """Helper to report progress if callback is available"""
+                if progress_callback:
+                    await progress_callback('crawling', percentage, message)
+            
+            # Report initial progress
+            await report_progress(start_progress, f"Fetching text file: {url}")
+            
             # Use consistent configuration even for text files
             crawl_config = CrawlerRunConfig(
                 cache_mode=CacheMode.ENABLED,
@@ -241,7 +243,11 @@ class CrawlingService:
             result = await self.crawler.arun(url=url, config=crawl_config)
             if result.success and result.markdown:
                 logger.info(f"Successfully crawled markdown file: {url}")
-                return [{'url': url, 'markdown': result.markdown, 'html': result.cleaned_html or result.html}]
+                
+                # Report completion progress
+                await report_progress(end_progress, f"Text file crawled successfully: {url}")
+                
+                return [{'url': url, 'markdown': result.markdown, 'html': result.html}]
             else:
                 logger.error(f"Failed to crawl {url}: {result.error_message}")
                 return []
@@ -260,25 +266,10 @@ class CrawlingService:
                 await progress_callback('error', 0, 'Crawler not available')
             return []
             
-        # Configuration for batch crawling with code block detection
-        wait_for_code = f"css:{', '.join(self.CODE_BLOCK_SELECTORS)}"
-        
+        # Simple configuration for batch crawling - like the original working implementation
         crawl_config = CrawlerRunConfig(
             cache_mode=CacheMode.BYPASS, 
             stream=False,
-            wait_for=wait_for_code,
-            js_code=[
-                # Click tabs and scroll for each page
-                """
-                document.querySelectorAll('[role=tab], .tab-button, .code-tab, button[class*="tab"]').forEach(tab => {
-                    if (tab.offsetParent !== null) tab.click();
-                });
-                """,
-                "window.scrollTo(0, document.body.scrollHeight/2);",
-                # Small delay to let syntax highlighters finish
-                "await new Promise(resolve => setTimeout(resolve, 1500));"
-            ],
-            page_timeout=30000,  # 30 second timeout per page
             markdown_generator=self._get_markdown_generator()
         )
         dispatcher = MemoryAdaptiveDispatcher(
@@ -319,7 +310,7 @@ class CrawlingService:
                     successful_results.append({
                         'url': result.url, 
                         'markdown': result.markdown,
-                        'html': result.cleaned_html or result.html
+                        'html': result.html  # Use raw HTML
                     })
                 
                 # Report individual URL progress with smooth increments
@@ -341,25 +332,10 @@ class CrawlingService:
                 await progress_callback('error', 0, 'Crawler not available')
             return []
             
-        # Configuration for recursive crawling with code block detection
-        wait_for_code = f"css:{', '.join(self.CODE_BLOCK_SELECTORS)}"
-        
+        # Simple configuration for recursive crawling - like the original working implementation
         run_config = CrawlerRunConfig(
             cache_mode=CacheMode.BYPASS, 
             stream=False,
-            wait_for=wait_for_code,
-            js_code=[
-                # Click tabs and scroll for each page
-                """
-                document.querySelectorAll('[role=tab], .tab-button, .code-tab, button[class*="tab"]').forEach(tab => {
-                    if (tab.offsetParent !== null) tab.click();
-                });
-                """,
-                "window.scrollTo(0, document.body.scrollHeight/2);",
-                # Small delay to let syntax highlighters finish
-                "await new Promise(resolve => setTimeout(resolve, 1500));"
-            ],
-            page_timeout=30000,  # 30 second timeout per page
             markdown_generator=self._get_markdown_generator()
         )
         dispatcher = MemoryAdaptiveDispatcher(

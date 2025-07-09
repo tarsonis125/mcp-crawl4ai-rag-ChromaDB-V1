@@ -161,15 +161,20 @@ class TaskService:
             Tuple of (success, result_dict)
         """
         try:
-            # Build query - always filter out archived tasks
-            query = self.supabase_client.table("tasks").select("*").or_("archived.is.null,archived.eq.false")
+            # Start with base query
+            query = self.supabase_client.table("tasks").select("*")
+            
+            # Track filters for debugging
+            filters_applied = []
             
             # Apply filters
             if project_id:
                 query = query.eq("project_id", project_id)
+                filters_applied.append(f"project_id={project_id}")
             
             if parent_task_id:
                 query = query.eq("parent_task_id", parent_task_id)
+                filters_applied.append(f"parent_task_id={parent_task_id}")
             
             if status:
                 # Validate status
@@ -177,11 +182,50 @@ class TaskService:
                 if not is_valid:
                     return False, {"error": error_msg}
                 query = query.eq("status", status)
-            
-            if not include_closed:
+                filters_applied.append(f"status={status}")
+                # When filtering by specific status, don't apply include_closed filter
+                # as it would be redundant or potentially conflicting
+            elif not include_closed:
+                # Only exclude done tasks if no specific status filter is applied
                 query = query.neq("status", "done")
+                filters_applied.append("exclude done tasks")
             
+            # Filter out archived tasks using is null or is false
+            query = query.or_("archived.is.null,archived.is.false")
+            filters_applied.append("exclude archived tasks (null or false)")
+            
+            logger.info(f"Listing tasks with filters: {', '.join(filters_applied)}")
+            
+            # Execute query and get raw response
             response = query.order("task_order", desc=False).order("created_at", desc=False).execute()
+            
+            # Debug: Log task status distribution and filter effectiveness
+            if response.data:
+                status_counts = {}
+                archived_counts = {"null": 0, "true": 0, "false": 0}
+                
+                for task in response.data:
+                    task_status = task.get("status", "unknown")
+                    status_counts[task_status] = status_counts.get(task_status, 0) + 1
+                    
+                    # Check archived field
+                    archived_value = task.get("archived")
+                    if archived_value is None:
+                        archived_counts["null"] += 1
+                    elif archived_value is True:
+                        archived_counts["true"] += 1
+                    else:
+                        archived_counts["false"] += 1
+                
+                logger.info(f"Retrieved {len(response.data)} tasks. Status distribution: {status_counts}")
+                logger.info(f"Archived field distribution: {archived_counts}")
+                
+                # If we're filtering by status and getting wrong results, log sample
+                if status and len(response.data) > 0:
+                    first_task = response.data[0]
+                    logger.warning(f"Status filter: {status}, First task status: {first_task.get('status')}, archived: {first_task.get('archived')}")
+            else:
+                logger.info("No tasks found with current filters")
             
             tasks = []
             for task in response.data:
