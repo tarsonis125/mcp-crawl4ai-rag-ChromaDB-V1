@@ -17,10 +17,20 @@ logger = get_logger(__name__)
 
 # Import Socket.IO broadcasting capability
 try:
-    from src.server.fastapi.projects_api import broadcast_task_update
+    from src.server.fastapi.socketio_broadcasts import broadcast_task_update
     _broadcast_available = True
-except ImportError:
-    logger.warning("Socket.IO broadcasting not available - real-time updates disabled")
+    logger.info("✅ Socket.IO broadcasting is AVAILABLE - real-time updates enabled")
+except ImportError as e:
+    logger.warning(f"❌ Socket.IO broadcasting not available - ImportError: {e}")
+    _broadcast_available = False
+    
+    # Dummy function when broadcasting is not available
+    async def broadcast_task_update(*args, **kwargs):
+        pass
+except Exception as e:
+    logger.warning(f"❌ Socket.IO broadcasting not available - Exception: {type(e).__name__}: {e}")
+    import traceback
+    logger.warning(f"❌ Full traceback: {traceback.format_exc()}")
     _broadcast_available = False
     
     # Dummy function when broadcasting is not available

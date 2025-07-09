@@ -8,7 +8,8 @@ Keeps the main projects_api.py file focused on REST endpoints.
 # Removed direct logging import - using unified config
 import asyncio
 from ..socketio_app import get_socketio_instance
-from ..services.projects import ProjectService, TaskService, SourceLinkingService
+from ..services.projects.project_service import ProjectService
+from ..services.projects.source_linking_service import SourceLinkingService
 
 from ..config.logfire_config import get_logger
 
@@ -182,22 +183,8 @@ async def join_project(sid, data):
     logger.info(f"📥 [SOCKETIO] Client {sid} joined project room: {project_id}")
     print(f"✅ Client {sid} joined project {project_id}")
     
-    # Send initial tasks for this project using TaskService
-    try:
-        task_service = TaskService()
-        success, result = task_service.list_tasks(
-            project_id=project_id,
-            include_closed=True  # Send all tasks initially
-        )
-        
-        if success:
-            tasks = result.get("tasks", [])
-            await sio.emit('initial_tasks', tasks, to=sid)
-            print(f"📤 Sent {len(tasks)} initial tasks to client {sid}")
-        else:
-            await sio.emit('error', {'message': result.get("error", "Failed to load tasks")}, to=sid)
-    except Exception as e:
-        await sio.emit('error', {'message': str(e)}, to=sid)
+    # Send confirmation - let frontend request initial tasks via API
+    await sio.emit('joined_project', {'project_id': project_id}, to=sid)
 
 @sio.event
 async def leave_project(sid, data):
