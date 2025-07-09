@@ -76,6 +76,11 @@ src/components/
 - Current URL display
 - Log message stream
 
+**Performance Notes**:
+- Uses Socket.IO room subscription for targeted updates
+- Minimal re-renders - only updates on progress changes
+- Example of proper real-time pattern
+
 ## 🏗️ Layout Components
 
 ### MainLayout.tsx
@@ -115,6 +120,11 @@ src/components/
 - Message history
 - Real-time responses
 - Context awareness
+
+**Performance Considerations**:
+- Uses Socket.IO for streaming AI responses
+- Consider virtualization for long chat histories
+- Implements proper cleanup in useEffect returns
 
 ## 🔌 MCP Components
 
@@ -164,6 +174,11 @@ src/components/
 - Doing
 - Review
 - Done
+
+**Performance Notes**:
+- Uses Socket.IO for real-time task updates from AI agents
+- Implements React DnD for smooth drag operations
+- Optimized with React.memo to prevent unnecessary re-renders
 
 ### TaskTableView.tsx
 **Purpose**: Table view for task management
@@ -234,6 +249,11 @@ src/components/
 - Model Configuration
 - UI Preferences
 - Data Management
+
+**⚠️ Performance Warning**:
+- RAGSettings component has 11 onChange handlers without optimization
+- Needs debounced inputs or local state pattern
+- See performance best practices in UI documentation
 
 ### CredentialManager.tsx
 **Purpose**: Secure credential storage UI
@@ -332,6 +352,30 @@ const KnowledgeTable = () => {
 };
 ```
 
+### Performance Patterns
+
+#### Optimized Input Components
+```jsx
+// Use DebouncedInput for forms/modals
+import { DebouncedInput } from './components/project-tasks/TaskInputComponents';
+
+<DebouncedInput
+  value={formData.title}
+  onChange={handleTitleChange}
+  placeholder="Enter title..."
+  delay={300}
+/>
+```
+
+#### Real-time Update Pattern
+```jsx
+// Efficient real-time updates
+const TaskComponent = memo(({ task }) => {
+  // Component only re-renders when task changes
+  return <TaskCard {...task} />;
+}, (prev, next) => prev.task.id === next.task.id);
+```
+
 ## 📱 Responsive Design
 
 ### Breakpoint Usage
@@ -348,7 +392,13 @@ const KnowledgeTable = () => {
 
 ## 🔗 Related Documentation
 
-- [UI Overview](./ui) - UI architecture and setup
-- [Socket.IO Integration](./socketio) - Real-time features
+- [UI Overview](./ui) - UI architecture, setup, and **performance best practices**
+- [Socket.IO Integration](./socketio) - Real-time features and room patterns
 - [Frontend Testing](./testing-vitest-strategy) - Component testing
 - [API Reference](./api-reference) - Backend integration
+- [Coding Best Practices](./coding-best-practices) - React patterns and anti-patterns
+
+### Performance Resources
+- See **Performance Best Practices** section in [UI Documentation](./ui#performance-best-practices)
+- Example implementation: `TaskInputComponents.tsx` for debounced inputs
+- Components needing optimization listed in [UI docs](./ui#components-requiring-performance-optimization)

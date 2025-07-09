@@ -162,6 +162,97 @@ async def test_subscribe_joins_room(mock_sio):
     mock_sio.enter_room.assert_called_with('sid-123', 'progress-456')
 ```
 
+## React/Frontend Best Practices
+
+### Performance Anti-Patterns to Avoid
+
+#### ❌ DON'T: Update State on Every Keystroke Without Debouncing
+```typescript
+// This causes excessive re-renders
+<input
+  value={formData.title}
+  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+/>
+```
+
+#### ✅ DO: Use Debounced Inputs or Local State
+```typescript
+// Use a debounced input component
+<DebouncedInput
+  value={formData.title}
+  onChange={handleTitleChange}
+  delay={300}
+/>
+```
+
+#### ❌ DON'T: Create New Functions in Render
+```typescript
+// Creates new function every render
+<button onClick={() => handleAction(item.id)}>Click</button>
+```
+
+#### ✅ DO: Use useCallback for Stable References
+```typescript
+const handleClick = useCallback((id) => {
+  handleAction(id);
+}, []);
+
+<button onClick={() => handleClick(item.id)}>Click</button>
+```
+
+### Socket.IO Client-Side Patterns
+
+#### Room Subscription Pattern
+```typescript
+useEffect(() => {
+  const ws = createWebSocketService();
+  
+  const connect = async () => {
+    await ws.connect('/'); // Always default namespace
+    
+    // Join room
+    ws.send({ 
+      type: 'join_project', 
+      data: { project_id: projectId } 
+    });
+    
+    // Handle messages
+    ws.addMessageHandler('task_updated', handleTaskUpdate);
+  };
+  
+  connect();
+  return () => ws.disconnect();
+}, [projectId]);
+```
+
+### State Management Patterns
+
+#### Batch Updates
+```typescript
+// ✅ Good - Single render
+setState(prev => ({
+  ...prev,
+  field1: value1,
+  field2: value2,
+  field3: value3
+}));
+
+// ❌ Bad - Three renders
+setField1(value1);
+setField2(value2);
+setField3(value3);
+```
+
+#### Local State for Transient Values
+```typescript
+// Keep form inputs local until save
+const [localTitle, setLocalTitle] = useState(title);
+
+const handleSave = () => {
+  onSave({ title: localTitle });
+};
+```
+
 ## Key Takeaways
 
 1. **Always await async functions** - Never let coroutines go unawaited
@@ -169,3 +260,6 @@ async def test_subscribe_joins_room(mock_sio):
 3. **Handle async boundaries** - Know when you're in an async context
 4. **Fail gracefully** - Always have fallbacks for external services
 5. **Test async code properly** - Use AsyncMock and proper async test patterns
+6. **Optimize React renders** - Use memo, useCallback, and debouncing
+7. **Batch state updates** - Minimize renders with single setState calls
+8. **Use local state** - Keep transient values local to components

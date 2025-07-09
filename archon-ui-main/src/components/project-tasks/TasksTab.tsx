@@ -1,15 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { X, Table, LayoutGrid, RefreshCw, Plus, Wifi, WifiOff, Check, Trash2, List, ChevronDown, ChevronRight } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Table, LayoutGrid, Plus, Wifi, WifiOff, List } from 'lucide-react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
-import { Button } from '../ui/Button';
-import { ArchonLoadingSpinner } from '../animations/Animations';
 import { Toggle } from '../ui/Toggle';
 import { projectService } from '../../services/projectService';
 import { taskUpdateSocketIO } from '../../services/socketIOService';
 import type { CreateTaskRequest, UpdateTaskRequest, DatabaseTaskStatus } from '../../types/project';
 import { TaskTableView, Task } from './TaskTableView';
 import { TaskBoardView } from './TaskBoardView';
+import { EditTaskModal } from './EditTaskModal';
 
 // Assignee utilities
 const ASSIGNEE_OPTIONS = ['User', 'Archon', 'AI IDE Agent'] as const;
@@ -151,7 +150,20 @@ export const TasksTab = ({
       
       taskUpdateSocketIO.addMessageHandler('task_updated', (message) => {
         const updatedTask = message.data || message;
-          console.log('📝 Real-time task updated:', updatedTask);
+          console.log('📝 Real-time task updated:', updatedTask, {
+            isModalOpen,
+            editingTaskId: editingTask?.id,
+            timestamp: Date.now()
+          });
+          
+          // Log if update happens while modal is open
+          if (isModalOpen) {
+            console.warn('[WebSocket] Task update received while modal is open!', {
+              updatedTaskId: updatedTask.id,
+              isEditingThisTask: editingTask?.id === updatedTask.id
+            });
+          }
+          
           const mappedTask = mapDatabaseTaskToUITask(updatedTask);
           setTasks(prev => {
             // Check if this is actually a change
@@ -314,29 +326,29 @@ export const TasksTab = ({
     setIsSubtasksExpanded(false);
   };
 
-  const saveTask = async () => {
-    if (!editingTask) return;
+  const saveTask = async (task: Task) => {
+    setEditingTask(task);
     
     setIsSavingTask(true);
     try {
-      let parentTaskId = editingTask.id;
+      let parentTaskId = task.id;
       
-      if (editingTask.id) {
+      if (task.id) {
         // Update existing task
         const updateData: UpdateTaskRequest = {
-          title: editingTask.title,
-          description: editingTask.description,
-          status: mapUIStatusToDBStatus(editingTask.status),
-          assignee: editingTask.assignee?.name || 'User',
-          task_order: editingTask.task_order,
-          ...(editingTask.feature && { feature: editingTask.feature }),
-          ...(editingTask.featureColor && { featureColor: editingTask.featureColor })
+          title: task.title,
+          description: task.description,
+          status: mapUIStatusToDBStatus(task.status),
+          assignee: task.assignee?.name || 'User',
+          task_order: task.task_order,
+          ...(task.feature && { feature: task.feature }),
+          ...(task.featureColor && { featureColor: task.featureColor })
         };
         
-        await projectService.updateTask(editingTask.id, updateData);
+        await projectService.updateTask(task.id, updateData);
         
         // Delete all existing subtasks first
-        const existingSubtasks = await projectService.getTaskSubtasks(editingTask.id, false);
+        const existingSubtasks = await projectService.getTaskSubtasks(task.id, false);
         for (const subtask of existingSubtasks) {
           await projectService.deleteTask(subtask.id);
         }
@@ -350,7 +362,7 @@ export const TasksTab = ({
             status: mapUIStatusToDBStatus(subtask.status),
             assignee: subtask.assignee?.name || 'User',
             task_order: subtask.task_order,
-            parent_task_id: editingTask.id,
+            parent_task_id: task.id,
             ...(subtask.feature && { feature: subtask.feature }),
             ...(subtask.featureColor && { featureColor: subtask.featureColor })
           };
@@ -361,13 +373,13 @@ export const TasksTab = ({
         // Create new task first to get UUID
         const createData: CreateTaskRequest = {
           project_id: projectId,
-          title: editingTask.title,
-          description: editingTask.description,
-          status: mapUIStatusToDBStatus(editingTask.status),
-          assignee: editingTask.assignee?.name || 'User',
-          task_order: editingTask.task_order,
-          ...(editingTask.feature && { feature: editingTask.feature }),
-          ...(editingTask.featureColor && { featureColor: editingTask.featureColor })
+          title: task.title,
+          description: task.description,
+          status: mapUIStatusToDBStatus(task.status),
+          assignee: task.assignee?.name || 'User',
+          task_order: task.task_order,
+          ...(task.feature && { feature: task.feature }),
+          ...(task.featureColor && { featureColor: task.featureColor })
         };
         
         const createdTask = await projectService.createTask(createData);
@@ -709,6 +721,13 @@ export const TasksTab = ({
     
     return options;
   };
+
+  // Memoized version of getTasksForPrioritySelection to prevent recalculation on every render
+  const memoizedGetTasksForPrioritySelection = useMemo(
+    () => getTasksForPrioritySelection,
+    [tasks, editingTask?.id]
+  );
+
 
   // Create subtask function
   const createSubtask = async (parentTaskId: string, subtaskData: Omit<Task, 'id'>) => {
@@ -1074,222 +1093,23 @@ const TempSubtaskAddRow = ({ onSubtaskCreate, inheritedFeature }: TempSubtaskAdd
         </div>
 
         {/* Edit Task Modal */}
-        {isModalOpen && (
-          <div className="fixed inset-0 bg-gray-500/50 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="relative p-6 rounded-md backdrop-blur-md w-full max-w-2xl bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30 border border-gray-200 dark:border-zinc-800/50 shadow-[0_10px_30px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_10px_30px_-15px_rgba(0,0,0,0.7)] before:content-[''] before:absolute before:top-0 before:left-0 before:right-0 before:h-[2px] before:rounded-t-[4px] before:bg-gradient-to-r before:from-cyan-500 before:to-fuchsia-500 before:shadow-[0_0_10px_2px_rgba(34,211,238,0.4)] dark:before:shadow-[0_0_20px_5px_rgba(34,211,238,0.7)] after:content-[''] after:absolute after:top-0 after:left-0 after:right-0 after:h-16 after:bg-gradient-to-b after:from-cyan-100 after:to-white dark:after:from-cyan-500/20 dark:after:to-fuchsia-500/5 after:rounded-t-md after:pointer-events-none">
-              <div className="relative z-10">
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-xl font-bold bg-gradient-to-r from-cyan-400 to-fuchsia-500 text-transparent bg-clip-text">
-                    {editingTask?.id ? 'Edit Task' : 'New Task'}
-                  </h3>
-                  <button onClick={closeModal} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors">
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-gray-700 dark:text-gray-300 mb-1">Title</label>
-                    <input 
-                      type="text" 
-                      value={editingTask?.title || ''} 
-                      onChange={e => setEditingTask(editingTask ? { ...editingTask, title: e.target.value } : null)} 
-                      className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white rounded-md py-2 px-3 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all duration-300" 
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-gray-700 dark:text-gray-300 mb-1">Description</label>
-                    <textarea 
-                      value={editingTask?.description || ''} 
-                      onChange={e => setEditingTask(editingTask ? { ...editingTask, description: e.target.value } : null)} 
-                      rows={5} 
-                      className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-white rounded-md py-2 px-3 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all duration-300" 
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-gray-700 dark:text-gray-300 mb-1">Status</label>
-                      <select 
-                        value={editingTask?.status || 'backlog'} 
-                        onChange={e => {
-                          const newStatus = e.target.value as Task['status'];
-                          const newOrder = getTasksForPrioritySelection(newStatus)[0]?.value || 1;
-                          setEditingTask(editingTask ? { ...editingTask, status: newStatus, task_order: newOrder } : null);
-                        }} 
-                        className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-white rounded-md py-2 px-3 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all duration-300"
-                      >
-                        <option value="backlog">Backlog</option>
-                        <option value="in-progress">In Process</option>
-                        <option value="review">Review</option>
-                        <option value="complete">Complete</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-gray-700 dark:text-gray-300 mb-1">Priority</label>
-                      <select 
-                        value={editingTask?.task_order || 1} 
-                        onChange={e => setEditingTask(editingTask ? { ...editingTask, task_order: parseInt(e.target.value) } : null)} 
-                        className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-white rounded-md py-2 px-3 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all duration-300"
-                      >
-                        {getTasksForPrioritySelection(editingTask?.status || 'backlog').map((option, index) => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-gray-700 dark:text-gray-300 mb-1">Assignee</label>
-                      <select 
-                        value={editingTask?.assignee?.name || 'User'} 
-                        onChange={e => setEditingTask(editingTask ? {
-                          ...editingTask,
-                          assignee: { name: e.target.value as 'User' | 'Archon' | 'AI IDE Agent', avatar: '' }
-                        } : null)} 
-                        className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-white rounded-md py-2 px-3 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all duration-300"
-                      >
-                        {ASSIGNEE_OPTIONS.map(option => (
-                          <option key={option} value={option}>{option}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-gray-700 dark:text-gray-300 mb-1">Feature</label>
-                      <div className="relative">
-                        <input 
-                          type="text" 
-                          value={editingTask?.feature || ''} 
-                          onChange={e => setEditingTask(editingTask ? { ...editingTask, feature: e.target.value } : null)} 
-                          placeholder="Type feature name"
-                          className="w-full bg-white/50 dark:bg-black/70 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-white rounded-md py-2 px-3 pr-10 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all duration-300" 
-                          list="features-list"
-                        />
-                        <datalist id="features-list">
-                          {projectFeatures.map((feature) => (
-                            <option key={feature.id} value={feature.label}>
-                              {feature.label} ({feature.type})
-                            </option>
-                          ))}
-                        </datalist>
-                        {isLoadingFeatures && (
-                          <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                            <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Subtasks Section - Accordion for both new and existing tasks */}
-                <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-6">
-                  <button
-                    onClick={() => setIsSubtasksExpanded(!isSubtasksExpanded)}
-                    className="flex items-center justify-between w-full mb-4 text-left hover:bg-gray-50 dark:hover:bg-gray-800 p-2 rounded-lg transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-                        Subtasks
-                      </h4>
-                      {tempSubtasks.length > 0 && (
-                        <span className="px-2 py-1 text-xs bg-blue-200 dark:bg-blue-700 text-blue-600 dark:text-blue-400 rounded-full">
-                          {tempSubtasks.length}
-                        </span>
-                      )}
-                      {isLoadingSubtasks && (
-                        <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" />
-                      )}
-                    </div>
-                    {isSubtasksExpanded ? (
-                      <ChevronDown className="w-5 h-5 text-gray-500 dark:text-gray-400" />
-                    ) : (
-                      <ChevronRight className="w-5 h-5 text-gray-500 dark:text-gray-400" />
-                    )}
-                  </button>
-                  
-                  {isSubtasksExpanded && (
-                    <div className="space-y-2 max-h-60 overflow-y-auto">
-                      {/* Temporary Subtasks (for both new and existing tasks) */}
-                      {tempSubtasks.map((subtask, index) => (
-                        <div key={index} className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border-l-4 border-blue-500">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                                {subtask.title}
-                              </span>
-                              <span className={`px-2 py-1 text-xs rounded-full ${
-                                subtask.status === 'complete' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                                subtask.status === 'in-progress' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
-                                subtask.status === 'review' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                                'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-                              }`}>
-                                {subtask.status}
-                              </span>
-                              <span className="text-xs text-gray-500 dark:text-gray-400">
-                                {subtask.assignee?.name || 'User'}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => updateTempSubtask(index, { 
-                                status: subtask.status === 'complete' ? 'backlog' : 'complete' 
-                              })}
-                              className={`p-1 rounded-full transition-colors ${
-                                subtask.status === 'complete' 
-                                  ? 'bg-gray-200 text-gray-500 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-400' 
-                                  : 'bg-green-100 text-green-600 hover:bg-green-200 dark:bg-green-900 dark:text-green-400'
-                              }`}
-                            >
-                              <Check className="w-3 h-3" />
-                            </button>
-                            <button
-                              onClick={() => deleteTempSubtask(index)}
-                              className="p-1 rounded-full bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900 dark:text-red-400 transition-colors"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                      
-                      {/* Add New Subtask Row */}
-                      <TempSubtaskAddRow 
-                        onSubtaskCreate={addTempSubtask}
-                        inheritedFeature={editingTask?.feature}
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex justify-end gap-3 mt-6">
-                  <Button onClick={closeModal} variant="ghost" disabled={isSavingTask}>Cancel</Button>
-                  <Button 
-                    onClick={saveTask} 
-                    variant="primary" 
-                    accentColor="cyan" 
-                    className="shadow-lg shadow-cyan-500/20"
-                    disabled={isSavingTask}
-                  >
-                    {isSavingTask ? (
-                      <span className="flex items-center">
-                        <ArchonLoadingSpinner size="sm" className="mr-2" />
-                        {editingTask?.id ? 'Saving...' : 'Creating...'}
-                      </span>
-                    ) : (
-                      editingTask?.id ? 'Save Changes' : 'Create Task'
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        <EditTaskModal
+          isModalOpen={isModalOpen}
+          editingTask={editingTask}
+          projectFeatures={projectFeatures}
+          isLoadingFeatures={isLoadingFeatures}
+          isLoadingSubtasks={isLoadingSubtasks}
+          isSavingTask={isSavingTask}
+          tempSubtasks={tempSubtasks}
+          isSubtasksExpanded={isSubtasksExpanded}
+          onClose={closeModal}
+          onSave={saveTask}
+          onTempSubtaskAdd={addTempSubtask}
+          onTempSubtaskUpdate={updateTempSubtask}
+          onTempSubtaskDelete={deleteTempSubtask}
+          onSubtasksExpandedChange={setIsSubtasksExpanded}
+          getTasksForPrioritySelection={memoizedGetTasksForPrioritySelection}
+        />
       </div>
     </DndProvider>
   );
