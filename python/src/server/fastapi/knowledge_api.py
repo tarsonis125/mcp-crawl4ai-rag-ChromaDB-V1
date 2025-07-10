@@ -45,7 +45,10 @@ router = APIRouter(prefix="/api", tags=["knowledge"])
 # Get Socket.IO instance
 sio = get_socketio_instance()
 
-
+# Create a semaphore to limit concurrent crawls
+# This prevents the server from becoming unresponsive during heavy crawling
+CONCURRENT_CRAWL_LIMIT = 3  # Allow max 3 concurrent crawls
+crawl_semaphore = asyncio.Semaphore(CONCURRENT_CRAWL_LIMIT)
 
 # Request Models
 class KnowledgeItemRequest(BaseModel):
@@ -182,6 +185,90 @@ async def delete_knowledge_item(source_id: str):
         safe_logfire_error(f"Failed to delete knowledge item | error={str(e)} | source_id={source_id}")
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
+@router.post("/knowledge-items/{source_id}/refresh")
+async def refresh_knowledge_item(source_id: str):
+    """Refresh a knowledge item by re-crawling its URL with the same metadata."""
+    try:
+        safe_logfire_info(f"Starting knowledge item refresh | source_id={source_id}")
+        
+        # Get the existing knowledge item
+        service = KnowledgeItemService(get_supabase_client())
+        existing_item = await service.get_item(source_id)
+        
+        if not existing_item:
+            raise HTTPException(status_code=404, detail={'error': f'Knowledge item {source_id} not found'})
+        
+        # Extract the URL from the existing item
+        url = existing_item.get('url')
+        if not url:
+            raise HTTPException(status_code=400, detail={'error': 'Knowledge item does not have a URL to refresh'})
+        
+        # Extract metadata
+        metadata = existing_item.get('metadata', {})
+        knowledge_type = metadata.get('knowledge_type', 'technical')
+        tags = metadata.get('tags', [])
+        max_depth = metadata.get('max_depth', 2)
+        
+        # Generate unique progress ID
+        progress_id = str(uuid.uuid4())
+        
+        # Start progress tracking with initial state
+        await start_crawl_progress(progress_id, {
+            'progressId': progress_id,
+            'currentUrl': url,
+            'totalPages': 0,
+            'processedPages': 0,
+            'percentage': 0,
+            'status': 'starting',
+            'message': 'Refreshing knowledge item...',
+            'logs': [f'Starting refresh for {url}']
+        })
+        
+        # Get crawler from CrawlerManager - same pattern as _perform_crawl_with_progress
+        try:
+            crawler = await get_crawler()
+            if crawler is None:
+                raise Exception("Crawler not available - initialization may have failed")
+        except Exception as e:
+            safe_logfire_error(f"Failed to get crawler | error={str(e)}")
+            raise HTTPException(status_code=500, detail={'error': f'Failed to initialize crawler: {str(e)}'})
+        
+        # Use the same crawl orchestration as regular crawl
+        crawl_service = CrawlOrchestrationService(
+            crawler=crawler,
+            supabase_client=get_supabase_client()
+        )
+        crawl_service.set_progress_id(progress_id)
+        
+        # Start the crawl task with proper request format
+        request_dict = {
+            'url': url,
+            'knowledge_type': knowledge_type,
+            'tags': tags,
+            'max_depth': max_depth,
+            'extract_code_examples': True,
+            'generate_summary': True
+        }
+        
+        # Create a wrapped task that acquires the semaphore
+        async def _perform_refresh_with_semaphore():
+            async with crawl_semaphore:
+                safe_logfire_info(f"Acquired crawl semaphore for refresh | source_id={source_id}")
+                await crawl_service.orchestrate_crawl(request_dict)
+        
+        asyncio.create_task(_perform_refresh_with_semaphore())
+        
+        return {
+            'progressId': progress_id,
+            'message': f'Started refresh for {url}'
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        safe_logfire_error(f"Failed to refresh knowledge item | error={str(e)} | source_id={source_id}")
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
 @router.post("/knowledge-items/crawl")
 async def crawl_knowledge_item(request: KnowledgeItemRequest):
     """Crawl a URL and add it to the knowledge base with progress tracking."""
@@ -216,67 +303,70 @@ async def crawl_knowledge_item(request: KnowledgeItemRequest):
 
 async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemRequest):
     """Perform the actual crawl operation with progress tracking using service layer."""
-    try:
-        safe_logfire_info(f"Starting crawl with progress tracking | progress_id={progress_id} | url={str(request.url)}")
-        
-        # Get crawler from CrawlerManager
+    # Acquire semaphore to limit concurrent crawls
+    async with crawl_semaphore:
+        safe_logfire_info(f"Acquired crawl semaphore | progress_id={progress_id} | url={str(request.url)}")
         try:
-            crawler = await get_crawler()
-            if crawler is None:
-                raise Exception("Crawler not available - initialization may have failed")
-        except Exception as e:
-            safe_logfire_error(f"Failed to get crawler | error={str(e)}")
-            await error_crawl_progress(progress_id, f"Failed to initialize crawler: {str(e)}")
-            return
+            safe_logfire_info(f"Starting crawl with progress tracking | progress_id={progress_id} | url={str(request.url)}")
             
-        supabase_client = get_supabase_client()
-        orchestration_service = CrawlOrchestrationService(crawler, supabase_client)
-        orchestration_service.set_progress_id(progress_id)
+            # Get crawler from CrawlerManager
+            try:
+                crawler = await get_crawler()
+                if crawler is None:
+                    raise Exception("Crawler not available - initialization may have failed")
+            except Exception as e:
+                safe_logfire_error(f"Failed to get crawler | error={str(e)}")
+                await error_crawl_progress(progress_id, f"Failed to initialize crawler: {str(e)}")
+                return
+                
+            supabase_client = get_supabase_client()
+            orchestration_service = CrawlOrchestrationService(crawler, supabase_client)
+            orchestration_service.set_progress_id(progress_id)
+            
+            # Convert request to dict for service
+            request_dict = {
+                'url': str(request.url),
+                'knowledge_type': request.knowledge_type,
+                'tags': request.tags or [],
+                'max_depth': request.max_depth,
+                'extract_code_examples': request.extract_code_examples,
+                'generate_summary': True
+            }
+            
+            # Orchestrate the crawl
+            result = await orchestration_service.orchestrate_crawl(request_dict)
+            
+            # Finalization step (95-100%)
+            await update_crawl_progress(progress_id, {
+                'status': 'finalization',
+                'percentage': 98,
+                'log': 'Finalizing crawl results...'
+            })
+            
+            # Complete the crawl with final data
+            await complete_crawl_progress(progress_id, {
+                'chunksStored': result['chunks_stored'],
+                'wordCount': result['word_count'],
+                'codeExamplesStored': result['code_examples_stored'],
+                'log': 'All processing completed successfully',
+                'processedPages': result['processed_pages'],
+                'totalPages': result['total_pages']
+            })
         
-        # Convert request to dict for service
-        request_dict = {
-            'url': str(request.url),
-            'knowledge_type': request.knowledge_type,
-            'tags': request.tags or [],
-            'max_depth': request.max_depth,
-            'extract_code_examples': request.extract_code_examples,
-            'generate_summary': True
-        }
-        
-        # Orchestrate the crawl
-        result = await orchestration_service.orchestrate_crawl(request_dict)
-        
-        # Finalization step (95-100%)
-        await update_crawl_progress(progress_id, {
-            'status': 'finalization',
-            'percentage': 98,
-            'log': 'Finalizing crawl results...'
-        })
-        
-        # Complete the crawl with final data
-        await complete_crawl_progress(progress_id, {
-            'chunksStored': result['chunks_stored'],
-            'wordCount': result['word_count'],
-            'codeExamplesStored': result['code_examples_stored'],
-            'log': 'All processing completed successfully',
-            'processedPages': result['processed_pages'],
-            'totalPages': result['total_pages']
-        })
-        
-        safe_logfire_info(f"Crawl completed successfully | progress_id={progress_id} | chunks_stored={result['chunks_stored']} | code_examples_stored={result['code_examples_stored']}")
-    except Exception as e:
-        error_message = f'Crawling failed: {str(e)}'
-        safe_logfire_error(f"Crawl failed | progress_id={progress_id} | error={error_message} | exception_type={type(e).__name__}")
-        import traceback
-        tb = traceback.format_exc()
-        # Ensure the error is visible in Docker logs
-        print(f"=== CRAWL ERROR FOR {progress_id} ===")
-        print(f"Error: {error_message}")
-        print(f"Exception Type: {type(e).__name__}")
-        print(f"Traceback:\n{tb}")
-        print("=== END CRAWL ERROR ===")
-        safe_logfire_error(f"Crawl exception traceback | traceback={tb}")
-        await error_crawl_progress(progress_id, error_message)
+            safe_logfire_info(f"Crawl completed successfully | progress_id={progress_id} | chunks_stored={result['chunks_stored']} | code_examples_stored={result['code_examples_stored']}")
+        except Exception as e:
+            error_message = f'Crawling failed: {str(e)}'
+            safe_logfire_error(f"Crawl failed | progress_id={progress_id} | error={error_message} | exception_type={type(e).__name__}")
+            import traceback
+            tb = traceback.format_exc()
+            # Ensure the error is visible in Docker logs
+            print(f"=== CRAWL ERROR FOR {progress_id} ===")
+            print(f"Error: {error_message}")
+            print(f"Exception Type: {type(e).__name__}")
+            print(f"Traceback:\n{tb}")
+            print("=== END CRAWL ERROR ===")
+            safe_logfire_error(f"Crawl exception traceback | traceback={tb}")
+            await error_crawl_progress(progress_id, error_message)
 
 @router.post("/documents/upload")
 async def upload_document(

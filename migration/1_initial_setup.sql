@@ -83,7 +83,6 @@ create table sources (
     total_word_count integer default 0,
     title TEXT,
     metadata JSONB DEFAULT '{}',
-    update_frequency integer default 7, -- Frequency in days (1=daily, 7=weekly, 30=monthly, 0=never)
     created_at timestamp with time zone default timezone('utc'::text, now()) not null,
     updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
@@ -91,15 +90,12 @@ create table sources (
 -- Create indexes for better query performance on the new columns
 CREATE INDEX IF NOT EXISTS idx_sources_title ON sources(title);
 CREATE INDEX IF NOT EXISTS idx_sources_metadata ON sources USING GIN(metadata);
-CREATE INDEX IF NOT EXISTS idx_sources_update_frequency ON sources(update_frequency);
-
 -- Create index for knowledge_type specifically since it will be commonly queried
 CREATE INDEX IF NOT EXISTS idx_sources_knowledge_type ON sources((metadata->>'knowledge_type'));
 
 -- Add comments to document the new columns
 COMMENT ON COLUMN sources.title IS 'Descriptive title for the source (e.g., "Pydantic AI API Reference")';
 COMMENT ON COLUMN sources.metadata IS 'JSONB field storing knowledge_type, tags, and other metadata';
-COMMENT ON COLUMN sources.update_frequency IS 'Update frequency in days: 1=daily, 7=weekly, 30=monthly, 0=never';
 
 -- Create the documentation chunks table
 create table crawled_pages (

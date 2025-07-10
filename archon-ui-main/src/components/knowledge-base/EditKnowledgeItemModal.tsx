@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { X, Save, RefreshCw } from 'lucide-react';
 import { Input } from '../ui/Input';
-import { Select } from '../ui/Select';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { KnowledgeItem } from '../../services/knowledgeBaseService';
@@ -25,7 +24,6 @@ export const EditKnowledgeItemModal: React.FC<EditKnowledgeItemModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     title: item.title,
-    update_frequency: item.metadata.update_frequency || 0,
   });
 
   // Handle escape key to close modal
@@ -49,10 +47,7 @@ export const EditKnowledgeItemModal: React.FC<EditKnowledgeItemModalProps> = ({
     
     try {
       // Update the knowledge item
-      // Include title if it has changed
-      const updates: any = {
-        update_frequency: formData.update_frequency,
-      };
+      const updates: any = {};
       
       // Only include title if it has changed
       if (formData.title !== item.title) {
@@ -72,12 +67,6 @@ export const EditKnowledgeItemModal: React.FC<EditKnowledgeItemModalProps> = ({
     }
   };
 
-  const frequencyOptions = [
-    { value: '0', label: 'Never' },
-    { value: '1', label: 'Daily' },
-    { value: '7', label: 'Weekly' },
-    { value: '30', label: 'Monthly' },
-  ];
 
   // Using React Portal to render the modal at the root level
   return createPortal(
@@ -119,15 +108,6 @@ export const EditKnowledgeItemModal: React.FC<EditKnowledgeItemModalProps> = ({
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
               placeholder="Enter title"
-              accentColor="pink"
-              disabled={isLoading}
-            />
-
-            <Select
-              label="Update Frequency"
-              value={formData.update_frequency.toString()}
-              onChange={(e) => setFormData({ ...formData, update_frequency: parseInt(e.target.value) })}
-              options={frequencyOptions}
               accentColor="pink"
               disabled={isLoading}
             />

@@ -81,6 +81,37 @@ class KnowledgeItemService:
             safe_logfire_error(f"Failed to list knowledge items | error={str(e)}")
             raise
     
+    async def get_item(self, source_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a single knowledge item by source ID.
+        
+        Args:
+            source_id: The source ID to retrieve
+            
+        Returns:
+            Knowledge item dict or None if not found
+        """
+        try:
+            safe_logfire_info(f"Getting knowledge item | source_id={source_id}")
+            
+            # Get the source record
+            result = self.supabase.from_('sources')\
+                .select('*')\
+                .eq('source_id', source_id)\
+                .single()\
+                .execute()
+            
+            if not result.data:
+                return None
+            
+            # Transform the source to item format
+            item = await self._transform_source_to_item(result.data)
+            return item
+            
+        except Exception as e:
+            safe_logfire_error(f"Failed to get knowledge item | error={str(e)} | source_id={source_id}")
+            return None
+    
     async def update_item(self, source_id: str, updates: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
         """
         Update a knowledge item's metadata.

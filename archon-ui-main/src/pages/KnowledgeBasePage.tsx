@@ -77,7 +77,7 @@ const groupItemsByDomain = (items: KnowledgeItem[]): GroupedKnowledgeItem[] => {
     
     return {
       id: isFileGroup ? firstItem.id : `group_${domain}`,
-      title: isFileGroup ? firstItem.title : `${domain} (${groupItems.length} sources)`,
+      title: isFileGroup ? firstItem.title : (groupItems.length === 1 ? domain : `${domain} (${groupItems.length} sources)`),
       domain: isFileGroup ? 'file' : domain,
       items: groupItems,
       metadata: {
@@ -104,11 +104,14 @@ export const KnowledgeBasePage = () => {
   const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>([]);
   const [progressItems, setProgressItems] = useState<CrawlProgressData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [displayedItems, setDisplayedItems] = useState<KnowledgeItem[]>([]);
+  const [isStaggerLoading, setIsStaggerLoading] = useState(false);
   const [, setTotalItems] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [loadingStrategy, setLoadingStrategy] = useState<'websocket' | 'rest' | 'complete'>('rest');
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
   const loadTimeoutRef = useRef<NodeJS.Timeout>();
+  const isInitialLoadRef = useRef(true);
   
   const { showToast } = useToast();
 
@@ -119,6 +122,7 @@ export const KnowledgeBasePage = () => {
     
     try {
       setLoading(true);
+      // Don't clear displayedItems to avoid empty screen
       const response = await knowledgeBaseService.getKnowledgeItems({
         knowledge_type: typeFilter === 'all' ? undefined : typeFilter,
         search: searchQuery || undefined,
@@ -134,13 +138,30 @@ export const KnowledgeBasePage = () => {
       setKnowledgeItems(response.items);
       setTotalItems(response.total);
       setLoadingStrategy('complete');
+      setLoading(false); // Set loading false immediately after API success
+      
+      // Clear and start staggered loading animation
+      setDisplayedItems([]); // Clear now, after loading is false
+      setIsStaggerLoading(true);
+      response.items.forEach((item, index) => {
+        setTimeout(() => {
+          setDisplayedItems(prev => [...prev, item]);
+          if (index === response.items.length - 1) {
+            setIsStaggerLoading(false);
+          }
+        }, index * 100); // 100ms delay between each item
+      });
+      
+      // If no items, set stagger loading false immediately
+      if (response.items.length === 0) {
+        setIsStaggerLoading(false);
+      }
     } catch (error) {
       const loadTime = Date.now() - startTime;
       console.error(`📊 API request failed after ${loadTime}ms:`, error);
       showToast('Failed to load knowledge items', 'error');
       setKnowledgeItems([]);
       setLoadingStrategy('complete');
-    } finally {
       setLoading(false);
     }
   };
@@ -161,37 +182,44 @@ export const KnowledgeBasePage = () => {
 
   // Handle filter changes
   useEffect(() => {
-    if (loadingStrategy === 'complete') {
-      // Filter changed, reloading knowledge items
-      setCurrentPage(1);
-      loadKnowledgeItems({ page: 1 });
-      setForceReanimate(prev => prev + 1);
+    // Skip on initial load
+    if (isInitialLoadRef.current) {
+      isInitialLoadRef.current = false;
+      return;
     }
-  }, [typeFilter, loadingStrategy]);
+    
+    // Filter changed, reloading knowledge items
+    setCurrentPage(1);
+    loadKnowledgeItems({ page: 1 });
+    setForceReanimate(prev => prev + 1);
+  }, [typeFilter]);
 
   // Handle search with debounce
   useEffect(() => {
-    if (loadingStrategy === 'complete') {
+    // Skip on initial load
+    if (isInitialLoadRef.current) {
+      return;
+    }
+    
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
+    searchTimeoutRef.current = setTimeout(() => {
+      console.log('🔎 Search query changed, reloading knowledge items');
+      setCurrentPage(1);
+      loadKnowledgeItems({ page: 1 });
+    }, 500);
+    
+    return () => {
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current);
       }
-      
-      searchTimeoutRef.current = setTimeout(() => {
-        console.log('🔎 Search query changed, reloading knowledge items');
-        setCurrentPage(1);
-        loadKnowledgeItems({ page: 1 });
-      }, 500);
-      
-      return () => {
-        if (searchTimeoutRef.current) {
-          clearTimeout(searchTimeoutRef.current);
-        }
-      };
-    }
-  }, [searchQuery, loadingStrategy]);
+    };
+  }, [searchQuery]);
 
-  // Filter items based on selected type and search query
-  const filteredItems = knowledgeItems.filter(item => {
+  // Filter displayed items based on selected type and search query
+  const filteredItems = displayedItems.filter(item => {
     // Type filter
     const typeMatch = typeFilter === 'all' ? true : item.metadata.knowledge_type === typeFilter;
     
@@ -205,7 +233,7 @@ export const KnowledgeBasePage = () => {
     return typeMatch && searchMatch;
   });
 
-  // Group items by domain for grid view
+  // Group displayed items by domain for grid view
   const groupedItems = viewMode === 'grid' ? groupItemsByDomain(filteredItems) : [];
 
   // Use our custom staggered entrance hook for the page header
@@ -223,6 +251,62 @@ export const KnowledgeBasePage = () => {
 
   const handleAddKnowledge = () => {
     setIsAddModalOpen(true);
+  };
+
+  const handleRefreshItem = async (sourceId: string) => {
+    try {
+      console.log('🔄 Refreshing knowledge item:', sourceId);
+      
+      // Get the item being refreshed to show its URL in progress
+      const item = knowledgeItems.find(k => k.source_id === sourceId);
+      if (!item) return;
+      
+      // Call the refresh API
+      const response = await knowledgeBaseService.refreshKnowledgeItem(sourceId);
+      console.log('🔄 Refresh response:', response);
+      
+      if (response.progressId) {
+        // Add progress tracking
+        const progressData: CrawlProgressData = {
+          progressId: response.progressId,
+          currentUrl: item.url,
+          totalPages: 0,
+          processedPages: 0,
+          percentage: 0,
+          status: 'starting',
+          message: 'Starting refresh...',
+          logs: ['Starting refresh for ' + item.url],
+          crawlType: 'refresh',
+          currentStep: 'starting',
+          startTime: new Date()
+        };
+        
+        setProgressItems(prev => [...prev, progressData]);
+        
+        // Remove the item temporarily while it's being refreshed
+        setKnowledgeItems(prev => prev.filter(k => k.source_id !== sourceId));
+        setDisplayedItems(prev => prev.filter(k => k.source_id !== sourceId));
+        
+        // Connect to crawl progress WebSocket
+        crawlProgressService.connect(response.progressId, {
+          onProgress: (data: CrawlProgressData) => {
+            console.log('🔄 Refresh progress update:', data);
+            handleProgressUpdate(data);
+          },
+          onComplete: (data: CrawlProgressData) => {
+            console.log('✅ Refresh completed:', data);
+            handleProgressComplete(data);
+          },
+          onError: (error: string) => {
+            console.error('❌ Refresh error:', error);
+            handleProgressError(error, response.progressId);
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Failed to refresh knowledge item:', error);
+      showToast('Failed to refresh knowledge item', 'error');
+    }
   };
 
   const handleDeleteItem = async (sourceId: string) => {
@@ -244,19 +328,28 @@ export const KnowledgeBasePage = () => {
         
         if (group) {
           // Delete all items in the group
+          const deletedIds: string[] = [];
           for (const item of group.items) {
             await knowledgeBaseService.deleteKnowledgeItem(item.source_id);
+            deletedIds.push(item.source_id);
           }
+          
+          // Remove deleted items from state
+          setKnowledgeItems(prev => prev.filter(item => !deletedIds.includes(item.source_id)));
+          setDisplayedItems(prev => prev.filter(item => !deletedIds.includes(item.source_id)));
+          
           showToast(`Deleted ${group.items.length} sources from ${domain}`, 'success');
         }
       } else {
         // Single item delete
         const result = await knowledgeBaseService.deleteKnowledgeItem(sourceId);
+        
+        // Remove the deleted item from state
+        setKnowledgeItems(prev => prev.filter(item => item.source_id !== sourceId));
+        setDisplayedItems(prev => prev.filter(item => item.source_id !== sourceId));
+        
         showToast((result as any).message || 'Item deleted', 'success');
       }
-      
-      // Reload items without triggering WebSocket race condition
-      await loadKnowledgeItems();
     } catch (error) {
       console.error('Failed to delete item:', error);
       showToast('Failed to delete item', 'error');
@@ -438,8 +531,16 @@ export const KnowledgeBasePage = () => {
       </motion.div>
       {/* Main Content */}
       <div className="relative">
-        {loading ? (
-          viewMode === 'table' ? <KnowledgeTableSkeleton /> : <KnowledgeGridSkeleton />
+        {loading && !isStaggerLoading ? (
+          <motion.div 
+            initial="hidden" 
+            animate="visible" 
+            className={`grid ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' : 'grid-cols-1 gap-3'}`}
+          >
+            <motion.div variants={contentItemVariants}>
+              <div className="h-64 bg-gray-100 dark:bg-zinc-800 rounded-lg animate-pulse" />
+            </motion.div>
+          </motion.div>
         ) : viewMode === 'table' ? (
           <KnowledgeTable 
             items={filteredItems} 
@@ -472,7 +573,8 @@ export const KnowledgeBasePage = () => {
                       <GroupedKnowledgeItemCard 
                         groupedItem={groupedItem} 
                         onDelete={handleDeleteItem}
-                        onUpdate={loadKnowledgeItems} 
+                        onUpdate={loadKnowledgeItems}
+                        onRefresh={handleRefreshItem}
                       />
                     </motion.div>
                   )) : (progressItems.length === 0 && (
@@ -484,13 +586,25 @@ export const KnowledgeBasePage = () => {
                   // List view - use individual items
                   filteredItems.length > 0 ? filteredItems.map(item => (
                     <motion.div key={item.id} variants={contentItemVariants}>
-                      <KnowledgeItemCard item={item} onDelete={handleDeleteItem} onUpdate={loadKnowledgeItems} />
+                      <KnowledgeItemCard 
+                      item={item} 
+                      onDelete={handleDeleteItem} 
+                      onUpdate={loadKnowledgeItems} 
+                      onRefresh={handleRefreshItem}
+                    />
                     </motion.div>
                   )) : (progressItems.length === 0 && (
                     <motion.div variants={contentItemVariants} className="col-span-full py-10 text-center text-gray-500 dark:text-zinc-400">
                       No knowledge items found for the selected filter.
                     </motion.div>
                   ))
+                )}
+                
+                {/* Show skeleton while loading more items */}
+                {isStaggerLoading && filteredItems.length < knowledgeItems.length && (
+                  <motion.div variants={contentItemVariants}>
+                    <div className="h-64 bg-gray-100 dark:bg-zinc-800 rounded-lg animate-pulse" />
+                  </motion.div>
                 )}
               </motion.div>
             </AnimatePresence>
@@ -526,7 +640,6 @@ const AddKnowledgeModal = ({
 }: AddKnowledgeModalProps) => {
   const [method, setMethod] = useState<'url' | 'file'>('url');
   const [url, setUrl] = useState('');
-  const [updateFrequency, setUpdateFrequency] = useState('7');
   const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
   const [knowledgeType, setKnowledgeType] = useState<'technical' | 'business'>('technical');
@@ -627,7 +740,6 @@ const AddKnowledgeModal = ({
           url: formattedUrl,
           knowledge_type: knowledgeType,
           tags,
-          update_frequency: parseInt(updateFrequency),
           max_depth: crawlDepth
         });
         
@@ -825,22 +937,6 @@ const AddKnowledgeModal = ({
           </div>
         )}
         
-        {/* Update Frequency */}
-        {method === 'url' && <div className="mb-6">
-            <Select label="Update Frequency" value={updateFrequency} onChange={e => setUpdateFrequency(e.target.value)} options={[{
-          value: '1',
-          label: 'Daily'
-        }, {
-          value: '7',
-          label: 'Weekly'
-        }, {
-          value: '30',
-          label: 'Monthly'
-        }, {
-          value: '0',
-          label: 'Never'
-        }]} accentColor="blue" />
-          </div>}
         {/* Tags */}
         <div className="mb-6">
           <label className="block text-gray-600 dark:text-zinc-400 text-sm mb-2">

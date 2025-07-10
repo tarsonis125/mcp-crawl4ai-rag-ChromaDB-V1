@@ -295,8 +295,10 @@ class CrawlProgressService {
     console.log('🔄 Reconnecting to Socket.IO server...');
     this.isConnected = false;
     
-    // Disconnect existing connection
-    this.wsService.disconnect();
+    // CRITICAL: Never disconnect the shared Socket.IO connection!
+    // This was causing the entire app to lose connection during crawls
+    // Just clear our handlers and resubscribe
+    console.warn('⚠️ Reconnect called - clearing handlers only, NOT disconnecting shared socket');
     
     // Resubscribe all active subscriptions
     const activeProgressIds = Array.from(this.activeSubscriptions.keys());
@@ -373,11 +375,21 @@ class CrawlProgressService {
    */
   disconnect(): void {
     console.log('🔌 Disconnecting crawl progress service');
+    console.log(`📊 Active subscriptions before cleanup: ${this.activeSubscriptions.size}`);
+    console.log(`📊 Active handlers before cleanup: ${this.messageHandlers.size}`);
+    
+    // Log the call stack to see what's triggering disconnects
+    console.warn('⚠️ disconnect() called from:', new Error().stack);
+    
     this.stopAllStreams();
     this.isConnected = false;
-    // Note: We don't disconnect the shared Socket.IO connection
-    // as it may be used by other services
+    
+    // CRITICAL: We NEVER disconnect the shared Socket.IO connection
+    // as it's used by other services (projects, tasks, etc.)
+    console.log('✅ Cleared handlers without disconnecting shared Socket.IO instance');
+    
     this.activeSubscriptions.clear();
+    console.log('✅ Crawl progress service cleanup complete - Socket.IO connection preserved');
   }
 }
 

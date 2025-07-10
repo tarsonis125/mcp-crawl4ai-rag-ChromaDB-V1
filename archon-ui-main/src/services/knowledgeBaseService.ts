@@ -175,6 +175,17 @@ class KnowledgeBaseService {
   }
 
   /**
+   * Refresh a knowledge item by re-crawling its URL
+   */
+  async refreshKnowledgeItem(sourceId: string) {
+    console.log('🔄 [KnowledgeBase] Refreshing knowledge item:', sourceId);
+    
+    return apiRequest(`/knowledge-items/${sourceId}/refresh`, {
+      method: 'POST'
+    })
+  }
+
+  /**
    * Upload a document to the knowledge base with progress tracking
    */
   async uploadDocument(file: File, metadata: UploadMetadata = {}) {

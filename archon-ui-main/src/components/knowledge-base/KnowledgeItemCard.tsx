@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link as LinkIcon, Upload, Trash2, RefreshCw, X, Code, FileText, Brain, BoxIcon, Pencil } from 'lucide-react';
+import { Link as LinkIcon, Upload, Trash2, RefreshCw, Code, FileText, Brain, BoxIcon, Pencil } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
 import { KnowledgeItem } from '../../services/knowledgeBaseService';
@@ -127,12 +127,14 @@ interface KnowledgeItemCardProps {
   item: KnowledgeItem;
   onDelete: (sourceId: string) => void;
   onUpdate?: () => void;
+  onRefresh?: (sourceId: string) => void;
 }
 
 export const KnowledgeItemCard = ({
   item,
   onDelete,
-  onUpdate
+  onUpdate,
+  onRefresh
 }: KnowledgeItemCardProps) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showCodeModal, setShowCodeModal] = useState(false);
@@ -168,23 +170,11 @@ export const KnowledgeItemCard = ({
     }, 500);
   };
 
-  // Get frequency display
-  const getFrequencyDisplay = () => {
-    const frequency = item.metadata.update_frequency;
-    if (!frequency || frequency === 0) {
-      return { icon: <X className="w-3 h-3" />, text: 'Never', color: 'text-gray-500 dark:text-zinc-500' };
-    } else if (frequency === 1) {
-      return { icon: <RefreshCw className="w-3 h-3" />, text: 'Daily', color: 'text-green-500' };
-    } else if (frequency === 7) {
-      return { icon: <RefreshCw className="w-3 h-3" />, text: 'Weekly', color: 'text-blue-500' };
-    } else if (frequency === 30) {
-      return { icon: <RefreshCw className="w-3 h-3" />, text: 'Monthly', color: 'text-purple-500' };
-    } else {
-      return { icon: <RefreshCw className="w-3 h-3" />, text: `Every ${frequency} days`, color: 'text-gray-500 dark:text-zinc-500' };
+  const handleRefresh = () => {
+    if (onRefresh) {
+      onRefresh(item.source_id);
     }
   };
-
-  const frequencyDisplay = getFrequencyDisplay();
 
   // Get code examples count
   const codeExamplesCount = item.code_examples?.length || 0;
@@ -285,16 +275,18 @@ export const KnowledgeItemCard = ({
           
           {/* Footer section - anchored to bottom */}
           <div className="flex items-end justify-between mt-auto card-3d-layer-1">
-            {/* Left side - frequency and updated stacked */}
+            {/* Left side - refresh button and updated stacked */}
             <div className="flex flex-col">
-              <div
-                className={`flex items-center gap-1 ${frequencyDisplay.color} mb-1`}
-              >
-                {frequencyDisplay.icon}
-                <span className="text-sm font-medium">
-                  {frequencyDisplay.text}
-                </span>
-              </div>
+              {item.metadata.source_type === 'url' && (
+                <button
+                  onClick={handleRefresh}
+                  className="flex items-center gap-1 mb-1 px-2 py-1 text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
+                  title="Refresh this knowledge item"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span className="text-sm font-medium">Manual Refresh</span>
+                </button>
+              )}
               <span className="text-xs text-gray-500 dark:text-zinc-500">
                 Updated: {new Date(item.updated_at).toLocaleDateString()}
               </span>

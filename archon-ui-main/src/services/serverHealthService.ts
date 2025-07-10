@@ -14,8 +14,8 @@ class ServerHealthService {
   // Settings
   private disconnectScreenEnabled: boolean = true;
   private disconnectScreenDelay: number = 10000; // 10 seconds
-  private maxMissedChecks: number = 3; // Show disconnect after 3 missed checks
-  private checkInterval: number = 3000; // Check every 3 seconds
+  private maxMissedChecks: number = 5; // Show disconnect after 5 missed checks (more tolerance for heavy operations)
+  private checkInterval: number = 5000; // Check every 5 seconds (reduced frequency for heavy operations)
 
   async loadSettings() {
     try {
@@ -33,7 +33,7 @@ class ServerHealthService {
       // Use the proxied /api/health endpoint which works in both dev and Docker
       const response = await fetch('/api/health', {
         method: 'GET',
-        signal: AbortSignal.timeout(5000) // 5 second timeout
+        signal: AbortSignal.timeout(10000) // 10 second timeout (increased for heavy operations)
       });
       
       console.log('🏥 [Health] Response:', response.status, response.statusText);

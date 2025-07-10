@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Link as LinkIcon, Upload, Trash2, RefreshCw, X, Code, FileText, Brain, BoxIcon, Globe, ChevronRight, Pencil } from 'lucide-react';
+import { Link as LinkIcon, Upload, Trash2, RefreshCw, Code, FileText, Brain, BoxIcon, Globe, ChevronRight, Pencil } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
 import { KnowledgeItem, KnowledgeItemMetadata } from '../../services/knowledgeBaseService';
@@ -138,12 +138,14 @@ interface GroupedKnowledgeItemCardProps {
   groupedItem: GroupedKnowledgeItem;
   onDelete: (sourceId: string) => void;
   onUpdate?: () => void;
+  onRefresh?: (sourceId: string) => void;
 }
 
 export const GroupedKnowledgeItemCard = ({
   groupedItem,
   onDelete,
-  onUpdate
+  onUpdate,
+  onRefresh
 }: GroupedKnowledgeItemCardProps) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showTooltip, setShowTooltip] = useState(false);
@@ -188,23 +190,11 @@ export const GroupedKnowledgeItemCard = ({
     }, 500);
   };
 
-  // Get frequency display for the active item
-  const getFrequencyDisplay = () => {
-    const frequency = groupedItem.metadata.update_frequency;
-    if (!frequency || frequency === 0) {
-      return { icon: <X className="w-3 h-3" />, text: 'Never', color: 'text-gray-500 dark:text-zinc-500' };
-    } else if (frequency === 1) {
-      return { icon: <RefreshCw className="w-3 h-3" />, text: 'Daily', color: 'text-green-500' };
-    } else if (frequency === 7) {
-      return { icon: <RefreshCw className="w-3 h-3" />, text: 'Weekly', color: 'text-blue-500' };
-    } else if (frequency === 30) {
-      return { icon: <RefreshCw className="w-3 h-3" />, text: 'Monthly', color: 'text-purple-500' };
-    } else {
-      return { icon: <RefreshCw className="w-3 h-3" />, text: `Every ${frequency} days`, color: 'text-gray-500 dark:text-zinc-500' };
+  const handleRefresh = () => {
+    if (onRefresh && activeItem) {
+      onRefresh(activeItem.source_id);
     }
   };
-
-  const frequencyDisplay = getFrequencyDisplay();
 
   // Calculate total word count
   const totalWordCount = groupedItem.metadata.word_count || groupedItem.items.reduce(
@@ -329,7 +319,9 @@ export const GroupedKnowledgeItemCard = ({
       {/* Description section - fixed height */}
       <p className="text-gray-600 dark:text-zinc-400 text-sm mb-3 line-clamp-2 card-3d-layer-2">
         {item.metadata.description || 
-          `Source ${activeCardIndex + 1} of ${groupedItem.items.length} from ${groupedItem.domain}`}
+          (groupedItem.items.length === 1 
+            ? `Content from ${groupedItem.domain}`
+            : `Source ${activeCardIndex + 1} of ${groupedItem.items.length} from ${groupedItem.domain}`)}
       </p>
       
       {/* Tags section - flexible height with flex-1 */}
@@ -339,14 +331,18 @@ export const GroupedKnowledgeItemCard = ({
       
       {/* Footer section - anchored to bottom */}
       <div className="flex items-end justify-between mt-auto card-3d-layer-1">
-        {/* Left side - frequency and updated stacked */}
+        {/* Left side - refresh button and updated stacked */}
         <div className="flex flex-col">
-          <div
-            className={`flex items-center gap-1 ${frequencyDisplay.color} mb-1`}
-          >
-            {frequencyDisplay.icon}
-            <span className="text-sm font-medium">{frequencyDisplay.text}</span>
-          </div>
+          {groupedItem.metadata.source_type === 'url' && (
+            <button
+              onClick={handleRefresh}
+              className="flex items-center gap-1 mb-1 px-2 py-1 text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
+              title="Refresh this knowledge item"
+            >
+              <RefreshCw className="w-3 h-3" />
+              <span className="text-sm font-medium">Manual Refresh</span>
+            </button>
+          )}
           <span className="text-xs text-gray-500 dark:text-zinc-500">
             Updated: {new Date(groupedItem.updated_at).toLocaleDateString()}
           </span>

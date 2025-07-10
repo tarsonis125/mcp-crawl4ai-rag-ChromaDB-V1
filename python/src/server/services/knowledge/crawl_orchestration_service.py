@@ -5,7 +5,7 @@ Handles the orchestration of crawling operations with progress tracking.
 Extracted from the monolithic _perform_crawl_with_progress function in knowledge_api.py.
 """
 import asyncio
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from urllib.parse import urlparse
 
 from ...config.logfire_config import safe_logfire_info, safe_logfire_error
@@ -113,6 +113,8 @@ class CrawlOrchestrationService:
                     'code_examples_found': code_examples_count
                 })
                 await update_crawl_progress(self.progress_id, self.progress_state)
+                # Yield control to prevent blocking
+                await asyncio.sleep(0)
             
             # Progress update: Preparing final report (97% -> 99%)
             if self.progress_id:
@@ -126,6 +128,8 @@ class CrawlOrchestrationService:
                     'total_pages': len(crawl_results)
                 })
                 await update_crawl_progress(self.progress_id, self.progress_state)
+                # Yield control to prevent blocking
+                await asyncio.sleep(0)
             
             # Send final progress update to reach 100%
             if self.progress_id:
@@ -263,7 +267,7 @@ class CrawlOrchestrationService:
         url_to_full_document = {}
         
         # Process and chunk each document
-        for doc in crawl_results:
+        for doc_index, doc in enumerate(crawl_results):
             source_url = doc.get('url', '')
             markdown_content = doc.get('markdown', '')
             
@@ -304,6 +308,14 @@ class CrawlOrchestrationService:
                 
                 # Accumulate word count
                 source_word_counts[source_id] = source_word_counts.get(source_id, 0) + word_count
+                
+                # Yield control every 10 chunks to prevent event loop blocking
+                if i > 0 and i % 10 == 0:
+                    await asyncio.sleep(0)
+            
+            # Yield control after processing each document
+            if doc_index > 0 and doc_index % 5 == 0:
+                await asyncio.sleep(0)
         
         # Create/update source record FIRST before storing documents
         if all_contents and all_metadatas:
@@ -332,7 +344,7 @@ class CrawlOrchestrationService:
                 content=combined_content,
                 knowledge_type=request.get('knowledge_type', 'technical'),
                 tags=request.get('tags', []),
-                update_frequency=request.get('update_frequency', 7)
+                update_frequency=0  # Set to 0 since we're using manual refresh
             )
             
             safe_logfire_info(f"Created/updated source record for {source_id}")
@@ -347,7 +359,7 @@ class CrawlOrchestrationService:
         safe_logfire_info(f"Document storage | documents={len(crawl_results)} | chunks={len(all_contents)} | avg_chunks_per_doc={len(all_contents)/len(crawl_results):.1f}")
         
         # Create a progress callback for document storage
-        async def doc_storage_callback(message: str, percentage: int, batch_info: dict = None):
+        async def doc_storage_callback(message: str, percentage: int, batch_info: Optional[dict] = None):
             if self.progress_id:
                 # Map percentage to document storage range (20-85%)
                 mapped_percentage = 20 + int((percentage / 100) * (85 - 20))
