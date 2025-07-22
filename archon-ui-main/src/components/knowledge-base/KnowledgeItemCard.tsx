@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link as LinkIcon, Upload, Trash2, RefreshCw, Code, FileText, Brain, BoxIcon, Pencil } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
+import { Checkbox } from '../ui/Checkbox';
 import { KnowledgeItem } from '../../services/knowledgeBaseService';
 import { useCardTilt } from '../../hooks/useCardTilt';
 import { CodeViewerModal, CodeExample } from '../code/CodeViewerModal';
@@ -128,13 +129,19 @@ interface KnowledgeItemCardProps {
   onDelete: (sourceId: string) => void;
   onUpdate?: () => void;
   onRefresh?: (sourceId: string) => void;
+  isSelectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelection?: (event: React.MouseEvent) => void;
 }
 
 export const KnowledgeItemCard = ({
   item,
   onDelete,
   onUpdate,
-  onRefresh
+  onRefresh,
+  isSelectionMode = false,
+  isSelected = false,
+  onToggleSelection
 }: KnowledgeItemCardProps) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showCodeModal, setShowCodeModal] = useState(false);
@@ -154,10 +161,10 @@ export const KnowledgeItemCard = ({
   const TypeIcon = item.metadata.knowledge_type === 'technical' ? BoxIcon : Brain;
   const typeIconColor = item.metadata.knowledge_type === 'technical' ? 'text-blue-500' : 'text-purple-500';
 
-  // Use the tilt effect hook
+  // Use the tilt effect hook - disable in selection mode
   const { cardRef, tiltStyles, handlers } = useCardTilt({
-    max: 10,
-    scale: 1.02,
+    max: isSelectionMode ? 0 : 10,
+    scale: isSelectionMode ? 1 : 1.02,
     perspective: 1200,
   });
 
@@ -202,8 +209,27 @@ export const KnowledgeItemCard = ({
     >
       <Card
         accentColor={accentColor}
-        className="relative h-full flex flex-col overflow-hidden"
+        className={`relative h-full flex flex-col overflow-hidden ${
+          isSelected ? 'ring-2 ring-blue-500 dark:ring-blue-400' : ''
+        } ${isSelectionMode ? 'cursor-pointer' : ''}`}
+        onClick={(e) => {
+          if (isSelectionMode && onToggleSelection) {
+            e.stopPropagation();
+            onToggleSelection(e);
+          }
+        }}
       >
+        {/* Checkbox for selection mode */}
+        {isSelectionMode && (
+          <div className="absolute top-3 right-3 z-20">
+            <Checkbox
+              checked={isSelected}
+              onChange={() => {}}
+              className="pointer-events-none"
+            />
+          </div>
+        )}
+        
         {/* Reflection overlay */}
         <div
           className="card-reflection"
@@ -239,28 +265,30 @@ export const KnowledgeItemCard = ({
             <h3 className="text-gray-800 dark:text-white font-medium flex-1 line-clamp-1">
               {item.title}
             </h3>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowEditModal(true);
-                }}
-                className="p-1 text-gray-500 hover:text-blue-500"
-                title="Edit"
-              >
-                <Pencil className="w-3 h-3" />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowDeleteConfirm(true);
-                }}
-                className="p-1 text-gray-500 hover:text-red-500"
+            {!isSelectionMode && (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowEditModal(true);
+                  }}
+                  className="p-1 text-gray-500 hover:text-blue-500"
+                  title="Edit"
+                >
+                  <Pencil className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowDeleteConfirm(true);
+                  }}
+                  className="p-1 text-gray-500 hover:text-red-500"
                 title="Delete"
               >
                 <Trash2 className="w-3 h-3" />
-              </button>
-            </div>
+                </button>
+              </div>
+            )}
           </div>
           
           {/* Description section - fixed height */}

@@ -283,6 +283,7 @@ class CrawlOrchestrationService:
             # Extract source_id
             parsed_url = urlparse(source_url)
             source_id = parsed_url.netloc or parsed_url.path
+            safe_logfire_info(f"Extracted source_id '{source_id}' from URL '{source_url}'")
             
             # Process each chunk
             for i, chunk in enumerate(chunks):
@@ -336,18 +337,22 @@ class CrawlOrchestrationService:
             summary = extract_source_summary(source_id, combined_content)
             
             # Update source info in database BEFORE storing documents
-            update_source_info(
-                client=self.supabase_client,
-                source_id=source_id,
-                summary=summary,
-                word_count=sum(source_word_counts.values()),
-                content=combined_content,
-                knowledge_type=request.get('knowledge_type', 'technical'),
-                tags=request.get('tags', []),
-                update_frequency=0  # Set to 0 since we're using manual refresh
-            )
-            
-            safe_logfire_info(f"Created/updated source record for {source_id}")
+            safe_logfire_info(f"About to create/update source record for '{source_id}'")
+            try:
+                update_source_info(
+                    client=self.supabase_client,
+                    source_id=source_id,
+                    summary=summary,
+                    word_count=sum(source_word_counts.values()),
+                    content=combined_content,
+                    knowledge_type=request.get('knowledge_type', 'technical'),
+                    tags=request.get('tags', []),
+                    update_frequency=0  # Set to 0 since we're using manual refresh
+                )
+                safe_logfire_info(f"Successfully created/updated source record for '{source_id}'")
+            except Exception as e:
+                safe_logfire_error(f"Failed to create/update source record for '{source_id}': {str(e)}")
+                raise  # Re-raise to stop processing
         
         # Document storage progress will be handled by the callback
         

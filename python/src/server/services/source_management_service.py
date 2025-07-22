@@ -219,6 +219,7 @@ def update_source_info(
             
     except Exception as e:
         search_logger.error(f"Error updating source {source_id}: {e}")
+        raise  # Re-raise the exception so the caller knows it failed
 
 
 class SourceManagementService:

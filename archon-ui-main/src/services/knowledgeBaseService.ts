@@ -17,6 +17,7 @@ export interface KnowledgeItemMetadata {
   page_count?: number
   update_frequency?: number
   next_update?: string
+  group_name?: string
 }
 
 export interface KnowledgeItem {

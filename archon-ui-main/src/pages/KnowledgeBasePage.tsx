@@ -1,5 +1,5 @@
-import { useEffect, useState, useRef } from 'react';
-import { Search, Grid, Plus, Upload, Link as LinkIcon, Brain, Filter, BoxIcon, List, BookOpen } from 'lucide-react';
+import { useEffect, useState, useRef, useMemo } from 'react';
+import { Search, Grid, Plus, Upload, Link as LinkIcon, Brain, Filter, BoxIcon, List, BookOpen, CheckSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -18,6 +18,7 @@ import { KnowledgeTable } from '../components/knowledge-base/KnowledgeTable';
 import { KnowledgeItemCard } from '../components/knowledge-base/KnowledgeItemCard';
 import { GroupedKnowledgeItemCard } from '../components/knowledge-base/GroupedKnowledgeItemCard';
 import { KnowledgeGridSkeleton, KnowledgeTableSkeleton } from '../components/knowledge-base/KnowledgeItemSkeleton';
+import { GroupCreationModal } from '../components/knowledge-base/GroupCreationModal';
 
 const extractDomain = (url: string): string => {
   try {
@@ -50,118 +51,50 @@ interface GroupedKnowledgeItem {
   updated_at: string;
 }
 
-const groupItemsByDomain = (items: KnowledgeItem[]): GroupedKnowledgeItem[] => {
-  const groups = new Map<string, KnowledgeItem[]>();
-  
-  // Group items by domain
-  items.forEach(item => {
-    // Only group URL-based items, not file uploads
-    if (item.metadata.source_type === 'url') {
-      const domain = extractDomain(item.url);
-      const existing = groups.get(domain) || [];
-      groups.set(domain, [...existing, item]);
-    } else {
-      // File uploads remain ungrouped
-      groups.set(`file_${item.id}`, [item]);
-    }
-  });
-  
-  // Convert groups to GroupedKnowledgeItem objects
-  return Array.from(groups.entries()).map(([domain, groupItems]) => {
-    const firstItem = groupItems[0];
-    const isFileGroup = domain.startsWith('file_');
-    
-    // Find the latest update timestamp and convert it properly to ISO string
-    const latestTimestamp = Math.max(...groupItems.map(item => new Date(item.updated_at).getTime()));
-    const latestDate = new Date(latestTimestamp);
-    
-    return {
-      id: isFileGroup ? firstItem.id : `group_${domain}`,
-      title: isFileGroup ? firstItem.title : (groupItems.length === 1 ? domain : `${domain} (${groupItems.length} sources)`),
-      domain: isFileGroup ? 'file' : domain,
-      items: groupItems,
-      metadata: {
-        ...firstItem.metadata,
-        // Merge tags from all items in the group
-        tags: [...new Set(groupItems.flatMap(item => item.metadata.tags || []))],
-      },
-      created_at: firstItem.created_at,
-      updated_at: latestDate.toISOString(),
-    };
-  });
-};
-
-
-
 
 
 export const KnowledgeBasePage = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [forceReanimate, setForceReanimate] = useState(0);
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [typeFilter, setTypeFilter] = useState<'all' | 'technical' | 'business'>('all');
   const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>([]);
   const [progressItems, setProgressItems] = useState<CrawlProgressData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [displayedItems, setDisplayedItems] = useState<KnowledgeItem[]>([]);
-  const [isStaggerLoading, setIsStaggerLoading] = useState(false);
-  const [, setTotalItems] = useState(0);
+  const [totalItems, setTotalItems] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
-  const [loadingStrategy, setLoadingStrategy] = useState<'websocket' | 'rest' | 'complete'>('rest');
-  const searchTimeoutRef = useRef<NodeJS.Timeout>();
-  const loadTimeoutRef = useRef<NodeJS.Timeout>();
-  const isInitialLoadRef = useRef(true);
+  
+  // Selection state
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
   
   const { showToast } = useToast();
 
-  // Single consolidated loading function
-  const loadKnowledgeItems = async (options = {}) => {
+  // Single consolidated loading function - only loads data, no filtering
+  const loadKnowledgeItems = async () => {
     const startTime = Date.now();
-    console.log('📊 Starting knowledge items API request...');
+    console.log('📊 Loading all knowledge items from API...');
     
     try {
       setLoading(true);
-      // Don't clear displayedItems to avoid empty screen
+      // Always load ALL items from API, filtering happens client-side
       const response = await knowledgeBaseService.getKnowledgeItems({
-        knowledge_type: typeFilter === 'all' ? undefined : typeFilter,
-        search: searchQuery || undefined,
         page: currentPage,
-        per_page: 20,
-        ...options
+        per_page: 100 // Load more items per page since we filter client-side
       });
       
       const loadTime = Date.now() - startTime;
-      console.log(`📊 API request completed successfully in ${loadTime}ms`);
-      console.log(`📊 Loaded ${response.items.length} items out of ${response.total} total`);
+      console.log(`📊 API request completed in ${loadTime}ms, loaded ${response.items.length} items`);
       
       setKnowledgeItems(response.items);
       setTotalItems(response.total);
-      setLoadingStrategy('complete');
-      setLoading(false); // Set loading false immediately after API success
-      
-      // Clear and start staggered loading animation
-      setDisplayedItems([]); // Clear now, after loading is false
-      setIsStaggerLoading(true);
-      response.items.forEach((item, index) => {
-        setTimeout(() => {
-          setDisplayedItems(prev => [...prev, item]);
-          if (index === response.items.length - 1) {
-            setIsStaggerLoading(false);
-          }
-        }, index * 100); // 100ms delay between each item
-      });
-      
-      // If no items, set stagger loading false immediately
-      if (response.items.length === 0) {
-        setIsStaggerLoading(false);
-      }
     } catch (error) {
-      const loadTime = Date.now() - startTime;
-      console.error(`📊 API request failed after ${loadTime}ms:`, error);
+      console.error('Failed to load knowledge items:', error);
       showToast('Failed to load knowledge items', 'error');
       setKnowledgeItems([]);
-      setLoadingStrategy('complete');
+    } finally {
       setLoading(false);
     }
   };
@@ -180,61 +113,62 @@ export const KnowledgeBasePage = () => {
     };
   }, []); // Only run once on mount
 
-  // Handle filter changes
-  useEffect(() => {
-    // Skip on initial load
-    if (isInitialLoadRef.current) {
-      isInitialLoadRef.current = false;
-      return;
-    }
-    
-    // Filter changed, reloading knowledge items
-    setCurrentPage(1);
-    loadKnowledgeItems({ page: 1 });
-    setForceReanimate(prev => prev + 1);
-  }, [typeFilter]);
 
-  // Handle search with debounce
-  useEffect(() => {
-    // Skip on initial load
-    if (isInitialLoadRef.current) {
-      return;
-    }
-    
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-    
-    searchTimeoutRef.current = setTimeout(() => {
-      console.log('🔎 Search query changed, reloading knowledge items');
-      setCurrentPage(1);
-      loadKnowledgeItems({ page: 1 });
-    }, 500);
-    
-    return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
-      }
-    };
-  }, [searchQuery]);
+  // Memoized filtered items - filters run client-side
+  const filteredItems = useMemo(() => {
+    return knowledgeItems.filter(item => {
+      // Type filter
+      const typeMatch = typeFilter === 'all' || item.metadata.knowledge_type === typeFilter;
+      
+      // Search filter - search in title, description, tags, and source_id
+      const searchLower = searchQuery.toLowerCase();
+      const searchMatch = !searchQuery || 
+        item.title.toLowerCase().includes(searchLower) ||
+        item.metadata.description?.toLowerCase().includes(searchLower) ||
+        item.metadata.tags?.some(tag => tag.toLowerCase().includes(searchLower)) ||
+        item.source_id.toLowerCase().includes(searchLower);
+      
+      return typeMatch && searchMatch;
+    });
+  }, [knowledgeItems, typeFilter, searchQuery]);
 
-  // Filter displayed items based on selected type and search query
-  const filteredItems = displayedItems.filter(item => {
-    // Type filter
-    const typeMatch = typeFilter === 'all' ? true : item.metadata.knowledge_type === typeFilter;
+  // Memoized grouped items
+  const groupedItems = useMemo(() => {
+    if (viewMode !== 'grid') return [];
     
-    // Search filter - search in title, description, tags, and source_id
-    const searchMatch = !searchQuery || 
-      item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (item.metadata.description && item.metadata.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (item.metadata.tags && item.metadata.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))) ||
-      item.source_id.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    return typeMatch && searchMatch;
-  });
-
-  // Group displayed items by domain for grid view
-  const groupedItems = viewMode === 'grid' ? groupItemsByDomain(filteredItems) : [];
+    return filteredItems
+      .filter(item => item.metadata?.group_name)
+      .reduce((groups: GroupedKnowledgeItem[], item) => {
+        const groupName = item.metadata.group_name!;
+        const existingGroup = groups.find(g => g.title === groupName);
+        
+        if (existingGroup) {
+          existingGroup.items.push(item);
+        } else {
+          groups.push({
+            id: `group_${groupName.replace(/\s+/g, '_')}`,
+            title: groupName,
+            domain: groupName, // For compatibility
+            items: [item],
+            metadata: {
+              ...item.metadata,
+              source_type: 'group',
+              chunks_count: item.metadata.chunks_count || 0,
+              word_count: item.metadata.word_count || 0,
+            },
+            created_at: item.created_at,
+            updated_at: item.updated_at,
+          });
+        }
+        
+        return groups;
+      }, []);
+  }, [filteredItems, viewMode]);
+  
+  // Memoized ungrouped items
+  const ungroupedItems = useMemo(() => {
+    return viewMode === 'grid' ? filteredItems.filter(item => !item.metadata?.group_name) : [];
+  }, [filteredItems, viewMode]);
 
   // Use our custom staggered entrance hook for the page header
   const {
@@ -247,11 +181,114 @@ export const KnowledgeBasePage = () => {
   const {
     containerVariants: contentContainerVariants,
     itemVariants: contentItemVariants
-  } = useStaggeredEntrance(filteredItems, 0.15, forceReanimate);
+  } = useStaggeredEntrance(filteredItems, 0.15);
 
   const handleAddKnowledge = () => {
     setIsAddModalOpen(true);
   };
+  
+  // Selection handlers
+  const toggleSelectionMode = () => {
+    setIsSelectionMode(!isSelectionMode);
+    if (isSelectionMode) {
+      // Exiting selection mode - clear selections
+      setSelectedItems(new Set());
+      setLastSelectedIndex(null);
+    }
+  };
+  
+  const toggleItemSelection = (itemId: string, index: number, event: React.MouseEvent) => {
+    const newSelected = new Set(selectedItems);
+    
+    if (event.shiftKey && lastSelectedIndex !== null) {
+      // Shift-click: select range
+      const start = Math.min(lastSelectedIndex, index);
+      const end = Math.max(lastSelectedIndex, index);
+      
+      // Get items in range
+      for (let i = start; i <= end; i++) {
+        if (filteredItems[i]) {
+          newSelected.add(filteredItems[i].id);
+        }
+      }
+    } else if (event.ctrlKey || event.metaKey) {
+      // Ctrl/Cmd-click: toggle single item
+      if (newSelected.has(itemId)) {
+        newSelected.delete(itemId);
+      } else {
+        newSelected.add(itemId);
+      }
+    } else {
+      // Regular click in selection mode: toggle single item
+      if (newSelected.has(itemId)) {
+        newSelected.delete(itemId);
+      } else {
+        newSelected.add(itemId);
+      }
+    }
+    
+    setSelectedItems(newSelected);
+    setLastSelectedIndex(index);
+  };
+  
+  const selectAll = () => {
+    const allIds = new Set(filteredItems.map(item => item.id));
+    setSelectedItems(allIds);
+  };
+  
+  const deselectAll = () => {
+    setSelectedItems(new Set());
+    setLastSelectedIndex(null);
+  };
+  
+  const deleteSelectedItems = async () => {
+    if (selectedItems.size === 0) return;
+    
+    const count = selectedItems.size;
+    const confirmed = window.confirm(`Are you sure you want to delete ${count} selected item${count > 1 ? 's' : ''}?`);
+    
+    if (!confirmed) return;
+    
+    try {
+      // Delete each selected item
+      const deletePromises = Array.from(selectedItems).map(itemId => 
+        knowledgeBaseService.deleteKnowledgeItem(itemId)
+      );
+      
+      await Promise.all(deletePromises);
+      
+      // Remove deleted items from state
+      setKnowledgeItems(prev => prev.filter(item => !selectedItems.has(item.id)));
+      
+      // Clear selection
+      setSelectedItems(new Set());
+      setIsSelectionMode(false);
+      
+      showToast(`Successfully deleted ${count} item${count > 1 ? 's' : ''}`, 'success');
+    } catch (error) {
+      console.error('Failed to delete selected items:', error);
+      showToast('Failed to delete some items', 'error');
+    }
+  };
+  
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl/Cmd + A: Select all (only in selection mode)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a' && isSelectionMode) {
+        e.preventDefault();
+        selectAll();
+      }
+      
+      // Escape: Exit selection mode
+      if (e.key === 'Escape' && isSelectionMode) {
+        toggleSelectionMode();
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isSelectionMode, filteredItems]);
 
   const handleRefreshItem = async (sourceId: string) => {
     try {
@@ -285,7 +322,6 @@ export const KnowledgeBasePage = () => {
         
         // Remove the item temporarily while it's being refreshed
         setKnowledgeItems(prev => prev.filter(k => k.source_id !== sourceId));
-        setDisplayedItems(prev => prev.filter(k => k.source_id !== sourceId));
         
         // Connect to crawl progress WebSocket
         crawlProgressService.connect(response.progressId, {
@@ -311,20 +347,12 @@ export const KnowledgeBasePage = () => {
 
   const handleDeleteItem = async (sourceId: string) => {
     try {
-      // Prevent duplicate operations by checking if already in progress
-      if (loading) {
-        // Delete already in progress, ignoring duplicate call
-        return;
-      }
-      
-      setLoading(true); // Set loading state to prevent duplicates
       
       // Check if this is a grouped item ID
       if (sourceId.startsWith('group_')) {
         // Find the grouped item and delete all its constituent items
-        const domain = sourceId.replace('group_', '');
-        const groupedItems = groupItemsByDomain(filteredItems);
-        const group = groupedItems.find(g => g.domain === domain);
+        const groupName = sourceId.replace('group_', '').replace(/_/g, ' ');
+        const group = groupedItems.find(g => g.title === groupName);
         
         if (group) {
           // Delete all items in the group
@@ -336,9 +364,8 @@ export const KnowledgeBasePage = () => {
           
           // Remove deleted items from state
           setKnowledgeItems(prev => prev.filter(item => !deletedIds.includes(item.source_id)));
-          setDisplayedItems(prev => prev.filter(item => !deletedIds.includes(item.source_id)));
           
-          showToast(`Deleted ${group.items.length} sources from ${domain}`, 'success');
+          showToast(`Deleted ${group.items.length} items from group "${groupName}"`, 'success');
         }
       } else {
         // Single item delete
@@ -346,15 +373,12 @@ export const KnowledgeBasePage = () => {
         
         // Remove the deleted item from state
         setKnowledgeItems(prev => prev.filter(item => item.source_id !== sourceId));
-        setDisplayedItems(prev => prev.filter(item => item.source_id !== sourceId));
         
         showToast((result as any).message || 'Item deleted', 'success');
       }
     } catch (error) {
       console.error('Failed to delete item:', error);
       showToast('Failed to delete item', 'error');
-    } finally {
-      setLoading(false); // Always reset loading state
     }
   };
 
@@ -522,6 +546,16 @@ export const KnowledgeBasePage = () => {
               <List className="w-4 h-4" />
             </button>
           </div>
+          {/* Selection Mode Toggle */}
+          <Button 
+            onClick={toggleSelectionMode} 
+            variant={isSelectionMode ? "secondary" : "ghost"} 
+            accentColor="blue"
+            className={isSelectionMode ? "bg-blue-500/10 border-blue-500/40" : ""}
+          >
+            <CheckSquare className="w-4 h-4 mr-2 inline" />
+            <span>{isSelectionMode ? 'Cancel' : 'Select'}</span>
+          </Button>
           {/* Add Button */}
           <Button onClick={handleAddKnowledge} variant="primary" accentColor="purple" className="shadow-lg shadow-purple-500/20">
             <Plus className="w-4 h-4 mr-2 inline" />
@@ -529,18 +563,66 @@ export const KnowledgeBasePage = () => {
           </Button>
         </motion.div>
       </motion.div>
+      {/* Selection Toolbar - appears when items are selected */}
+      <AnimatePresence>
+        {isSelectionMode && selectedItems.size > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="mb-6"
+          >
+            <Card className="p-4 bg-gradient-to-r from-blue-500/10 to-purple-500/10 border-blue-500/20">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {selectedItems.size} item{selectedItems.size > 1 ? 's' : ''} selected
+                  </span>
+                  <Button
+                    onClick={selectAll}
+                    variant="ghost"
+                    size="sm"
+                    accentColor="blue"
+                  >
+                    Select All
+                  </Button>
+                  <Button
+                    onClick={deselectAll}
+                    variant="ghost"
+                    size="sm"
+                    accentColor="gray"
+                  >
+                    Clear Selection
+                  </Button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={() => setIsGroupModalOpen(true)}
+                    variant="secondary"
+                    size="sm"
+                    accentColor="blue"
+                  >
+                    Create Group
+                  </Button>
+                  <Button
+                    onClick={deleteSelectedItems}
+                    variant="secondary"
+                    size="sm"
+                    accentColor="pink"
+                  >
+                    Delete Selected
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      
       {/* Main Content */}
       <div className="relative">
-        {loading && !isStaggerLoading ? (
-          <motion.div 
-            initial="hidden" 
-            animate="visible" 
-            className={`grid ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' : 'grid-cols-1 gap-3'}`}
-          >
-            <motion.div variants={contentItemVariants}>
-              <div className="h-64 bg-gray-100 dark:bg-zinc-800 rounded-lg animate-pulse" />
-            </motion.div>
-          </motion.div>
+        {loading ? (
+          viewMode === 'grid' ? <KnowledgeGridSkeleton /> : <KnowledgeTableSkeleton />
         ) : viewMode === 'table' ? (
           <KnowledgeTable 
             items={filteredItems} 
@@ -567,31 +649,55 @@ export const KnowledgeBasePage = () => {
                 
                 {/* Regular Knowledge Items */}
                 {viewMode === 'grid' ? (
-                  // Grid view - use grouped items
-                  groupedItems.length > 0 ? groupedItems.map(groupedItem => (
-                    <motion.div key={groupedItem.id} variants={contentItemVariants}>
-                      <GroupedKnowledgeItemCard 
-                        groupedItem={groupedItem} 
-                        onDelete={handleDeleteItem}
-                        onUpdate={loadKnowledgeItems}
-                        onRefresh={handleRefreshItem}
-                      />
-                    </motion.div>
-                  )) : (progressItems.length === 0 && (
-                    <motion.div variants={contentItemVariants} className="col-span-full py-10 text-center text-gray-500 dark:text-zinc-400">
-                      No knowledge items found for the selected filter.
-                    </motion.div>
-                  ))
+                  // Grid view - show grouped items first, then ungrouped
+                  <>
+                    {/* Manually grouped items */}
+                    {groupedItems.map(groupedItem => (
+                      <motion.div key={groupedItem.id} variants={contentItemVariants}>
+                        <GroupedKnowledgeItemCard 
+                          groupedItem={groupedItem} 
+                          onDelete={handleDeleteItem}
+                          onUpdate={loadKnowledgeItems}
+                          onRefresh={handleRefreshItem}
+                        />
+                      </motion.div>
+                    ))}
+                    
+                    {/* Ungrouped items */}
+                    {ungroupedItems.map((item, index) => (
+                      <motion.div key={item.id} variants={contentItemVariants}>
+                        <KnowledgeItemCard 
+                          item={item} 
+                          onDelete={handleDeleteItem} 
+                          onUpdate={loadKnowledgeItems} 
+                          onRefresh={handleRefreshItem}
+                          isSelectionMode={isSelectionMode}
+                          isSelected={selectedItems.has(item.id)}
+                          onToggleSelection={(e) => toggleItemSelection(item.id, index, e)}
+                        />
+                      </motion.div>
+                    ))}
+                    
+                    {/* No items message */}
+                    {groupedItems.length === 0 && ungroupedItems.length === 0 && progressItems.length === 0 && (
+                      <motion.div variants={contentItemVariants} className="col-span-full py-10 text-center text-gray-500 dark:text-zinc-400">
+                        No knowledge items found for the selected filter.
+                      </motion.div>
+                    )}
+                  </>
                 ) : (
                   // List view - use individual items
-                  filteredItems.length > 0 ? filteredItems.map(item => (
+                  filteredItems.length > 0 ? filteredItems.map((item, index) => (
                     <motion.div key={item.id} variants={contentItemVariants}>
                       <KnowledgeItemCard 
-                      item={item} 
-                      onDelete={handleDeleteItem} 
-                      onUpdate={loadKnowledgeItems} 
-                      onRefresh={handleRefreshItem}
-                    />
+                        item={item} 
+                        onDelete={handleDeleteItem} 
+                        onUpdate={loadKnowledgeItems} 
+                        onRefresh={handleRefreshItem}
+                        isSelectionMode={isSelectionMode}
+                        isSelected={selectedItems.has(item.id)}
+                        onToggleSelection={(e) => toggleItemSelection(item.id, index, e)}
+                      />
                     </motion.div>
                   )) : (progressItems.length === 0 && (
                     <motion.div variants={contentItemVariants} className="col-span-full py-10 text-center text-gray-500 dark:text-zinc-400">
@@ -600,12 +706,6 @@ export const KnowledgeBasePage = () => {
                   ))
                 )}
                 
-                {/* Show skeleton while loading more items */}
-                {isStaggerLoading && filteredItems.length < knowledgeItems.length && (
-                  <motion.div variants={contentItemVariants}>
-                    <div className="h-64 bg-gray-100 dark:bg-zinc-800 rounded-lg animate-pulse" />
-                  </motion.div>
-                )}
               </motion.div>
             </AnimatePresence>
           </>
@@ -620,6 +720,19 @@ export const KnowledgeBasePage = () => {
         }}
         onStartCrawl={handleStartCrawl}
       />}
+      
+      {/* Group Creation Modal */}
+      {isGroupModalOpen && (
+        <GroupCreationModal
+          selectedItems={knowledgeItems.filter(item => selectedItems.has(item.id))}
+          onClose={() => setIsGroupModalOpen(false)}
+          onSuccess={() => {
+            setIsGroupModalOpen(false);
+            toggleSelectionMode(); // Exit selection mode
+            loadKnowledgeItems(); // Reload to show groups
+          }}
+        />
+      )}
     </div>;
 };
 
