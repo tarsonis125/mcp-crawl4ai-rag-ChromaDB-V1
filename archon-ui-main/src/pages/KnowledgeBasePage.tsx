@@ -324,19 +324,29 @@ export const KnowledgeBasePage = () => {
         setKnowledgeItems(prev => prev.filter(k => k.source_id !== sourceId));
         
         // Connect to crawl progress WebSocket
-        crawlProgressService.connect(response.progressId, {
-          onProgress: (data: CrawlProgressData) => {
+        await crawlProgressService.streamProgressEnhanced(response.progressId, {
+          onMessage: (data: CrawlProgressData) => {
             console.log('🔄 Refresh progress update:', data);
-            handleProgressUpdate(data);
+            if (data.completed) {
+              handleProgressComplete(data);
+            } else if (data.error) {
+              handleProgressError(data.error, response.progressId);
+            } else {
+              handleProgressUpdate(data);
+            }
           },
-          onComplete: (data: CrawlProgressData) => {
-            console.log('✅ Refresh completed:', data);
-            handleProgressComplete(data);
+          onStateChange: (state: any) => {
+            console.log('🔄 Refresh state change:', state);
           },
-          onError: (error: string) => {
-            console.error('❌ Refresh error:', error);
-            handleProgressError(error, response.progressId);
+          onError: (error: Error | Event) => {
+            const errorMessage = error instanceof Error ? error.message : 'Connection error';
+            console.error('❌ Refresh error:', errorMessage);
+            handleProgressError(errorMessage, response.progressId);
           }
+        }, {
+          autoReconnect: true,
+          reconnectDelay: 5000,
+          connectionTimeout: 10000
         });
       }
     } catch (error) {

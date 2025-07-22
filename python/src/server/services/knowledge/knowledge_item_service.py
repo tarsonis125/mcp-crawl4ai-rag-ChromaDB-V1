@@ -226,7 +226,7 @@ class KnowledgeItemService:
                 update_data['title'] = updates['title']
             
             # Handle metadata updates
-            metadata_fields = ['description', 'knowledge_type', 'tags', 'status', 'update_frequency']
+            metadata_fields = ['description', 'knowledge_type', 'tags', 'status', 'update_frequency', 'group_name']
             metadata_updates = {k: v for k, v in updates.items() if k in metadata_fields}
             
             if metadata_updates:
