@@ -143,7 +143,7 @@ async def lifespan(app: FastAPI):
         api_logger.info("✅ Cleanup completed")
         
     except Exception as e:
-        api_logger.error("❌ Error during shutdown", error=str(e))
+        api_logger.error(f"❌ Error during shutdown: {str(e)}")
 
 # Create FastAPI application
 app = FastAPI(

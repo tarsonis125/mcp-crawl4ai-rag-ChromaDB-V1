@@ -113,6 +113,80 @@ export const KnowledgeBasePage = () => {
     };
   }, []); // Only run once on mount
 
+  // Load and reconnect to active crawls from localStorage
+  useEffect(() => {
+    const loadActiveCrawls = async () => {
+      try {
+        const activeCrawls = JSON.parse(localStorage.getItem('active_crawls') || '[]');
+        const now = Date.now();
+        const ONE_HOUR = 3600000; // 1 hour in milliseconds
+        const validCrawls: string[] = [];
+        
+        for (const progressId of activeCrawls) {
+          const crawlDataStr = localStorage.getItem(`crawl_progress_${progressId}`);
+          if (crawlDataStr) {
+            try {
+              const crawlData = JSON.parse(crawlDataStr);
+              const startedAt = crawlData.startedAt || 0;
+              
+              // Check if crawl is not too old (within 1 hour) and not completed/errored
+              if (now - startedAt < ONE_HOUR && 
+                  crawlData.status !== 'completed' && 
+                  crawlData.status !== 'error') {
+                validCrawls.push(progressId);
+                
+                // Add to progress items with reconnecting status
+                setProgressItems(prev => [...prev, {
+                  ...crawlData,
+                  status: 'reconnecting',
+                  percentage: crawlData.percentage || 0,
+                  logs: [...(crawlData.logs || []), 'Reconnecting to crawl...']
+                }]);
+                
+                // Reconnect to Socket.IO room
+                await crawlProgressService.streamProgressEnhanced(progressId, {
+                  onMessage: (data: CrawlProgressData) => {
+                    console.log('🔄 Reconnected crawl progress update:', data);
+                    if (data.status === 'completed') {
+                      handleProgressComplete(data);
+                    } else if (data.error || data.status === 'error') {
+                      handleProgressError(data.error || 'Crawl failed', progressId);
+                    } else {
+                      handleProgressUpdate(data);
+                    }
+                  },
+                  onError: (error: Error | Event) => {
+                    const errorMessage = error instanceof Error ? error.message : 'Connection error';
+                    console.error('❌ Reconnection error:', errorMessage);
+                    handleProgressError(errorMessage, progressId);
+                  }
+                }, {
+                  autoReconnect: true,
+                  reconnectDelay: 5000
+                });
+              } else {
+                // Remove stale crawl data
+                localStorage.removeItem(`crawl_progress_${progressId}`);
+              }
+            } catch (error) {
+              console.error(`Failed to parse crawl data for ${progressId}:`, error);
+              localStorage.removeItem(`crawl_progress_${progressId}`);
+            }
+          }
+        }
+        
+        // Update active crawls list with only valid ones
+        if (validCrawls.length !== activeCrawls.length) {
+          localStorage.setItem('active_crawls', JSON.stringify(validCrawls));
+        }
+      } catch (error) {
+        console.error('Failed to load active crawls:', error);
+      }
+    };
+    
+    loadActiveCrawls();
+  }, []); // Only run once on mount
+
 
   // Memoized filtered items - filters run client-side
   const filteredItems = useMemo(() => {
@@ -320,6 +394,22 @@ export const KnowledgeBasePage = () => {
         
         setProgressItems(prev => [...prev, progressData]);
         
+        // Store in localStorage for persistence
+        try {
+          localStorage.setItem(`crawl_progress_${response.progressId}`, JSON.stringify({
+            ...progressData,
+            startedAt: Date.now()
+          }));
+          
+          const activeCrawls = JSON.parse(localStorage.getItem('active_crawls') || '[]');
+          if (!activeCrawls.includes(response.progressId)) {
+            activeCrawls.push(response.progressId);
+            localStorage.setItem('active_crawls', JSON.stringify(activeCrawls));
+          }
+        } catch (error) {
+          console.error('Failed to persist refresh progress:', error);
+        }
+        
         // Remove the item temporarily while it's being refreshed
         setKnowledgeItems(prev => prev.filter(k => k.source_id !== sourceId));
         
@@ -327,10 +417,10 @@ export const KnowledgeBasePage = () => {
         await crawlProgressService.streamProgressEnhanced(response.progressId, {
           onMessage: (data: CrawlProgressData) => {
             console.log('🔄 Refresh progress update:', data);
-            if (data.completed) {
+            if (data.status === 'completed') {
               handleProgressComplete(data);
-            } else if (data.error) {
-              handleProgressError(data.error, response.progressId);
+            } else if (data.error || data.status === 'error') {
+              handleProgressError(data.error || 'Refresh failed', response.progressId);
             } else {
               handleProgressUpdate(data);
             }
@@ -405,6 +495,19 @@ export const KnowledgeBasePage = () => {
       )
     );
     
+    // Clean up from localStorage immediately
+    try {
+      localStorage.removeItem(`crawl_progress_${data.progressId}`);
+      const activeCrawls = JSON.parse(localStorage.getItem('active_crawls') || '[]');
+      const updated = activeCrawls.filter((id: string) => id !== data.progressId);
+      localStorage.setItem('active_crawls', JSON.stringify(updated));
+    } catch (error) {
+      console.error('Failed to clean up completed crawl:', error);
+    }
+    
+    // Stop the Socket.IO streaming for this progress
+    crawlProgressService.stopStreaming(data.progressId);
+    
     // Show success toast
     const message = data.uploadType === 'document' 
       ? `Document "${data.fileName}" uploaded successfully! ${data.chunksStored || 0} chunks stored.`
@@ -416,15 +519,28 @@ export const KnowledgeBasePage = () => {
       setProgressItems(prev => prev.filter(item => item.progressId !== data.progressId));
       // Reload knowledge items to show the new item
       loadKnowledgeItems();
-    }, 2000); // 2 second delay to show completion state
+    }, 3000); // 3 second delay to show completion state
   };
 
   const handleProgressError = (error: string, progressId?: string) => {
     console.error('Crawl error:', error);
     showToast(`Crawling failed: ${error}`, 'error');
     
-    // Auto-remove failed progress items after 5 seconds to prevent UI clutter
+    // Clean up from localStorage
     if (progressId) {
+      try {
+        localStorage.removeItem(`crawl_progress_${progressId}`);
+        const activeCrawls = JSON.parse(localStorage.getItem('active_crawls') || '[]');
+        const updated = activeCrawls.filter((id: string) => id !== progressId);
+        localStorage.setItem('active_crawls', JSON.stringify(updated));
+      } catch (error) {
+        console.error('Failed to clean up failed crawl:', error);
+      }
+      
+      // Stop the Socket.IO streaming for this progress
+      crawlProgressService.stopStreaming(progressId);
+      
+      // Auto-remove failed progress items after 5 seconds to prevent UI clutter
       setTimeout(() => {
         setProgressItems(prev => prev.filter(item => item.progressId !== progressId));
       }, 5000);
@@ -437,6 +553,21 @@ export const KnowledgeBasePage = () => {
         item.progressId === data.progressId ? data : item
       )
     );
+    
+    // Update in localStorage to keep it in sync
+    try {
+      const existingData = localStorage.getItem(`crawl_progress_${data.progressId}`);
+      if (existingData) {
+        const parsed = JSON.parse(existingData);
+        localStorage.setItem(`crawl_progress_${data.progressId}`, JSON.stringify({
+          ...parsed,
+          ...data,
+          startedAt: parsed.startedAt // Preserve original start time
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to update crawl progress in localStorage:', error);
+    }
   };
 
   const handleRetryProgress = (progressId: string) => {
@@ -464,6 +595,24 @@ export const KnowledgeBasePage = () => {
     
     // Adding progress item to state
     setProgressItems(prev => [...prev, newProgressItem]);
+    
+    // Store in localStorage for persistence
+    try {
+      // Store the crawl data
+      localStorage.setItem(`crawl_progress_${progressId}`, JSON.stringify({
+        ...newProgressItem,
+        startedAt: Date.now()
+      }));
+      
+      // Add to active crawls list
+      const activeCrawls = JSON.parse(localStorage.getItem('active_crawls') || '[]');
+      if (!activeCrawls.includes(progressId)) {
+        activeCrawls.push(progressId);
+        localStorage.setItem('active_crawls', JSON.stringify(activeCrawls));
+      }
+    } catch (error) {
+      console.error('Failed to persist crawl progress:', error);
+    }
     
     // Set up callbacks for enhanced progress tracking
     const progressCallback = (data: CrawlProgressData) => {
@@ -642,23 +791,84 @@ export const KnowledgeBasePage = () => {
           <>
             {/* Knowledge Items Grid/List with staggered animation that reanimates on view change */}
             <AnimatePresence mode="wait">
-              <motion.div key={`view-${viewMode}-filter-${typeFilter}`} initial="hidden" animate="visible" variants={contentContainerVariants} className={`grid ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' : 'grid-cols-1 gap-3'}`}>
-                {/* Progress Items */}
-                {progressItems.map(progressData => (
-                  <motion.div key={progressData.progressId} variants={contentItemVariants}>
-                    <CrawlingProgressCard 
-                      progressData={progressData}
-                      onComplete={handleProgressComplete}
-                      onError={(error) => handleProgressError(error, progressData.progressId)}
-                      onProgress={handleProgressUpdate}
-                      onRetry={() => handleRetryProgress(progressData.progressId)}
-                      onDismiss={() => setProgressItems(prev => prev.filter(item => item.progressId !== progressData.progressId))}
-                    />
-                  </motion.div>
-                ))}
-                
-                {/* Regular Knowledge Items */}
-                {viewMode === 'grid' ? (
+              <motion.div key={`view-${viewMode}-filter-${typeFilter}`} initial="hidden" animate="visible" variants={contentContainerVariants}>
+                {progressItems.length > 0 && viewMode === 'grid' ? (
+                  // Two-column layout when there are progress items in grid view
+                  <div className="flex gap-4">
+                    {/* Left column for progress items */}
+                    <div className="w-full lg:w-96 flex-shrink-0 space-y-4">
+                      {progressItems.map(progressData => (
+                        <motion.div key={progressData.progressId} variants={contentItemVariants}>
+                          <CrawlingProgressCard 
+                            progressData={progressData}
+                            onComplete={handleProgressComplete}
+                            onError={(error) => handleProgressError(error, progressData.progressId)}
+                            onProgress={handleProgressUpdate}
+                            onRetry={() => handleRetryProgress(progressData.progressId)}
+                            onDismiss={() => setProgressItems(prev => prev.filter(item => item.progressId !== progressData.progressId))}
+                          />
+                        </motion.div>
+                      ))}
+                    </div>
+                    
+                    {/* Right area for knowledge items grid */}
+                    <div className="flex-1">
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                        {/* Manually grouped items */}
+                        {groupedItems.map(groupedItem => (
+                          <motion.div key={groupedItem.id} variants={contentItemVariants}>
+                            <GroupedKnowledgeItemCard 
+                              groupedItem={groupedItem} 
+                              onDelete={handleDeleteItem}
+                              onUpdate={loadKnowledgeItems}
+                              onRefresh={handleRefreshItem}
+                            />
+                          </motion.div>
+                        ))}
+                        
+                        {/* Ungrouped items */}
+                        {ungroupedItems.map((item, index) => (
+                          <motion.div key={item.id} variants={contentItemVariants}>
+                            <KnowledgeItemCard 
+                              item={item} 
+                              onDelete={handleDeleteItem} 
+                              onUpdate={loadKnowledgeItems} 
+                              onRefresh={handleRefreshItem}
+                              isSelectionMode={isSelectionMode}
+                              isSelected={selectedItems.has(item.id)}
+                              onToggleSelection={(e) => toggleItemSelection(item.id, index, e)}
+                            />
+                          </motion.div>
+                        ))}
+                        
+                        {/* No items message */}
+                        {groupedItems.length === 0 && ungroupedItems.length === 0 && (
+                          <div className="col-span-full py-10 text-center text-gray-500 dark:text-zinc-400">
+                            No knowledge items found for the selected filter.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  // Original layout when no progress items or in list view
+                  <div className={`grid ${viewMode === 'grid' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' : 'grid-cols-1 gap-3'}`}>
+                    {/* Progress Items (only in list view) */}
+                    {viewMode === 'list' && progressItems.map(progressData => (
+                      <motion.div key={progressData.progressId} variants={contentItemVariants}>
+                        <CrawlingProgressCard 
+                          progressData={progressData}
+                          onComplete={handleProgressComplete}
+                          onError={(error) => handleProgressError(error, progressData.progressId)}
+                          onProgress={handleProgressUpdate}
+                          onRetry={() => handleRetryProgress(progressData.progressId)}
+                          onDismiss={() => setProgressItems(prev => prev.filter(item => item.progressId !== progressData.progressId))}
+                        />
+                      </motion.div>
+                    ))}
+                    
+                    {/* Regular Knowledge Items */}
+                    {viewMode === 'grid' ? (
                   // Grid view - show grouped items first, then ungrouped
                   <>
                     {/* Manually grouped items */}
@@ -715,7 +925,8 @@ export const KnowledgeBasePage = () => {
                     </motion.div>
                   ))
                 )}
-                
+                  </div>
+                )}
               </motion.div>
             </AnimatePresence>
           </>

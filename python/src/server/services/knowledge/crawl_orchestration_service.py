@@ -106,7 +106,7 @@ class CrawlOrchestrationService:
             # Progress update: Finalizing results (95% -> 97%)
             if self.progress_id:
                 self.progress_state.update({
-                    'status': 'finalizing',
+                    'status': 'finalization',
                     'percentage': 97,
                     'log': 'Finalizing crawl results...',
                     'chunks_stored': storage_results['chunk_count'],
@@ -119,7 +119,7 @@ class CrawlOrchestrationService:
             # Progress update: Preparing final report (97% -> 99%)
             if self.progress_id:
                 self.progress_state.update({
-                    'status': 'finalizing',
+                    'status': 'finalization',
                     'percentage': 99,
                     'log': 'Preparing final report...',
                     'chunks_stored': storage_results['chunk_count'],
@@ -437,13 +437,6 @@ class CrawlOrchestrationService:
             end_progress=95
         )
         
-        # Final progress update
-        if self.progress_id:
-            self.progress_state.update({
-                'status': 'code_storage',
-                'percentage': 95,
-                'log': f'Code extraction completed. Found {result} code examples.'
-            })
-            await update_crawl_progress(self.progress_id, self.progress_state)
+        # No need for duplicate progress update here - the code extraction service handles it
         
         return result

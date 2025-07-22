@@ -561,6 +561,14 @@ class CodeExtractionService:
                 progress_callback=storage_progress_callback
             )
             
+            # Ensure we report completion at end_progress
+            if progress_callback:
+                await progress_callback({
+                    'status': 'code_storage',
+                    'percentage': end_progress,
+                    'log': f'Code extraction completed. Stored {len(storage_data["examples"])} code examples.'
+                })
+            
             safe_logfire_info(f"Successfully stored {len(storage_data['examples'])} code examples")
             return len(storage_data['examples'])
             

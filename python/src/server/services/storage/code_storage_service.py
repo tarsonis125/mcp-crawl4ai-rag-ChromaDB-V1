@@ -272,7 +272,7 @@ async def generate_code_summaries_batch(code_blocks: List[Dict[str, Any]], max_w
                     # Simple progress based on summaries completed
                     progress_percentage = int((completed_count / len(code_blocks)) * 100)
                     await progress_callback({
-                        'status': 'code_summary_generation', 
+                        'status': 'code_extraction', 
                         'percentage': progress_percentage,
                         'log': f'Generated {completed_count}/{len(code_blocks)} code summaries',
                         'completed_summaries': completed_count,
@@ -502,3 +502,12 @@ async def add_code_examples_to_supabase(
                 'batch_number': batch_num,
                 'total_batches': total_batches
             })
+    
+    # Report final completion at 100% after all batches are done
+    if progress_callback and total_items > 0:
+        await progress_callback({
+            'status': 'code_storage',
+            'percentage': 100,
+            'log': f'Code storage completed. Stored {total_items} code examples.',
+            'total_items': total_items
+        })

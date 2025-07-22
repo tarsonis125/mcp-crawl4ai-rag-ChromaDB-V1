@@ -610,6 +610,13 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
                           />
                         </div>
                         
+                        {/* Worker Configuration Info */}
+                        {progressData.max_workers && progressData.max_workers > 0 && (
+                          <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
+                            Using {progressData.max_workers} workers for contextual embeddings
+                          </div>
+                        )}
+                        
                         {/* Current batch details */}
                         {progressData.current_batch && progressData.current_batch > 0 && (
                           <div className="text-xs text-gray-600 dark:text-gray-400">

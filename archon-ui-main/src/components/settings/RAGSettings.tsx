@@ -150,7 +150,7 @@ export const RAGSettings = ({
                     <input
                       type="number"
                       min="1"
-                      max="20"
+                      max="10"
                       value={ragSettings.CONTEXTUAL_EMBEDDINGS_MAX_WORKERS}
                       onChange={e => setRagSettings({
                         ...ragSettings,
@@ -171,7 +171,7 @@ export const RAGSettings = ({
                         type="button"
                         onClick={() => setRagSettings({
                           ...ragSettings,
-                          CONTEXTUAL_EMBEDDINGS_MAX_WORKERS: Math.min(ragSettings.CONTEXTUAL_EMBEDDINGS_MAX_WORKERS + 1, 20)
+                          CONTEXTUAL_EMBEDDINGS_MAX_WORKERS: Math.min(ragSettings.CONTEXTUAL_EMBEDDINGS_MAX_WORKERS + 1, 10)
                         })}
                         className="flex-1 px-1 rounded-t-sm 
                           bg-gradient-to-b from-green-500/20 to-green-600/10

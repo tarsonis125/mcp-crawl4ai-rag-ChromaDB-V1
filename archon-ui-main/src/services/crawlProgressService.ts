@@ -36,7 +36,7 @@ export interface CrawlProgressData {
   currentStep?: string;
   logs?: string[];
   log?: string;
-  workers?: WorkerProgress[];  // Deprecated - kept for backward compatibility
+  workers?: WorkerProgress[] | any[];  // Updated to support new worker format
   error?: string;
   completed?: boolean;
   // Additional properties for document upload and crawling

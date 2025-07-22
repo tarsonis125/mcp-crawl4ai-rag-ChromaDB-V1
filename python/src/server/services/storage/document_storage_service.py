@@ -100,7 +100,7 @@ async def add_documents_to_supabase(
             # Simple batch progress - only track completed batches
             current_percentage = int((completed_batches / total_batches) * 100)
             
-            # Get max workers setting for contextual embeddings
+            # Get max workers setting FIRST before using it
             if use_contextual_embeddings:
                 try:
                     max_workers = await credential_service.get_credential("CONTEXTUAL_EMBEDDINGS_MAX_WORKERS", "4", decrypt=True)
@@ -109,6 +109,20 @@ async def add_documents_to_supabase(
                     max_workers = 4
             else:
                 max_workers = 1
+            
+            # Report batch start with simplified progress
+            if progress_callback and asyncio.iscoroutinefunction(progress_callback):
+                await progress_callback(
+                    f"Processing batch {batch_num}/{total_batches} ({len(batch_contents)} chunks)",
+                    current_percentage,
+                    {
+                        'current_batch': batch_num,
+                        'total_batches': total_batches,
+                        'completed_batches': completed_batches,
+                        'chunks_in_batch': len(batch_contents),
+                        'max_workers': max_workers if use_contextual_embeddings else 0
+                    }
+                )
             
             # Skip batch start progress to reduce Socket.IO traffic
             # Only report on completion
@@ -123,14 +137,14 @@ async def add_documents_to_supabase(
                     full_document = url_to_full_document.get(url, "")
                     process_args.append((url, content, full_document))
                 
-                # Process in parallel using ThreadPoolExecutor
+                # Track processing
                 contextual_contents = [None] * len(batch_contents)
+                
+                # Process in parallel using ThreadPoolExecutor
                 with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
                     # Submit all tasks and collect futures with their indices
-                    future_to_idx = {
-                        executor.submit(process_chunk_with_context, arg): idx 
-                        for idx, arg in enumerate(process_args)
-                    }
+                    future_to_idx = {executor.submit(process_chunk_with_context, arg): idx 
+                                   for idx, arg in enumerate(process_args)}
                     
                     # Process results as they complete
                     for future in concurrent.futures.as_completed(future_to_idx):
@@ -198,12 +212,14 @@ async def add_documents_to_supabase(
                     new_percentage = int((completed_batches / total_batches) * 100)
                     
                     complete_msg = f"Completed batch {batch_num}/{total_batches} ({len(batch_data)} chunks)"
+                    
+                    # Simple batch completion info
                     batch_info = {
                         'completed_batches': completed_batches,
                         'total_batches': total_batches,
                         'current_batch': batch_num,
                         'chunks_processed': len(batch_data),
-                        'active_workers': max_workers
+                        'max_workers': max_workers if use_contextual_embeddings else 0
                     }
                     await report_progress(complete_msg, new_percentage, batch_info)
                     break
