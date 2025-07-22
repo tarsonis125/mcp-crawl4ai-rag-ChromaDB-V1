@@ -93,6 +93,28 @@ class MCPServerManager:
             mcp_logger.error(f"Error getting container status: {str(e)}")
             return 'error'
     
+    def _is_log_reader_active(self) -> bool:
+        """Check if the log reader task is active."""
+        return self.log_reader_task is not None and not self.log_reader_task.done()
+    
+    async def _ensure_log_reader_running(self):
+        """Ensure the log reader task is running if container is active."""
+        if not self.container:
+            return
+        
+        # Cancel existing task if any
+        if self.log_reader_task:
+            self.log_reader_task.cancel()
+            try:
+                await self.log_reader_task
+            except asyncio.CancelledError:
+                pass
+        
+        # Start new log reader task
+        self.log_reader_task = asyncio.create_task(self._read_container_logs())
+        self._add_log('INFO', 'Connected to MCP container logs')
+        mcp_logger.info(f"Started log reader for already-running container: {self.container_name}")
+    
     async def start_server(self) -> Dict[str, Any]:
         """Start the MCP Docker container."""
         async with self._operation_lock:
@@ -314,6 +336,10 @@ class MCPServerManager:
         }
         
         self.status = status_map.get(container_status, 'unknown')
+        
+        # If container is running but log reader isn't active, start it
+        if self.status == 'running' and not self._is_log_reader_active():
+            asyncio.create_task(self._ensure_log_reader_running())
         
         uptime = None
         if self.status == 'running' and self.start_time:
