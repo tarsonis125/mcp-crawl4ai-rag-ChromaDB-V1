@@ -291,6 +291,25 @@ export const DocsTab = ({
 
       if (!response.ok) throw new Error('Failed to save document');
       
+      // Create a version entry specifically for this document change
+      try {
+        await fetch(`http://localhost:8080/api/projects/${project.id}/versions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            field_name: 'docs',
+            content: updatedDocs,
+            change_summary: `Updated document: ${selectedDocument.title}`,
+            change_type: 'update',
+            document_id: selectedDocument.id,
+            created_by: 'User'
+          })
+        });
+      } catch (versionError) {
+        console.error('Failed to create version:', versionError);
+        // Don't fail the save if versioning fails
+      }
+      
       showToast('Document saved successfully', 'success');
       setIsEditing(false);
       loadProjectDocuments();
@@ -695,6 +714,7 @@ export const DocsTab = ({
         <VersionHistoryModal
           projectId={project.id}
           fieldName="docs"
+          documentId={selectedDocument?.id}
           isOpen={showVersionHistory}
           onClose={() => setShowVersionHistory(false)}
           onRestore={() => {

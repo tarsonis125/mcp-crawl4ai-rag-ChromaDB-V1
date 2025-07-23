@@ -120,7 +120,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
       loadVersionHistory();
       loadCurrentContent();
     }
-  }, [isOpen, projectId, fieldName]);
+  }, [isOpen, projectId, fieldName, documentId]);
 
   const loadVersionHistory = async () => {
     setLoading(true);
@@ -128,7 +128,24 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
     
     try {
       const versionData = await projectService.getDocumentVersionHistory(projectId, fieldName);
-      setVersions(versionData || []);
+      
+      // Filter versions by document if documentId is provided
+      let filteredVersions = versionData || [];
+      if (documentId) {
+        filteredVersions = versionData.filter((version: Version) => {
+          // Check if this version contains changes to the specific document
+          if (version.document_id === documentId) {
+            return true;
+          }
+          // Also check if the content contains the document
+          if (Array.isArray(version.content)) {
+            return version.content.some((doc: any) => doc.id === documentId);
+          }
+          return false;
+        });
+      }
+      
+      setVersions(filteredVersions);
     } catch (error) {
       console.error('Error loading version history:', error);
       setError('Failed to load version history');
@@ -216,22 +233,36 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
     }
   };
 
-  const extractTextContent = (content: any): string => {
+  const extractTextContent = (content: any, docId?: string): string => {
     if (!content) return '';
     
+    // If content is an array of documents
     if (Array.isArray(content)) {
-      return content.map(doc => {
-        let text = `=== ${doc.title || 'Document'} ===\n`;
-        if (doc.blocks) {
-          text += doc.blocks.map((block: any) => {
-            if (block.content) {
-              return block.content;
-            }
-            return '';
-          }).filter(Boolean).join('\n');
+      // If we have a documentId, filter to just that document
+      if (docId) {
+        const doc = content.find(d => d.id === docId);
+        if (doc) {
+          // If it has markdown content, return that
+          if (doc.content?.markdown) {
+            return doc.content.markdown;
+          }
+          // Otherwise try to extract text content
+          return extractDocumentText(doc);
         }
-        return text;
+        return 'Document not found in this version';
+      }
+      // Otherwise show all documents
+      return content.map(doc => {
+        if (doc.content?.markdown) {
+          return `=== ${doc.title || 'Document'} ===\n${doc.content.markdown}`;
+        }
+        return `=== ${doc.title || 'Document'} ===\n${extractDocumentText(doc)}`;
       }).join('\n\n');
+    }
+    
+    // If content is an object with markdown
+    if (typeof content === 'object' && content.markdown) {
+      return content.markdown;
     }
     
     if (typeof content === 'object') {
@@ -241,9 +272,26 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
     return String(content);
   };
 
+  const extractDocumentText = (doc: any): string => {
+    let text = '';
+    if (doc.blocks) {
+      text = doc.blocks.map((block: any) => {
+        if (block.content) {
+          return block.content;
+        }
+        return '';
+      }).filter(Boolean).join('\n');
+    } else if (doc.content && typeof doc.content === 'string') {
+      text = doc.content;
+    } else if (doc.content && typeof doc.content === 'object') {
+      text = JSON.stringify(doc.content, null, 2);
+    }
+    return text;
+  };
+
   const generateDiff = (oldContent: any, newContent: any): DiffLine[] => {
-    const oldText = extractTextContent(oldContent);
-    const newText = extractTextContent(newContent);
+    const oldText = extractTextContent(oldContent, documentId);
+    const newText = extractTextContent(newContent, documentId);
     
     const oldLines = oldText.split('\n');
     const newLines = newText.split('\n');
@@ -285,6 +333,16 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
     }
 
     const diffLines = generateDiff(previewContent, currentContent);
+    
+    // If filtering by document but no changes found
+    if (documentId && diffLines.length === 0) {
+      return (
+        <div className="text-center py-12">
+          <FileText className="w-16 h-16 text-gray-600 mx-auto mb-4 opacity-50" />
+          <p className="text-gray-500 text-lg">No changes found for this document in the selected version</p>
+        </div>
+      );
+    }
 
     return (
       <div className="space-y-2">
@@ -337,7 +395,29 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
   const renderDocumentContent = (content: any) => {
     if (!content) return <div className="text-gray-500 text-center py-8">No content available</div>;
 
-    if (Array.isArray(content)) {
+    // Extract the markdown content for the specific document
+    const markdownContent = extractTextContent(content, documentId);
+    
+    if (markdownContent === 'Document not found in this version') {
+      return (
+        <div className="text-center py-12">
+          <FileText className="w-16 h-16 text-gray-600 mx-auto mb-4 opacity-50" />
+          <p className="text-gray-500 text-lg">Document not found in this version</p>
+        </div>
+      );
+    }
+    
+    // Render the markdown content
+    return (
+      <div className="prose prose-invert max-w-none">
+        <pre className="whitespace-pre-wrap bg-gray-900/50 p-6 rounded-lg border border-gray-700/50 text-gray-300 font-mono text-sm overflow-auto">
+          {markdownContent}
+        </pre>
+      </div>
+    );
+    
+    // Old array handling code - keeping for reference but not using
+    if (Array.isArray(content) && false) {
       return (
         <div className="space-y-6">
           {content.map((doc, index) => (
@@ -404,7 +484,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
             <h2 className="text-xl font-semibold text-white flex items-center gap-3">
               <Clock className="w-6 h-6 text-purple-400" />
               Version History
-              <span className="text-purple-400">- {fieldName}</span>
+              <span className="text-purple-400">- {fieldName}{documentId ? ' (Document Filtered)' : ''}</span>
             </h2>
             <button
               onClick={onClose}
@@ -484,6 +564,11 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                       
                       <p className="text-sm text-gray-300 mb-3">
                         {version.change_summary}
+                        {version.document_id && documentId && version.document_id === documentId && (
+                          <span className="ml-2 text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded">
+                            This document
+                          </span>
+                        )}
                       </p>
                       
                       <div className="flex items-center gap-4 text-xs text-gray-400">
