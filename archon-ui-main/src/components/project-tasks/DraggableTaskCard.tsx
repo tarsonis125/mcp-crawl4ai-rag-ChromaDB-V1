@@ -90,13 +90,13 @@ export const DraggableTaskCard = ({
   const cardScale = 'scale-100';
   const cardOpacity = 'opacity-100';
   
-  // Subtle highlight effect for related tasks
+  // Subtle highlight effect for related tasks - applied to the card, not parent
   const highlightGlow = isHighlighted 
-    ? 'ring-1 ring-cyan-400/50' 
+    ? 'border-cyan-400/50 shadow-[0_0_8px_rgba(34,211,238,0.2)]' 
     : '';
     
-  // Subtle hover effect with soft border glow (combining border color and shadow for glow)
-  const hoverEffectClasses = 'group-hover:border-cyan-300/70 dark:group-hover:border-cyan-500/40 group-hover:shadow-[0_0_12px_rgba(34,211,238,0.3)] dark:group-hover:shadow-[0_0_12px_rgba(34,211,238,0.5)]';
+  // Simplified hover effect - just a glowing border
+  const hoverEffectClasses = 'group-hover:border-cyan-400/70 dark:group-hover:border-cyan-500/50 group-hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:group-hover:shadow-[0_0_15px_rgba(34,211,238,0.6)]';
   
   // Base card styles with proper rounded corners
   const cardBaseStyles = 'bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30 border border-gray-200 dark:border-gray-700 rounded-lg';
@@ -111,7 +111,7 @@ export const DraggableTaskCard = ({
         perspective: '1000px',
         transformStyle: 'preserve-3d'
       }}
-      className={`flip-card w-full min-h-[140px] cursor-move relative ${cardScale} ${cardOpacity} ${isDragging ? 'opacity-50 scale-90' : ''} ${transitionStyles} group ${highlightGlow}`}
+      className={`flip-card w-full min-h-[140px] cursor-move relative ${cardScale} ${cardOpacity} ${isDragging ? 'opacity-50 scale-90' : ''} ${transitionStyles} group`}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
@@ -119,7 +119,7 @@ export const DraggableTaskCard = ({
         className={`relative w-full min-h-[140px] transform-style-preserve-3d ${isFlipped ? 'rotate-y-180' : ''}`}
       >
         {/* Front side with subtle hover effect */}
-        <div className={`absolute w-full h-full backface-hidden ${cardBaseStyles} ${transitionStyles} ${hoverEffectClasses} rounded-lg`}>
+        <div className={`absolute w-full h-full backface-hidden ${cardBaseStyles} ${transitionStyles} ${hoverEffectClasses} ${highlightGlow} rounded-lg`}>
           {/* Priority indicator */}
           <div className={`absolute left-0 top-0 bottom-0 w-[3px] ${getOrderColor(task.task_order)} ${getOrderGlow(task.task_order)} rounded-l-lg opacity-80 group-hover:w-[4px] group-hover:opacity-100 transition-all duration-300`}></div>
           
@@ -211,7 +211,7 @@ export const DraggableTaskCard = ({
         
         {/* Back side */}
         {/* Back side with same hover effect */}
-        <div className={`absolute w-full h-full backface-hidden ${cardBaseStyles} ${transitionStyles} ${hoverEffectClasses} rounded-lg rotate-y-180 ${isDragging ? 'opacity-0' : 'opacity-100'}`}>
+        <div className={`absolute w-full h-full backface-hidden ${cardBaseStyles} ${transitionStyles} ${hoverEffectClasses} ${highlightGlow} rounded-lg rotate-y-180 ${isDragging ? 'opacity-0' : 'opacity-100'}`}>
           {/* Priority indicator */}
           <div className={`absolute left-0 top-0 bottom-0 w-[3px] ${getOrderColor(task.task_order)} ${getOrderGlow(task.task_order)} rounded-l-lg opacity-80 group-hover:w-[4px] group-hover:opacity-100 transition-all duration-300`}></div>
           
