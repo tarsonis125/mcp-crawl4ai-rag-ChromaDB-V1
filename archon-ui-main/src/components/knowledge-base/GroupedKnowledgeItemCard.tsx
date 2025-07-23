@@ -340,7 +340,7 @@ export const GroupedKnowledgeItemCard = ({
               title="Refresh this knowledge item"
             >
               <RefreshCw className="w-3 h-3" />
-              <span className="text-sm font-medium">Manual Refresh</span>
+              <span className="text-sm font-medium">Recrawl</span>
             </button>
           )}
           <span className="text-xs text-gray-500 dark:text-zinc-500">

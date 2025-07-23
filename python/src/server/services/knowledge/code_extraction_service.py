@@ -124,8 +124,8 @@ class CodeExtractionService:
                 # Debug logging
                 safe_logfire_info(f"Document content check | url={source_url} | has_html={bool(html_content)} | has_markdown={bool(md)} | html_len={len(html_content) if html_content else 0} | md_len={len(md) if md else 0}")
                 
-                # Use a reasonable threshold to ensure we only extract substantial code blocks
-                min_length = 1000  # Only extract code blocks >= 1000 characters to avoid snippets
+                # Use a reasonable threshold to extract meaningful code blocks
+                min_length = 100  # Extract code blocks >= 100 characters
                 
                 # Check markdown first to see if it has code blocks
                 if md:
@@ -249,8 +249,8 @@ class CodeExtractionService:
             # Monaco Editor - capture all view-lines content
             (r'<div[^>]*class=["\'][^"\']*monaco-editor[^"\']*["\'][^>]*>.*?<div[^>]*class=["\'][^"\']*view-lines[^"\']*[^>]*>(.*?)</div>(?=.*?</div>.*?</div>)', 'monaco'),
             
-            # CodeMirror - capture cm-content
-            (r'<div[^>]*class=["\'][^"\']*cm-content[^"\']*["\'][^>]*>(.*?)</div>(?=\s*</div>)', 'codemirror'),
+            # CodeMirror - capture cm-content with all nested cm-line divs
+            (r'<div[^>]*class=["\'][^"\']*cm-content[^"\']*["\'][^>]*>((?:<div[^>]*class=["\'][^"\']*cm-line[^"\']*["\'][^>]*>.*?</div>\s*)+)</div>', 'codemirror'),
             
             # Prism.js with language - must be before generic pre
             (r'<pre[^>]*class=["\'][^"\']*language-(\w+)[^"\']*["\'][^>]*>\s*<code[^>]*>(.*?)</code>\s*</pre>', 'prism'),
@@ -279,8 +279,8 @@ class CodeExtractionService:
             pattern_str, source_type = pattern_tuple
             matches = list(re.finditer(pattern_str, content, re.DOTALL | re.IGNORECASE))
             
-            # Log pattern matches for Milkdown patterns
-            if matches and ('milkdown' in source_type or 'milkdown' in content[:1000].lower()):
+            # Log pattern matches for Milkdown patterns and CodeMirror
+            if matches and ('milkdown' in source_type or 'codemirror' in source_type or 'milkdown' in content[:1000].lower()):
                 safe_logfire_info(f"Pattern {source_type} found {len(matches)} matches")
             
             for match in matches:

@@ -67,7 +67,7 @@ class CrawlingService:
     def _get_markdown_generator(self):
         """Get markdown generator that preserves code blocks."""
         return DefaultMarkdownGenerator(
-            content_source="cleaned_html",  # Keep using cleaned_html as before
+            content_source="html",  # Use raw HTML to preserve code blocks
             options={
                 "mark_code": True,         # Mark code blocks properly
                 "handle_code_in_pre": True,  # Handle <pre><code> tags
@@ -123,6 +123,29 @@ class CrawlingService:
 
         return urls
 
+    def _transform_github_url(self, url: str) -> str:
+        """Transform GitHub URLs to raw content URLs for better content extraction."""
+        import re
+        
+        # Pattern for GitHub file URLs
+        github_file_pattern = r'https://github\.com/([^/]+)/([^/]+)/blob/([^/]+)/(.+)'
+        match = re.match(github_file_pattern, url)
+        if match:
+            owner, repo, branch, path = match.groups()
+            raw_url = f'https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}'
+            logger.info(f"Transformed GitHub file URL to raw: {url} -> {raw_url}")
+            return raw_url
+        
+        # Pattern for GitHub directory URLs
+        github_dir_pattern = r'https://github\.com/([^/]+)/([^/]+)/tree/([^/]+)/(.+)'
+        match = re.match(github_dir_pattern, url)
+        if match:
+            # For directories, we can't directly get raw content
+            # Return original URL but log a warning
+            logger.warning(f"GitHub directory URL detected: {url} - consider using specific file URLs or GitHub API")
+        
+        return url
+
     async def crawl_single_page(self, url: str, retry_count: int = 3) -> Dict[str, Any]:
         """
         Crawl a single web page and return the result with retry logic.
@@ -134,6 +157,10 @@ class CrawlingService:
         Returns:
             Dict with success status, content, and metadata
         """
+        # Transform GitHub URLs to raw content URLs if applicable
+        original_url = url
+        url = self._transform_github_url(url)
+        
         last_error = None
         
         for attempt in range(retry_count):
@@ -193,7 +220,7 @@ class CrawlingService:
                 
                 return {
                     "success": True,
-                    "url": url,
+                    "url": original_url,  # Use original URL for tracking
                     "markdown": result.markdown,
                     "html": result.html,  # Use raw HTML instead of cleaned_html for code extraction
                     "title": result.title or "Untitled",
@@ -223,6 +250,9 @@ class CrawlingService:
                                  start_progress: int = 10, end_progress: int = 20) -> List[Dict[str, Any]]:
         """Crawl a .txt or markdown file with comprehensive error handling and progress reporting."""
         try:
+            # Transform GitHub URLs to raw content URLs if applicable
+            original_url = url
+            url = self._transform_github_url(url)
             logger.info(f"Crawling markdown file: {url}")
             
             # Define local report_progress helper like in other methods
@@ -245,9 +275,9 @@ class CrawlingService:
                 logger.info(f"Successfully crawled markdown file: {url}")
                 
                 # Report completion progress
-                await report_progress(end_progress, f"Text file crawled successfully: {url}")
+                await report_progress(end_progress, f"Text file crawled successfully: {original_url}")
                 
-                return [{'url': url, 'markdown': result.markdown, 'html': result.html}]
+                return [{'url': original_url, 'markdown': result.markdown, 'html': result.html}]
             else:
                 logger.error(f"Failed to crawl {url}: {result.error_message}")
                 return []
@@ -291,8 +321,16 @@ class CrawlingService:
         successful_results = []
         processed = 0
         
+        # Transform all URLs at the beginning
+        url_mapping = {}  # Map transformed URLs back to original
+        transformed_urls = []
+        for url in urls:
+            transformed = self._transform_github_url(url)
+            transformed_urls.append(transformed)
+            url_mapping[transformed] = url
+        
         for i in range(0, total_urls, batch_size):
-            batch_urls = urls[i:i + batch_size]
+            batch_urls = transformed_urls[i:i + batch_size]
             batch_start = i
             batch_end = min(i + batch_size, total_urls)
             
@@ -307,8 +345,10 @@ class CrawlingService:
             for j, result in enumerate(batch_results):
                 processed += 1
                 if result.success and result.markdown:
+                    # Map back to original URL
+                    original_url = url_mapping.get(result.url, result.url)
                     successful_results.append({
-                        'url': result.url, 
+                        'url': original_url, 
                         'markdown': result.markdown,
                         'html': result.html  # Use raw HTML
                     })
@@ -404,7 +444,7 @@ class CrawlingService:
                         results_all.append({
                             'url': result.url, 
                             'markdown': result.markdown,
-                            'html': result.cleaned_html or result.html
+                            'html': result.html  # Always use raw HTML for code extraction
                         })
                         depth_successful += 1
                         
