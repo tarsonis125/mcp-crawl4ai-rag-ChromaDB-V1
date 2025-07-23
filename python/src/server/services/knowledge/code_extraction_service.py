@@ -115,7 +115,7 @@ class CodeExtractionService:
         total_docs = len(crawl_results)
         completed_docs = 0
         
-        for idx, doc in enumerate(crawl_results):
+        for doc in crawl_results:
             try:
                 source_url = doc['url']
                 html_content = doc.get('html', '')
@@ -239,6 +239,14 @@ class CodeExtractionService:
         # Comprehensive patterns for various code block formats
         # Order matters - more specific patterns first
         patterns = [
+            # GitHub/GitLab patterns
+            (r'<div[^>]*class=["\'][^"\']*highlight[^"\']*["\'][^>]*>.*?<pre[^>]*class=["\'][^"\']*(?:language-)?(\w+)[^"\']*["\'][^>]*><code[^>]*>(.*?)</code></pre>', 'github-highlight'),
+            (r'<div[^>]*class=["\'][^"\']*snippet-clipboard-content[^"\']*["\'][^>]*>.*?<pre[^>]*><code[^>]*>(.*?)</code></pre>', 'github-snippet'),
+            
+            # Docusaurus patterns
+            (r'<div[^>]*class=["\'][^"\']*codeBlockContainer[^"\']*["\'][^>]*>.*?<pre[^>]*class=["\'][^"\']*prism-code[^"\']*language-(\w+)[^"\']*["\'][^>]*>(.*?)</pre>', 'docusaurus'),
+            (r'<div[^>]*class=["\'][^"\']*language-(\w+)[^"\']*["\'][^>]*>.*?<pre[^>]*class=["\'][^"\']*prism-code[^"\']*["\'][^>]*>(.*?)</pre>', 'docusaurus-alt'),
+            
             # Milkdown specific patterns - check their actual HTML structure
             (r'<pre[^>]*><code[^>]*class=["\'][^"\']*language-(\w+)[^"\']*["\'][^>]*>(.*?)</code></pre>', 'milkdown-typed'),
             (r'<div[^>]*class=["\'][^"\']*code-wrapper[^"\']*["\'][^>]*>.*?<pre[^>]*>(.*?)</pre>', 'milkdown-wrapper'),
@@ -249,21 +257,30 @@ class CodeExtractionService:
             # Monaco Editor - capture all view-lines content
             (r'<div[^>]*class=["\'][^"\']*monaco-editor[^"\']*["\'][^>]*>.*?<div[^>]*class=["\'][^"\']*view-lines[^"\']*[^>]*>(.*?)</div>(?=.*?</div>.*?</div>)', 'monaco'),
             
-            # CodeMirror - capture cm-content with all nested cm-line divs
+            # CodeMirror patterns
             (r'<div[^>]*class=["\'][^"\']*cm-content[^"\']*["\'][^>]*>((?:<div[^>]*class=["\'][^"\']*cm-line[^"\']*["\'][^>]*>.*?</div>\s*)+)</div>', 'codemirror'),
+            (r'<div[^>]*class=["\'][^"\']*CodeMirror[^"\']*["\'][^>]*>.*?<div[^>]*class=["\'][^"\']*CodeMirror-code[^"\']*["\'][^>]*>(.*?)</div>', 'codemirror-legacy'),
             
             # Prism.js with language - must be before generic pre
             (r'<pre[^>]*class=["\'][^"\']*language-(\w+)[^"\']*["\'][^>]*>\s*<code[^>]*>(.*?)</code>\s*</pre>', 'prism'),
+            (r'<pre[^>]*>\s*<code[^>]*class=["\'][^"\']*language-(\w+)[^"\']*["\'][^>]*>(.*?)</code>\s*</pre>', 'prism-alt'),
             
             # highlight.js - must be before generic pre/code
             (r'<pre[^>]*><code[^>]*class=["\'][^"\']*hljs(?:\s+language-(\w+))?[^"\']*["\'][^>]*>(.*?)</code></pre>', 'hljs'),
+            (r'<pre[^>]*class=["\'][^"\']*hljs[^"\']*["\'][^>]*><code[^>]*>(.*?)</code></pre>', 'hljs-pre'),
             
-            # Shiki patterns
-            (r'<pre[^>]*class=["\'][^"\']*shiki[^"\']*["\'][^>]*>\s*<code[^>]*>(.*?)</code>\s*</pre>', 'shiki'),
+            # Shiki patterns (VitePress, Astro, etc.)
+            (r'<pre[^>]*class=["\'][^"\']*shiki[^"\']*["\'][^>]*(?:.*?style=["\'][^"\']*background-color[^"\']*["\'])?[^>]*>\s*<code[^>]*>(.*?)</code>\s*</pre>', 'shiki'),
             (r'<pre[^>]*class=["\'][^"\']*astro-code[^"\']*["\'][^>]*>(.*?)</pre>', 'astro-shiki'),
+            (r'<div[^>]*class=["\'][^"\']*astro-code[^"\']*["\'][^>]*>.*?<pre[^>]*>(.*?)</pre>', 'astro-wrapper'),
             
             # VitePress/Vue patterns
             (r'<div[^>]*class=["\'][^"\']*language-(\w+)[^"\']*["\'][^>]*>.*?<pre[^>]*>(.*?)</pre>', 'vitepress'),
+            (r'<div[^>]*class=["\'][^"\']*vp-code[^"\']*["\'][^>]*>.*?<pre[^>]*>(.*?)</pre>', 'vitepress-vp'),
+            
+            # Nextra patterns
+            (r'<div[^>]*data-nextra-code[^>]*>.*?<pre[^>]*>(.*?)</pre>', 'nextra'),
+            (r'<pre[^>]*class=["\'][^"\']*nx-[^"\']*["\'][^>]*><code[^>]*>(.*?)</code></pre>', 'nextra-nx'),
             
             # Standard pre/code patterns - should be near the end
             (r'<pre[^>]*><code[^>]*class=["\'][^"\']*language-(\w+)[^"\']*["\'][^>]*>(.*?)</code></pre>', 'standard-lang'),
@@ -301,8 +318,8 @@ class CodeExtractionService:
                     lang_match = re.search(r'class=["\'].*?language-(\w+)', full_match)
                     language = lang_match.group(1) if lang_match else ""
                 
-                # Clean up HTML entities
-                code_content = self._decode_html_entities(code_content)
+                # Initial HTML entity decoding will be done in _clean_code_content
+                # code_content = self._decode_html_entities(code_content)
                 
                 # For CodeMirror, extract text from cm-lines
                 if source_type == 'codemirror':
@@ -355,17 +372,24 @@ class CodeExtractionService:
                         context_before = content[max(0, start_pos - 1000):start_pos].strip()
                         context_after = content[end_pos:min(len(content), end_pos + 1000)].strip()
                         
-                        # Log successful extraction
-                        safe_logfire_info(f"Extracted code block | source_type={source_type} | language={language} | length={len(code_content)}")
+                        # Clean the code content
+                        cleaned_code = self._clean_code_content(code_content, language)
                         
-                        code_blocks.append({
-                            'code': code_content,
-                            'language': language,
-                            'context_before': context_before,
-                            'context_after': context_after,
-                            'full_context': f"{context_before}\n\n{code_content}\n\n{context_after}",
-                            'source_type': source_type  # Track which pattern matched
-                        })
+                        # Validate code quality
+                        if self._validate_code_quality(cleaned_code, language):
+                            # Log successful extraction
+                            safe_logfire_info(f"Extracted code block | source_type={source_type} | language={language} | original_length={len(code_content)} | cleaned_length={len(cleaned_code)}")
+                            
+                            code_blocks.append({
+                                'code': cleaned_code,
+                                'language': language,
+                                'context_before': context_before,
+                                'context_after': context_after,
+                                'full_context': f"{context_before}\n\n{cleaned_code}\n\n{context_after}",
+                                'source_type': source_type  # Track which pattern matched
+                            })
+                        else:
+                            safe_logfire_info(f"Code block failed validation | source_type={source_type} | language={language} | length={len(cleaned_code)}")
         
         # Pattern 2: <code>...</code> (standalone)
         if not code_blocks:  # Only if we didn't find pre/code blocks
@@ -374,27 +398,44 @@ class CodeExtractionService:
             
             for match in matches:
                 code_content = match.group(1).strip()
-                code_content = self._decode_html_entities(code_content)
+                # Clean the code content
+                cleaned_code = self._clean_code_content(code_content, "")
                 
-                # Check if it's multiline or substantial enough
-                if len(code_content) >= min_length and ('\n' in code_content or len(code_content) > 100):
-                    start_pos = match.start()
-                    end_pos = match.end()
-                    context_before = content[max(0, start_pos - 1000):start_pos].strip()
-                    context_after = content[end_pos:min(len(content), end_pos + 1000)].strip()
-                    
-                    code_blocks.append({
-                        'code': code_content,
-                        'language': "",
-                        'context_before': context_before,
-                        'context_after': context_after,
-                        'full_context': f"{context_before}\n\n{code_content}\n\n{context_after}"
-                    })
+                # Check if it's multiline or substantial enough and validate quality
+                if len(cleaned_code) >= min_length and ('\n' in cleaned_code or len(cleaned_code) > 100):
+                    if self._validate_code_quality(cleaned_code, ""):
+                        start_pos = match.start()
+                        end_pos = match.end()
+                        context_before = content[max(0, start_pos - 1000):start_pos].strip()
+                        context_after = content[end_pos:min(len(content), end_pos + 1000)].strip()
+                        
+                        code_blocks.append({
+                            'code': cleaned_code,
+                            'language': "",
+                            'context_before': context_before,
+                            'context_after': context_after,
+                            'full_context': f"{context_before}\n\n{cleaned_code}\n\n{context_after}"
+                        })
+                    else:
+                        safe_logfire_info(f"Standalone code block failed validation | length={len(cleaned_code)}")
         
         return code_blocks
     
     def _decode_html_entities(self, text: str) -> str:
-        """Decode common HTML entities in code."""
+        """Decode common HTML entities and clean HTML tags from code."""
+        import re
+        
+        # First, handle span tags that wrap individual tokens
+        # This pattern handles both self-closing and paired span tags
+        # Replace closing span tags with a space to prevent word concatenation
+        text = re.sub(r'</span>\s*', ' ', text)
+        # Remove opening span tags
+        text = re.sub(r'<span[^>]*>', '', text)
+        
+        # Remove any other HTML tags but preserve their content
+        text = re.sub(r'</?[^>]+>', '', text)
+        
+        # Decode HTML entities
         replacements = {
             '&lt;': '<',
             '&gt;': '>',
@@ -411,7 +452,155 @@ class CodeExtractionService:
         for entity, char in replacements.items():
             text = text.replace(entity, char)
         
+        # Clean up excessive whitespace while preserving intentional spacing
+        # Replace multiple spaces with single space, but preserve newlines
+        lines = text.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            # Replace multiple spaces with single space
+            line = re.sub(r' +', ' ', line)
+            # Trim trailing spaces but preserve leading spaces (indentation)
+            line = line.rstrip()
+            cleaned_lines.append(line)
+        
+        text = '\n'.join(cleaned_lines)
+        
         return text
+    
+    def _clean_code_content(self, code: str, language: str = "") -> str:
+        """
+        Clean and fix common issues in extracted code content.
+        
+        Args:
+            code: The code content to clean
+            language: The detected language (optional)
+            
+        Returns:
+            Cleaned code content
+        """
+        import re
+        
+        # First apply HTML entity decoding and tag cleaning
+        code = self._decode_html_entities(code)
+        
+        # Fix common concatenation issues from span removal
+        # Common patterns where spaces are missing between keywords
+        spacing_fixes = [
+            # Import statements
+            (r'(\b(?:from|import|as)\b)([A-Za-z])', r'\1 \2'),
+            # Function/class definitions
+            (r'(\b(?:def|class|async|await|return|raise|yield)\b)([A-Za-z])', r'\1 \2'),
+            # Control flow
+            (r'(\b(?:if|elif|else|for|while|try|except|finally|with)\b)([A-Za-z])', r'\1 \2'),
+            # Type hints and declarations
+            (r'(\b(?:int|str|float|bool|list|dict|tuple|set|None|True|False)\b)([A-Za-z])', r'\1 \2'),
+            # Common Python keywords
+            (r'(\b(?:and|or|not|in|is|lambda)\b)([A-Za-z])', r'\1 \2'),
+            # Fix missing spaces around operators (but be careful with negative numbers)
+            (r'([A-Za-z_)])(\+|-|\*|/|=|<|>|%)', r'\1 \2'),
+            (r'(\+|-|\*|/|=|<|>|%)([A-Za-z_(])', r'\1 \2'),
+        ]
+        
+        for pattern, replacement in spacing_fixes:
+            code = re.sub(pattern, replacement, code)
+        
+        # Fix specific patterns for different languages
+        if language.lower() in ['python', 'py']:
+            # Fix Python-specific issues
+            code = re.sub(r'(\b(?:from|import)\b)(\w+)(\b(?:import)\b)', r'\1 \2 \3', code)
+            # Fix missing colons
+            code = re.sub(r'(\b(?:def|class|if|elif|else|for|while|try|except|finally|with)\b[^:]+)$', r'\1:', code, flags=re.MULTILINE)
+        
+        # Remove backticks that might have been included
+        if code.startswith('```') and code.endswith('```'):
+            lines = code.split('\n')
+            if len(lines) > 2:
+                # Remove first and last line
+                code = '\n'.join(lines[1:-1])
+        elif code.startswith('`') and code.endswith('`'):
+            code = code[1:-1]
+        
+        # Final cleanup
+        # Remove any remaining excessive spaces while preserving indentation
+        lines = code.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            # Don't touch leading whitespace (indentation)
+            stripped = line.lstrip()
+            indent = line[:len(line) - len(stripped)]
+            # Clean the rest of the line
+            cleaned = re.sub(r' {2,}', ' ', stripped)
+            cleaned_lines.append(indent + cleaned)
+        
+        return '\n'.join(cleaned_lines).strip()
+    
+    def _validate_code_quality(self, code: str, language: str = "") -> bool:
+        """
+        Validate the quality of extracted code to ensure it's useful.
+        
+        Args:
+            code: The code content to validate
+            language: The detected language (optional)
+            
+        Returns:
+            True if code passes quality checks, False otherwise
+        """
+        # Basic checks
+        if not code or len(code.strip()) < 20:
+            return False
+        
+        # Check for common formatting issues that indicate poor extraction
+        bad_patterns = [
+            # Concatenated keywords without spaces
+            r'\b(from|import|def|class|if|for|while|return)\w+\b',
+            # HTML entities that weren't decoded
+            r'&[lg]t;|&amp;|&quot;|&#\d+;',
+            # Excessive HTML tags
+            r'<[^>]{50,}>',  # Very long HTML tags
+            # Multiple spans in a row (indicates poor extraction)
+            r'(<span[^>]*>){5,}',
+            # Suspicious character sequences
+            r'[^\s]{100,}',  # Very long unbroken strings
+        ]
+        
+        import re
+        for pattern in bad_patterns:
+            if re.search(pattern, code):
+                safe_logfire_info(f"Code failed quality check: pattern '{pattern}' found")
+                return False
+        
+        # Language-specific checks
+        if language.lower() in ['python', 'py']:
+            # Check for basic Python syntax indicators
+            python_indicators = [
+                r'\b(def|class|import|from|if|for|while)\b',
+                r':\s*$',  # Colon at end of line
+                r'^\s{4,}',  # Indentation
+            ]
+            
+            found_indicators = sum(1 for pattern in python_indicators 
+                                 if re.search(pattern, code, re.MULTILINE))
+            if found_indicators == 0:
+                safe_logfire_info("Code failed Python syntax indicator check")
+                return False
+        
+        # Check for reasonable code structure
+        lines = code.split('\n')
+        non_empty_lines = [line for line in lines if line.strip()]
+        
+        # Too few meaningful lines
+        if len(non_empty_lines) < 3:
+            safe_logfire_info(f"Code has too few non-empty lines: {len(non_empty_lines)}")
+            return False
+        
+        # Check for reasonable line lengths
+        very_long_lines = sum(1 for line in lines if len(line) > 200)
+        if very_long_lines > len(lines) * 0.5:
+            safe_logfire_info("Code has too many very long lines")
+            return False
+        
+        # Passed all checks
+        return True
     
     async def _generate_code_summaries(
         self,
@@ -474,7 +663,7 @@ class CodeExtractionService:
         code_summaries = []
         code_metadatas = []
         
-        for idx, (code_item, summary_result) in enumerate(zip(all_code_blocks, summary_results)):
+        for code_item, summary_result in zip(all_code_blocks, summary_results):
             block = code_item['block']
             source_url = code_item['source_url']
             source_id = code_item['source_id']
@@ -561,12 +750,12 @@ class CodeExtractionService:
                 progress_callback=storage_progress_callback
             )
             
-            # Ensure we report completion at end_progress
+            # Report final progress for code storage phase (not overall completion)
             if progress_callback:
                 await progress_callback({
-                    'status': 'code_storage',
+                    'status': 'code_extraction',  # Keep status as code_extraction, not completed
                     'percentage': end_progress,
-                    'log': f'Code extraction completed. Stored {len(storage_data["examples"])} code examples.'
+                    'log': f'Code extraction phase completed. Stored {len(storage_data["examples"])} code examples.'
                 })
             
             safe_logfire_info(f"Successfully stored {len(storage_data['examples'])} code examples")

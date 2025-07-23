@@ -93,7 +93,7 @@ async def lifespan(app: FastAPI):
         try:
             await initialize_crawler()
         except Exception as e:
-            api_logger.warning("Could not fully initialize crawling context", error=str(e))
+            api_logger.warning(f"Could not fully initialize crawling context: {str(e)}")
         
         # Make crawling context available to modules
         # Crawler is now managed by CrawlerManager
@@ -122,7 +122,7 @@ async def lifespan(app: FastAPI):
         api_logger.info("🎉 Archon backend started successfully!")
         
     except Exception as e:
-        api_logger.error("❌ Failed to start backend", error=str(e))
+        api_logger.error(f"❌ Failed to start backend: {str(e)}")
         raise
     
     yield

@@ -58,7 +58,23 @@ class CrawlerManager:
             # crawl4ai/Playwright will handle Docker-specific settings internally
             browser_config = BrowserConfig(
                 headless=True,
-                verbose=False
+                verbose=False,
+                # Set viewport for proper rendering
+                viewport_width=1920,
+                viewport_height=1080,
+                # Add user agent to appear as a real browser
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                # Set browser type
+                browser_type="chromium",
+                # Extra args for Chromium
+                extra_args=[
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-dev-shm-usage',
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-web-security',
+                    '--disable-features=IsolateOrigins,site-per-process'
+                ]
             )
             
             safe_logfire_info(f"Creating AsyncWebCrawler with config | in_docker={in_docker}")

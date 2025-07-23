@@ -346,6 +346,11 @@ async def crawl_unsubscribe(sid, data):
     """Unsubscribe from crawl progress updates."""
     progress_id = data.get('progress_id')
     if progress_id:
+        # Log why the client is unsubscribing
+        logger.info(f"📤 [SOCKETIO] crawl_unsubscribe event received | sid={sid} | progress_id={progress_id} | data={data}")
+        print(f"🛑 [SOCKETIO DEBUG] Client {sid} requesting to unsubscribe from crawl progress {progress_id}")
+        print(f"🛑 [SOCKETIO DEBUG] Unsubscribe data: {data}")
+        
         await sio.leave_room(sid, progress_id)
         logger.info(f"📤 [SOCKETIO] Client {sid} left crawl progress room: {progress_id}")
         print(f"🛑 Client {sid} unsubscribed from crawl progress {progress_id}")

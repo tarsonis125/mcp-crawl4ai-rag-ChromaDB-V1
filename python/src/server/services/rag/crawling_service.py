@@ -73,7 +73,12 @@ class CrawlingService:
                 "handle_code_in_pre": True,  # Handle <pre><code> tags
                 "body_width": 0,            # No line wrapping
                 "skip_internal_links": True,  # Add to reduce noise
-                "include_raw_html": False     # Prevent HTML in markdown
+                "include_raw_html": False,    # Prevent HTML in markdown
+                "escape": False,             # Don't escape special chars in code
+                "decode_unicode": True,      # Decode unicode characters
+                "strip_empty_lines": False,  # Preserve empty lines in code
+                "preserve_code_formatting": True,  # Custom option if supported
+                "code_language_callback": lambda el: el.get('class', '').replace('language-', '') if el else ''
             }
         )
     
@@ -145,6 +150,46 @@ class CrawlingService:
             logger.warning(f"GitHub directory URL detected: {url} - consider using specific file URLs or GitHub API")
         
         return url
+    
+    def _is_documentation_site(self, url: str) -> bool:
+        """Check if URL is likely a documentation site that needs special handling."""
+        doc_patterns = [
+            'docs.',
+            'documentation.',
+            '/docs/',
+            '/documentation/',
+            'readthedocs',
+            'gitbook',
+            'docusaurus',
+            'vitepress',
+            'docsify',
+            'mkdocs'
+        ]
+        
+        url_lower = url.lower()
+        return any(pattern in url_lower for pattern in doc_patterns)
+    
+    def _get_wait_selector_for_docs(self, url: str) -> str:
+        """Get appropriate wait selector based on documentation framework."""
+        url_lower = url.lower()
+        
+        # Common selectors for different documentation frameworks
+        if 'docusaurus' in url_lower:
+            return '.markdown, .theme-doc-markdown, article'
+        elif 'vitepress' in url_lower:
+            return '.VPDoc, .vp-doc, .content'
+        elif 'gitbook' in url_lower:
+            return '.markdown-section, .page-wrapper'
+        elif 'mkdocs' in url_lower:
+            return '.md-content, article'
+        elif 'docsify' in url_lower:
+            return '#main, .markdown-section'
+        elif 'copilotkit' in url_lower:
+            # CopilotKit uses a custom setup, wait for any content
+            return 'div[class*="content"], div[class*="doc"], #__next'
+        else:
+            # Simplified generic selector - just wait for body to have content
+            return 'body'
 
     async def crawl_single_page(self, url: str, retry_count: int = 3) -> Dict[str, Any]:
         """
@@ -175,12 +220,44 @@ class CrawlingService:
                 # Use ENABLED cache mode for better performance, BYPASS only on retries
                 cache_mode = CacheMode.BYPASS if attempt > 0 else CacheMode.ENABLED
                 
-                # Simple configuration for web crawling - like the original working implementation
-                crawl_config = CrawlerRunConfig(
-                    cache_mode=cache_mode, 
-                    stream=False,
-                    markdown_generator=self._get_markdown_generator()
-                )
+                # Check if this is a documentation site that needs special handling
+                is_doc_site = self._is_documentation_site(url)
+                
+                # Enhanced configuration for documentation sites
+                if is_doc_site:
+                    wait_selector = self._get_wait_selector_for_docs(url)
+                    logger.info(f"Detected documentation site, using wait selector: {wait_selector}")
+                    
+                    crawl_config = CrawlerRunConfig(
+                        cache_mode=cache_mode, 
+                        stream=False,
+                        markdown_generator=self._get_markdown_generator(),
+                        # Wait for documentation content to load
+                        wait_for=wait_selector,
+                        # Wait for DOM content instead of network idle for faster loading
+                        wait_until='domcontentloaded',
+                        # Reduced timeout for faster failures
+                        page_timeout=15000,  # 15 seconds
+                        # No delay needed for most docs
+                        delay_before_return_html=0.5,  # Minimal delay
+                        # Disable image waiting for speed
+                        wait_for_images=False,
+                        # Don't scan full page - docs load content immediately
+                        scan_full_page=False,
+                        # Skip all images for faster processing
+                        exclude_all_images=True,
+                        # Still remove popups
+                        remove_overlay_elements=True,
+                        # Skip iframes for speed
+                        process_iframes=False
+                    )
+                else:
+                    # Simple configuration for regular sites
+                    crawl_config = CrawlerRunConfig(
+                        cache_mode=cache_mode, 
+                        stream=False,
+                        markdown_generator=self._get_markdown_generator()
+                    )
                 
                 logger.info(f"Crawling {url} (attempt {attempt + 1}/{retry_count})")
                 result = await self.crawler.arun(url=url, config=crawl_config)
@@ -296,12 +373,33 @@ class CrawlingService:
                 await progress_callback('error', 0, 'Crawler not available')
             return []
             
-        # Simple configuration for batch crawling - like the original working implementation
-        crawl_config = CrawlerRunConfig(
-            cache_mode=CacheMode.BYPASS, 
-            stream=False,
-            markdown_generator=self._get_markdown_generator()
-        )
+        # Check if any URLs are documentation sites
+        has_doc_sites = any(self._is_documentation_site(url) for url in urls)
+        
+        if has_doc_sites:
+            logger.info("Detected documentation sites in batch, using enhanced configuration")
+            # Use generic documentation selectors for batch crawling
+            crawl_config = CrawlerRunConfig(
+                cache_mode=CacheMode.BYPASS, 
+                stream=False,
+                markdown_generator=self._get_markdown_generator(),
+                wait_for='body',  # Simple selector for batch
+                wait_until='domcontentloaded',
+                page_timeout=15000,  # 15 seconds
+                delay_before_return_html=0.2,  # Minimal delay for batch
+                wait_for_images=False,
+                scan_full_page=False,
+                exclude_all_images=True,
+                remove_overlay_elements=True,
+                process_iframes=False
+            )
+        else:
+            # Simple configuration for regular batch crawling
+            crawl_config = CrawlerRunConfig(
+                cache_mode=CacheMode.BYPASS, 
+                stream=False,
+                markdown_generator=self._get_markdown_generator()
+            )
         dispatcher = MemoryAdaptiveDispatcher(
             memory_threshold_percent=70.0,
             check_interval=1.0,
@@ -316,8 +414,8 @@ class CrawlingService:
         total_urls = len(urls)
         await report_progress(start_progress, f'Starting to crawl {total_urls} URLs...')
         
-        # Process URLs in smaller batches for better progress reporting and reliability
-        batch_size = min(10, max_concurrent)  # Reduced from 20 to 10 for better reliability
+        # Process URLs in batches for better performance
+        batch_size = min(20, max_concurrent)  # Increased to 20 for faster processing
         successful_results = []
         processed = 0
         
@@ -372,12 +470,32 @@ class CrawlingService:
                 await progress_callback('error', 0, 'Crawler not available')
             return []
             
-        # Simple configuration for recursive crawling - like the original working implementation
-        run_config = CrawlerRunConfig(
-            cache_mode=CacheMode.BYPASS, 
-            stream=False,
-            markdown_generator=self._get_markdown_generator()
-        )
+        # Check if start URLs include documentation sites
+        has_doc_sites = any(self._is_documentation_site(url) for url in start_urls)
+        
+        if has_doc_sites:
+            logger.info("Detected documentation sites for recursive crawl, using enhanced configuration")
+            run_config = CrawlerRunConfig(
+                cache_mode=CacheMode.BYPASS, 
+                stream=False,
+                markdown_generator=self._get_markdown_generator(),
+                wait_for='body',
+                wait_until='domcontentloaded',
+                page_timeout=15000,  # 15 seconds
+                delay_before_return_html=0.2,
+                wait_for_images=False,
+                scan_full_page=False,
+                exclude_all_images=True,
+                remove_overlay_elements=True,
+                process_iframes=False
+            )
+        else:
+            # Simple configuration for regular recursive crawling
+            run_config = CrawlerRunConfig(
+                cache_mode=CacheMode.BYPASS, 
+                stream=False,
+                markdown_generator=self._get_markdown_generator()
+            )
         dispatcher = MemoryAdaptiveDispatcher(
             memory_threshold_percent=70.0,
             check_interval=1.0,
@@ -415,8 +533,8 @@ class CrawlingService:
             
             await report_progress(depth_start, f'Crawling depth {depth + 1}/{max_depth}: {len(urls_to_crawl)} URLs to process')
 
-            # Process URLs in smaller batches for better progress reporting
-            batch_size = min(20, max_concurrent)  # Process in batches of 20
+            # Process URLs in larger batches for better performance
+            batch_size = min(30, max_concurrent)  # Process in batches of 30 for speed
             next_level_urls = set()
             depth_successful = 0
             

@@ -44,6 +44,15 @@ class CrawlOrchestrationService:
         """Set the progress ID for Socket.IO updates."""
         self.progress_id = progress_id
     
+    def _is_documentation_site(self, url: str) -> bool:
+        """Check if URL is a documentation site."""
+        doc_patterns = [
+            'docs.', 'documentation.', '/docs/', '/documentation/',
+            'readthedocs', 'gitbook', 'docusaurus', 'vitepress',
+            'docsify', 'mkdocs', 'copilotkit'
+        ]
+        return any(pattern in url.lower() for pattern in doc_patterns)
+    
     async def _create_crawl_progress_callback(self, base_status: str):
         """Create a progress callback for crawling operations."""
         async def callback(status: str, percentage: int, message: str, **kwargs):
@@ -143,6 +152,8 @@ class CrawlOrchestrationService:
                     'total_pages': len(crawl_results)
                 })
                 await update_crawl_progress(self.progress_id, self.progress_state)
+                # Small delay to ensure Socket.IO message is delivered before function returns
+                await asyncio.sleep(0.1)
             
             return {
                 'success': True,
@@ -231,9 +242,13 @@ class CrawlOrchestrationService:
                 await update_crawl_progress(self.progress_id, self.progress_state)
             
             max_depth = request.get('max_depth', 1)
+            # Limit concurrent crawls for better performance
+            max_concurrent = 20 if self._is_documentation_site(url) else 10
+            
             crawl_results = await self.crawling_service.crawl_recursive_with_progress(
                 [url],
                 max_depth=max_depth,
+                max_concurrent=max_concurrent,
                 progress_callback=await self._create_crawl_progress_callback('crawling'),
                 start_progress=10,
                 end_progress=20

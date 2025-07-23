@@ -336,22 +336,8 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
             # Orchestrate the crawl
             result = await orchestration_service.orchestrate_crawl(request_dict)
             
-            # Finalization step (95-100%)
-            await update_crawl_progress(progress_id, {
-                'status': 'finalization',
-                'percentage': 98,
-                'log': 'Finalizing crawl results...'
-            })
-            
-            # Complete the crawl with final data
-            await complete_crawl_progress(progress_id, {
-                'chunksStored': result['chunks_stored'],
-                'wordCount': result['word_count'],
-                'codeExamplesStored': result['code_examples_stored'],
-                'log': 'All processing completed successfully',
-                'processedPages': result['processed_pages'],
-                'totalPages': result['total_pages']
-            })
+            # The orchestration service already handles all progress updates including completion at 100%
+            # No need for duplicate completion updates here
         
             safe_logfire_info(f"Crawl completed successfully | progress_id={progress_id} | chunks_stored={result['chunks_stored']} | code_examples_stored={result['code_examples_stored']}")
         except Exception as e:

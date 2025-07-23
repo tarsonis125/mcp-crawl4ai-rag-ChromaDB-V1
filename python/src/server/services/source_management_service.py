@@ -187,25 +187,41 @@ def update_source_info(
         update_frequency: Update frequency in days
     """
     try:
-        # Generate title and metadata
-        title, metadata = generate_source_title_and_metadata(
-            source_id, content, knowledge_type, tags
-        )
+        # First, check if source already exists to preserve title
+        existing_source = client.table('sources').select('title').eq('source_id', source_id).execute()
         
-        # Add update_frequency to metadata
-        metadata["update_frequency"] = update_frequency
-        
-        # Try to update existing source
-        result = client.table('sources').update({
-            'title': title,
-            'summary': summary,
-            'total_word_count': word_count,
-            'metadata': metadata,
-            'updated_at': 'now()'
-        }).eq('source_id', source_id).execute()
-        
-        # If no rows were updated, insert new source
-        if not result.data:
+        if existing_source.data:
+            # Source exists - preserve the existing title
+            existing_title = existing_source.data[0]['title']
+            search_logger.info(f"Preserving existing title for {source_id}: {existing_title}")
+            
+            # Update metadata while preserving title
+            metadata = {
+                "knowledge_type": knowledge_type,
+                "tags": tags or [],
+                "auto_generated": False,  # Mark as not auto-generated since we're preserving
+                "update_frequency": update_frequency
+            }
+            
+            # Update existing source (preserving title)
+            result = client.table('sources').update({
+                'summary': summary,
+                'total_word_count': word_count,
+                'metadata': metadata,
+                'updated_at': 'now()'
+            }).eq('source_id', source_id).execute()
+            
+            search_logger.info(f"Updated source {source_id} while preserving title: {existing_title}")
+        else:
+            # New source - generate title and metadata
+            title, metadata = generate_source_title_and_metadata(
+                source_id, content, knowledge_type, tags
+            )
+            
+            # Add update_frequency to metadata
+            metadata["update_frequency"] = update_frequency
+            
+            # Insert new source
             client.table('sources').insert({
                 'source_id': source_id,
                 'title': title,
@@ -213,9 +229,7 @@ def update_source_info(
                 'total_word_count': word_count,
                 'metadata': metadata
             }).execute()
-            search_logger.info(f"Created new source: {source_id}")
-        else:
-            search_logger.info(f"Updated source: {source_id}")
+            search_logger.info(f"Created new source {source_id} with title: {title}")
             
     except Exception as e:
         search_logger.error(f"Error updating source {source_id}: {e}")
