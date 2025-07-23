@@ -125,7 +125,7 @@ class CodeExtractionService:
                 safe_logfire_info(f"Document content check | url={source_url} | has_html={bool(html_content)} | has_markdown={bool(md)} | html_len={len(html_content) if html_content else 0} | md_len={len(md) if md else 0}")
                 
                 # Use a reasonable threshold to extract meaningful code blocks
-                min_length = 100  # Extract code blocks >= 100 characters
+                min_length = 250  # Extract code blocks >= 250 characters
                 
                 # Check markdown first to see if it has code blocks
                 if md:

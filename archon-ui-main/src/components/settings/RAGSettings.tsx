@@ -212,7 +212,7 @@ export const RAGSettings = ({
           <div className="col-span-3">
             {ragSettings.USE_CONTEXTUAL_EMBEDDINGS && (
               <p className="text-xs text-green-900 dark:text-blue-600 mt-2">
-                Controls parallel processing to reduce API rate limits (1-20)
+                Controls parallel processing for embeddings (1-10)
               </p>
             )}
           </div>
