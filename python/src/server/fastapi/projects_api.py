@@ -512,6 +512,64 @@ async def create_task(request: CreateTaskRequest):
         logfire.error(f"Failed to create task | error={str(e)} | project_id={request.project_id}")
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
+@router.get("/tasks")
+async def list_tasks(
+    status: Optional[str] = None,
+    project_id: Optional[str] = None,
+    parent_task_id: Optional[str] = None,
+    include_closed: bool = False,
+    page: int = 1,
+    per_page: int = 50,
+    exclude_large_fields: bool = False
+):
+    """List tasks with optional filters including status, project, and parent task."""
+    try:
+        logfire.info(f"Listing tasks | status={status} | project_id={project_id} | include_closed={include_closed} | page={page} | per_page={per_page}")
+        
+        # Use TaskService to list tasks
+        task_service = TaskService()
+        success, result = task_service.list_tasks(
+            project_id=project_id,
+            parent_task_id=parent_task_id,
+            status=status,
+            include_closed=include_closed
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail=result)
+        
+        tasks = result.get("tasks", [])
+        
+        # If exclude_large_fields is True, remove large fields from tasks
+        if exclude_large_fields:
+            for task in tasks:
+                # Remove potentially large fields
+                task.pop("sources", None)
+                task.pop("code_examples", None)
+                task.pop("messages", None)
+        
+        # Apply pagination
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        paginated_tasks = tasks[start_idx:end_idx]
+        
+        # Return paginated response
+        return {
+            "tasks": paginated_tasks,
+            "pagination": {
+                "total": len(tasks),
+                "page": page,
+                "per_page": per_page,
+                "pages": (len(tasks) + per_page - 1) // per_page
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logfire.error(f"Failed to list tasks | error={str(e)}")
+        raise HTTPException(status_code=500, detail={'error': str(e)})
+
 @router.get("/tasks/{task_id}")
 async def get_task(task_id: str):
     """Get a specific task by ID."""

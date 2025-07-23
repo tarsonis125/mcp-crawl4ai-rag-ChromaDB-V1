@@ -4,8 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/project-tasks/Tabs';
 import { DocsTab } from '../components/project-tasks/DocsTab';
-import { FeaturesTab } from '../components/project-tasks/FeaturesTab';
-import { DataTab } from '../components/project-tasks/DataTab';
+// import { FeaturesTab } from '../components/project-tasks/FeaturesTab';
+// import { DataTab } from '../components/project-tasks/DataTab';
 import { TasksTab } from '../components/project-tasks/TasksTab';
 import { Button } from '../components/ui/Button';
 import { ChevronRight, ShoppingCart, Code, Briefcase, Layers, Plus, X, AlertCircle, Loader2, Heart, BarChart3, Trash2, Pin, ListTodo, Activity, CheckCircle2 } from 'lucide-react';
@@ -78,124 +78,122 @@ export function ProjectPage({
 
   const { showToast } = useToast();
 
-  // Load projects with Socket.IO support
+  // Load projects on mount - simplified approach
   useEffect(() => {
-    let isComponentMounted = true;
-    let wsConnected = false;
-    let fallbackExecuted = false;
-    let loadTimeoutRef: NodeJS.Timeout | null = null;
-
-    console.log('🚀 ProjectPage: Initializing project loading strategy');
-
-    // Function to sort and update projects
-    const updateProjectsState = (projectsData: Project[]) => {
-      if (!isComponentMounted) return;
-      
-      console.log(`[PROJECT UPDATE] Received projects:`, projectsData.map(p => ({id: p.id, title: p.title, pinned: p.pinned})));
-      
-      // Sort projects - pinned first, then alphabetically
-      const sortedProjects = [...projectsData].sort((a, b) => {
-        if (a.pinned && !b.pinned) return -1;
-        if (!a.pinned && b.pinned) return 1;
-        return a.title.localeCompare(b.title);
-      });
-      console.log(`[PROJECT UPDATE] Projects after sorting:`, sortedProjects.map(p => ({id: p.id, title: p.title, pinned: p.pinned})));
-      
-      setProjects(prev => {
-        // Keep temp projects and merge with real projects
-        const tempProjects = prev.filter(p => p.id.startsWith('temp-'));
-        return [...tempProjects, ...sortedProjects];
-      });
-      
-      // Load task counts for all real projects
-      const projectIds = sortedProjects.map(p => p.id);
-      loadTaskCountsForAllProjects(projectIds);
-      
-      // Handle project selection
-      const pinnedProject = sortedProjects.find(project => project.pinned);
-      console.log(`[PROJECT UPDATE] Pinned project:`, pinnedProject ? {id: pinnedProject.id, title: pinnedProject.title, pinned: pinnedProject.pinned} : 'None');
-      
-      if (sortedProjects.length > 0) {
-        setSelectedProject(prev => {
-          // If no project selected, select pinned or first project
-          if (!prev) {
-            const projectToSelect = pinnedProject || sortedProjects[0];
-            console.log(`[PROJECT UPDATE] Selecting project:`, {id: projectToSelect.id, title: projectToSelect.title, pinned: projectToSelect.pinned});
-            setShowProjectDetails(true);
-            return projectToSelect;
-          }
-          
-          // If pinned project exists and it's different from current selection, switch to it
-          if (pinnedProject && prev.id !== pinnedProject.id) {
-            console.log(`[PROJECT UPDATE] Switching to pinned project:`, {id: pinnedProject.id, title: pinnedProject.title, pinned: pinnedProject.pinned});
-            setShowProjectDetails(true);
-            return pinnedProject;
-          }
-          
-          return prev;
-        });
-      }
-      
-      setIsLoadingProjects(false);
-    };
-
-    // Try Socket.IO connection first
-    const connectWebSocket = () => {
-      console.log('📡 Attempting Socket.IO connection for real-time project updates');
-      projectListSocketIO.connect('/').then(() => {
-        // Subscribe to project list updates after connection
-        projectListSocketIO.send({ type: 'subscribe_projects' });
-      });
-      
-      const handleProjectUpdate = (message: any) => {
-        if (!isComponentMounted) return;
-        
-        console.log('✅ Socket.IO: Received projects update', message.data);
-        updateProjectsState(message.data.projects);
-        wsConnected = true;
-      };
-      
-      projectListSocketIO.addMessageHandler('projects_update', handleProjectUpdate);
-      
-      // Set fallback timeout - only execute if Socket.IO hasn't connected and component is still mounted
-      loadTimeoutRef = setTimeout(() => {
-        if (isComponentMounted && !wsConnected && !fallbackExecuted) {
-          console.log('⏰ Socket.IO fallback: Loading via REST API after timeout');
-          fallbackExecuted = true;
-          loadProjectsViaRest();
-        }
-      }, 2000);
-      
-      return () => {
-        projectListSocketIO.removeMessageHandler('projects_update', handleProjectUpdate);
-      };
-    };
-
-    // Fallback REST API loading
-    const loadProjectsViaRest = async () => {
-      if (!isComponentMounted) return;
-      
+    const loadProjectsData = async () => {
       try {
-        console.log('🔄 Loading projects via REST API');
+        console.log('🚀 Loading projects...');
+        setIsLoadingProjects(true);
+        setProjectsError(null);
+        
         const projectsData = await projectService.listProjects();
-        updateProjectsState(projectsData);
+        console.log(`📦 Received ${projectsData.length} projects from API`);
+        
+        // Log each project's pinned status
+        projectsData.forEach(p => {
+          console.log(`  - ${p.title}: pinned=${p.pinned} (type: ${typeof p.pinned})`);
+        });
+        
+        // Sort projects - pinned first, then alphabetically
+        const sortedProjects = [...projectsData].sort((a, b) => {
+          if (a.pinned && !b.pinned) return -1;
+          if (!a.pinned && b.pinned) return 1;
+          return a.title.localeCompare(b.title);
+        });
+        
+        setProjects(sortedProjects);
+        
+        // Load task counts for all projects
+        const projectIds = sortedProjects.map(p => p.id);
+        loadTaskCountsForAllProjects(projectIds);
+        
+        // Find pinned project - this is ALWAYS the default on page load
+        const pinnedProject = sortedProjects.find(p => p.pinned === true);
+        console.log(`📌 Pinned project:`, pinnedProject ? `${pinnedProject.title} (pinned=${pinnedProject.pinned})` : 'None found');
+        
+        // Debug: Log all projects and their pinned status
+        console.log('📋 All projects with pinned status:');
+        sortedProjects.forEach(p => {
+          console.log(`   - ${p.title}: pinned=${p.pinned} (type: ${typeof p.pinned})`);
+        });
+        
+        // On page load, ALWAYS select pinned project if it exists
+        if (pinnedProject) {
+          console.log(`✅ Selecting pinned project: ${pinnedProject.title}`);
+          setSelectedProject(pinnedProject);
+          setShowProjectDetails(true);
+          setActiveTab('tasks');
+          loadTasksForProject(pinnedProject.id);
+        } else if (sortedProjects.length > 0) {
+          // No pinned project, select first one
+          const firstProject = sortedProjects[0];
+          console.log(`📋 No pinned project, selecting first: ${firstProject.title}`);
+          setSelectedProject(firstProject);
+          setShowProjectDetails(true);
+          setActiveTab('tasks');
+          loadTasksForProject(firstProject.id);
+        }
+        
+        setIsLoadingProjects(false);
       } catch (error) {
         console.error('Failed to load projects:', error);
         setProjectsError(error instanceof Error ? error.message : 'Failed to load projects');
         setIsLoadingProjects(false);
       }
     };
+    
+    loadProjectsData();
+  }, []); // Only run once on mount
 
+  // Set up Socket.IO for real-time project list updates (after initial load)
+  useEffect(() => {
+    console.log('📡 Setting up Socket.IO for project list updates');
+    
+    const connectWebSocket = async () => {
+      try {
+        await projectListSocketIO.connect('/');
+        projectListSocketIO.send({ type: 'subscribe_projects' });
+        
+        const handleProjectUpdate = (message: any) => {
+          console.log('📨 Received project list update via Socket.IO');
+          if (message.data && message.data.projects) {
+            const projectsData = message.data.projects;
+            
+            // Sort projects - pinned first, then alphabetically
+            const sortedProjects = [...projectsData].sort((a, b) => {
+              if (a.pinned && !b.pinned) return -1;
+              if (!a.pinned && b.pinned) return 1;
+              return a.title.localeCompare(b.title);
+            });
+            
+            setProjects(prev => {
+              // Keep temp projects and merge with real projects
+              const tempProjects = prev.filter(p => p.id.startsWith('temp-'));
+              return [...tempProjects, ...sortedProjects];
+            });
+            
+            // Refresh task counts
+            const projectIds = sortedProjects.map(p => p.id);
+            loadTaskCountsForAllProjects(projectIds);
+          }
+        };
+        
+        projectListSocketIO.addMessageHandler('projects_update', handleProjectUpdate);
+        
+        return () => {
+          projectListSocketIO.removeMessageHandler('projects_update', handleProjectUpdate);
+        };
+      } catch (error) {
+        console.error('Failed to connect project list Socket.IO:', error);
+      }
+    };
+    
     const cleanup = connectWebSocket();
     
     return () => {
-      console.log('🧹 ProjectPage: Cleaning up project loading');
-      isComponentMounted = false;
-      if (loadTimeoutRef) {
-        clearTimeout(loadTimeoutRef);
-      }
-      cleanup();
+      console.log('🧹 Disconnecting project list Socket.IO');
       projectListSocketIO.disconnect();
+      cleanup.then(cleanupFn => cleanupFn && cleanupFn());
     };
   }, []); // Only run once on mount
 
@@ -231,11 +229,17 @@ export function ProjectPage({
     }
   }, [selectedProject]);
 
+  // Removed localStorage persistence for selected project
+  // We always want to load the pinned project on page refresh
+
   // Set up Socket.IO for real-time task count updates for selected project
   useEffect(() => {
     if (!selectedProject) return;
 
     console.log('🔌 Setting up Socket.IO for project task updates:', selectedProject.id);
+    
+    // Store the project room in localStorage for reconnection
+    localStorage.setItem('lastProjectRoom', selectedProject.id);
     
     const connectWebSocket = async () => {
       try {
@@ -312,21 +316,23 @@ export function ProjectPage({
       loadTaskCountsForAllProjects(projectIds);
       
       // Find pinned project if any
-      const pinnedProject = sortedProjects.find(project => project.pinned);
-      console.log(`[LOAD PROJECTS] Pinned project:`, pinnedProject ? {id: pinnedProject.id, title: pinnedProject.title, pinned: pinnedProject.pinned} : 'None');
-      console.log(`[LOAD PROJECTS] Current selected project:`, selectedProject ? {id: selectedProject.id, title: selectedProject.title, pinned: selectedProject.pinned} : 'None');
+      const pinnedProject = sortedProjects.find(project => project.pinned === true);
+      console.log(`[LOAD PROJECTS] Pinned project:`, pinnedProject ? pinnedProject.title : 'None');
       
-      // If there's a pinned project and currently selected project is different,
-      // switch to the pinned project
-      if (pinnedProject && (!selectedProject || selectedProject.id !== pinnedProject.id)) {
-        console.log(`[LOAD PROJECTS] Switching selection to pinned project: ${pinnedProject.title}`);
+      // Always select pinned project if it exists
+      if (pinnedProject) {
+        console.log(`[LOAD PROJECTS] Selecting pinned project: ${pinnedProject.title}`);
         setSelectedProject(pinnedProject);
         setShowProjectDetails(true);
-      } else if (sortedProjects.length > 0 && !selectedProject) {
-        // No pinned project but we need a default selection
+        setActiveTab('tasks');
+        loadTasksForProject(pinnedProject.id);
+      } else if (!selectedProject && sortedProjects.length > 0) {
+        // No pinned project and no selection, select first project
         console.log(`[LOAD PROJECTS] No pinned project, selecting first project: ${sortedProjects[0].title}`);
         setSelectedProject(sortedProjects[0]);
         setShowProjectDetails(true);
+        setActiveTab('tasks');
+        loadTasksForProject(sortedProjects[0].id);
       } else {
         console.log(`[LOAD PROJECTS] Keeping current project selection`);
       }
@@ -372,7 +378,7 @@ export function ProjectPage({
   const handleProjectSelect = (project: Project) => {
     setSelectedProject(project);
     setShowProjectDetails(true);
-    setActiveTab('docs'); // Reset to docs tab when a new project is selected
+    setActiveTab('tasks'); // Default to tasks tab when a new project is selected
     loadTasksForProject(project.id); // Load tasks for the selected project
   };
 
@@ -425,40 +431,42 @@ export function ProjectPage({
       });
       console.log(`[PIN] Backend response:`, updatedProject);
       
-      // Update local state directly without reloading all projects
+      // Update local state to reflect the change immediately
       setProjects(prev => {
-        // Create updated project
-        const updatedProject = { ...project, pinned: newPinnedState };
-        console.log(`[PIN] Updated project object:`, updatedProject);
-        
-        // If pinning: unpin all others and move this to the front
         if (newPinnedState) {
-          console.log(`[PIN] Pinning project - will unpin all others locally`);
-          const unpinnedProjects = prev.map(p => {
-            if (p.id === project.id) return updatedProject;
-            if (p.pinned) console.log(`[PIN] Unpinning project locally: ${p.id} (${p.title})`);
-            return { ...p, pinned: false };
-          });
+          // If pinning: unpin all others and update this one
+          console.log(`[PIN] Pinning project ${project.title} - unpinning all others`);
+          const updated = prev.map(p => ({
+            ...p,
+            pinned: p.id === project.id ? true : false
+          }));
           
-          // Re-sort with the newly pinned project first, then alphabetically
-          const sortedProjects = [...unpinnedProjects].sort((a, b) => {
+          // Re-sort with the newly pinned project first
+          return updated.sort((a, b) => {
             if (a.pinned && !b.pinned) return -1;
             if (!a.pinned && b.pinned) return 1;
             return a.title.localeCompare(b.title);
           });
-          console.log(`[PIN] Projects after sorting:`, sortedProjects.map(p => ({id: p.id, title: p.title, pinned: p.pinned})));
-          return sortedProjects;
         } else {
-          // Just update this project's pin state
-          console.log(`[PIN] Unpinning project - only updating this project locally`);
-          return prev.map(p => p.id === project.id ? updatedProject : p);
+          // Just unpin this project
+          console.log(`[PIN] Unpinning project ${project.title}`);
+          return prev.map(p => 
+            p.id === project.id ? { ...p, pinned: false } : p
+          );
         }
       });
       
-      // Update selected project if necessary
-      if (selectedProject?.id === project.id) {
+      // If pinning a project, also select it
+      if (newPinnedState) {
+        console.log(`[PIN] Selecting newly pinned project: ${project.title}`);
+        setSelectedProject({ ...project, pinned: true });
+        setShowProjectDetails(true);
+        setActiveTab('tasks'); // Default to tasks tab
+        loadTasksForProject(project.id);
+      } else if (selectedProject?.id === project.id) {
+        // If unpinning the currently selected project, just update its pin state
         console.log(`[PIN] Updating selected project's pin state`);
-        setSelectedProject(prev => prev ? { ...prev, pinned: newPinnedState } : null);
+        setSelectedProject(prev => prev ? { ...prev, pinned: false } : null);
       }
       
       showToast(
@@ -690,11 +698,11 @@ export function ProjectPage({
                             // Disconnect Socket.IO
                             projectCreationProgressService.disconnect();
                             
-                            // Remove temp project and reload to show the real project
+                            // Remove temp project 
                             setProjects((prev) => prev.filter(p => p.id !== project.id));
                             
-                            // Reload projects to show the newly created project
-                            loadProjects();
+                            // The project list will be updated via Socket.IO broadcast
+                            // No need to manually reload projects
                           }, 1000); // Reduced from 2000ms to 1000ms for faster refresh
                         }
                       }}
@@ -712,13 +720,17 @@ export function ProjectPage({
                   onClick={() => handleProjectSelect(project)} 
                   className={`
                     relative p-4 rounded-xl backdrop-blur-md w-72 cursor-pointer overflow-hidden
-                    ${selectedProject?.id === project.id 
-                      ? 'bg-gradient-to-b from-white/70 via-purple-50/20 to-white/50 dark:from-white/5 dark:via-purple-900/5 dark:to-black/20' 
-                      : 'bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30'
+                    ${project.pinned
+                      ? 'bg-gradient-to-b from-purple-100/80 via-purple-50/30 to-purple-100/50 dark:from-purple-900/30 dark:via-purple-900/20 dark:to-purple-900/10'
+                      : selectedProject?.id === project.id 
+                        ? 'bg-gradient-to-b from-white/70 via-purple-50/20 to-white/50 dark:from-white/5 dark:via-purple-900/5 dark:to-black/20' 
+                        : 'bg-gradient-to-b from-white/80 to-white/60 dark:from-white/10 dark:to-black/30'
                     }
-                    border ${selectedProject?.id === project.id 
-                      ? 'border-purple-400/60 dark:border-purple-500/60' 
-                      : 'border-gray-200 dark:border-zinc-800/50'
+                    border ${project.pinned
+                      ? 'border-purple-500/80 dark:border-purple-500/80 shadow-[0_0_15px_rgba(168,85,247,0.3)]'
+                      : selectedProject?.id === project.id 
+                        ? 'border-purple-400/60 dark:border-purple-500/60' 
+                        : 'border-gray-200 dark:border-zinc-800/50'
                     }
                     ${selectedProject?.id === project.id
                       ? 'shadow-[0_0_15px_rgba(168,85,247,0.4),0_0_10px_rgba(147,51,234,0.3)] dark:shadow-[0_0_20px_rgba(168,85,247,0.5),0_0_15px_rgba(147,51,234,0.4)]'
@@ -740,11 +752,12 @@ export function ProjectPage({
                   <div className="absolute top-2 left-2 z-20">
                     <button
                       onClick={(e) => handleTogglePin(e, project)}
-                      className={`p-1.5 rounded-full ${project.pinned ? 'bg-purple-100 text-purple-700 dark:bg-purple-700/30 dark:text-purple-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'} hover:bg-purple-200 hover:text-purple-800 dark:hover:bg-purple-800/50 dark:hover:text-purple-300 transition-colors`}
-                      title={project.pinned ? 'Unpin project' : 'Pin project'}
-                      aria-label={project.pinned ? 'Unpin project' : 'Pin project'}
+                      className={`p-1.5 rounded-full ${project.pinned === true ? 'bg-purple-100 text-purple-700 dark:bg-purple-700/30 dark:text-purple-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'} hover:bg-purple-200 hover:text-purple-800 dark:hover:bg-purple-800/50 dark:hover:text-purple-300 transition-colors`}
+                      title={project.pinned === true ? 'Unpin project' : 'Pin project'}
+                      aria-label={project.pinned === true ? 'Unpin project' : 'Pin project'}
+                      data-pinned={project.pinned}
                     >
-                      <Pin className="w-3.5 h-3.5" fill={project.pinned ? 'currentColor' : 'none'} />
+                      <Pin className="w-3.5 h-3.5" fill={project.pinned === true ? 'currentColor' : 'none'} />
                     </button>
                   </div>
                   
@@ -838,17 +851,17 @@ export function ProjectPage({
       {/* Project Details Section */}
       {showProjectDetails && selectedProject && (
         <motion.div variants={itemVariants}>
-          <Tabs defaultValue="docs" value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <Tabs defaultValue="tasks" value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList>
               <TabsTrigger value="docs" className="py-3 font-mono transition-all duration-300" color="blue">
                 Docs
               </TabsTrigger>
-              <TabsTrigger value="features" className="py-3 font-mono transition-all duration-300" color="purple">
+              {/* <TabsTrigger value="features" className="py-3 font-mono transition-all duration-300" color="purple">
                 Features
               </TabsTrigger>
               <TabsTrigger value="data" className="py-3 font-mono transition-all duration-300" color="pink">
                 Data
-              </TabsTrigger>
+              </TabsTrigger> */}
               <TabsTrigger value="tasks" className="py-3 font-mono transition-all duration-300" color="orange">
                 Tasks
               </TabsTrigger>
@@ -868,7 +881,7 @@ export function ProjectPage({
                     <DocsTab tasks={tasks} project={selectedProject} />
                   </TabsContent>
                 )}
-                {activeTab === 'features' && (
+                {/* {activeTab === 'features' && (
                   <TabsContent value="features" className="mt-0">
                     <FeaturesTab project={selectedProject} />
                   </TabsContent>
@@ -877,7 +890,7 @@ export function ProjectPage({
                   <TabsContent value="data" className="mt-0">
                     <DataTab project={selectedProject} />
                   </TabsContent>
-                )}
+                )} */}
                 {activeTab === 'tasks' && (
                   <TabsContent value="tasks" className="mt-0">
                     {isLoadingTasks ? (

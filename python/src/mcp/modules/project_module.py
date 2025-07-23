@@ -245,6 +245,9 @@ def register_project_tools(mcp: FastMCP):
                     url = urljoin(api_url, "/api/tasks")
                     params["status"] = filter_value
                     params["include_closed"] = include_closed
+                    # Add project_id if provided
+                    if project_id:
+                        params["project_id"] = project_id
                 elif filter_by == "parent" and filter_value:
                     # Use subtasks endpoint for parent filtering
                     url = urljoin(api_url, f"/api/tasks/subtasks/{filter_value}")

@@ -192,19 +192,22 @@ export class WebSocketService {
     });
 
     this.socket.on('disconnect', (reason: string) => {
-      // Socket.IO disconnected
+      console.log(`🔌 Socket.IO disconnected. Reason: ${reason}`);
       
       // Socket.IO handles reconnection automatically based on the reason
       if (reason === 'io server disconnect') {
         // Server initiated disconnect, won't auto-reconnect
         this.setState(WebSocketState.DISCONNECTED);
+      } else if (reason === 'transport close' || reason === 'transport error') {
+        // Network issue, will auto-reconnect
+        this.setState(WebSocketState.RECONNECTING);
       } else {
         // Client side disconnect, will auto-reconnect
         this.setState(WebSocketState.RECONNECTING);
       }
       
-      // Reject connection promise if still pending
-      if (this.connectionRejector) {
+      // Don't reject connection promise for temporary disconnects
+      if (this.connectionRejector && reason === 'io server disconnect') {
         this.connectionRejector(new Error(`Socket disconnected: ${reason}`));
         this.connectionResolver = null;
         this.connectionRejector = null;

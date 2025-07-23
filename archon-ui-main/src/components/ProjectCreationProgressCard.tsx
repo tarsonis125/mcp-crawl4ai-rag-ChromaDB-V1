@@ -13,7 +13,8 @@ import {
   Bot,
   BrainCircuit,
   BookOpen,
-  Database
+  Database,
+  AlertCircle
 } from 'lucide-react';
 import { Button } from './ui/Button';
 import { ProjectCreationProgressData } from '../services/projectCreationProgressService';
@@ -34,15 +35,19 @@ export const ProjectCreationProgressCard: React.FC<ProjectCreationProgressCardPr
   connectionStatus = 'connected'
 }) => {
   const [showLogs, setShowLogs] = useState(false);
+  const [hasCompletedRef] = useState({ value: false });
+  const [hasErroredRef] = useState({ value: false });
 
   // Handle completion/error events
   React.useEffect(() => {
-    if (progressData.status === 'completed' && onComplete) {
+    if (progressData.status === 'completed' && onComplete && !hasCompletedRef.value) {
+      hasCompletedRef.value = true;
       onComplete(progressData);
-    } else if (progressData.status === 'error' && onError) {
+    } else if (progressData.status === 'error' && onError && !hasErroredRef.value) {
+      hasErroredRef.value = true;
       onError(progressData.error || 'Project creation failed');
     }
-  }, [progressData.status, onComplete, onError, progressData]);
+  }, [progressData.status, onComplete, onError, progressData, hasCompletedRef, hasErroredRef]);
 
   const getStatusIcon = () => {
     switch (progressData.status) {

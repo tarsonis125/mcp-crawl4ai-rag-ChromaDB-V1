@@ -91,7 +91,12 @@ class ProjectService:
                     "title": project["title"],
                     "github_repo": project.get("github_repo"),
                     "created_at": project["created_at"],
-                    "updated_at": project["updated_at"]
+                    "updated_at": project["updated_at"],
+                    "pinned": project.get("pinned", False),
+                    "description": project.get("description", ""),
+                    "docs": project.get("docs", []),
+                    "features": project.get("features", []),
+                    "data": project.get("data", [])
                 })
             
             return True, {

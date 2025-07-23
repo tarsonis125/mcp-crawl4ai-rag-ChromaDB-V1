@@ -166,17 +166,26 @@ export const projectService = {
       console.log('[PROJECT SERVICE] Fetching projects from API');
       const projects = await callAPI<Project[]>('/api/projects');
       console.log('[PROJECT SERVICE] Raw API response:', projects);
+      console.log('[PROJECT SERVICE] Raw API response length:', projects.length);
+      
+      // Debug raw pinned values
+      projects.forEach((p: any) => {
+        console.log(`[PROJECT SERVICE] Raw project: ${p.title}, pinned=${p.pinned} (type: ${typeof p.pinned})`);
+      });
       
       // Add computed UI properties
       const processedProjects = projects.map((project: Project) => {
+        // Debug the raw pinned value
+        console.log(`[PROJECT SERVICE] Processing ${project.title}: raw pinned=${project.pinned} (type: ${typeof project.pinned})`);
+        
         const processed = {
           ...project,
-          // Explicitly ensure pinned is boolean type
-          pinned: project.pinned === true, 
+          // Ensure pinned is properly handled as boolean
+          pinned: project.pinned === true || project.pinned === 'true',
           progress: project.progress || 0,
           updated: project.updated || this.formatRelativeTime(project.updated_at)
         };
-        console.log(`[PROJECT SERVICE] Processed project ${project.id} (${project.title}), pinned=${processed.pinned}`);
+        console.log(`[PROJECT SERVICE] Processed project ${project.id} (${project.title}), pinned=${processed.pinned} (type: ${typeof processed.pinned})`);
         return processed;
       });
       
