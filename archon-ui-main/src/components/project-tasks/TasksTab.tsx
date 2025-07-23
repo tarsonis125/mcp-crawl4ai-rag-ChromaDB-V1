@@ -86,6 +86,12 @@ export const TasksTab = ({
 
     console.log('🔌 Setting up WebSocket connection for project:', projectId);
     
+    // Check current connection state immediately
+    if (taskUpdateSocketIO.isConnected()) {
+      console.log('🔄 Already connected, setting state immediately');
+      setIsWebSocketConnected(true);
+    }
+    
     // Debounce connection to avoid race conditions
     const connectionTimeout = setTimeout(() => {
       console.log('⏱️ Debounce period passed, establishing WebSocket connection...');
@@ -93,7 +99,10 @@ export const TasksTab = ({
       const connectWebSocket = async () => {
         // Check if already connected to avoid double connections
         if (taskUpdateSocketIO.isConnected()) {
-          console.log('🔄 WebSocket already connected, skipping reconnection');
+          console.log('🔄 WebSocket already connected, but rejoining project room');
+          // Even if connected, we need to join the correct project room
+          taskUpdateSocketIO.send({ type: 'join_project', project_id: projectId });
+          setIsWebSocketConnected(true);
           return;
         }
         
@@ -233,7 +242,7 @@ export const TasksTab = ({
       };
 
       connectWebSocket();
-    }, 100); // 100ms debounce to let component settle
+    }, 50); // 50ms debounce to let component settle (reduced for faster initial connection)
 
     // Cleanup on unmount or projectId change
     return () => {

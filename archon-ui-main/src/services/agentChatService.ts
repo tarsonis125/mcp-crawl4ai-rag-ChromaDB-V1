@@ -10,6 +10,7 @@ import {
   WebSocketMessage,
   WebSocketConfig
 } from './socketIOService';
+import { serverHealthService } from './serverHealthService';
 
 export interface ChatMessage {
   id: string;
@@ -447,9 +448,16 @@ class AgentChatService {
     });
     
     // Set up error handler
-    if (onError) {
-      wsService.addErrorHandler(onError);
-    }
+    wsService.addErrorHandler((error) => {
+      console.error(`❌ WebSocket error for session ${sessionId}:`, error);
+      
+      // Immediately trigger disconnect screen on WebSocket error
+      serverHealthService.handleImmediateDisconnect();
+      
+      if (onError) {
+        onError(error);
+      }
+    });
     
     // Set up state change handler
     wsService.addStateChangeHandler((state) => {
@@ -464,6 +472,9 @@ class AgentChatService {
           console.log(`🔌 WebSocket disconnected for session ${sessionId}`);
           this.notifyStatusChange('offline', sessionId);
           
+          // Immediately trigger disconnect screen via health service
+          serverHealthService.handleImmediateDisconnect();
+          
           // Handle session invalidation or schedule reconnect
           if (onClose) {
             onClose(new CloseEvent('close'));
@@ -473,11 +484,17 @@ class AgentChatService {
         case WebSocketState.RECONNECTING:
           console.log(`🟢 WebSocket reconnecting for session ${sessionId}`);
           this.notifyStatusChange('connecting', sessionId);
+          // Reset missed checks when reconnecting
+          serverHealthService.handleWebSocketReconnect();
           break;
           
         case WebSocketState.FAILED:
           console.log(`❌ WebSocket failed for session ${sessionId}`);
           this.notifyStatusChange('offline', sessionId);
+          
+          // Immediately trigger disconnect screen via health service
+          serverHealthService.handleImmediateDisconnect();
+          
           this.handleSessionInvalidation(sessionId);
           break;
       }

@@ -8,7 +8,7 @@ import { DocsTab } from '../components/project-tasks/DocsTab';
 // import { DataTab } from '../components/project-tasks/DataTab';
 import { TasksTab } from '../components/project-tasks/TasksTab';
 import { Button } from '../components/ui/Button';
-import { ChevronRight, ShoppingCart, Code, Briefcase, Layers, Plus, X, AlertCircle, Loader2, Heart, BarChart3, Trash2, Pin, ListTodo, Activity, CheckCircle2 } from 'lucide-react';
+import { ChevronRight, ShoppingCart, Code, Briefcase, Layers, Plus, X, AlertCircle, Loader2, Heart, BarChart3, Trash2, Pin, ListTodo, Activity, CheckCircle2, Clipboard } from 'lucide-react';
 
 // Import our service layer and types
 import { projectService } from '../services/projectService';
@@ -123,7 +123,10 @@ export function ProjectPage({
           setSelectedProject(pinnedProject);
           setShowProjectDetails(true);
           setActiveTab('tasks');
-          loadTasksForProject(pinnedProject.id);
+          // Small delay to let Socket.IO connections establish
+          setTimeout(() => {
+            loadTasksForProject(pinnedProject.id);
+          }, 100);
         } else if (sortedProjects.length > 0) {
           // No pinned project, select first one
           const firstProject = sortedProjects[0];
@@ -131,7 +134,10 @@ export function ProjectPage({
           setSelectedProject(firstProject);
           setShowProjectDetails(true);
           setActiveTab('tasks');
-          loadTasksForProject(firstProject.id);
+          // Small delay to let Socket.IO connections establish
+          setTimeout(() => {
+            loadTasksForProject(firstProject.id);
+          }, 100);
         }
         
         setIsLoadingProjects(false);
@@ -241,37 +247,40 @@ export function ProjectPage({
     // Store the project room in localStorage for reconnection
     localStorage.setItem('lastProjectRoom', selectedProject.id);
     
+    // Define handlers outside so they can be removed in cleanup
+    const handleTaskCreated = () => {
+      console.log('✅ Task created - refreshing counts for all projects');
+      const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
+      loadTaskCountsForAllProjects(projectIds);
+    };
+    
+    const handleTaskUpdated = () => {
+      console.log('✅ Task updated - refreshing counts for all projects');
+      const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
+      loadTaskCountsForAllProjects(projectIds);
+    };
+    
+    const handleTaskDeleted = () => {
+      console.log('✅ Task deleted - refreshing counts for all projects');
+      const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
+      loadTaskCountsForAllProjects(projectIds);
+    };
+    
+    const handleTaskArchived = () => {
+      console.log('✅ Task archived - refreshing counts for all projects');
+      const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
+      loadTaskCountsForAllProjects(projectIds);
+    };
+    
     const connectWebSocket = async () => {
       try {
-        await taskUpdateSocketIO.connect('/');
+        // Check if already connected
+        if (!taskUpdateSocketIO.isConnected()) {
+          await taskUpdateSocketIO.connect('/');
+        }
         
-        // Join the project room after connection
+        // Always join the project room (even if already connected)
         taskUpdateSocketIO.send({ type: 'join_project', project_id: selectedProject.id });
-        
-        // Set up event handlers for task updates
-        const handleTaskCreated = () => {
-          console.log('✅ Task created - refreshing counts for all projects');
-          const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
-          loadTaskCountsForAllProjects(projectIds);
-        };
-        
-        const handleTaskUpdated = () => {
-          console.log('✅ Task updated - refreshing counts for all projects');
-          const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
-          loadTaskCountsForAllProjects(projectIds);
-        };
-        
-        const handleTaskDeleted = () => {
-          console.log('✅ Task deleted - refreshing counts for all projects');
-          const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
-          loadTaskCountsForAllProjects(projectIds);
-        };
-        
-        const handleTaskArchived = () => {
-          console.log('✅ Task archived - refreshing counts for all projects');
-          const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
-          loadTaskCountsForAllProjects(projectIds);
-        };
         
         // Add event handlers
         taskUpdateSocketIO.addMessageHandler('task_created', handleTaskCreated);
@@ -287,10 +296,15 @@ export function ProjectPage({
     connectWebSocket();
 
     return () => {
-      console.log('🔌 Disconnecting task Socket.IO');
-      taskUpdateSocketIO.disconnect();
+      // Don't disconnect the shared taskUpdateSocketIO - let TasksTab manage it
+      console.log('🔌 Cleaning up task Socket.IO handlers');
+      // Just remove the handlers, don't disconnect
+      taskUpdateSocketIO.removeMessageHandler('task_created', handleTaskCreated);
+      taskUpdateSocketIO.removeMessageHandler('task_updated', handleTaskUpdated);
+      taskUpdateSocketIO.removeMessageHandler('task_deleted', handleTaskDeleted);
+      taskUpdateSocketIO.removeMessageHandler('task_archived', handleTaskArchived);
     };
-  }, [selectedProject?.id, loadTaskCountsForAllProjects, projects]);
+  }, [selectedProject?.id]);
 
   const loadProjects = async () => {
     try {
@@ -748,33 +762,8 @@ export function ProjectPage({
                     </div>
                   )}
 
-                  {/* Pin button positioned in top-left corner */}
-                  <div className="absolute top-2 left-2 z-20">
-                    <button
-                      onClick={(e) => handleTogglePin(e, project)}
-                      className={`p-1.5 rounded-full ${project.pinned === true ? 'bg-purple-100 text-purple-700 dark:bg-purple-700/30 dark:text-purple-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'} hover:bg-purple-200 hover:text-purple-800 dark:hover:bg-purple-800/50 dark:hover:text-purple-300 transition-colors`}
-                      title={project.pinned === true ? 'Unpin project' : 'Pin project'}
-                      aria-label={project.pinned === true ? 'Unpin project' : 'Pin project'}
-                      data-pinned={project.pinned}
-                    >
-                      <Pin className="w-3.5 h-3.5" fill={project.pinned === true ? 'currentColor' : 'none'} />
-                    </button>
-                  </div>
-                  
-                  {/* Delete button positioned in top-right corner */}
-                  <div className="absolute top-2 right-2 z-20">
-                    <button
-                      onClick={(e) => handleDeleteProject(e, project.id, project.title)}
-                      className="p-1.5 rounded-full bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-600 dark:bg-gray-800/70 dark:text-gray-400 dark:hover:bg-red-900/30 dark:hover:text-red-400 transition-colors"
-                      title="Delete project"
-                      aria-label="Delete project"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  
                   <div className="relative z-10">
-                    <div className="h-14 flex items-center justify-center mb-4 px-2">
+                    <div className="flex items-center justify-center mb-4 px-2">
                       <h3 className={`font-medium text-center leading-tight line-clamp-2 transition-all duration-300 ${
                         selectedProject?.id === project.id 
                           ? 'text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]' 
@@ -839,6 +828,51 @@ export function ProjectPage({
                         </div>
                       </div>
                     </div>
+                    
+                    {/* Action buttons - At bottom of card */}
+                    <div className="mt-3 pt-3 border-t border-gray-200/50 dark:border-gray-700/30 flex items-center justify-between gap-2">
+                      {/* Pin button */}
+                      <button
+                        onClick={(e) => handleTogglePin(e, project)}
+                        className={`p-1.5 rounded-full ${project.pinned === true ? 'bg-purple-100 text-purple-700 dark:bg-purple-700/30 dark:text-purple-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'} hover:bg-purple-200 hover:text-purple-800 dark:hover:bg-purple-800/50 dark:hover:text-purple-300 transition-colors`}
+                        title={project.pinned === true ? 'Unpin project' : 'Pin project'}
+                        aria-label={project.pinned === true ? 'Unpin project' : 'Pin project'}
+                        data-pinned={project.pinned}
+                      >
+                        <Pin className="w-3.5 h-3.5" fill={project.pinned === true ? 'currentColor' : 'none'} />
+                      </button>
+                      
+                      {/* Copy Project ID Button */}
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigator.clipboard.writeText(project.id);
+                          showToast('Project ID copied to clipboard', 'success');
+                          // Visual feedback
+                          const button = e.currentTarget;
+                          const originalHTML = button.innerHTML;
+                          button.innerHTML = '<svg class="w-3 h-3 mr-1 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>Copied!';
+                          setTimeout(() => {
+                            button.innerHTML = originalHTML;
+                          }, 2000);
+                        }}
+                        className="flex-1 flex items-center justify-center gap-1 text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors py-1"
+                        title="Copy Project ID to clipboard"
+                      >
+                        <Clipboard className="w-3 h-3" />
+                        <span>Copy ID</span>
+                      </button>
+                      
+                      {/* Delete button */}
+                      <button
+                        onClick={(e) => handleDeleteProject(e, project.id, project.title)}
+                        className="p-1.5 rounded-full bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-600 dark:bg-gray-800/70 dark:text-gray-400 dark:hover:bg-red-900/30 dark:hover:text-red-400 transition-colors"
+                        title="Delete project"
+                        aria-label="Delete project"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </motion.div>
                 )
@@ -867,69 +901,61 @@ export function ProjectPage({
               </TabsTrigger>
             </TabsList>
             
-            {/* Add AnimatePresence for tab content transitions */}
-            <AnimatePresence mode="wait">
-              <motion.div 
-                key={activeTab} 
-                initial="hidden" 
-                animate="visible" 
-                exit="exit" 
-                variants={tabContentVariants}
-              >
-                {activeTab === 'docs' && (
-                  <TabsContent value="docs" className="mt-0">
-                    <DocsTab tasks={tasks} project={selectedProject} />
-                  </TabsContent>
-                )}
-                {/* {activeTab === 'features' && (
-                  <TabsContent value="features" className="mt-0">
-                    <FeaturesTab project={selectedProject} />
-                  </TabsContent>
-                )}
-                {activeTab === 'data' && (
-                  <TabsContent value="data" className="mt-0">
-                    <DataTab project={selectedProject} />
-                  </TabsContent>
-                )} */}
-                {activeTab === 'tasks' && (
-                  <TabsContent value="tasks" className="mt-0">
-                    {isLoadingTasks ? (
-                      <div className="flex items-center justify-center py-12">
-                        <div className="text-center">
-                          <Loader2 className="w-6 h-6 text-orange-500 mx-auto mb-4 animate-spin" />
-                          <p className="text-gray-600 dark:text-gray-400">Loading tasks...</p>
-                        </div>
+            {/* Tab content without AnimatePresence to prevent unmounting */}
+            <div>
+              {activeTab === 'docs' && (
+                <TabsContent value="docs" className="mt-0">
+                  <DocsTab tasks={tasks} project={selectedProject} />
+                </TabsContent>
+              )}
+              {/* {activeTab === 'features' && (
+                <TabsContent value="features" className="mt-0">
+                  <FeaturesTab project={selectedProject} />
+                </TabsContent>
+              )}
+              {activeTab === 'data' && (
+                <TabsContent value="data" className="mt-0">
+                  <DataTab project={selectedProject} />
+                </TabsContent>
+              )} */}
+              {activeTab === 'tasks' && (
+                <TabsContent value="tasks" className="mt-0">
+                  {isLoadingTasks ? (
+                    <div className="flex items-center justify-center py-12">
+                      <div className="text-center">
+                        <Loader2 className="w-6 h-6 text-orange-500 mx-auto mb-4 animate-spin" />
+                        <p className="text-gray-600 dark:text-gray-400">Loading tasks...</p>
                       </div>
-                    ) : tasksError ? (
-                      <div className="flex items-center justify-center py-12">
-                        <div className="text-center">
-                          <AlertCircle className="w-6 h-6 text-red-500 mx-auto mb-4" />
-                          <p className="text-red-600 dark:text-red-400 mb-4">{tasksError}</p>
-                                                     <Button 
-                             onClick={() => loadTasksForProject(selectedProject.id)} 
-                             variant="primary" 
-                             accentColor="purple"
-                           >
-                            Retry
-                          </Button>
-                        </div>
+                    </div>
+                  ) : tasksError ? (
+                    <div className="flex items-center justify-center py-12">
+                      <div className="text-center">
+                        <AlertCircle className="w-6 h-6 text-red-500 mx-auto mb-4" />
+                        <p className="text-red-600 dark:text-red-400 mb-4">{tasksError}</p>
+                                                   <Button 
+                           onClick={() => loadTasksForProject(selectedProject.id)} 
+                           variant="primary" 
+                           accentColor="purple"
+                         >
+                          Retry
+                        </Button>
                       </div>
-                    ) : (
-                      <TasksTab 
-                        initialTasks={tasks} 
-                        onTasksChange={(updatedTasks) => {
-                          setTasks(updatedTasks);
-                          // Refresh task counts for all projects when tasks change
-                          const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
-                          loadTaskCountsForAllProjects(projectIds);
-                        }} 
-                        projectId={selectedProject.id} 
-                      />
-                    )}
-                  </TabsContent>
-                )}
-              </motion.div>
-            </AnimatePresence>
+                    </div>
+                  ) : (
+                    <TasksTab 
+                      initialTasks={tasks} 
+                      onTasksChange={(updatedTasks) => {
+                        setTasks(updatedTasks);
+                        // Refresh task counts for all projects when tasks change
+                        const projectIds = projects.map(p => p.id).filter(id => !id.startsWith('temp-'));
+                        loadTaskCountsForAllProjects(projectIds);
+                      }} 
+                      projectId={selectedProject.id} 
+                    />
+                  )}
+                </TabsContent>
+              )}
+            </div>
           </Tabs>
         </motion.div>
       )}

@@ -14,7 +14,7 @@ class ServerHealthService {
   // Settings
   private disconnectScreenEnabled: boolean = true;
   private disconnectScreenDelay: number = 10000; // 10 seconds
-  private maxMissedChecks: number = 5; // Show disconnect after 5 missed checks (more tolerance for heavy operations)
+  private maxMissedChecks: number = 2; // Show disconnect after 2 missed checks (10 seconds max)
   private checkInterval: number = 5000; // Check every 5 seconds (reduced frequency for heavy operations)
 
   async loadSettings() {
@@ -118,6 +118,30 @@ class ServerHealthService {
 
   isServerConnected(): boolean {
     return this.isConnected;
+  }
+
+  /**
+   * Immediately trigger disconnect screen without waiting for health checks
+   * Used when WebSocket or other services detect immediate disconnection
+   */
+  handleImmediateDisconnect() {
+    console.log('🏥 [Health] Immediate disconnect triggered');
+    this.isConnected = false;
+    this.missedChecks = this.maxMissedChecks; // Set to max to ensure disconnect screen shows
+    
+    if (this.disconnectScreenEnabled && this.callbacks) {
+      console.log('🏥 [Health] Triggering disconnect screen immediately');
+      this.callbacks.onDisconnected();
+    }
+  }
+
+  /**
+   * Handle when WebSocket reconnects - reset state but let health check confirm
+   */
+  handleWebSocketReconnect() {
+    console.log('🏥 [Health] WebSocket reconnected, resetting missed checks');
+    this.missedChecks = 0;
+    // Don't immediately mark as connected - let health check confirm server is actually healthy
   }
 
   getSettings() {
