@@ -10,31 +10,18 @@ import { Badge } from '../ui/Badge';
 import { Select } from '../ui/Select';
 import { CrawlProgressData, crawlProgressService } from '../../services/crawlProgressService';
 import { WebSocketState } from '../../services/socketIOService';
-import { BlockNoteEditor } from './BlockNoteEditor';
+import { MilkdownEditor } from './MilkdownEditor';
 import { VersionHistoryModal } from './VersionHistoryModal';
 
 
 
-// Archon-like Block structure
-interface ArchonBlock {
-  id: string;
-  type: 'paragraph' | 'heading_1' | 'heading_2' | 'heading_3' | 'bulleted_list' | 'numbered_list' | 'to_do' | 'callout' | 'divider' | 'quote';
-  content: any;
-  properties?: {
-    title?: string;
-    color?: string;
-    checked?: boolean;
-    text?: string;
-  };
-}
 
 interface ProjectDoc {
   id: string;
   title: string;
-  blocks?: ArchonBlock[]; // Optional - some docs only have content
   created_at: string;
   updated_at: string;
-  // Additional fields for Archon MCP format support
+  // Content field stores markdown or structured data
   content?: any;
   document_type?: string;
 }
@@ -51,52 +38,77 @@ const DOCUMENT_TEMPLATES = {
   'prd': {
     name: 'PRD Template',
     icon: '📋',
-    blocks: [
-      { id: '1', type: 'heading_1' as const, content: 'Product Requirements Document', properties: { title: 'Product Requirements Document' } },
-      { id: '2', type: 'heading_2' as const, content: 'Project Overview', properties: { title: 'Project Overview' } },
-      { id: '3', type: 'paragraph' as const, content: 'Describe the project overview here...', properties: {} },
-      { id: '4', type: 'heading_2' as const, content: 'Goals', properties: { title: 'Goals' } },
-      { id: '5', type: 'bulleted_list' as const, content: ['Goal 1', 'Goal 2', 'Goal 3'], properties: {} },
-      { id: '6', type: 'heading_2' as const, content: 'Success Criteria', properties: { title: 'Success Criteria' } },
-      { id: '7', type: 'bulleted_list' as const, content: ['Criteria 1', 'Criteria 2'], properties: {} },
-      { id: '8', type: 'heading_2' as const, content: 'Requirements', properties: { title: 'Requirements' } },
-      { id: '9', type: 'numbered_list' as const, content: ['Requirement 1', 'Requirement 2'], properties: {} }
-    ]
+    content: `# Product Requirements Document
+
+## Project Overview
+
+Describe the project overview here...
+
+## Goals
+
+- Goal 1
+- Goal 2
+- Goal 3
+
+## Success Criteria
+
+- Criteria 1
+- Criteria 2
+
+## Requirements
+
+1. Requirement 1
+2. Requirement 2`
   },
   'technical_spec': {
     name: 'Technical Spec',
     icon: '⚙️',
-    blocks: [
-      { id: '1', type: 'heading_1' as const, content: 'Technical Specification', properties: { title: 'Technical Specification' } },
-      { id: '2', type: 'heading_2' as const, content: 'Architecture', properties: { title: 'Architecture' } },
-      { id: '3', type: 'paragraph' as const, content: 'Describe the technical architecture...', properties: {} },
-      { id: '4', type: 'heading_2' as const, content: 'Tech Stack', properties: { title: 'Tech Stack' } },
-      { id: '5', type: 'bulleted_list' as const, content: ['Frontend: React + TypeScript', 'Backend: Node.js + Express', 'Database: PostgreSQL'], properties: {} },
-      { id: '6', type: 'heading_2' as const, content: 'Implementation Plan', properties: { title: 'Implementation Plan' } },
-      { id: '7', type: 'numbered_list' as const, content: ['Phase 1: Setup', 'Phase 2: Core Features', 'Phase 3: Testing'], properties: {} }
-    ]
+    content: `# Technical Specification
+
+## Architecture
+
+Describe the technical architecture...
+
+## Tech Stack
+
+- Frontend: React + TypeScript
+- Backend: Node.js + Express
+- Database: PostgreSQL
+
+## Implementation Plan
+
+1. Phase 1: Setup
+2. Phase 2: Core Features
+3. Phase 3: Testing`
   },
   'meeting_notes': {
     name: 'Meeting Notes',
     icon: '📝',
-    blocks: [
-      { id: '1', type: 'heading_1' as const, content: 'Meeting Notes', properties: { title: 'Meeting Notes' } },
-      { id: '2', type: 'paragraph' as const, content: 'Date: ' + new Date().toLocaleDateString(), properties: {} },
-      { id: '3', type: 'heading_2' as const, content: 'Attendees', properties: { title: 'Attendees' } },
-      { id: '4', type: 'bulleted_list' as const, content: ['Person 1', 'Person 2'], properties: {} },
-      { id: '5', type: 'heading_2' as const, content: 'Agenda', properties: { title: 'Agenda' } },
-      { id: '6', type: 'numbered_list' as const, content: ['Topic 1', 'Topic 2'], properties: {} },
-      { id: '7', type: 'heading_2' as const, content: 'Action Items', properties: { title: 'Action Items' } },
-      { id: '8', type: 'to_do' as const, content: ['Task 1', 'Task 2'], properties: {} }
-    ]
+    content: `# Meeting Notes
+
+Date: ${new Date().toLocaleDateString()}
+
+## Attendees
+
+- Person 1
+- Person 2
+
+## Agenda
+
+1. Topic 1
+2. Topic 2
+
+## Action Items
+
+- [ ] Task 1
+- [ ] Task 2`
   },
   'blank': {
     name: 'Blank Document',
     icon: '📄',
-    blocks: [
-      { id: '1', type: 'heading_1' as const, content: 'Untitled', properties: { title: 'Untitled' } },
-      { id: '2', type: 'paragraph' as const, content: 'Start writing...', properties: {} }
-    ]
+    content: `# Untitled
+
+Start writing...`
   }
 };
 
@@ -177,10 +189,9 @@ export const DocsTab = ({
       const projectDocuments: ProjectDoc[] = docs.map((doc: any, index: number) => ({
         id: doc.id || `doc-${Date.now()}-${index}`, // Ensure unique IDs
         title: doc.title || 'Untitled Document',
-        blocks: doc.blocks || [],
         created_at: doc.created_at || new Date().toISOString(),
         updated_at: doc.updated_at || new Date().toISOString(),
-        // Preserve original data for BlockNote conversion
+        // Preserve original data
         content: doc.content,
         document_type: doc.document_type
       }));
@@ -206,19 +217,12 @@ export const DocsTab = ({
     const template = DOCUMENT_TEMPLATES[templateKey as keyof typeof DOCUMENT_TEMPLATES];
     if (!template) return;
 
-    // Create template blocks with unique IDs
-    const templateBlocks = template.blocks.map(block => ({
-      ...block,
-      id: `${Date.now()}-${block.id}`
-    }));
-
-    // Convert to clean MCP format using existing converter
-    const mcpContent = convertArchonBlocksToMCPContent(templateBlocks);
-
     const newDoc: ProjectDoc = {
       id: `doc-${Date.now()}`,
       title: template.name,
-      content: mcpContent,    // Only clean MCP format like E-commerce
+      content: {
+        markdown: template.content
+      },
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -571,7 +575,7 @@ export const DocsTab = ({
             <div className="text-gray-500">Loading documents...</div>
           </div>
         ) : selectedDocument ? (
-          <BlockNoteEditor
+          <MilkdownEditor
             document={selectedDocument}
             isDarkMode={isDarkMode}
             onSave={async (updatedDocument) => {
@@ -704,64 +708,6 @@ export const DocsTab = ({
   );
 };
 
-/* ——————————————————————————————————————————— */
-/* Helper functions                               */
-/* ——————————————————————————————————————————— */
-
-// Convert Archon blocks to clean MCP content format for AI agents
-const convertArchonBlocksToMCPContent = (blocks: ArchonBlock[]) => {
-  const content: any = {};
-  let currentSection = '';
-  let currentItems: string[] = [];
-  
-  for (const block of blocks) {
-    if (block.type === 'heading_1') {
-      // Main title - skip
-      continue;
-    }
-    
-    if (block.type === 'heading_2') {
-      // Save previous section if exists
-      if (currentSection && currentItems.length > 0) {
-        const sectionKey = currentSection.toLowerCase().replace(/\s+/g, '_');
-        if (currentItems.length === 1) {
-          content[sectionKey] = { description: currentItems[0] };
-        } else {
-          content[sectionKey] = currentItems;
-        }
-      }
-      
-      // Start new section
-      currentSection = block.content || block.properties?.text || '';
-      currentItems = [];
-    } else if (block.type === 'paragraph' && block.content?.trim()) {
-      currentItems.push(block.content);
-    } else if (block.type === 'bulleted_list' || block.type === 'numbered_list') {
-      if (block.content) {
-        // Handle array content or string content
-        if (Array.isArray(block.content)) {
-          currentItems.push(...block.content);
-        } else {
-          // Split by newlines for concatenated content
-          const items = block.content.split('\n').filter((item: string) => item.trim());
-          currentItems.push(...items);
-        }
-      }
-    }
-  }
-  
-  // Save final section
-  if (currentSection && currentItems.length > 0) {
-    const sectionKey = currentSection.toLowerCase().replace(/\s+/g, '_');
-    if (currentItems.length === 1) {
-      content[sectionKey] = { description: currentItems[0] };
-    } else {
-      content[sectionKey] = currentItems;
-    }
-  }
-  
-  return content;
-};
 
 /* ——————————————————————————————————————————— */
 /* Helper components                              */
@@ -810,7 +756,7 @@ const TemplateModal: React.FC<{
                   <h4 className="font-semibold text-gray-900 dark:text-white">{template.name}</h4>
                 </div>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {template.blocks.length} blocks included
+                  Markdown template
                 </p>
               </button>
             ))}
