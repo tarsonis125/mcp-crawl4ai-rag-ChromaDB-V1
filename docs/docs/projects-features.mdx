@@ -20,14 +20,14 @@ import Admonition from '@theme/Admonition';
 ## 🎯 Core Project Management Features
 
 ### Project Organization
-- **Hierarchical Structure**: Projects contain tasks, documents, and features
+- **Organized Structure**: Projects contain tasks, documents, and features
 - **GitHub Integration**: Link projects to repositories for seamless context
 - **PRD Management**: Store and version Product Requirements Documents
 - **Feature Tracking**: Organize work by features with associated tasks
 
 ### Task Management
 - **Status Workflow**: Todo → Doing → Review → Done
-- **Parent-Child Tasks**: Create subtasks for complex work
+- **Task Organization**: Group related tasks together
 - **Task Assignment**: Assign to User, Archon, or AI IDE Agent
 - **Priority Levels**: High, Medium, Low priority organization
 - **Archive Support**: Soft delete with recovery options
@@ -100,7 +100,7 @@ import Admonition from '@theme/Admonition';
 
 ### Database Schema
 - **Projects Table**: Stores project metadata and JSONB fields
-- **Tasks Table**: Hierarchical task storage with relationships
+- **Tasks Table**: Task storage with project relationships
 - **Project Versions**: Complete version history
 
 ### API Endpoints
@@ -144,7 +144,7 @@ The AI will:
 
 ### Task Breakdown
 ```
-AI Assistant: "Break down the 'Implement login form' task into subtasks"
+AI Assistant: "Break down the 'Implement login form' task into smaller tasks"
 ```
 The AI will create:
 - Design login UI component

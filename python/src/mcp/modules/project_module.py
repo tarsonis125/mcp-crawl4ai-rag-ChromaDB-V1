@@ -146,7 +146,6 @@ def register_project_tools(mcp: FastMCP):
         assignee: str = "User",
         task_order: int = 0,
         feature: str = None,
-        parent_task_id: str = None,
         sources: List[Dict[str, Any]] = None,
         code_examples: List[Dict[str, Any]] = None,
         update_fields: Dict[str, Any] = None,
@@ -161,14 +160,13 @@ def register_project_tools(mcp: FastMCP):
             action: Operation - "create" | "list" | "get" | "update" | "delete" | "archive"
             task_id: UUID of the task (required for get/update/delete/archive)
             project_id: UUID of the project (required for create, optional for list)
-            filter_by: Filter type for list - "status" | "parent" | "project"
-            filter_value: Value for the filter (status value or parent_task_id)
+            filter_by: Filter type for list - "status" | "project"
+            filter_value: Value for the filter (status value)
             title: Task title (required for create)
             description: Task description (for create)
             assignee: One of 'User', 'Archon', 'AI IDE Agent' (for create)
             task_order: Priority within status - higher number = higher priority (e.g., 10 is higher priority than 1)
             feature: Feature label (for create)
-            parent_task_id: Parent task for subtasks (for create)
             sources: List of source metadata (for create)
             code_examples: List of code examples (for create)
             update_fields: Dict of fields to update (for update action)
@@ -208,7 +206,6 @@ def register_project_tools(mcp: FastMCP):
                             "assignee": assignee,
                             "task_order": task_order,
                             "feature": feature,
-                            "parent_task_id": parent_task_id,
                             "sources": sources,
                             "code_examples": code_examples
                         }
@@ -234,7 +231,6 @@ def register_project_tools(mcp: FastMCP):
                     # Use project-specific endpoint for project filtering
                     url = urljoin(api_url, f"/api/projects/{filter_value}/tasks")
                     params["include_archived"] = False  # For backward compatibility
-                    params["include_subtasks"] = False  # Don't include subtasks by default
                     
                     # Only add include_closed logic for project filtering
                     if not include_closed:
@@ -248,10 +244,6 @@ def register_project_tools(mcp: FastMCP):
                     # Add project_id if provided
                     if project_id:
                         params["project_id"] = project_id
-                elif filter_by == "parent" and filter_value:
-                    # Use subtasks endpoint for parent filtering
-                    url = urljoin(api_url, f"/api/tasks/subtasks/{filter_value}")
-                    params["include_closed"] = include_closed
                 else:
                     # Default to generic tasks endpoint
                     url = urljoin(api_url, "/api/tasks")

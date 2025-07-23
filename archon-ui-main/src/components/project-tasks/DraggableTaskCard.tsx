@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState } from 'react';
 import { useDrag, useDrop } from 'react-dnd';
 import { Edit, Trash2, RefreshCw, Tag, User, Bot, Clipboard } from 'lucide-react';
 import { Task } from './TaskTableView';
@@ -15,7 +15,6 @@ export interface DraggableTaskCardProps {
   allTasks?: Task[];
   hoveredTaskId?: string | null;
   onTaskHover?: (taskId: string | null) => void;
-  showSubtasks?: boolean;
 }
 
 export const DraggableTaskCard = ({
@@ -27,15 +26,7 @@ export const DraggableTaskCard = ({
   allTasks = [],
   hoveredTaskId,
   onTaskHover,
-  showSubtasks = false,
 }: DraggableTaskCardProps) => {
-  // Use useCallback to stabilize the state setter
-  const [expandedSubtask, setExpandedSubtask] = useState<string | null>(null);
-  
-  const handleSubtaskClick = useCallback((subtaskId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setExpandedSubtask(prev => prev === subtaskId ? null : subtaskId);
-  }, []); // Empty dependency array to keep it stable
   
   const [{ isDragging }, drag] = useDrag({
     type: ItemTypes.TASK,
@@ -78,15 +69,6 @@ export const DraggableTaskCard = ({
   const getRelatedTaskIds = () => {
     const relatedIds = new Set<string>();
     
-    if (task.parent_task_id) {
-      // If this is a subtask, include parent
-      relatedIds.add(task.parent_task_id);
-    } else {
-      // If this is a parent task, include all subtasks
-      const subtasks = allTasks.filter(t => t.parent_task_id === task.id);
-      subtasks.forEach(subtask => relatedIds.add(subtask.id));
-    }
-    
     return relatedIds;
   };
 
@@ -101,8 +83,6 @@ export const DraggableTaskCard = ({
     onTaskHover?.(null);
   };
 
-  // Get subtasks for this parent task
-  const subtasks = allTasks.filter(t => t.parent_task_id === task.id);
   
   // Card styling - using CSS-based height animation for better scrolling
   
@@ -131,12 +111,12 @@ export const DraggableTaskCard = ({
         perspective: '1000px',
         transformStyle: 'preserve-3d'
       }}
-      className={`flip-card w-full cursor-move relative ${cardScale} ${cardOpacity} ${isDragging ? 'opacity-50 scale-90' : ''} ${transitionStyles} ${showSubtasks && subtasks.length > 0 ? 'card-expanded' : 'card-collapsed'} group ${highlightGlow}`}
+      className={`flip-card w-full min-h-[140px] cursor-move relative ${cardScale} ${cardOpacity} ${isDragging ? 'opacity-50 scale-90' : ''} ${transitionStyles} group ${highlightGlow}`}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
       <div 
-        className={`relative w-full h-full transform-style-preserve-3d ${isFlipped ? 'rotate-y-180' : ''}`}
+        className={`relative w-full min-h-[140px] transform-style-preserve-3d ${isFlipped ? 'rotate-y-180' : ''}`}
       >
         {/* Front side with subtle hover effect */}
         <div className={`absolute w-full h-full backface-hidden ${cardBaseStyles} ${transitionStyles} ${hoverEffectClasses} rounded-lg`}>
@@ -191,47 +171,12 @@ export const DraggableTaskCard = ({
               </div>
             </div>
             
-            <h4 className="font-medium text-gray-900 dark:text-white mb-2 pl-1.5 line-clamp-2 overflow-hidden" title={task.title}>
+            <h4 className="text-xs font-medium text-gray-900 dark:text-white mb-2 pl-1.5 line-clamp-2 overflow-hidden" title={task.title}>
               {task.title}
             </h4>
             
-            {/* Subtasks display - exactly matching back side pattern for scrolling */}
-            <div className="flex-1 overflow-hidden relative" style={{ display: showSubtasks ? 'block' : 'none' }}>
-              <div className="absolute inset-0 overflow-y-auto hide-scrollbar pl-1.5 pr-2">
-                <div className={`pt-1 border-l-2 border-cyan-200/30 dark:border-cyan-800/30 pr-1 space-y-1 ${!showSubtasks ? 'opacity-0' : 'opacity-100'}`}>
-                  {subtasks.map((subtask, index) => (
-                    <div 
-                      key={subtask.id} 
-                      className={`flex items-start gap-2 text-xs bg-gray-100/50 dark:bg-gray-800/50 rounded px-2 py-1 transform transition-all duration-300 ease-in-out hover:bg-gray-200/50 dark:hover:bg-gray-700/50 hover:shadow-sm cursor-pointer relative ${
-                        showSubtasks 
-                          ? 'translate-y-0 opacity-100' 
-                          : '-translate-y-2 opacity-0'
-                      }`}
-                      style={{ 
-                        transitionDelay: showSubtasks ? `${index * 50}ms` : '0ms'
-                      }}
-                      onClick={(e) => handleSubtaskClick(subtask.id, e)}
-                    >
-                      <span className={`flex-1 text-gray-600 dark:text-gray-400 text-[11px] ${
-                        expandedSubtask === subtask.id ? 'whitespace-normal break-words' : 'truncate'
-                      }`}>
-                        {subtask.title}
-                      </span>
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 flex-shrink-0 ${
-                        subtask.status === 'complete' ? 'bg-green-200 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                        subtask.status === 'in-progress' ? 'bg-blue-200 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
-                        subtask.status === 'review' ? 'bg-purple-200 text-purple-800 dark:bg-purple-900 dark:text-purple-200' :
-                        'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-                      }`}>
-                        {subtask.status === 'backlog' ? 'Backlog' :
-                         subtask.status === 'in-progress' ? 'In Progress' :
-                         subtask.status === 'review' ? 'Review' : 'Complete'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+            {/* Spacer to push assignee section to bottom */}
+            <div className="flex-1"></div>
             
             <div className="flex items-center justify-between mt-auto pt-2 pl-1.5 pr-3">
               <div className="flex items-center gap-2">
@@ -273,7 +218,7 @@ export const DraggableTaskCard = ({
           {/* Content container with fixed padding */}
           <div className="flex flex-col h-full p-3">
             <div className="flex items-center gap-2 mb-2 pl-1.5">
-              <h4 className="font-medium text-gray-900 dark:text-white truncate max-w-[75%]">
+              <h4 className="text-xs font-medium text-gray-900 dark:text-white truncate max-w-[75%]">
                 {task.title}
               </h4>
               <button 
@@ -287,7 +232,7 @@ export const DraggableTaskCard = ({
             {/* Description container with absolute positioning inside parent bounds */}
             <div className="flex-1 overflow-hidden relative">
               <div className="absolute inset-0 overflow-y-auto hide-scrollbar pl-1.5 pr-2">
-                <p className="text-xs text-gray-700 dark:text-gray-300 break-words whitespace-pre-wrap">{task.description}</p>
+                <p className="text-xs text-gray-700 dark:text-gray-300 break-words whitespace-pre-wrap" style={{fontSize: '11px'}}>{task.description}</p>
               </div>
             </div>
           </div>

@@ -771,7 +771,7 @@ Projects in Archon use JSONB fields for flexible document storage:
 
 **Service Layer Architecture:**
 - **ProjectService**: Core CRUD operations for projects
-- **TaskService**: Task management with archiving and hierarchical structure
+- **TaskService**: Task management with archiving
 - **ProjectCreationService**: AI-assisted project creation with GitHub integration
 - **ProgressService**: Real-time progress tracking for long-running operations
 - **SourceLinkingService**: Manages relationships between projects and knowledge sources
@@ -1098,7 +1098,6 @@ Retrieve tasks with filtering options.
 |-----------|------|----------|-------------|
 | `project_id` | string | ❌ | Filter by project ID |
 | `status` | string | ❌ | Filter by status (`todo`, `doing`, `review`, `done`) |
-| `parent_task_id` | string | ❌ | Filter by parent task |
 | `assignee` | string | ❌ | Filter by assignee |
 
 #### Example Response
@@ -1110,7 +1109,6 @@ Retrieve tasks with filtering options.
     {
       "id": "660e8400-e29b-41d4-a716-446655440001",
       "project_id": "550e8400-e29b-41d4-a716-446655440000",
-      "parent_task_id": null,
       "title": "Write API documentation",
       "description": "Create comprehensive API reference documentation",
       "sources": [
@@ -1142,7 +1140,6 @@ Create a new task under a project.
 ```json
 {
   "project_id": "550e8400-e29b-41d4-a716-446655440000",
-  "parent_task_id": null,
   "title": "Implement user authentication",
   "description": "Add JWT-based authentication to the API",
   "sources": [
@@ -1203,17 +1200,6 @@ Delete a task.
 |-----------|------|----------|-------------|
 | `task_id` | string | ✅ | Task UUID |
 
-### Get Subtasks
-
-**GET** `/api/tasks/subtasks/{parent_task_id}`
-
-Get all subtasks for a parent task.
-
-#### Path Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `parent_task_id` | string | ✅ | Parent task UUID |
 
 ### Update Task Status (MCP)
 

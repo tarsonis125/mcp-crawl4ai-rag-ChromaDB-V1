@@ -48,7 +48,6 @@ const mapDatabaseTaskToUITask = (dbTask: any): Task => {
     feature: dbTask.feature || 'General',
     featureColor: '#3b82f6', // Default blue color
     task_order: dbTask.task_order || 0,
-    parent_task_id: dbTask.parent_task_id || undefined
   };
 };
 
@@ -69,18 +68,7 @@ export const TasksTab = ({
   const [isLoadingFeatures, setIsLoadingFeatures] = useState(false);
   const [isWebSocketConnected, setIsWebSocketConnected] = useState(false);
   
-  // Subtask-related state
-  const [currentSubtasks, setCurrentSubtasks] = useState<Task[]>([]);
-  const [isLoadingSubtasks, setIsLoadingSubtasks] = useState<boolean>(false);
   const [isSavingTask, setIsSavingTask] = useState<boolean>(false);
-  const [showSubtasksInTable, setShowSubtasksInTable] = useState(false);
-  const [showSubtasksInBoard, setShowSubtasksInBoard] = useState(false);
-  
-  // Accordion state
-  const [isSubtasksExpanded, setIsSubtasksExpanded] = useState(false);
-  
-  // Temporary subtasks for new tasks
-  const [tempSubtasks, setTempSubtasks] = useState<Omit<Task, 'id'>[]>([]);
 
   // Initialize tasks
   useEffect(() => {
@@ -271,59 +259,16 @@ export const TasksTab = ({
     }
   };
 
-  // Load subtasks when editing an existing task
-  const loadSubtasks = async (parentTaskId: string) => {
-    setIsLoadingSubtasks(true);
-    try {
-      const response = await projectService.getTaskSubtasks(parentTaskId);
-      const subtasks = response.map(mapDatabaseTaskToUITask);
-      setCurrentSubtasks(subtasks);
-    } catch (error) {
-      console.error('Failed to load subtasks:', error);
-      setCurrentSubtasks([]);
-    } finally {
-      setIsLoadingSubtasks(false);
-    }
-  };
 
   // Modal management functions
   const openEditModal = async (task: Task) => {
     setEditingTask(task);
     setIsModalOpen(true);
-    if (task.id) {
-      // Load existing subtasks into tempSubtasks so we can modify them before saving
-      setIsLoadingSubtasks(true);
-      try {
-        const subtasks = await projectService.getTaskSubtasks(task.id, false);
-        setTempSubtasks(subtasks.map(subtask => ({
-          title: subtask.title,
-          description: subtask.description,
-          status: mapDBStatusToUIStatus(subtask.status),
-          assignee: { name: subtask.assignee as 'User' | 'Archon' | 'AI IDE Agent', avatar: '' },
-          feature: subtask.feature || '',
-          featureColor: subtask.featureColor || '#3b82f6',
-          task_order: subtask.task_order,
-          parent_task_id: task.id
-        })));
-        setCurrentSubtasks([]); // Clear this since we're using tempSubtasks now
-      } catch (error) {
-        console.error('Failed to load subtasks:', error);
-        setTempSubtasks([]);
-      } finally {
-        setIsLoadingSubtasks(false);
-      }
-    } else {
-      setCurrentSubtasks([]);
-      setTempSubtasks([]);
-    }
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingTask(null);
-    setCurrentSubtasks([]);
-    setTempSubtasks([]);
-    setIsSubtasksExpanded(false);
   };
 
   const saveTask = async (task: Task) => {
@@ -346,29 +291,6 @@ export const TasksTab = ({
         };
         
         await projectService.updateTask(task.id, updateData);
-        
-        // Delete all existing subtasks first
-        const existingSubtasks = await projectService.getTaskSubtasks(task.id, false);
-        for (const subtask of existingSubtasks) {
-          await projectService.deleteTask(subtask.id);
-        }
-        
-        // Create all tempSubtasks as new subtasks
-        for (const subtask of tempSubtasks) {
-          const subtaskCreateData: CreateTaskRequest = {
-            project_id: projectId,
-            title: subtask.title,
-            description: subtask.description,
-            status: mapUIStatusToDBStatus(subtask.status),
-            assignee: subtask.assignee?.name || 'User',
-            task_order: subtask.task_order,
-            parent_task_id: task.id,
-            ...(subtask.feature && { feature: subtask.feature }),
-            ...(subtask.featureColor && { featureColor: subtask.featureColor })
-          };
-          
-          await projectService.createTask(subtaskCreateData);
-        }
       } else {
         // Create new task first to get UUID
         const createData: CreateTaskRequest = {
@@ -384,25 +306,6 @@ export const TasksTab = ({
         
         const createdTask = await projectService.createTask(createData);
         parentTaskId = createdTask.id;
-        
-        // Now create any temporary subtasks
-        if (tempSubtasks.length > 0) {
-          for (const subtask of tempSubtasks) {
-            const subtaskCreateData: CreateTaskRequest = {
-              project_id: projectId,
-              title: subtask.title,
-              description: subtask.description,
-              status: mapUIStatusToDBStatus(subtask.status),
-              assignee: subtask.assignee?.name || 'User',
-              task_order: subtask.task_order,
-              parent_task_id: parentTaskId,
-              ...(subtask.feature && { feature: subtask.feature }),
-              ...(subtask.featureColor && { featureColor: subtask.featureColor })
-            };
-            
-            await projectService.createTask(subtaskCreateData);
-          }
-        }
       }
       
       // Reload tasks from backend
@@ -428,7 +331,7 @@ export const TasksTab = ({
   // Helper function to reorder tasks by status to ensure no gaps (1,2,3...)
   const reorderTasksByStatus = async (status: Task['status']) => {
     const tasksInStatus = tasks
-      .filter(task => task.status === status && !task.parent_task_id) // Only parent tasks
+      .filter(task => task.status === status)
       .sort((a, b) => a.task_order - b.task_order);
     
     const updatePromises = tasksInStatus.map((task, index) => 
@@ -441,7 +344,7 @@ export const TasksTab = ({
   // Helper function to get next available order number for a status
   const getNextOrderForStatus = (status: Task['status']): number => {
     const tasksInStatus = tasks.filter(task => 
-      task.status === status && !task.parent_task_id // Only parent tasks
+      task.status === status
     );
     
     if (tasksInStatus.length === 0) return 1;
@@ -729,272 +632,7 @@ export const TasksTab = ({
   );
 
 
-  // Create subtask function
-  const createSubtask = async (parentTaskId: string, subtaskData: Omit<Task, 'id'>) => {
-    try {
-      const createData: CreateTaskRequest = {
-        project_id: projectId,
-        title: subtaskData.title,
-        description: subtaskData.description,
-        status: mapUIStatusToDBStatus(subtaskData.status),
-        assignee: subtaskData.assignee?.name || 'User',
-        task_order: subtaskData.task_order,
-        parent_task_id: parentTaskId,
-        ...(subtaskData.feature && { feature: subtaskData.feature }),
-        ...(subtaskData.featureColor && { featureColor: subtaskData.featureColor })
-      };
-      
-      await projectService.createTask(createData);
-      
-      // Reload subtasks
-      await loadSubtasks(parentTaskId);
-      
-      // Reload all tasks to update parent status if needed
-      const updatedTasks = await projectService.getTasksByProject(projectId);
-      const uiTasks: Task[] = updatedTasks.map(mapDatabaseTaskToUITask);
-      updateTasks(uiTasks);
-    } catch (error) {
-      console.error('Failed to create subtask:', error);
-      throw error;
-    }
-  };
 
-  // Delete subtask function
-  const deleteSubtask = async (subtaskId: string, parentTaskId: string) => {
-    try {
-      await projectService.deleteTask(subtaskId);
-      
-      // Reload subtasks
-      await loadSubtasks(parentTaskId);
-      
-      // Reload all tasks
-      const updatedTasks = await projectService.getTasksByProject(projectId);
-      const uiTasks: Task[] = updatedTasks.map(mapDatabaseTaskToUITask);
-      updateTasks(uiTasks);
-    } catch (error) {
-      console.error('Failed to delete subtask:', error);
-      throw error;
-    }
-  };
-
-  // Update subtask function
-  const updateSubtask = async (subtaskId: string, updates: Partial<Task>, parentTaskId: string) => {
-    try {
-      const updateData: Partial<UpdateTaskRequest> = {};
-      
-      if (updates.title !== undefined) updateData.title = updates.title;
-      if (updates.description !== undefined) updateData.description = updates.description;
-      if (updates.status !== undefined) updateData.status = mapUIStatusToDBStatus(updates.status);
-      if (updates.assignee !== undefined) updateData.assignee = updates.assignee.name;
-      if (updates.task_order !== undefined) updateData.task_order = updates.task_order;
-      if (updates.feature !== undefined) updateData.feature = updates.feature;
-      if (updates.featureColor !== undefined) updateData.featureColor = updates.featureColor;
-      
-      await projectService.updateTask(subtaskId, updateData);
-      
-      // Reload subtasks
-      await loadSubtasks(parentTaskId);
-    } catch (error) {
-      console.error('Failed to update subtask:', error);
-      throw error;
-    }
-  };
-
-  // Handle temporary subtasks for new tasks
-  const addTempSubtask = (subtaskData: Omit<Task, 'id'>) => {
-    setTempSubtasks(prev => [...prev, {
-      ...subtaskData,
-      parent_task_id: 'temp' // Will be replaced when parent is saved
-    }]);
-  };
-
-  const deleteTempSubtask = (index: number) => {
-    setTempSubtasks(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const updateTempSubtask = (index: number, updates: Partial<Omit<Task, 'id'>>) => {
-    setTempSubtasks(prev => prev.map((subtask, i) => 
-      i === index ? { ...subtask, ...updates } : subtask
-    ));
-  };
-
-// SubtaskAddRow component for inline subtask creation
-interface SubtaskAddRowProps {
-  parentTaskId: string;
-  onSubtaskCreate: (parentTaskId: string, subtaskData: Omit<Task, 'id'>) => Promise<void>;
-  inheritedFeature?: string;
-}
-
-const SubtaskAddRow = ({ parentTaskId, onSubtaskCreate, inheritedFeature }: SubtaskAddRowProps) => {
-  const [newSubtask, setNewSubtask] = useState<Omit<Task, 'id'>>({
-    title: '',
-    description: '',
-    status: 'backlog',
-    assignee: { name: 'AI IDE Agent', avatar: '' },
-    feature: inheritedFeature || '',
-    featureColor: '#3b82f6',
-    task_order: 1,
-    parent_task_id: parentTaskId
-  });
-
-  const handleCreateSubtask = async () => {
-    if (!newSubtask.title.trim()) return;
-    
-    try {
-      await onSubtaskCreate(parentTaskId, newSubtask);
-      
-      // Reset form
-      setNewSubtask(prev => ({
-        ...prev,
-        title: '',
-        description: ''
-      }));
-    } catch (error) {
-      console.error('Failed to create subtask:', error);
-    }
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleCreateSubtask();
-    }
-  };
-
-  return (
-    <div className="flex items-center gap-3 p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-      <input
-        type="text"
-        value={newSubtask.title}
-        onChange={(e) => setNewSubtask(prev => ({ ...prev, title: e.target.value }))}
-        onKeyPress={handleKeyPress}
-        placeholder="Add subtask..."
-        className="flex-1 bg-white/90 dark:bg-black/90 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-cyan-500 focus:shadow-[0_0_5px_rgba(34,211,238,0.3)]"
-      />
-      
-      <select
-        value={newSubtask.assignee?.name || 'User'}
-        onChange={(e) => setNewSubtask(prev => ({ 
-          ...prev, 
-          assignee: { name: e.target.value as 'User' | 'Archon' | 'AI IDE Agent', avatar: '' } 
-        }))}
-        className="bg-white/90 dark:bg-black/90 border border-gray-300 dark:border-gray-600 rounded px-2 py-2 text-sm focus:outline-none focus:border-cyan-500"
-      >
-        {ASSIGNEE_OPTIONS.map(option => (
-          <option key={option} value={option}>{option}</option>
-        ))}
-      </select>
-      
-      <select
-        value={newSubtask.status}
-        onChange={(e) => setNewSubtask(prev => ({ 
-          ...prev, 
-          status: e.target.value as Task['status'] 
-        }))}
-        className="bg-white/90 dark:bg-black/90 border border-gray-300 dark:border-gray-600 rounded px-2 py-2 text-sm focus:outline-none focus:border-cyan-500"
-      >
-        <option value="backlog">Backlog</option>
-        <option value="in-progress">In Progress</option>
-        <option value="review">Review</option>
-        <option value="complete">Complete</option>
-      </select>
-      
-      <button
-        onClick={handleCreateSubtask}
-        disabled={!newSubtask.title.trim()}
-        className="p-2 rounded-full bg-cyan-500 text-white hover:bg-cyan-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-      >
-        <Plus className="w-4 h-4" />
-      </button>
-    </div>
-  );
-};
-
-// Component for adding temporary subtasks (for new tasks)
-interface TempSubtaskAddRowProps {
-  onSubtaskCreate: (subtaskData: Omit<Task, 'id'>) => void;
-  inheritedFeature?: string;
-}
-
-const TempSubtaskAddRow = ({ onSubtaskCreate, inheritedFeature }: TempSubtaskAddRowProps) => {
-  const [newSubtask, setNewSubtask] = useState<Omit<Task, 'id'>>({
-    title: '',
-    description: '',
-    status: 'backlog',
-    assignee: { name: 'AI IDE Agent', avatar: '' },
-    feature: inheritedFeature || '',
-    featureColor: '#3b82f6',
-    task_order: 1
-  });
-
-  const handleCreateSubtask = () => {
-    if (!newSubtask.title.trim()) return;
-    
-    onSubtaskCreate(newSubtask);
-    
-    // Reset form
-    setNewSubtask(prev => ({
-      ...prev,
-      title: '',
-      description: ''
-    }));
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleCreateSubtask();
-    }
-  };
-
-  return (
-    <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
-      <input
-        type="text"
-        value={newSubtask.title}
-        onChange={(e) => setNewSubtask(prev => ({ ...prev, title: e.target.value }))}
-        onKeyPress={handleKeyPress}
-        placeholder="Add subtask..."
-        className="flex-1 bg-white/90 dark:bg-black/90 border border-blue-300 dark:border-blue-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:shadow-[0_0_5px_rgba(59,130,246,0.3)]"
-      />
-      
-      <select
-        value={newSubtask.assignee?.name || 'User'}
-        onChange={(e) => setNewSubtask(prev => ({ 
-          ...prev, 
-          assignee: { name: e.target.value as 'User' | 'Archon' | 'AI IDE Agent', avatar: '' } 
-        }))}
-        className="bg-white/90 dark:bg-black/90 border border-blue-300 dark:border-blue-600 rounded px-2 py-2 text-sm focus:outline-none focus:border-blue-500"
-      >
-        {ASSIGNEE_OPTIONS.map(option => (
-          <option key={option} value={option}>{option}</option>
-        ))}
-      </select>
-      
-      <select
-        value={newSubtask.status}
-        onChange={(e) => setNewSubtask(prev => ({ 
-          ...prev, 
-          status: e.target.value as Task['status'] 
-        }))}
-        className="bg-white/90 dark:bg-black/90 border border-blue-300 dark:border-blue-600 rounded px-2 py-2 text-sm focus:outline-none focus:border-blue-500"
-      >
-        <option value="backlog">Backlog</option>
-        <option value="in-progress">In Progress</option>
-        <option value="review">Review</option>
-        <option value="complete">Complete</option>
-      </select>
-      
-      <button
-        onClick={handleCreateSubtask}
-        disabled={!newSubtask.title.trim()}
-        className="p-2 rounded-full bg-blue-500 text-white hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-      >
-        <Plus className="w-4 h-4" />
-      </button>
-    </div>
-  );
-};
 
   return (
     <DndProvider backend={HTML5Backend}>
@@ -1010,9 +648,6 @@ const TempSubtaskAddRow = ({ onSubtaskCreate, inheritedFeature }: TempSubtaskAdd
               onTaskReorder={handleTaskReorder}
               onTaskCreate={createTaskInline}
               onTaskUpdate={updateTaskInline}
-              showSubtasks={showSubtasksInTable}
-              showSubtasksToggle={true}
-              onShowSubtasksChange={setShowSubtasksInTable}
             />
           ) : (
             <TaskBoardView
@@ -1022,9 +657,6 @@ const TempSubtaskAddRow = ({ onSubtaskCreate, inheritedFeature }: TempSubtaskAdd
               onTaskDelete={deleteTask}
               onTaskMove={moveTask}
               onTaskReorder={handleTaskReorder}
-              showSubtasks={showSubtasksInBoard}
-              showSubtasksToggle={true}
-              onShowSubtasksChange={setShowSubtasksInBoard}
             />
           )}
         </div>
@@ -1098,16 +730,9 @@ const TempSubtaskAddRow = ({ onSubtaskCreate, inheritedFeature }: TempSubtaskAdd
           editingTask={editingTask}
           projectFeatures={projectFeatures}
           isLoadingFeatures={isLoadingFeatures}
-          isLoadingSubtasks={isLoadingSubtasks}
           isSavingTask={isSavingTask}
-          tempSubtasks={tempSubtasks}
-          isSubtasksExpanded={isSubtasksExpanded}
           onClose={closeModal}
           onSave={saveTask}
-          onTempSubtaskAdd={addTempSubtask}
-          onTempSubtaskUpdate={updateTempSubtask}
-          onTempSubtaskDelete={deleteTempSubtask}
-          onSubtasksExpandedChange={setIsSubtasksExpanded}
           getTasksForPrioritySelection={memoizedGetTasksForPrioritySelection}
         />
       </div>

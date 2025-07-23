@@ -32,19 +32,6 @@ vi.mock('@/components/project-tasks/DraggableTaskCard', () => ({
   )
 }))
 
-// Mock Toggle component
-vi.mock('@/components/ui/Toggle', () => ({
-  Toggle: ({ checked, onCheckedChange }: any) => (
-    <button
-      data-testid="subtasks-toggle"
-      onClick={() => onCheckedChange(!checked)}
-      aria-pressed={checked}
-    >
-      {checked ? 'Hide Subtasks' : 'Show Subtasks'}
-    </button>
-  )
-}))
-
 // Mock DeleteConfirmModal
 vi.mock('@/pages/ProjectPage', () => ({
   DeleteConfirmModal: ({ itemName, onConfirm, onCancel }: any) => (
@@ -73,7 +60,6 @@ describe('TaskBoardView', () => {
       description: 'Initial project setup',
       status: 'backlog',
       task_order: 1,
-      parent_task_id: null,
       assignee: 'John',
       priority: 'medium',
       due_date: null,
@@ -87,7 +73,6 @@ describe('TaskBoardView', () => {
       description: 'Design database schema',
       status: 'in-progress',
       task_order: 1,
-      parent_task_id: null,
       assignee: 'Jane',
       priority: 'high',
       due_date: null,
@@ -101,7 +86,6 @@ describe('TaskBoardView', () => {
       description: 'Review PR #123',
       status: 'review',
       task_order: 1,
-      parent_task_id: null,
       assignee: 'Bob',
       priority: 'medium',
       due_date: null,
@@ -115,7 +99,6 @@ describe('TaskBoardView', () => {
       description: 'Deploy v1.0',
       status: 'complete',
       task_order: 1,
-      parent_task_id: null,
       assignee: 'Alice',
       priority: 'high',
       due_date: null,
@@ -129,7 +112,6 @@ describe('TaskBoardView', () => {
       description: 'Unit tests for feature',
       status: 'in-progress',
       task_order: 2,
-      parent_task_id: '2',
       assignee: 'Jane',
       priority: 'medium',
       due_date: null,
@@ -183,17 +165,15 @@ describe('TaskBoardView', () => {
       expect(within(completeCol!).getByText('Deploy to production')).toBeInTheDocument()
     })
 
-    it('should only display parent tasks in columns', () => {
+    it('should display all tasks in columns', () => {
       renderWithDnd(<TaskBoardView {...defaultProps} />)
 
-      // Parent tasks should be visible
+      // All tasks should be visible
       expect(screen.getByTestId('task-card-1')).toBeInTheDocument()
       expect(screen.getByTestId('task-card-2')).toBeInTheDocument()
       expect(screen.getByTestId('task-card-3')).toBeInTheDocument()
       expect(screen.getByTestId('task-card-4')).toBeInTheDocument()
-
-      // Subtask should not be directly in column
-      expect(screen.queryByTestId('task-card-5')).not.toBeInTheDocument()
+      expect(screen.getByTestId('task-card-5')).toBeInTheDocument()
     })
 
     it('should show empty columns when no tasks', () => {
@@ -319,46 +299,6 @@ describe('TaskBoardView', () => {
     })
   })
 
-  describe('Subtasks Toggle', () => {
-    it('should show subtasks toggle when enabled', () => {
-      renderWithDnd(
-        <TaskBoardView 
-          {...defaultProps} 
-          showSubtasksToggle={true}
-          onShowSubtasksChange={vi.fn()}
-        />
-      )
-
-      expect(screen.getByText('Show Subtasks')).toBeInTheDocument()
-      expect(screen.getByText('Display subtasks indented under parent tasks')).toBeInTheDocument()
-      expect(screen.getByTestId('subtasks-toggle')).toBeInTheDocument()
-    })
-
-    it('should not show subtasks toggle when disabled', () => {
-      renderWithDnd(<TaskBoardView {...defaultProps} />)
-
-      expect(screen.queryByText('Show Subtasks')).not.toBeInTheDocument()
-      expect(screen.queryByTestId('subtasks-toggle')).not.toBeInTheDocument()
-    })
-
-    it('should handle subtasks toggle change', async () => {
-      const user = userEvent.setup()
-      const onShowSubtasksChange = vi.fn()
-      
-      renderWithDnd(
-        <TaskBoardView 
-          {...defaultProps} 
-          showSubtasksToggle={true}
-          showSubtasks={false}
-          onShowSubtasksChange={onShowSubtasksChange}
-        />
-      )
-
-      await user.click(screen.getByTestId('subtasks-toggle'))
-
-      expect(onShowSubtasksChange).toHaveBeenCalledWith(true)
-    })
-  })
 
   describe('Task Ordering', () => {
     it('should sort tasks by order within columns', () => {
@@ -370,7 +310,6 @@ describe('TaskBoardView', () => {
           description: 'API docs',
           status: 'in-progress',
           task_order: 1, // In progress - order 1
-          parent_task_id: null,
           assignee: 'John',
           priority: 'low',
           due_date: null,

@@ -35,7 +35,7 @@ The Task Agent contains NO project management logic. All actual operations are p
 
 ### Project Orchestration
 - **Project Creation**: Sets up new projects with structure
-- **Task Hierarchies**: Creates parent-child task relationships
+- **Task Organization**: Creates and manages related tasks
 - **Status Management**: Coordinates task state transitions
 - **Team Coordination**: Assigns work to humans or AI agents
 
@@ -80,7 +80,7 @@ flowchart TD
     
     D --> E[Identify Components]
     E --> F[Create Parent Task]
-    F --> G[Create Subtasks]
+    F --> G[Create Related Tasks]
     
     G --> H{Dependencies?}
     H -->|Yes| I[Set Order]
@@ -133,10 +133,10 @@ flowchart TD
 ### Complex Task Breakdown
 ```python
 # User request
-"Break down 'Implement login API endpoint' into subtasks"
+"Break down 'Implement login API endpoint' into smaller tasks"
 
 # Task Agent workflow
-1. Analyze parent task
+1. Analyze the main task
 2. Identify components:
    - Input validation
    - Database query
@@ -145,15 +145,16 @@ flowchart TD
    - Response formatting
    - Error handling
 
-3. Create subtasks:
-   manage_task(action="create", parent_task_id=parent_id, ...)
+3. Create related tasks:
+   manage_task(action="create", project_id=project_id, ...)
    
-4. Set dependencies:
-   - Input validation → Database query
-   - Database query → Password verification
-   - Password verification → JWT generation
+4. Set logical order and priorities:
+   - Input validation (priority: high)
+   - Database query (priority: high)
+   - Password verification (priority: high)
+   - JWT generation (priority: medium)
 
-5. Return: "Created 6 subtasks with dependencies"
+5. Return: "Created 6 related tasks with appropriate priorities"
 ```
 
 ## 🔍 Implementation Details

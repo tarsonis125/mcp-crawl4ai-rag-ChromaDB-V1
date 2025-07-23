@@ -343,12 +343,11 @@ perform_rag_query(
 | `action` | `string` | ✅ | Action: create/list/get/update/delete/archive |
 | `task_id` | `string` | Conditional | Required for get/update/delete/archive |
 | `project_id` | `string` | Conditional | Required for create, optional for list |
-| `filter_by` | `string` | ❌ | Filter: status/parent/project |
+| `filter_by` | `string` | ❌ | Filter: status/project |
 | `filter_value` | `string` | ❌ | Value for filter |
 | `title` | `string` | Conditional | Required for create |
 | `description` | `string` | ❌ | Task description |
 | `assignee` | `string` | ❌ | User/Archon/AI IDE Agent |
-| `parent_task_id` | `string` | ❌ | For subtasks |
 | `update_fields` | `object` | Conditional | Fields to update |
 
 **Example Task Creation**:

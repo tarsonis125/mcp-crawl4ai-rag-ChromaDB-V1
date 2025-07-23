@@ -539,26 +539,6 @@ export const projectService = {
     }
   },
 
-  /**
-   * Get subtasks for a parent task
-   */
-  async getTaskSubtasks(parentTaskId: string, includeClosed: boolean = false): Promise<Task[]> {
-    try {
-      // Use regular API endpoint for getting subtasks
-      const response = await callAPI<{tasks: Task[]}>(`/api/tasks/subtasks/${parentTaskId}?include_closed=${includeClosed}`, {
-        method: 'GET'
-      });
-      
-      // Map database tasks to UI tasks
-      return (response.tasks || []).map(dbTaskToUITask);
-    } catch (error) {
-      console.error(`Failed to get subtasks for task ${parentTaskId}:`, error);
-      // Return empty array instead of failing the whole operation
-      // This will prevent the error dialog from appearing on task save
-      console.log('Returning empty array for subtasks due to error');
-      return [];
-    }
-  },
 
   // ==================== DOCUMENT OPERATIONS ====================
 

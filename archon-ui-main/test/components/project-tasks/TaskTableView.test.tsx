@@ -19,17 +19,6 @@ vi.mock('@/contexts/ToastContext', () => ({
   })
 }))
 
-vi.mock('@/components/ui/Toggle', () => ({
-  Toggle: ({ checked, onCheckedChange }: any) => (
-    <button
-      data-testid="subtasks-toggle"
-      onClick={() => onCheckedChange(!checked)}
-      aria-pressed={checked}
-    >
-      {checked ? 'Hide Subtasks' : 'Show Subtasks'}
-    </button>
-  )
-}))
 
 vi.mock('@/pages/ProjectPage', () => ({
   DeleteConfirmModal: ({ itemName, onConfirm, onCancel }: any) => (
@@ -119,7 +108,6 @@ describe('TaskTableView', () => {
       description: 'Unit tests for database',
       status: 'in-progress',
       task_order: 2,
-      parent_task_id: '2',
       assignee: { name: 'Archon', avatar: '' },
       feature: 'Backend',
       featureColor: '#10b981'
@@ -312,59 +300,6 @@ describe('TaskTableView', () => {
     })
   })
 
-  describe('Subtasks Display', () => {
-    it('should show subtasks toggle when enabled', () => {
-      renderWithDnd(
-        <TaskTableView 
-          {...defaultProps} 
-          showSubtasksToggle={true}
-          onShowSubtasksChange={vi.fn()}
-        />
-      )
-
-      expect(screen.getByText('Show Subtasks')).toBeInTheDocument()
-      expect(screen.getByTestId('subtasks-toggle')).toBeInTheDocument()
-    })
-
-    it('should show subtasks when toggled on', () => {
-      renderWithDnd(
-        <TaskTableView 
-          {...defaultProps} 
-          showSubtasks={true}
-        />
-      )
-
-      // Subtask should be visible
-      expect(screen.getByText('Write tests')).toBeInTheDocument()
-    })
-
-    it('should hide subtasks when toggled off', () => {
-      renderWithDnd(
-        <TaskTableView 
-          {...defaultProps} 
-          showSubtasks={false}
-        />
-      )
-
-      // Subtask should not be visible
-      expect(screen.queryByText('Write tests')).not.toBeInTheDocument()
-    })
-
-    it('should indent subtasks', () => {
-      renderWithDnd(
-        <TaskTableView 
-          {...defaultProps} 
-          showSubtasks={true}
-        />
-      )
-
-      const subtaskRow = screen.getByText('Write tests').closest('tr')
-      const titleCell = within(subtaskRow!).getByText('Write tests').parentElement
-
-      // Should have indentation
-      expect(titleCell).toHaveClass('ml-6')
-    })
-  })
 
   describe('Add Task Row', () => {
     it('should show add task row when onTaskCreate is provided', () => {

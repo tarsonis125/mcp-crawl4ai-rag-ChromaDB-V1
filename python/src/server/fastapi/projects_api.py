@@ -66,7 +66,6 @@ class UpdateProjectRequest(BaseModel):
 
 class CreateTaskRequest(BaseModel):
     project_id: str
-    parent_task_id: Optional[str] = None
     title: str
     description: Optional[str] = None
     status: Optional[str] = 'todo'
@@ -439,10 +438,10 @@ async def get_project_features(project_id: str):
         raise HTTPException(status_code=500, detail={'error': str(e)})
 
 @router.get("/projects/{project_id}/tasks")
-async def list_project_tasks(project_id: str, include_archived: bool = False, include_subtasks: bool = False):
-    """List all tasks for a specific project. By default, filters out archived tasks and subtasks."""
+async def list_project_tasks(project_id: str, include_archived: bool = False):
+    """List all tasks for a specific project. By default, filters out archived tasks."""
     try:
-        logfire.info(f"Listing project tasks | project_id={project_id} | include_archived={include_archived} | include_subtasks={include_subtasks}")
+        logfire.info(f"Listing project tasks | project_id={project_id} | include_archived={include_archived}")
         
         # Use TaskService to list tasks
         task_service = TaskService()
@@ -463,9 +462,6 @@ async def list_project_tasks(project_id: str, include_archived: bool = False, in
             if not include_archived and task.get("archived", False):
                 continue
             
-            # Skip subtasks if not including them
-            if not include_subtasks and task.get("parent_task_id"):
-                continue
             
             filtered_tasks.append(task)
         
@@ -493,8 +489,7 @@ async def create_task(request: CreateTaskRequest):
                 description=request.description or "",
                 assignee=request.assignee or "User",
                 task_order=request.task_order or 0,
-                feature=request.feature,
-                parent_task_id=request.parent_task_id
+                feature=request.feature
             )
             
             if not success:
@@ -685,11 +680,10 @@ async def delete_task(task_id: str):
                 else:
                     raise HTTPException(status_code=500, detail=result)
             
-            logfire.info(f"Task archived successfully | task_id={task_id} | subtasks_archived={result.get('archived_subtasks', 0)}")
+            logfire.info(f"Task archived successfully | task_id={task_id}")
             
             return {
-                "message": result.get("message", "Task archived successfully"),
-                "subtasks_archived": result.get("archived_subtasks", 0)
+                "message": result.get("message", "Task archived successfully")
             }
                 
     except HTTPException:
@@ -703,32 +697,6 @@ async def delete_task(task_id: str):
 
 
 # MCP endpoints now emit Socket.IO directly - no context manager needed
-
-@router.get("/tasks/subtasks/{parent_task_id}")
-async def get_task_subtasks(parent_task_id: str, include_closed: bool = False):
-    """Get all subtasks of a specific task."""
-    try:
-            # Use TaskService to list subtasks
-            task_service = TaskService()
-            success, result = task_service.list_tasks(
-                parent_task_id=parent_task_id,
-                include_closed=include_closed
-            )
-            
-            if not success:
-                raise HTTPException(status_code=500, detail=result)
-            
-            tasks = result.get("tasks", [])
-            
-            logfire.info(f"Retrieved subtasks successfully | parent_task_id={parent_task_id} | subtask_count={len(tasks)} | include_closed={include_closed}")
-            
-            return {"tasks": tasks}
-                
-    except HTTPException:
-        raise
-    except Exception as e:
-        logfire.error(f"Failed to get subtasks | error={str(e)} | parent_task_id={parent_task_id}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 @router.put("/mcp/tasks/{task_id}/status")
 async def mcp_update_task_status_with_socketio(task_id: str, status: str):

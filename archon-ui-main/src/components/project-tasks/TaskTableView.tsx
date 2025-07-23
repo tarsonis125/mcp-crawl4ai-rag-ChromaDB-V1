@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useDrag, useDrop } from 'react-dnd';
-import { Check, Trash2, Edit, Tag, User, Bot, Clipboard, Save, Plus, Network } from 'lucide-react';
-import { Toggle } from '../ui/Toggle';
+import { Check, Trash2, Edit, Tag, User, Bot, Clipboard, Save, Plus } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { DeleteConfirmModal } from '../../pages/ProjectPage';
 import { projectService } from '../../services/projectService';
@@ -20,7 +19,6 @@ export interface Task {
   feature: string;
   featureColor: string;
   task_order: number;
-  parent_task_id?: string; // Added for subtask support
 }
 
 interface TaskTableViewProps {
@@ -31,9 +29,6 @@ interface TaskTableViewProps {
   onTaskReorder: (taskId: string, newOrder: number, status: Task['status']) => void;
   onTaskCreate?: (task: Omit<Task, 'id'>) => Promise<void>;
   onTaskUpdate?: (taskId: string, updates: Partial<Task>) => Promise<void>;
-  showSubtasks?: boolean;
-  showSubtasksToggle?: boolean;
-  onShowSubtasksChange?: (show: boolean) => void;
 }
 
 const getAssigneeGlassStyle = (assigneeName: 'User' | 'Archon' | 'AI IDE Agent') => {
@@ -197,8 +192,6 @@ interface DraggableTaskRowProps {
   onTaskReorder: (taskId: string, newOrder: number, status: Task['status']) => void;
   onTaskUpdate?: (taskId: string, updates: Partial<Task>) => Promise<void>;
   tasksInStatus: Task[];
-  isSubtask?: boolean;
-  indentLevel?: number;
   style?: React.CSSProperties;
 }
 
@@ -211,8 +204,6 @@ const DraggableTaskRow = ({
   onTaskReorder,
   onTaskUpdate,
   tasksInStatus,
-  isSubtask = false,
-  indentLevel = 0,
   style
 }: DraggableTaskRowProps) => {
   const [editingField, setEditingField] = useState<string | null>(null);
@@ -298,13 +289,7 @@ const DraggableTaskRow = ({
         </div>
       </td>
       <td className="p-3 text-gray-800 dark:text-gray-200 group-hover:text-gray-900 dark:group-hover:text-white transition-colors relative">
-        <div className={`min-w-0 flex items-center ${isSubtask ? 'ml-6' : ''}`}>
-          {isSubtask && (
-            <div className="flex items-center mr-2 text-gray-400">
-              <div className="w-4 h-px bg-gray-300 dark:bg-gray-600"></div>
-              <div className="w-2 h-px bg-gray-300 dark:bg-gray-600 rotate-90"></div>
-            </div>
-          )}
+        <div className="min-w-0 flex items-center">
           <div className="truncate flex-1">
             <EditableCell
               value={task.title}
@@ -569,10 +554,7 @@ export const TaskTableView = ({
   onTaskDelete, 
   onTaskReorder,
   onTaskCreate,
-  onTaskUpdate,
-  showSubtasks = false,
-  showSubtasksToggle = false,
-  onShowSubtasksChange
+  onTaskUpdate
 }: TaskTableViewProps) => {
   const [statusFilter, setStatusFilter] = useState<Task['status'] | 'all'>('backlog');
 
@@ -691,71 +673,18 @@ export const TaskTableView = ({
       .sort((a, b) => a.task_order - b.task_order);
   };
 
-  // Organize tasks hierarchically (parent tasks with their subtasks)
+  // Simply return tasks as-is (no hierarchy)
   const organizeTasksHierarchically = (taskList: Task[]) => {
-    const parentTasks = taskList.filter(task => !task.parent_task_id);
-    const subtasks = taskList.filter(task => task.parent_task_id);
-    
-    const organizedTasks: (Task & { isSubtask?: boolean; indentLevel?: number })[] = [];
-    
-    parentTasks.forEach(parentTask => {
-      // Add parent task
-      organizedTasks.push({ ...parentTask, isSubtask: false, indentLevel: 0 });
-      
-      // Add its subtasks if showSubtasks is true AND subtasks are present in the task list
-      if (showSubtasks) {
-        const taskSubtasks = subtasks
-          .filter(subtask => subtask.parent_task_id === parentTask.id)
-          .sort((a, b) => a.task_order - b.task_order);
-        
-        taskSubtasks.forEach(subtask => {
-          organizedTasks.push({ ...subtask, isSubtask: true, indentLevel: 1 });
-        });
-      }
-    });
-    
-    return organizedTasks;
+    return taskList;
   };
 
-  // Apply status filtering carefully to preserve parent-child relationships
+  // Apply status filtering
   let statusFilteredTasks: Task[];
   
   if (statusFilter === 'all') {
     statusFilteredTasks = tasks;
   } else {
-    // When filtering by status and showing subtasks, we need to include:
-    // 1. Tasks that match the status filter
-    // 2. Parent tasks of subtasks that match the status filter (even if parent doesn't match)
-    // 3. Subtasks of parent tasks that match the status filter (even if subtask doesn't match)
-    
-    const directMatches = tasks.filter(task => task.status === statusFilter);
-    const taskIds = new Set(directMatches.map(task => task.id));
-    
-    if (showSubtasks) {
-      // Include parent tasks of matching subtasks
-      directMatches.forEach(task => {
-        if (task.parent_task_id) {
-          const parentTask = tasks.find(t => t.id === task.parent_task_id);
-          if (parentTask && !taskIds.has(parentTask.id)) {
-            taskIds.add(parentTask.id);
-          }
-        }
-      });
-      
-      // Include subtasks of matching parent tasks
-      directMatches.forEach(task => {
-        if (!task.parent_task_id) { // if it's a parent task
-          const subtasks = tasks.filter(t => t.parent_task_id === task.id);
-          subtasks.forEach(subtask => {
-            if (!taskIds.has(subtask.id)) {
-              taskIds.add(subtask.id);
-            }
-          });
-        }
-      });
-    }
-    
-    statusFilteredTasks = tasks.filter(task => taskIds.has(task.id));
+    statusFilteredTasks = tasks.filter(task => task.status === statusFilter);
   }
   
   const filteredTasks = organizeTasksHierarchically(statusFilteredTasks);
@@ -838,16 +767,6 @@ export const TaskTableView = ({
           );
         })}
         </div>
-        
-        {/* Show Subtasks Toggle */}
-        {onShowSubtasksChange && (
-          <Toggle 
-            checked={showSubtasks} 
-            onCheckedChange={onShowSubtasksChange} 
-            accentColor="blue" 
-            icon={<Network className="w-5 h-5" />} 
-          />
-        )}
       </div>
 
       {/* Scrollable table container */}
@@ -927,8 +846,6 @@ export const TaskTableView = ({
                 onTaskReorder={onTaskReorder}
                 onTaskUpdate={onTaskUpdate}
                 tasksInStatus={getTasksByStatus(task.status)}
-                isSubtask={task.isSubtask}
-                indentLevel={task.indentLevel}
                 style={{ 
                   opacity: scrollOpacities.get(`row-${index}`) || 1,
                   transition: 'opacity 0.2s ease-out'

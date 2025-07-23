@@ -62,7 +62,7 @@ class TaskService:
     
     async def create_task(self, project_id: str, title: str, description: str = "", 
                    assignee: str = "User", task_order: int = 0, feature: Optional[str] = None,
-                   parent_task_id: Optional[str] = None, sources: List[Dict[str, Any]] = None,
+                   sources: List[Dict[str, Any]] = None,
                    code_examples: List[Dict[str, Any]] = None) -> Tuple[bool, Dict[str, Any]]:
         """
         Create a new task under a project with automatic reordering.
@@ -119,8 +119,6 @@ class TaskService:
                 "updated_at": datetime.now().isoformat()
             }
             
-            if parent_task_id:
-                task_data["parent_task_id"] = parent_task_id
             
             if feature:
                 task_data["feature"] = feature
@@ -146,7 +144,6 @@ class TaskService:
                     "task": {
                         "id": task["id"],
                         "project_id": task["project_id"],
-                        "parent_task_id": task.get("parent_task_id"),
                         "title": task["title"],
                         "description": task["description"],
                         "status": task["status"],
@@ -162,7 +159,7 @@ class TaskService:
             logger.error(f"Error creating task: {e}")
             return False, {"error": f"Error creating task: {str(e)}"}
     
-    def list_tasks(self, project_id: str = None, parent_task_id: str = None, 
+    def list_tasks(self, project_id: str = None, 
                   status: str = None, include_closed: bool = False) -> Tuple[bool, Dict[str, Any]]:
         """
         List tasks with various filters.
@@ -182,9 +179,6 @@ class TaskService:
                 query = query.eq("project_id", project_id)
                 filters_applied.append(f"project_id={project_id}")
             
-            if parent_task_id:
-                query = query.eq("parent_task_id", parent_task_id)
-                filters_applied.append(f"parent_task_id={parent_task_id}")
             
             if status:
                 # Validate status
@@ -242,7 +236,6 @@ class TaskService:
                 tasks.append({
                     "id": task["id"],
                     "project_id": task["project_id"],
-                    "parent_task_id": task.get("parent_task_id"),
                     "title": task["title"],
                     "description": task["description"],
                     "status": task["status"],
@@ -255,8 +248,6 @@ class TaskService:
             filter_info = []
             if project_id:
                 filter_info.append(f"project_id={project_id}")
-            if parent_task_id:
-                filter_info.append(f"parent_task_id={parent_task_id}")
             if status:
                 filter_info.append(f"status={status}")
             if not include_closed:
@@ -378,9 +369,6 @@ class TaskService:
             if task.get("archived") is True:
                 return False, {"error": f"Task with ID {task_id} is already archived"}
             
-            # Get all non-archived subtasks
-            subtasks_response = self.supabase_client.table("tasks").select("id").eq("parent_task_id", task_id).or_("archived.is.null,archived.eq.false").execute()
-            subtasks_count = len(subtasks_response.data) if subtasks_response.data else 0
             
             # Archive the task
             archive_data = {
@@ -394,9 +382,6 @@ class TaskService:
             response = self.supabase_client.table("tasks").update(archive_data).eq("id", task_id).execute()
             
             if response.data:
-                # Also archive all subtasks
-                if subtasks_count > 0:
-                    self.supabase_client.table("tasks").update(archive_data).eq("parent_task_id", task_id).or_("archived.is.null,archived.eq.false").execute()
                 
                 # Broadcast Socket.IO update for archived task
                 if _broadcast_available:
@@ -404,7 +389,7 @@ class TaskService:
                         await broadcast_task_update(
                             project_id=task["project_id"],
                             event_type="task_archived",
-                            task_data={"id": task_id, "project_id": task["project_id"], "archived_subtasks": subtasks_count}
+                            task_data={"id": task_id, "project_id": task["project_id"]}
                         )
                         logger.info(f"Socket.IO broadcast sent for archived task {task_id}")
                     except Exception as ws_error:
@@ -412,8 +397,7 @@ class TaskService:
                 
                 return True, {
                     "task_id": task_id,
-                    "archived_subtasks": subtasks_count,
-                    "message": "Task and all subtasks archived successfully"
+                    "message": "Task archived successfully"
                 }
             else:
                 return False, {"error": f"Failed to archive task {task_id}"}

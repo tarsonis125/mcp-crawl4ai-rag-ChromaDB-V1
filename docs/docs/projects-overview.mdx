@@ -24,7 +24,7 @@ Archon Projects brings intelligent project management to your AI development wor
 The Archon task management system provides:
 
 - **Project Organization**: Structured project management with PRDs, features, and documentation
-- **Hierarchical Tasks**: Support for parent-child task relationships
+- **Task Organization**: Organize and group related tasks
 - **Status Tracking**: Todo, Doing, Review, Done status management
 - **MCP Integration**: AI agents can create, update, and query tasks autonomously
 - **Reference Management**: Link tasks to code examples and documentation sources
@@ -109,7 +109,7 @@ graph TB
 Archon uses a simple but flexible data structure:
 
 - **Projects**: Main containers with title, description, PRD, features, and GitHub integration
-- **Tasks**: Organized under projects with hierarchical support (parent/child relationships)  
+- **Tasks**: Organized under projects with logical grouping  
 - **Documents**: JSONB-based document storage for PRDs, specs, and other project docs
 - **Status Tracking**: Simple workflow - Todo → Doing → Review → Done
 
@@ -211,15 +211,15 @@ curl -X POST "http://localhost:8080/api/tasks" \
 
 ## 🔧 Task Management Features
 
-### Task Hierarchy
+### Task Organization
 
-Create subtasks to break down complex work:
+Break down complex work into manageable tasks:
 
 <Tabs>
 <TabItem value="api" label="API Example">
 
 ```bash
-# Create parent task
+# Create main task
 curl -X POST "http://localhost:8080/api/tasks" \
   -H "Content-Type: application/json" \
   -d '{
@@ -229,15 +229,15 @@ curl -X POST "http://localhost:8080/api/tasks" \
     "status": "todo"
   }'
 
-# Create subtasks (using parent_task_id from response)
+# Create related tasks
 curl -X POST "http://localhost:8080/api/tasks" \
   -H "Content-Type: application/json" \
   -d '{
     "project_id": "550e8400-e29b-41d4-a716-446655440000",
-    "parent_task_id": "parent-task-uuid-here",
     "title": "Design JWT token structure",
     "description": "Define token payload and expiration strategy",
-    "status": "todo"
+    "status": "todo",
+    "feature": "Authentication"
   }'
 ```
 
@@ -247,7 +247,7 @@ curl -X POST "http://localhost:8080/api/tasks" \
 ```
 User: "Break down the authentication task into smaller pieces"
 AI: [Uses create_task MCP tool multiple times]
-    "I've broken down your authentication task into 5 subtasks:
+    "I've broken down your authentication task into 5 related tasks:
     1. Design JWT token structure
     2. Implement token generation
     3. Create middleware for validation
@@ -332,8 +332,8 @@ curl "http://localhost:8080/api/tasks?status=doing"
 # Get all tasks for a project
 curl "http://localhost:8080/api/tasks?project_id=550e8400-e29b-41d4-a716-446655440000"
 
-# Get subtasks of a parent task
-curl "http://localhost:8080/api/tasks?parent_task_id=parent-uuid-here"
+# Get tasks by feature
+curl "http://localhost:8080/api/tasks?project_id=550e8400-e29b-41d4-a716-446655440000&feature=Authentication"
 ```
 
 #### Advanced Filtering
@@ -419,11 +419,11 @@ tasks = await manage_task(
     project_id="project-uuid"
 )
 
-# Get subtasks
-subtasks = await manage_task(
+# Get tasks by feature
+tasks = await manage_task(
     action="list",
-    filter_by="parent",
-    filter_value="parent-task-uuid"
+    project_id="project-uuid",
+    feature="Authentication"
 )
 ```
 
@@ -506,7 +506,7 @@ Update my tasks and suggest what to work on next.
 1. `manage_task` with `action="list"` and `filter_by="project"` - Gets current project tasks
 2. `manage_task` with `filter_by="status"` and `filter_value="doing"` - Finds active tasks
 3. `manage_task` with `action="update"` - Marks registration task as "done"
-4. `manage_task` with `filter_by="parent"` - Checks for dependent tasks
+4. `manage_task` with `filter_by="status"` and `filter_value="todo"` - Finds next tasks
 5. Provides recommendations for next priority tasks
 
 #### Scenario 3: Code Review Integration
@@ -627,7 +627,7 @@ The React frontend (`ProjectPage.tsx` - 593 lines) provides intuitive task manag
 - **Task List**: Filterable by status, searchable
 - **Task Details**: Full task information, sources, code examples
 - **Status Updates**: Drag-and-drop status changes
-- **Subtask Management**: Hierarchical task display
+- **Task Grouping**: Organize tasks by feature or category
 
 ### Real-time Updates
 

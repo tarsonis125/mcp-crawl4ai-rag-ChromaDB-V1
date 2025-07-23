@@ -1,7 +1,5 @@
 import React, { useRef, useState, useCallback } from 'react';
 import { useDrag, useDrop } from 'react-dnd';
-import { Network } from 'lucide-react';
-import { Toggle } from '../ui/Toggle';
 import { useToast } from '../../contexts/ToastContext';
 import { DeleteConfirmModal } from '../../pages/ProjectPage';
 import { projectService } from '../../services/projectService';
@@ -16,9 +14,6 @@ interface TaskBoardViewProps {
   onTaskDelete: (task: Task) => void;
   onTaskMove: (taskId: string, newStatus: Task['status']) => void;
   onTaskReorder: (taskId: string, newOrder: number, status: Task['status']) => void;
-  showSubtasks?: boolean;
-  showSubtasksToggle?: boolean;
-  onShowSubtasksChange?: (show: boolean) => void;
 }
 
 interface ColumnDropZoneProps {
@@ -31,7 +26,6 @@ interface ColumnDropZoneProps {
   onTaskDelete: (task: Task) => void;
   onTaskReorder: (taskId: string, newOrder: number, status: Task['status']) => void;
   allTasks: Task[];
-  showSubtasks: boolean;
   hoveredTaskId: string | null;
   onTaskHover: (taskId: string | null) => void;
 }
@@ -46,7 +40,6 @@ const ColumnDropZone = ({
   onTaskDelete,
   onTaskReorder,
   allTasks,
-  showSubtasks,
   hoveredTaskId,
   onTaskHover
 }: ColumnDropZoneProps) => {
@@ -123,7 +116,6 @@ const ColumnDropZone = ({
             allTasks={allTasks}
             hoveredTaskId={hoveredTaskId}
             onTaskHover={onTaskHover}
-            showSubtasks={showSubtasks}
           />
         ))}
       </div>
@@ -137,10 +129,7 @@ export const TaskBoardView = ({
   onTaskComplete,
   onTaskDelete,
   onTaskMove,
-  onTaskReorder,
-  showSubtasks = false,
-  showSubtasksToggle = false,
-  onShowSubtasksChange
+  onTaskReorder
 }: TaskBoardViewProps) => {
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
 
@@ -180,31 +169,15 @@ export const TaskBoardView = ({
     setTaskToDelete(null);
   }, [setShowDeleteConfirm, setTaskToDelete]);
 
-  // Simple task filtering for board view - only show parent tasks
+  // Simple task filtering for board view
   const getTasksByStatus = (status: Task['status']) => {
-    // Always only show parent tasks in columns
-    // Subtasks will be displayed inside parent cards when showSubtasks is true
-    const parentTasks = tasks
-      .filter(task => task.status === status && !task.parent_task_id)
+    return tasks
+      .filter(task => task.status === status)
       .sort((a, b) => a.task_order - b.task_order);
-    
-    return parentTasks;
   };
 
   return (
     <div className="flex flex-col h-full min-h-[70vh]">
-      {/* Show Subtasks Toggle */}
-      {showSubtasksToggle && onShowSubtasksChange && (
-        <div className="mb-4 flex justify-end">
-          <Toggle 
-            checked={showSubtasks} 
-            onCheckedChange={onShowSubtasksChange} 
-            accentColor="blue" 
-            icon={<Network className="w-5 h-5" />} 
-          />
-        </div>
-      )}
-
       {/* Board Columns */}
       <div className="grid grid-cols-4 gap-0 flex-1">
         {/* Backlog Column */}
@@ -218,7 +191,6 @@ export const TaskBoardView = ({
           onTaskDelete={onTaskDelete}
           onTaskReorder={onTaskReorder}
           allTasks={tasks}
-          showSubtasks={showSubtasks}
           hoveredTaskId={hoveredTaskId}
           onTaskHover={setHoveredTaskId}
         />
@@ -234,7 +206,6 @@ export const TaskBoardView = ({
           onTaskDelete={onTaskDelete}
           onTaskReorder={onTaskReorder}
           allTasks={tasks}
-          showSubtasks={showSubtasks}
           hoveredTaskId={hoveredTaskId}
           onTaskHover={setHoveredTaskId}
         />
@@ -250,7 +221,6 @@ export const TaskBoardView = ({
           onTaskDelete={onTaskDelete}
           onTaskReorder={onTaskReorder}
           allTasks={tasks}
-          showSubtasks={showSubtasks}
           hoveredTaskId={hoveredTaskId}
           onTaskHover={setHoveredTaskId}
         />
@@ -266,7 +236,6 @@ export const TaskBoardView = ({
           onTaskDelete={onTaskDelete}
           onTaskReorder={onTaskReorder}
           allTasks={tasks}
-          showSubtasks={showSubtasks}
           hoveredTaskId={hoveredTaskId}
           onTaskHover={setHoveredTaskId}
         />

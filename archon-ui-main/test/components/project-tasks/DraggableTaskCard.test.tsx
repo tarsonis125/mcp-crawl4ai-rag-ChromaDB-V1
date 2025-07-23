@@ -67,30 +67,6 @@ describe('DraggableTaskCard', () => {
     featureColor: '#3b82f6'
   }
 
-  const mockSubtasks: Task[] = [
-    {
-      id: '2',
-      title: 'Install dependencies',
-      description: 'npm install all required packages',
-      status: 'complete',
-      task_order: 1,
-      parent_task_id: '1',
-      assignee: { name: 'AI IDE Agent', avatar: '' },
-      feature: 'Core Setup',
-      featureColor: '#3b82f6'
-    },
-    {
-      id: '3',
-      title: 'Configure ESLint',
-      description: 'Setup linting rules',
-      status: 'in-progress',
-      task_order: 2,
-      parent_task_id: '1',
-      assignee: { name: 'Archon', avatar: '' },
-      feature: 'Core Setup',
-      featureColor: '#3b82f6'
-    }
-  ]
 
   const defaultProps = {
     task: mockTask,
@@ -235,75 +211,6 @@ describe('DraggableTaskCard', () => {
     })
   })
 
-  describe('Subtasks Display', () => {
-    it('should show subtasks when enabled', () => {
-      renderWithDnd(
-        <DraggableTaskCard 
-          {...defaultProps} 
-          allTasks={[mockTask, ...mockSubtasks]}
-          showSubtasks={true}
-        />
-      )
-
-      expect(screen.getByText('Install dependencies')).toBeInTheDocument()
-      expect(screen.getByText('Configure ESLint')).toBeInTheDocument()
-    })
-
-    it('should not show subtasks when disabled', () => {
-      renderWithDnd(
-        <DraggableTaskCard 
-          {...defaultProps} 
-          allTasks={[mockTask, ...mockSubtasks]}
-          showSubtasks={false}
-        />
-      )
-
-      // Subtasks container should be hidden
-      const subtasksContainer = screen.getByText('Install dependencies').closest('.absolute.inset-0')?.parentElement
-      expect(subtasksContainer).toHaveStyle({ display: 'none' })
-    })
-
-    it('should display subtask status badges', () => {
-      renderWithDnd(
-        <DraggableTaskCard 
-          {...defaultProps} 
-          allTasks={[mockTask, ...mockSubtasks]}
-          showSubtasks={true}
-        />
-      )
-
-      // Complete subtask
-      const completeSubtask = screen.getByText('Install dependencies').parentElement
-      expect(within(completeSubtask!).getByText('Complete')).toBeInTheDocument()
-
-      // In progress subtask
-      const inProgressSubtask = screen.getByText('Configure ESLint').parentElement
-      expect(within(inProgressSubtask!).getByText('In Progress')).toBeInTheDocument()
-    })
-
-    it('should expand subtask on click', async () => {
-      const user = userEvent.setup()
-      
-      renderWithDnd(
-        <DraggableTaskCard 
-          {...defaultProps} 
-          allTasks={[mockTask, ...mockSubtasks]}
-          showSubtasks={true}
-        />
-      )
-
-      const subtask = screen.getByText('Install dependencies')
-      
-      // Initially truncated
-      expect(subtask).toHaveClass('truncate')
-
-      // Click to expand
-      await user.click(subtask.parentElement!)
-
-      // Should no longer be truncated
-      expect(subtask).toHaveClass('whitespace-normal', 'break-words')
-    })
-  })
 
   describe('Hover Effects', () => {
     it('should highlight related tasks on hover', async () => {
@@ -314,7 +221,7 @@ describe('DraggableTaskCard', () => {
         <DraggableTaskCard 
           {...defaultProps}
           onTaskHover={onTaskHover}
-          allTasks={[mockTask, ...mockSubtasks]}
+          allTasks={[mockTask]}
         />
       )
 
@@ -331,8 +238,8 @@ describe('DraggableTaskCard', () => {
       renderWithDnd(
         <DraggableTaskCard 
           {...defaultProps}
-          hoveredTaskId='2' // Hovering a subtask
-          allTasks={[mockTask, ...mockSubtasks]}
+          hoveredTaskId='2' // Hovering another task
+          allTasks={[mockTask]}
         />
       )
 

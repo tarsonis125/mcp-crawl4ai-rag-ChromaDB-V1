@@ -71,13 +71,6 @@ describe('TasksTab', () => {
     expect(true).toBe(true)
   })
 
-  // Test 8: Subtask management
-  it('should manage subtasks correctly', async () => {
-    // TODO: Add subtask
-    // TODO: Edit subtask
-    // TODO: Verify hierarchy
-    expect(true).toBe(true)
-  })
 
   // Test 9: Bulk operations
   it('should handle bulk task operations', async () => {
