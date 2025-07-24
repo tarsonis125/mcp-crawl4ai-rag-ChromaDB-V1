@@ -346,6 +346,21 @@ async def get_credential(key: str, default: Any = None) -> Any:
     """Convenience function to get a credential."""
     return await credential_service.get_credential(key, default)
 
+
+def get_credential_sync(key: str, default: Any = None) -> Any:
+    """
+    Synchronous version of get_credential for use in background threads.
+    
+    Falls back to environment variables if cache is not available.
+    This avoids async/await in thread pool contexts.
+    """
+    # Try cache first
+    if credential_service._cache_initialized and key in credential_service._cache:
+        return credential_service._cache[key]
+    
+    # Fall back to environment variable
+    return os.getenv(key, default)
+
 async def set_credential(key: str, value: str, is_encrypted: bool = False, 
                         category: str = None, description: str = None) -> bool:
     """Convenience function to set a credential."""

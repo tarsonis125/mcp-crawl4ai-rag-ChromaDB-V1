@@ -42,6 +42,7 @@ from .fastapi.internal_api import router as internal_router
 from .services.credential_service import initialize_credentials
 from .utils import get_supabase_client
 from .services.crawler_manager import initialize_crawler, cleanup_crawler
+from .services.background_task_manager import cleanup_task_manager
 
 # Import missing dependencies that the modular APIs need
 try:
@@ -114,6 +115,16 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             api_logger.warning(f"Could not initialize prompt service: {e}")
         
+        # Set the main event loop for background tasks
+        try:
+            from .services.background_task_manager import get_task_manager
+            task_manager = get_task_manager()
+            current_loop = asyncio.get_running_loop()
+            task_manager.set_main_loop(current_loop)
+            api_logger.info("✅ Main event loop set for background tasks")
+        except Exception as e:
+            api_logger.warning(f"Could not set main event loop: {e}")
+        
         # MCP Client functionality removed from architecture
         # Agents now use MCP tools directly
         
@@ -139,6 +150,13 @@ async def lifespan(app: FastAPI):
             await cleanup_crawler()
         except Exception as e:
             api_logger.warning("Could not cleanup crawling context", error=str(e))
+        
+        # Cleanup background task manager
+        try:
+            await cleanup_task_manager()
+            api_logger.info("Background task manager cleaned up")
+        except Exception as e:
+            api_logger.warning("Could not cleanup background task manager", error=str(e))
         
         api_logger.info("✅ Cleanup completed")
         

@@ -333,13 +333,12 @@ async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemR
                 'generate_summary': True
             }
             
-            # Orchestrate the crawl
+            # Orchestrate the crawl (now returns immediately with task info)
             result = await orchestration_service.orchestrate_crawl(request_dict)
             
-            # The orchestration service already handles all progress updates including completion at 100%
-            # No need for duplicate completion updates here
-        
-            safe_logfire_info(f"Crawl completed successfully | progress_id={progress_id} | chunks_stored={result['chunks_stored']} | code_examples_stored={result['code_examples_stored']}")
+            # The orchestration service now runs in background and handles all progress updates
+            # Just log that the task was started
+            safe_logfire_info(f"Crawl task started | progress_id={progress_id} | task_id={result.get('task_id')}")
         except Exception as e:
             error_message = f'Crawling failed: {str(e)}'
             safe_logfire_error(f"Crawl failed | progress_id={progress_id} | error={error_message} | exception_type={type(e).__name__}")
@@ -404,6 +403,10 @@ async def upload_document(
 
 async def _perform_upload_with_progress(progress_id: str, file_content: bytes, file_metadata: dict, tag_list: List[str], knowledge_type: str):
     """Perform document upload with progress tracking using service layer."""
+    # Import ProgressMapper to prevent progress from going backwards
+    from ..services.knowledge.progress_mapper import ProgressMapper
+    progress_mapper = ProgressMapper()
+    
     try:
         filename = file_metadata['filename']
         content_type = file_metadata['content_type']
@@ -413,10 +416,11 @@ async def _perform_upload_with_progress(progress_id: str, file_content: bytes, f
         
         # Socket.IO handles connection automatically - no need to wait
         
-        # Extract text from document with progress
+        # Extract text from document with progress - use mapper for consistent progress
+        mapped_progress = progress_mapper.map_progress('processing', 50)
         await update_crawl_progress(progress_id, {
             'status': 'processing',
-            'percentage': 10,
+            'percentage': mapped_progress,
             'currentUrl': f"file://{filename}",
             'log': f'Reading {filename}...'
         })
@@ -434,6 +438,23 @@ async def _perform_upload_with_progress(progress_id: str, file_content: bytes, f
         # Generate source_id from filename
         source_id = f"file_{filename.replace(' ', '_').replace('.', '_')}_{int(time.time())}"
         
+        # Create progress callback that emits to Socket.IO with mapped progress
+        async def document_progress_callback(message: str, percentage: int, batch_info: dict = None):
+            """Progress callback that emits to Socket.IO with mapped progress"""
+            # Map the document storage progress to overall progress range
+            mapped_percentage = progress_mapper.map_progress('document_storage', percentage)
+            
+            progress_data = {
+                'status': 'document_storage',
+                'percentage': mapped_percentage,  # Use mapped progress to prevent backwards jumps
+                'currentUrl': f"file://{filename}",
+                'log': message
+            }
+            if batch_info:
+                progress_data.update(batch_info)
+            
+            await update_crawl_progress(progress_id, progress_data)
+        
         # Call the service's upload_document method
         success, result = await doc_storage_service.upload_document(
             file_content=extracted_text,
@@ -441,11 +462,20 @@ async def _perform_upload_with_progress(progress_id: str, file_content: bytes, f
             source_id=source_id,
             knowledge_type=knowledge_type,
             tags=tag_list,
-            progress_callback=None  # Emit progress manually
+            progress_callback=document_progress_callback
         )
         
         if success:
-            # Complete the upload
+            # Complete the upload with 100% progress
+            final_progress = progress_mapper.map_progress('completed', 100)
+            await update_crawl_progress(progress_id, {
+                'status': 'completed',
+                'percentage': final_progress,
+                'currentUrl': f"file://{filename}",
+                'log': f'Document upload completed successfully!'
+            })
+            
+            # Also send the completion event with details
             await complete_crawl_progress(progress_id, {
                 'chunksStored': result.get('chunks_stored', 0),
                 'wordCount': result.get('total_word_count', 0),
@@ -597,5 +627,24 @@ async def knowledge_health():
         "timestamp": datetime.now().isoformat()
     }
     
-    return result 
+    return result
+
+@router.get("/knowledge-items/task/{task_id}")
+async def get_crawl_task_status(task_id: str):
+    """Get status of a background crawl task."""
+    try:
+        from ..services.background_task_manager import get_task_manager
+        
+        task_manager = get_task_manager()
+        status = await task_manager.get_task_status(task_id)
+        
+        if "error" in status and status["error"] == "Task not found":
+            raise HTTPException(status_code=404, detail={'error': 'Task not found'})
+        
+        return status
+    except HTTPException:
+        raise
+    except Exception as e:
+        safe_logfire_error(f"Failed to get task status | error={str(e)} | task_id={task_id}")
+        raise HTTPException(status_code=500, detail={'error': str(e)}) 
 
