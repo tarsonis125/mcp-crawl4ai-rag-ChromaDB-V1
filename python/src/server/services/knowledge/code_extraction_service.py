@@ -138,19 +138,35 @@ class CodeExtractionService:
                         sample = md[:500]
                         safe_logfire_info(f"Markdown sample for getting-started: {sample}...")
                 
-                # Simple extraction logic - try markdown first, then HTML as fallback
+                # Improved extraction logic - check for text files first, then HTML, then markdown
                 code_blocks = []
                 
-                # If markdown has triple backticks, extract code blocks from it
-                if md and '```' in md:
+                # Check if this is a text file (e.g., .txt, .md)
+                is_text_file = source_url.endswith(('.txt', '.text', '.md')) or 'text/plain' in doc.get('content_type', '')
+                
+                if is_text_file:
+                    # For text files, use specialized text extraction
+                    safe_logfire_info(f"Detected text file, using text extraction | url={source_url}")
+                    # For text files, the HTML content should be the raw text (not wrapped in <pre>)
+                    text_content = html_content if html_content else md
+                    if text_content:
+                        code_blocks = self._extract_text_file_code_blocks(text_content, source_url, min_length=min_length)
+                        safe_logfire_info(f"Found {len(code_blocks)} code blocks from text file | url={source_url}")
+                
+                # If not a text file or no code blocks found, try HTML extraction first
+                if len(code_blocks) == 0 and html_content and not is_text_file:
+                    safe_logfire_info(f"Trying HTML extraction first | url={source_url} | html_length={len(html_content)}")
+                    html_code_blocks = self._extract_html_code_blocks(html_content, min_length=min_length)
+                    if html_code_blocks:
+                        code_blocks = html_code_blocks
+                        safe_logfire_info(f"Found {len(code_blocks)} code blocks from HTML | url={source_url}")
+                
+                # If still no code blocks, try markdown extraction as fallback
+                if len(code_blocks) == 0 and md and '```' in md:
+                    safe_logfire_info(f"No code blocks from HTML, trying markdown extraction | url={source_url}")
                     from ..storage.code_storage_service import extract_code_blocks
                     code_blocks = extract_code_blocks(md, min_length=min_length)
                     safe_logfire_info(f"Found {len(code_blocks)} code blocks from markdown | url={source_url}")
-                
-                # Try HTML extraction if no code blocks found
-                elif html_content and not code_blocks:
-                    code_blocks = self._extract_html_code_blocks(html_content, min_length=min_length)
-                    safe_logfire_info(f"Found {len(code_blocks)} code blocks from HTML | url={source_url}")
                 
                 if code_blocks:
                     parsed_url = urlparse(source_url)
@@ -406,6 +422,180 @@ class CodeExtractionService:
                         safe_logfire_info(f"Standalone code block failed validation | length={len(cleaned_code)}")
         
         return code_blocks
+    
+    def _extract_text_file_code_blocks(self, content: str, url: str, min_length: int = 250) -> List[Dict[str, Any]]:
+        """
+        Extract code blocks from plain text files (like .txt files).
+        Handles formats like llms.txt where code blocks may be indicated by:
+        - Triple backticks (```)
+        - Language indicators (e.g., "typescript", "python")
+        - Indentation patterns
+        - Code block separators
+        
+        Args:
+            content: The plain text content
+            url: The URL of the text file for context
+            min_length: Minimum length for code blocks
+            
+        Returns:
+            List of code blocks with metadata
+        """
+        import re
+        
+        safe_logfire_info(f"Processing text file for code extraction | url={url} | content_length={len(content)}")
+        
+        code_blocks = []
+        
+        # Method 1: Look for triple backtick code blocks (Markdown style)
+        backtick_pattern = r'```(\w*)\n(.*?)```'
+        matches = re.finditer(backtick_pattern, content, re.DOTALL | re.MULTILINE)
+        
+        for match in matches:
+            language = match.group(1) or ""
+            code_content = match.group(2).strip()
+            
+            if len(code_content) >= min_length:
+                # Get context
+                start_pos = match.start()
+                end_pos = match.end()
+                context_before = content[max(0, start_pos - 500):start_pos].strip()
+                context_after = content[end_pos:min(len(content), end_pos + 500)].strip()
+                
+                # Clean and validate
+                cleaned_code = self._clean_code_content(code_content, language)
+                if self._validate_code_quality(cleaned_code, language):
+                    safe_logfire_info(f"Found backtick code block | language={language} | length={len(cleaned_code)}")
+                    code_blocks.append({
+                        'code': cleaned_code,
+                        'language': language,
+                        'context_before': context_before,
+                        'context_after': context_after,
+                        'full_context': f"{context_before}\n\n{cleaned_code}\n\n{context_after}",
+                        'source_type': 'text_backticks'
+                    })
+        
+        # Method 2: Look for language-labeled code blocks (e.g., "TypeScript:" or "Python example:")
+        language_pattern = r'(?:^|\n)((?:typescript|javascript|python|java|c\+\+|rust|go|ruby|php|swift|kotlin|scala|r|matlab|julia|dart|elixir|erlang|haskell|clojure|lua|perl|shell|bash|sql|html|css|xml|json|yaml|toml|ini|dockerfile|makefile|cmake|gradle|maven|npm|yarn|pip|cargo|gem|pod|composer|nuget|apt|yum|brew|choco|snap|flatpak|appimage|msi|exe|dmg|pkg|deb|rpm|tar|zip|7z|rar|gz|bz2|xz|zst|lz4|lzo|lzma|lzip|lzop|compress|uncompress|gzip|gunzip|bzip2|bunzip2|xz|unxz|zstd|unzstd|lz4|unlz4|lzo|unlzo|lzma|unlzma|lzip|lunzip|lzop|unlzop)\s*(?:code|example|snippet)?)[:\s]*\n((?:(?:^[ \t]+.*\n?)+)|(?:.*\n)+?)(?=\n(?:[A-Z][a-z]+\s*:|^\s*$|\n#|\n\*|\n-|\n\d+\.))'
+        matches = re.finditer(language_pattern, content, re.IGNORECASE | re.MULTILINE)
+        
+        for match in matches:
+            language_info = match.group(1).lower()
+            # Extract just the language name
+            language = re.match(r'(\w+)', language_info).group(1) if re.match(r'(\w+)', language_info) else ""
+            code_content = match.group(2).strip()
+            
+            if len(code_content) >= min_length:
+                # Get context
+                start_pos = match.start()
+                end_pos = match.end()
+                context_before = content[max(0, start_pos - 500):start_pos].strip()
+                context_after = content[end_pos:min(len(content), end_pos + 500)].strip()
+                
+                # Clean and validate
+                cleaned_code = self._clean_code_content(code_content, language)
+                if self._validate_code_quality(cleaned_code, language):
+                    safe_logfire_info(f"Found language-labeled code block | language={language} | length={len(cleaned_code)}")
+                    code_blocks.append({
+                        'code': cleaned_code,
+                        'language': language,
+                        'context_before': context_before,
+                        'context_after': context_after,
+                        'full_context': f"{context_before}\n\n{cleaned_code}\n\n{context_after}",
+                        'source_type': 'text_language_label'
+                    })
+        
+        # Method 3: Look for consistently indented blocks (at least 4 spaces or 1 tab)
+        # This is more heuristic and should be used carefully
+        if len(code_blocks) == 0:  # Only if we haven't found code blocks yet
+            # Split content into potential code sections
+            lines = content.split('\n')
+            current_block = []
+            current_indent = None
+            block_start_idx = 0
+            
+            for i, line in enumerate(lines):
+                # Check if line is indented
+                stripped = line.lstrip()
+                indent = len(line) - len(stripped)
+                
+                if indent >= 4 and stripped:  # At least 4 spaces and not empty
+                    if current_indent is None:
+                        current_indent = indent
+                        block_start_idx = i
+                    current_block.append(line)
+                elif current_block and len('\n'.join(current_block)) >= min_length:
+                    # End of indented block, check if it's code
+                    code_content = '\n'.join(current_block)
+                    
+                    # Try to detect language from content
+                    language = self._detect_language_from_content(code_content)
+                    
+                    # Get context
+                    context_before_lines = lines[max(0, block_start_idx - 10):block_start_idx]
+                    context_after_lines = lines[i:min(len(lines), i + 10)]
+                    context_before = '\n'.join(context_before_lines).strip()
+                    context_after = '\n'.join(context_after_lines).strip()
+                    
+                    # Clean and validate
+                    cleaned_code = self._clean_code_content(code_content, language)
+                    if self._validate_code_quality(cleaned_code, language):
+                        safe_logfire_info(f"Found indented code block | language={language} | length={len(cleaned_code)}")
+                        code_blocks.append({
+                            'code': cleaned_code,
+                            'language': language,
+                            'context_before': context_before,
+                            'context_after': context_after,
+                            'full_context': f"{context_before}\n\n{cleaned_code}\n\n{context_after}",
+                            'source_type': 'text_indented'
+                        })
+                    
+                    # Reset for next block
+                    current_block = []
+                    current_indent = None
+                else:
+                    # Reset if not indented
+                    if current_block and not stripped:
+                        # Allow empty lines within code blocks
+                        current_block.append(line)
+                    else:
+                        current_block = []
+                        current_indent = None
+        
+        safe_logfire_info(f"Total code blocks found in text file: {len(code_blocks)}")
+        return code_blocks
+    
+    def _detect_language_from_content(self, code: str) -> str:
+        """
+        Try to detect programming language from code content.
+        This is a simple heuristic approach.
+        """
+        import re
+        
+        # Language detection patterns
+        patterns = {
+            'python': [r'\bdef\s+\w+\s*\(', r'\bclass\s+\w+', r'\bimport\s+\w+', r'\bfrom\s+\w+\s+import'],
+            'javascript': [r'\bfunction\s+\w+\s*\(', r'\bconst\s+\w+\s*=', r'\blet\s+\w+\s*=', r'\bvar\s+\w+\s*='],
+            'typescript': [r'\binterface\s+\w+', r':\s*\w+\[\]', r'\btype\s+\w+\s*=', r'\bclass\s+\w+.*\{'],
+            'java': [r'\bpublic\s+class\s+\w+', r'\bprivate\s+\w+\s+\w+', r'\bpublic\s+static\s+void\s+main'],
+            'rust': [r'\bfn\s+\w+\s*\(', r'\blet\s+mut\s+\w+', r'\bimpl\s+\w+', r'\bstruct\s+\w+'],
+            'go': [r'\bfunc\s+\w+\s*\(', r'\bpackage\s+\w+', r'\btype\s+\w+\s+struct'],
+        }
+        
+        # Count matches for each language
+        scores = {}
+        for lang, lang_patterns in patterns.items():
+            score = 0
+            for pattern in lang_patterns:
+                if re.search(pattern, code, re.MULTILINE):
+                    score += 1
+            if score > 0:
+                scores[lang] = score
+        
+        # Return language with highest score
+        if scores:
+            return max(scores, key=scores.get)
+        
+        return ""
     
     def _decode_html_entities(self, text: str) -> str:
         """Decode common HTML entities and clean HTML tags from code."""

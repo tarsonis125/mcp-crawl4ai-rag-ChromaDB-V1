@@ -119,7 +119,7 @@ def extract_code_blocks(markdown_content: str, min_length: int = None) -> List[D
             # Check if first line is a language specifier (no spaces, common language names)
             first_line = lines[0].strip()
             if first_line and not ' ' in first_line and len(first_line) < 20:
-                language = first_line
+                language = first_line.lower()
                 # Keep the code content with its original formatting (don't strip)
                 code_content = lines[1] if len(lines) > 1 else ""
             else:
@@ -135,6 +135,66 @@ def extract_code_blocks(markdown_content: str, min_length: int = None) -> List[D
         if len(code_content) < min_length:
             i += 2  # Move to next pair
             continue
+        
+        # Check if this is actually code or just documentation text
+        # If no language specified, check content to determine if it's code
+        if not language or language in ['text', 'plaintext', 'txt']:
+            # Check if content looks like prose/documentation rather than code
+            code_lower = code_content.lower()
+            
+            # Common indicators this is documentation, not code
+            doc_indicators = [
+                # Prose patterns
+                ('this ', 'that ', 'these ', 'those ', 'the '),  # Articles
+                ('is ', 'are ', 'was ', 'were ', 'will ', 'would '),  # Verbs
+                ('to ', 'from ', 'with ', 'for ', 'and ', 'or '),  # Prepositions/conjunctions
+                
+                # Documentation specific
+                'for example:', 'note:', 'warning:', 'important:',
+                'description:', 'usage:', 'parameters:', 'returns:',
+                
+                # Sentence endings
+                '. ', '? ', '! ',
+            ]
+            
+            # Count documentation indicators
+            doc_score = 0
+            for indicator in doc_indicators:
+                if isinstance(indicator, tuple):
+                    # Check if multiple words from tuple appear
+                    doc_score += sum(1 for word in indicator if word in code_lower)
+                else:
+                    if indicator in code_lower:
+                        doc_score += 2
+            
+            # Calculate lines and check structure
+            content_lines = code_content.split('\n')
+            non_empty_lines = [line for line in content_lines if line.strip()]
+            
+            # If high documentation score relative to content size, skip
+            words = code_content.split()
+            if len(words) > 0:
+                doc_ratio = doc_score / len(words)
+                # If more than 10% of words are documentation indicators, likely not code
+                if doc_ratio > 0.1:
+                    search_logger.debug(f"Skipping documentation text disguised as code | doc_ratio={doc_ratio:.2f} | first_50_chars={code_content[:50]}")
+                    i += 2
+                    continue
+            
+            # Additional check: if no typical code patterns found
+            code_patterns = [
+                '=', '(', ')', '{', '}', '[', ']', ';', 
+                'function', 'def', 'class', 'import', 'export',
+                'const', 'let', 'var', 'return', 'if', 'for',
+                '->', '=>', '==', '!=', '<=', '>='
+            ]
+            
+            code_pattern_count = sum(1 for pattern in code_patterns if pattern in code_content)
+            if code_pattern_count < 3 and len(non_empty_lines) > 5:
+                # Looks more like prose than code
+                search_logger.debug(f"Skipping prose text | code_patterns={code_pattern_count} | lines={len(non_empty_lines)}")
+                i += 2
+                continue
         
         # Extract context before (1000 chars)
         context_start = max(0, start_pos - 1000)

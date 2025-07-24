@@ -828,7 +828,7 @@ class CrawlOrchestrationService:
                     crawl_results = [{
                         'url': url,
                         'markdown': content,
-                        'html': f'<pre>{content}</pre>',
+                        'html': content,  # Keep raw content for text files to allow proper code extraction
                         'title': url.split('/')[-1],
                         'description': f'Text file from {url}',
                         'success': True
