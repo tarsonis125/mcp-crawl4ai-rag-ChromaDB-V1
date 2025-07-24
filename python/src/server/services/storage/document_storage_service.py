@@ -264,8 +264,8 @@ async def add_documents_to_supabase(
                     'completed_batches': total_batches,
                     'total_batches': total_batches,
                     'current_batch': total_batches,
-                    'chunks_processed': len(contents),
-                    'status': 'completed'
+                    'chunks_processed': len(contents)
+                    # DON'T send 'status': 'completed' - that's for the orchestration service only!
                 }
             )
         

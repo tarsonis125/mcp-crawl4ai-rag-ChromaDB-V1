@@ -41,7 +41,9 @@ class TestAPIEndpoints:
         assert response.status_code == 200
         data = response.json()
         assert 'status' in data
-        assert 'mcp_available' in data
+        # Updated to match actual response fields
+        assert data['status'] in ['running', 'stopped', 'error']
+        assert 'container_status' in data
     
     @pytest.mark.asyncio
     async def test_projects_list_endpoint(self, async_client):

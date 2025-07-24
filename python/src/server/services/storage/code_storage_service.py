@@ -19,8 +19,31 @@ from ..llm_provider_service import get_llm_client_sync
 
 
 def _get_model_choice() -> str:
-    """Get MODEL_CHOICE from environment."""
-    model = os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
+    """Get MODEL_CHOICE from credential service."""
+    try:
+        # Import here to avoid circular dependency
+        from ...services.credential_service import credential_service
+        # Use asyncio to run the async credential lookup
+        import asyncio
+        
+        # Try to get the current event loop, or create one if none exists
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If we're in an async context, we can't use run_until_complete
+                # Fall back to environment variable or default
+                model = os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
+            else:
+                model = loop.run_until_complete(credential_service.get_credential("MODEL_CHOICE", "gpt-4.1-nano"))
+        except RuntimeError:
+            # No event loop exists, create one
+            model = asyncio.run(credential_service.get_credential("MODEL_CHOICE", "gpt-4.1-nano"))
+            
+    except Exception as e:
+        # Fallback to environment variable or default if credential service fails
+        search_logger.warning(f"Failed to get MODEL_CHOICE from credential service: {e}, using fallback")
+        model = os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
+    
     search_logger.debug(f"Using MODEL_CHOICE: {model}")
     return model
 
@@ -28,6 +51,8 @@ def _get_model_choice() -> str:
 def _get_max_workers() -> int:
     """Get max workers from environment, defaulting to 3."""
     return int(os.getenv("CONTEXTUAL_EMBEDDINGS_MAX_WORKERS", "3"))
+
+
 
 
 def extract_code_blocks(markdown_content: str, min_length: int = None) -> List[Dict[str, Any]]:
@@ -54,19 +79,20 @@ def extract_code_blocks(markdown_content: str, min_length: int = None) -> List[D
     # Check for corrupted markdown (entire content wrapped in code block)
     if content.startswith('```'):
         first_line = content.split('\n')[0] if '\n' in content else content[:10]
-        # If it's ```K` or similar single-letter "language", skip the entire content
-        if re.match(r'^```[A-Z]`?$', first_line):
+        # If it's ```K` or similar single-letter "language" followed by backtick, it's corrupted
+        # This pattern specifically looks for ```K` or ```K` (with extra backtick)
+        if re.match(r'^```[A-Z]`$', first_line):
             search_logger.warning(f"Detected corrupted markdown with fake language: {first_line}")
             # Try to find actual code blocks within the corrupted content
             # Look for nested triple backticks
-            # Skip the outer ```K and closing ```
-            inner_content = content[4:-3] if content.endswith('```') else content[4:]
+            # Skip the outer ```K` and closing ```
+            inner_content = content[5:-3] if content.endswith('```') else content[5:]
             # Now extract normally from inner content
             search_logger.info(f"Attempting to extract from inner content (length: {len(inner_content)})")
             return extract_code_blocks(inner_content, min_length)
-        # Otherwise, skip the first triple backticks as before
-        start_offset = 3
-        print("Skipping initial triple backticks")
+        # For normal language identifiers (e.g., ```python, ```javascript), process normally
+        # No need to skip anything - the extraction logic will handle it correctly
+        start_offset = 0
     
     # Find all occurrences of triple backticks
     backtick_positions = []
@@ -94,13 +120,16 @@ def extract_code_blocks(markdown_content: str, min_length: int = None) -> List[D
             first_line = lines[0].strip()
             if first_line and not ' ' in first_line and len(first_line) < 20:
                 language = first_line
-                code_content = lines[1].strip() if len(lines) > 1 else ""
+                # Keep the code content with its original formatting (don't strip)
+                code_content = lines[1] if len(lines) > 1 else ""
             else:
                 language = ""
-                code_content = code_section.strip()
+                # No language identifier, so the entire section is code
+                code_content = code_section
         else:
             language = ""
-            code_content = code_section.strip()
+            # Single line code block - keep as is
+            code_content = code_section
         
         # Skip if code block is too short
         if len(code_content) < min_length:
@@ -115,12 +144,14 @@ def extract_code_blocks(markdown_content: str, min_length: int = None) -> List[D
         context_end = min(len(markdown_content), end_pos + 3 + 1000)
         context_after = markdown_content[end_pos + 3:context_end].strip()
         
+        # Add the extracted code block
+        stripped_code = code_content.strip()
         code_blocks.append({
-            'code': code_content,
+            'code': stripped_code,
             'language': language,
             'context_before': context_before,
             'context_after': context_after,
-            'full_context': f"{context_before}\n\n{code_content}\n\n{context_after}"
+            'full_context': f"{context_before}\n\n{stripped_code}\n\n{context_after}"
         })
         
         # Move to next pair (skip the closing backtick we just processed)

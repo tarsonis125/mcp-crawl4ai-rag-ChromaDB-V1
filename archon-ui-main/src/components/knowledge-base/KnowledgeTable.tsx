@@ -212,18 +212,26 @@ const GroupedKnowledgeTableRow: React.FC<GroupedKnowledgeTableRowProps> = ({
       <td className="px-6 py-4 max-w-xs">
         <div className="flex items-center gap-2">
           {firstItem.metadata.source_type === 'url' ? (
-            <LinkIcon className="w-4 h-4 text-blue-500 flex-shrink-0" />
+            <LinkIcon className={`w-4 h-4 flex-shrink-0 ${
+              firstItem.metadata.knowledge_type === 'technical' ? 'text-blue-500' : 'text-cyan-500'
+            }`} />
           ) : (
-            <Upload className="w-4 h-4 text-pink-500 flex-shrink-0" />
+            <Upload className={`w-4 h-4 flex-shrink-0 ${
+              firstItem.metadata.knowledge_type === 'technical' ? 'text-purple-500' : 'text-pink-500'
+            }`} />
           )}
-          <TypeIcon className={`w-4 h-4 ${typeIconColor} flex-shrink-0`} />
+          <TypeIcon className={`w-4 h-4 flex-shrink-0 ${
+            firstItem.metadata.source_type === 'url'
+              ? firstItem.metadata.knowledge_type === 'technical' ? 'text-blue-500' : 'text-cyan-500'
+              : firstItem.metadata.knowledge_type === 'technical' ? 'text-purple-500' : 'text-pink-500'
+          }`} />
           <div className="text-sm font-medium text-gray-900 dark:text-white truncate max-w-[200px]" title={isGrouped ? groupedItem.domain : firstItem.title}>
             {isGrouped ? groupedItem.domain : firstItem.title}
           </div>
         </div>
       </td>
       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-zinc-400">
-        <Badge color={firstItem.metadata.knowledge_type === 'technical' ? 'blue' : 'purple'}>
+        <Badge color={firstItem.metadata.knowledge_type === 'technical' ? 'blue' : 'pink'}>
           {firstItem.metadata.knowledge_type}
         </Badge>
       </td>

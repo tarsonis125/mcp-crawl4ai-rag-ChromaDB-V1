@@ -18,8 +18,31 @@ logger = get_logger(__name__)
 
 
 def _get_model_choice() -> str:
-    """Get MODEL_CHOICE from environment."""
-    model = os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
+    """Get MODEL_CHOICE from credential service."""
+    try:
+        # Import here to avoid circular dependency
+        from .credential_service import credential_service
+        # Use asyncio to run the async credential lookup
+        import asyncio
+        
+        # Try to get the current event loop, or create one if none exists
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If we're in an async context, we can't use run_until_complete
+                # Fall back to environment variable or default
+                model = os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
+            else:
+                model = loop.run_until_complete(credential_service.get_credential("MODEL_CHOICE", "gpt-4.1-nano"))
+        except RuntimeError:
+            # No event loop exists, create one
+            model = asyncio.run(credential_service.get_credential("MODEL_CHOICE", "gpt-4.1-nano"))
+            
+    except Exception as e:
+        # Fallback to environment variable or default if credential service fails
+        logger.warning(f"Failed to get MODEL_CHOICE from credential service: {e}, using fallback")
+        model = os.getenv("MODEL_CHOICE", "gpt-4.1-nano")
+    
     logger.debug(f"Using MODEL_CHOICE: {model}")
     return model
 

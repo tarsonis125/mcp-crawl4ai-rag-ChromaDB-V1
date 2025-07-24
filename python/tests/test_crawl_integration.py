@@ -9,6 +9,28 @@ import asyncio
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 import json
 from datetime import datetime
+import os
+
+# CRITICAL: Set test environment to prevent real connections
+os.environ['TESTING'] = 'true'
+os.environ['ENV'] = 'test'
+
+# Safety fixture to block all real operations
+@pytest.fixture(autouse=True)
+def block_real_operations():
+    """Automatically block real database and storage operations in all tests"""
+    # Create a mock table that raises an error on insert
+    mock_table = Mock()
+    mock_table.insert = Mock(side_effect=Exception("BLOCKED: Real database insert in tests!"))
+    
+    # Create a mock client that returns the mock table
+    mock_client = Mock()
+    mock_client.table = Mock(return_value=mock_table)
+    
+    with patch('supabase.create_client', return_value=mock_client):
+        with patch('src.server.services.client_manager.get_supabase_client', return_value=mock_client):
+            with patch('openai.OpenAI', side_effect=Exception("BLOCKED: Real OpenAI client in tests!")):
+                yield
 
 
 class TestCrawlIntegration:
@@ -95,48 +117,56 @@ class TestCrawlIntegration:
                       return_value=mock_dependencies['crawler']):
                 with patch('src.server.services.client_manager.get_supabase_client',
                           return_value=mock_dependencies['supabase']):
-                    with patch('src.server.fastapi.socketio_handlers.update_crawl_progress',
-                              capture_progress):
-                        
-                        # Simulate API request
-                        from src.server.fastapi.knowledge_api import crawl_knowledge_item
-                        from src.server.fastapi.knowledge_api import KnowledgeItemRequest
-                        
-                        request = KnowledgeItemRequest(
-                            url="https://example.com/llms.txt",
-                            knowledge_type="technical",
-                            tags=["ai", "llm"],
-                            max_depth=1,
-                            extract_code_examples=True
-                        )
-                        
-                        # Start crawl (should return immediately)
-                        response = await crawl_knowledge_item(request)
-                        
-                        # Verify immediate response
-                        assert response['success'] == True
-                        assert 'progressId' in response
-                        assert response['message'] == "Crawling started"
-                        
-                        progress_id = response['progressId']
-                        
-                        # Wait for background task to complete
-                        await asyncio.sleep(2.0)  # Give more time for background task
-                        
-                        # Verify progress updates were sent
-                        assert len(progress_updates) > 0
-                    
-                    # Check progress sequence
-                    statuses = [u['data']['status'] for u in progress_updates]
-                    assert 'starting' in statuses
-                    assert 'crawling' in statuses or 'analyzing' in statuses
-                    
-                    # Verify progress never went backwards
-                    percentages = [u['data'].get('percentage', 0) for u in progress_updates 
-                                 if 'percentage' in u['data']]
-                    for i in range(1, len(percentages)):
-                        assert percentages[i] >= percentages[i-1], \
-                            f"Progress went backwards: {percentages}"
+                    # Mock OpenAI for embeddings
+                    with patch('src.server.services.llm_provider_service.get_llm_client_sync',
+                              return_value=mock_dependencies['openai']):
+                        with patch('src.server.fastapi.socketio_handlers.broadcast_crawl_progress',
+                                  side_effect=capture_progress):
+                            # Mock document storage to prevent real uploads
+                            with patch('src.server.services.storage.document_storage_service.add_documents_to_supabase') as mock_store:
+                                async def mock_add_documents(*args, **kwargs):
+                                    return {'success': True, 'error': None}
+                                mock_store.side_effect = mock_add_documents
+                                
+                                # Simulate API request
+                                from src.server.fastapi.knowledge_api import crawl_knowledge_item
+                                from src.server.fastapi.knowledge_api import KnowledgeItemRequest
+                                
+                                request = KnowledgeItemRequest(
+                                    url="https://example.com/llms.txt",
+                                    knowledge_type="technical",
+                                    tags=["ai", "llm"],
+                                    max_depth=1,
+                                    extract_code_examples=True
+                                )
+                                
+                                # Start crawl (should return immediately)
+                                response = await crawl_knowledge_item(request)
+                                
+                                # Verify immediate response
+                                assert response['success'] == True
+                                assert 'progressId' in response
+                                assert response['message'] == "Crawling started"
+                                
+                                progress_id = response['progressId']
+                                
+                                # Wait for background task to complete
+                                await asyncio.sleep(2.0)  # Give more time for background task
+                                
+                                # Verify progress updates were sent
+                                assert len(progress_updates) > 0
+                                
+                                # Check progress sequence
+                                statuses = [u['data']['status'] for u in progress_updates]
+                                assert 'starting' in statuses
+                                assert 'crawling' in statuses or 'analyzing' in statuses
+                                
+                                # Verify progress never went backwards
+                                percentages = [u['data'].get('percentage', 0) for u in progress_updates 
+                                             if 'percentage' in u['data']]
+                                for i in range(1, len(percentages)):
+                                    assert percentages[i] >= percentages[i-1], \
+                                        f"Progress went backwards: {percentages}"
     
     @pytest.mark.asyncio
     async def test_complete_website_crawl_workflow(self, mock_dependencies):

@@ -268,11 +268,34 @@ class CrawlOrchestrationService:
                 })
                 safe_logfire_info("Starting code extraction in background task")
                 
-                # Perform code extraction using the existing method
-                extraction_result = self._extract_code_examples_blocking(
-                    crawl_results, storage_results, progress_queue
-                )
-                code_examples_count = extraction_result.get('code_examples_stored', 0)
+                # Use the async code extraction method via run_async_in_thread
+                # This maintains Socket.IO connection by using the main event loop
+                from ..blocking_helpers import run_async_in_thread
+                from ..knowledge.code_extraction_service import CodeExtractionService
+                
+                # Create code extraction service
+                code_service = CodeExtractionService(self.supabase_client)
+                
+                # Define async progress callback that writes to queue
+                async def async_progress_callback(data: dict):
+                    progress_queue.put(data)
+                
+                try:
+                    # Run the async extraction method using the main event loop
+                    code_examples_count = run_async_in_thread(
+                        code_service.extract_and_store_code_examples(
+                            crawl_results,
+                            url_to_full_document,
+                            async_progress_callback,
+                            start_progress=85,
+                            end_progress=95
+                        ),
+                        timeout=300.0  # 5 minute timeout for code extraction
+                    )
+                    safe_logfire_info(f"Code extraction completed: {code_examples_count} examples stored")
+                except Exception as e:
+                    safe_logfire_error(f"Error in code extraction: {e}")
+                    code_examples_count = 0
             
             # Finalize and return results
             progress_queue.put({
@@ -482,39 +505,95 @@ class CrawlOrchestrationService:
         
         # Create/update source record FIRST before storing documents
         if all_contents and all_metadatas:
-            # Get the primary source info (usually from the first metadata)
-            primary_metadata = all_metadatas[0]
-            source_id = primary_metadata['source_id']
+            # Find ALL unique source_ids in the crawl results
+            unique_source_ids = set()
+            source_id_contents = {}
+            source_id_word_counts = {}
             
-            # Get combined content for summary generation (first few chunks for context)
-            # Take first 15000 chars (roughly 3 chunks) for summary
-            combined_content = ''
-            for chunk in all_contents:
-                if len(combined_content) + len(chunk) < 15000:
-                    combined_content += ' ' + chunk
-                else:
-                    break
+            for i, metadata in enumerate(all_metadatas):
+                source_id = metadata['source_id']
+                unique_source_ids.add(source_id)
+                
+                # Group content by source_id for better summaries
+                if source_id not in source_id_contents:
+                    source_id_contents[source_id] = []
+                source_id_contents[source_id].append(all_contents[i])
+                
+                # Track word counts per source_id
+                if source_id not in source_id_word_counts:
+                    source_id_word_counts[source_id] = 0
+                source_id_word_counts[source_id] += metadata.get('word_count', 0)
             
-            # Generate summary
-            summary = extract_source_summary(source_id, combined_content)
+            safe_logfire_info(f"Found {len(unique_source_ids)} unique source_ids: {list(unique_source_ids)}")
             
-            # Update source info in database BEFORE storing documents
-            safe_logfire_info(f"About to create/update source record for '{source_id}'")
-            try:
-                update_source_info(
-                    client=self.supabase_client,
-                    source_id=source_id,
-                    summary=summary,
-                    word_count=sum(source_word_counts.values()),
-                    content=combined_content,
-                    knowledge_type=request.get('knowledge_type', 'technical'),
-                    tags=request.get('tags', []),
-                    update_frequency=0  # Set to 0 since we're using manual refresh
-                )
-                safe_logfire_info(f"Successfully created/updated source record for '{source_id}'")
-            except Exception as e:
-                safe_logfire_error(f"Failed to create/update source record for '{source_id}': {str(e)}")
-                raise  # Re-raise to stop processing
+            # Create source records for ALL unique source_ids
+            for source_id in unique_source_ids:
+                # Get combined content for this specific source_id
+                source_contents = source_id_contents[source_id]
+                combined_content = ''
+                for chunk in source_contents[:3]:  # First 3 chunks for this source
+                    if len(combined_content) + len(chunk) < 15000:
+                        combined_content += ' ' + chunk
+                    else:
+                        break
+                
+                # Generate summary with fallback
+                try:
+                    summary = extract_source_summary(source_id, combined_content)
+                except Exception as e:
+                    safe_logfire_error(f"Failed to generate AI summary for '{source_id}': {str(e)}, using fallback")
+                    # Fallback to simple summary
+                    summary = f"Documentation from {source_id} - {len(source_contents)} pages crawled"
+                
+                # Update source info in database BEFORE storing documents
+                safe_logfire_info(f"About to create/update source record for '{source_id}' (word count: {source_id_word_counts[source_id]})")
+                try:
+                    update_source_info(
+                        client=self.supabase_client,
+                        source_id=source_id,
+                        summary=summary,
+                        word_count=source_id_word_counts[source_id],
+                        content=combined_content,
+                        knowledge_type=request.get('knowledge_type', 'technical'),
+                        tags=request.get('tags', []),
+                        update_frequency=0  # Set to 0 since we're using manual refresh
+                    )
+                    safe_logfire_info(f"Successfully created/updated source record for '{source_id}'")
+                except Exception as e:
+                    safe_logfire_error(f"Failed to create/update source record for '{source_id}': {str(e)}")
+                    # Try a simpler approach with minimal data
+                    try:
+                        safe_logfire_info(f"Attempting fallback source creation for '{source_id}'")
+                        self.supabase_client.table('sources').upsert({
+                            'source_id': source_id,
+                            'title': source_id,  # Use source_id as title fallback
+                            'summary': summary,
+                            'total_word_count': source_id_word_counts[source_id],
+                            'metadata': {
+                                'knowledge_type': request.get('knowledge_type', 'technical'),
+                                'tags': request.get('tags', []),
+                                'auto_generated': True,
+                                'fallback_creation': True
+                            }
+                        }).execute()
+                        safe_logfire_info(f"Fallback source creation succeeded for '{source_id}'")
+                    except Exception as fallback_error:
+                        safe_logfire_error(f"Both source creation attempts failed for '{source_id}': {str(fallback_error)}")
+                        raise Exception(f"Unable to create source record for '{source_id}'. This will cause foreign key violations. Error: {str(fallback_error)}")
+        
+        # Verify ALL source records exist before proceeding with document storage
+        if unique_source_ids:
+            for source_id in unique_source_ids:
+                try:
+                    source_check = self.supabase_client.table('sources').select('source_id').eq('source_id', source_id).execute()
+                    if not source_check.data:
+                        raise Exception(f"Source record verification failed - '{source_id}' does not exist in sources table")
+                    safe_logfire_info(f"Source record verified for '{source_id}'")
+                except Exception as e:
+                    safe_logfire_error(f"Source verification failed for '{source_id}': {str(e)}")
+                    raise
+            
+            safe_logfire_info(f"All {len(unique_source_ids)} source records verified - proceeding with document storage")
         
         # Document storage progress will be handled by the callback
         
@@ -656,12 +735,12 @@ class CrawlOrchestrationService:
             # Convert async callback to sync for blocking execution
             from ..blocking_helpers import run_async_in_thread
             
-            # Run the async extraction method in blocking mode
+            # Run the async extraction method using the main event loop
             result = run_async_in_thread(
                 code_service.extract_and_store_code_examples(
                     crawl_results,
                     url_to_full_document,
-                    async_progress_callback,  # Pass async callback directly
+                    async_progress_callback,
                     start_progress=85,
                     end_progress=95
                 ),
@@ -917,38 +996,95 @@ class CrawlOrchestrationService:
         
         # Create/update source record FIRST before storing documents
         if all_contents and all_metadatas:
-            # Get the primary source info
-            primary_metadata = all_metadatas[0]
-            source_id = primary_metadata['source_id']
+            # Find ALL unique source_ids in the crawl results
+            unique_source_ids = set()
+            source_id_contents = {}
+            source_id_word_counts = {}
             
-            # Get combined content for summary generation
-            combined_content = ''
-            for chunk in all_contents[:3]:  # First 3 chunks
-                if len(combined_content) + len(chunk) < 15000:
-                    combined_content += ' ' + chunk
-                else:
-                    break
+            for i, metadata in enumerate(all_metadatas):
+                source_id = metadata['source_id']
+                unique_source_ids.add(source_id)
+                
+                # Group content by source_id for better summaries
+                if source_id not in source_id_contents:
+                    source_id_contents[source_id] = []
+                source_id_contents[source_id].append(all_contents[i])
+                
+                # Track word counts per source_id
+                if source_id not in source_id_word_counts:
+                    source_id_word_counts[source_id] = 0
+                source_id_word_counts[source_id] += metadata.get('word_count', 0)
             
-            # Generate summary
-            summary = extract_source_summary(source_id, combined_content)
+            safe_logfire_info(f"Found {len(unique_source_ids)} unique source_ids: {list(unique_source_ids)}")
             
-            # Update source info in database BEFORE storing documents
-            safe_logfire_info(f"About to create/update source record for '{source_id}'")
-            try:
-                update_source_info(
-                    client=self.supabase_client,
-                    source_id=source_id,
-                    summary=summary,
-                    word_count=sum(source_word_counts.values()),
-                    content=combined_content,
-                    knowledge_type=request.get('knowledge_type', 'technical'),
-                    tags=request.get('tags', []),
-                    update_frequency=0
-                )
-                safe_logfire_info(f"Successfully created/updated source record for '{source_id}'")
-            except Exception as e:
-                safe_logfire_error(f"Failed to create/update source record for '{source_id}': {str(e)}")
-                raise
+            # Create source records for ALL unique source_ids
+            for source_id in unique_source_ids:
+                # Get combined content for this specific source_id
+                source_contents = source_id_contents[source_id]
+                combined_content = ''
+                for chunk in source_contents[:3]:  # First 3 chunks for this source
+                    if len(combined_content) + len(chunk) < 15000:
+                        combined_content += ' ' + chunk
+                    else:
+                        break
+                
+                # Generate summary with fallback
+                try:
+                    summary = extract_source_summary(source_id, combined_content)
+                except Exception as e:
+                    safe_logfire_error(f"Failed to generate AI summary for '{source_id}': {str(e)}, using fallback")
+                    # Fallback to simple summary
+                    summary = f"Documentation from {source_id} - {len(source_contents)} pages crawled"
+                
+                # Update source info in database BEFORE storing documents
+                safe_logfire_info(f"About to create/update source record for '{source_id}' (word count: {source_id_word_counts[source_id]})")
+                try:
+                    update_source_info(
+                        client=self.supabase_client,
+                        source_id=source_id,
+                        summary=summary,
+                        word_count=source_id_word_counts[source_id],
+                        content=combined_content,
+                        knowledge_type=request.get('knowledge_type', 'technical'),
+                        tags=request.get('tags', []),
+                        update_frequency=0
+                    )
+                    safe_logfire_info(f"Successfully created/updated source record for '{source_id}'")
+                except Exception as e:
+                    safe_logfire_error(f"Failed to create/update source record for '{source_id}': {str(e)}")
+                    # Try a simpler approach with minimal data
+                    try:
+                        safe_logfire_info(f"Attempting fallback source creation for '{source_id}'")
+                        self.supabase_client.table('sources').upsert({
+                            'source_id': source_id,
+                            'title': source_id,  # Use source_id as title fallback
+                            'summary': summary,
+                            'total_word_count': source_id_word_counts[source_id],
+                            'metadata': {
+                                'knowledge_type': request.get('knowledge_type', 'technical'),
+                                'tags': request.get('tags', []),
+                                'auto_generated': True,
+                                'fallback_creation': True
+                            }
+                        }).execute()
+                        safe_logfire_info(f"Fallback source creation succeeded for '{source_id}'")
+                    except Exception as fallback_error:
+                        safe_logfire_error(f"Both source creation attempts failed for '{source_id}': {str(fallback_error)}")
+                        raise Exception(f"Unable to create source record for '{source_id}'. This will cause foreign key violations. Error: {str(fallback_error)}")
+        
+        # Verify ALL source records exist before proceeding with document storage
+        if unique_source_ids:
+            for source_id in unique_source_ids:
+                try:
+                    source_check = self.supabase_client.table('sources').select('source_id').eq('source_id', source_id).execute()
+                    if not source_check.data:
+                        raise Exception(f"Source record verification failed - '{source_id}' does not exist in sources table")
+                    safe_logfire_info(f"Source record verified for '{source_id}'")
+                except Exception as e:
+                    safe_logfire_error(f"Source verification failed for '{source_id}': {str(e)}")
+                    raise
+            
+            safe_logfire_info(f"All {len(unique_source_ids)} source records verified - proceeding with document storage")
         
         safe_logfire_info(f"url_to_full_document keys: {list(url_to_full_document.keys())[:5]}")
         safe_logfire_info(f"Document storage | documents={len(crawl_results)} | chunks={len(all_contents)}")
@@ -1027,169 +1163,8 @@ class CrawlOrchestrationService:
                                                  url_to_full_document: Dict[str, str],
                                                  progress_queue: Queue) -> int:
         """
-        Blocking version of code example extraction and storage.
-        
-        Returns:
-            Number of code examples stored
+        REMOVED: This method created new event loops which broke Socket.IO connections.
+        Use the async version instead with proper event loop coordination.
         """
-        try:
-            safe_logfire_info("Starting code extraction in blocking mode")
-            progress_queue.put({
-                'status': 'code_extraction',
-                'percentage': 86,
-                'log': f'Starting code extraction from {len(crawl_results)} documents...'
-            })
-            
-            # Import the code storage functions
-            from ..storage.code_storage_service import (
-                extract_code_blocks,
-                generate_code_summaries_batch,
-                add_code_examples_to_supabase
-            )
-            
-            # Extract code blocks from all documents
-            all_code_blocks = []
-            total_docs = len(crawl_results)
-            
-            for i, doc in enumerate(crawl_results):
-                try:
-                    source_url = doc['url']
-                    html_content = doc.get('html', '')
-                    md = doc.get('markdown', '')
-                    
-                    # Update progress
-                    progress = 86 + int((i / total_docs) * 4)  # 86-90%
-                    progress_queue.put({
-                        'status': 'code_extraction',
-                        'percentage': progress,
-                        'log': f'Extracting code from document {i+1}/{total_docs}...'
-                    })
-                    
-                    # Use a reasonable threshold to extract meaningful code blocks
-                    min_length = 250  # Extract code blocks >= 250 characters
-                    
-                    # Simple extraction logic - try markdown first, then HTML as fallback
-                    code_blocks = []
-                    
-                    # If markdown has triple backticks, extract code blocks from it
-                    if md and '```' in md:
-                        code_blocks = extract_code_blocks(md, min_length=min_length)
-                        safe_logfire_info(f"Found {len(code_blocks)} code blocks from markdown | url={source_url}")
-                    
-                    # Try HTML extraction if no code blocks found
-                    elif html_content and not code_blocks:
-                        code_blocks = extract_code_blocks(html_content, min_length=min_length)
-                        safe_logfire_info(f"Found {len(code_blocks)} code blocks from HTML | url={source_url}")
-                    
-                    # Add source URL to each code block
-                    for block in code_blocks:
-                        all_code_blocks.append({
-                            'block': block,
-                            'source_url': source_url
-                        })
-                        
-                except Exception as e:
-                    safe_logfire_error(f"Error extracting code from {doc.get('url', 'unknown')}: {e}")
-            
-            if not all_code_blocks:
-                safe_logfire_info("No code examples found in any crawled documents")
-                return 0
-            
-            safe_logfire_info(f"Found {len(all_code_blocks)} total code blocks to process")
-            # Log some examples
-            for i, block_data in enumerate(all_code_blocks[:3]):
-                block = block_data['block']
-                safe_logfire_info(f"Code block {i+1}: language={block.get('language', 'none')}, length={len(block.get('code', ''))}")
-            
-            # Generate summaries for code blocks
-            progress_queue.put({
-                'status': 'code_extraction',
-                'percentage': 91,
-                'log': f'Generating summaries for {len(all_code_blocks)} code blocks...'
-            })
-            
-            # Run the async function in a blocking way
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                summary_results = loop.run_until_complete(
-                    generate_code_summaries_batch(all_code_blocks)
-                )
-            finally:
-                loop.close()
-            
-            # Prepare code examples for storage - matching the expected format
-            code_urls = []
-            code_chunk_numbers = []
-            code_examples = []
-            code_summaries = []
-            code_metadatas = []
-            
-            for i, (block_data, summary_result) in enumerate(zip(all_code_blocks, summary_results)):
-                if summary_result['success']:
-                    block = block_data['block']
-                    source_url = block_data['source_url']
-                    
-                    # Extract source_id from URL
-                    parsed_url = urlparse(source_url)
-                    source_id = parsed_url.netloc or parsed_url.path
-                    
-                    code_urls.append(source_url)
-                    code_chunk_numbers.append(i)
-                    code_examples.append(block['code'])
-                    code_summaries.append(summary_result['summary'])
-                    
-                    code_meta = {
-                        "chunk_index": i,
-                        "url": source_url,
-                        "source": source_id,
-                        "source_id": source_id,
-                        "language": block.get('language', 'unknown'),
-                        "char_count": len(block['code']),
-                        "word_count": len(block['code'].split()),
-                        "example_name": summary_result.get('example_name', 'Code Example'),
-                        "title": summary_result.get('example_name', 'Code Example')
-                    }
-                    code_metadatas.append(code_meta)
-            
-            # Store code examples in database
-            progress_queue.put({
-                'status': 'code_extraction',
-                'percentage': 93,
-                'log': f'Storing {len(code_examples)} code examples...'
-            })
-            
-            # Run the async storage function in a blocking way
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                loop.run_until_complete(
-                    add_code_examples_to_supabase(
-                        client=self.supabase_client,
-                        urls=code_urls,
-                        chunk_numbers=code_chunk_numbers,
-                        code_examples=code_examples,
-                        summaries=code_summaries,
-                        metadatas=code_metadatas,
-                        batch_size=20,
-                        url_to_full_document=url_to_full_document,
-                        progress_callback=None  # No async callback in blocking context
-                    )
-                )
-                # Function returns None, so count the examples we stored
-                result = len(code_examples)
-            finally:
-                loop.close()
-            
-            # Update progress
-            progress_queue.put({
-                'status': 'code_extraction',
-                'percentage': 95,
-                'log': f'Extracted and stored {result} code examples'
-            })
-            
-            return result
-        except Exception as e:
-            safe_logfire_error(f"Code extraction failed: {e}")
-            # Still return 0 instead of crashing
-            return 0
+        safe_logfire_error("_extract_and_store_code_examples_blocking called - this method was removed!")
+        return 0

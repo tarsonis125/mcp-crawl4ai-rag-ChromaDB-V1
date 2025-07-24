@@ -143,30 +143,14 @@ class CodeExtractionService:
                 
                 # If markdown has triple backticks, extract code blocks from it
                 if md and '```' in md:
-                    safe_logfire_info(f"Using markdown extraction (found backticks) | url={source_url}")
+                    from ..storage.code_storage_service import extract_code_blocks
                     code_blocks = extract_code_blocks(md, min_length=min_length)
                     safe_logfire_info(f"Found {len(code_blocks)} code blocks from markdown | url={source_url}")
                 
-                # If no code blocks from markdown, try HTML extraction as fallback
-                if len(code_blocks) == 0 and html_content:
-                    safe_logfire_info(f"No code blocks in markdown, trying HTML extraction | url={source_url} | html_length={len(html_content)}")
-                    code_blocks = self._extract_html_code_blocks(html_content, min_length)
+                # Try HTML extraction if no code blocks found
+                elif html_content and not code_blocks:
+                    code_blocks = self._extract_html_code_blocks(html_content, min_length=min_length)
                     safe_logfire_info(f"Found {len(code_blocks)} code blocks from HTML | url={source_url}")
-                
-                # Debug: If no code blocks found from markdown but backticks exist, log sample
-                if len(code_blocks) == 0 and not html_content and md and '```' in md:
-                    # Find first code block for debugging
-                    start_idx = md.find('```')
-                    if start_idx != -1:
-                        end_idx = md.find('```', start_idx + 3)
-                        if end_idx != -1:
-                            content_between = md[start_idx+3:end_idx]
-                            first_line = content_between.split('\n')[0] if '\n' in content_between else content_between[:50]
-                            content_length = end_idx - start_idx - 3
-                            safe_logfire_info(f"Debug: Found backticks but no code blocks extracted")
-                            safe_logfire_info(f"First line after backticks: '{first_line}'")
-                            safe_logfire_info(f"Content length between backticks: {content_length}")
-                            safe_logfire_info(f"Sample: {content_between[:100]}...")
                 
                 if code_blocks:
                     parsed_url = urlparse(source_url)
@@ -250,6 +234,8 @@ class CodeExtractionService:
             # Milkdown specific patterns - check their actual HTML structure
             (r'<pre[^>]*><code[^>]*class=["\'][^"\']*language-(\w+)[^"\']*["\'][^>]*>(.*?)</code></pre>', 'milkdown-typed'),
             (r'<div[^>]*class=["\'][^"\']*code-wrapper[^"\']*["\'][^>]*>.*?<pre[^>]*>(.*?)</pre>', 'milkdown-wrapper'),
+            (r'<div[^>]*class=["\'][^"\']*code-block-wrapper[^"\']*["\'][^>]*>.*?<pre[^>]*><code[^>]*>(.*?)</code></pre>', 'milkdown-wrapper-code'),
+            (r'<div[^>]*class=["\'][^"\']*milkdown-code-block[^"\']*["\'][^>]*>.*?<pre[^>]*><code[^>]*>(.*?)</code></pre>', 'milkdown-code-block'),
             (r'<pre[^>]*class=["\'][^"\']*code-block[^"\']*["\'][^>]*><code[^>]*>(.*?)</code></pre>', 'milkdown'),
             (r'<div[^>]*data-code-block[^>]*>.*?<pre[^>]*>(.*?)</pre>', 'milkdown-alt'),
             (r'<div[^>]*class=["\'][^"\']*milkdown[^"\']*["\'][^>]*>.*?<pre[^>]*><code[^>]*>(.*?)</code></pre>', 'milkdown-div'),
@@ -451,6 +437,9 @@ class CodeExtractionService:
         
         for entity, char in replacements.items():
             text = text.replace(entity, char)
+        
+        # Replace escaped newlines with actual newlines
+        text = text.replace('\\n', '\n')
         
         # Clean up excessive whitespace while preserving intentional spacing
         # Replace multiple spaces with single space, but preserve newlines

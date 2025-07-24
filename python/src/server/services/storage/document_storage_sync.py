@@ -220,6 +220,7 @@ def add_documents_to_supabase_sync(
             'total_chunks': len(contents),
             'total_batches': total_batches,
             'completed_batches': completed_batches
+            # DON'T send 'status': 'completed' - only the orchestration service should do that!
         }
     )
     

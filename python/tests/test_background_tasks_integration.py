@@ -1,6 +1,8 @@
 """
 Integration tests for background tasks that test actual implementation.
 These tests should fail on broken functionality and pass when fixed.
+
+IMPORTANT: All tests MUST use mocks - NEVER connect to real services or databases!
 """
 import pytest
 import pytest_asyncio
@@ -8,9 +10,8 @@ import asyncio
 import aiohttp
 from datetime import datetime
 import time
+from unittest.mock import Mock, AsyncMock, patch
 from src.server.services.knowledge.crawl_orchestration_service import CrawlOrchestrationService
-from src.server.services.crawler_manager import get_crawler
-from src.server.services.client_manager import get_supabase_client
 from src.server.services.background_task_manager import BackgroundTaskManager
 from src.server.services.knowledge.progress_mapper import ProgressMapper
 
@@ -20,16 +21,33 @@ class TestBackgroundTasksActualImplementation:
     
     @pytest_asyncio.fixture
     async def crawler_instance(self):
-        """Get actual crawler instance"""
-        crawler = await get_crawler()
+        """Get MOCK crawler instance - NEVER use real crawler in tests"""
+        crawler = AsyncMock()
+        # Mock a successful crawl result
+        mock_result = Mock()
+        mock_result.success = True
+        mock_result.url = "https://example.com"
+        mock_result.markdown = "# Test Content\n\nThis is test content."
+        mock_result.html = "<h1>Test Content</h1>"
+        mock_result.metadata = {"title": "Test"}
+        crawler.arun = AsyncMock(return_value=mock_result)
         yield crawler
-        if crawler and hasattr(crawler, 'close'):
-            await crawler.close()
     
     @pytest.fixture
     def supabase_client(self):
-        """Get actual Supabase client"""
-        return get_supabase_client()
+        """Get MOCK Supabase client - NEVER use real database in tests"""
+        mock_client = Mock()
+        mock_client.table = Mock(return_value=Mock(
+            insert=Mock(return_value=Mock(
+                execute=Mock(return_value=Mock(data=[]))
+            )),
+            delete=Mock(return_value=Mock(
+                in_=Mock(return_value=Mock(
+                    execute=Mock(return_value=Mock(data=[]))
+                ))
+            ))
+        ))
+        return mock_client
     
     @pytest.mark.asyncio
     async def test_text_file_crawl_blocks_event_loop(self, crawler_instance, supabase_client):

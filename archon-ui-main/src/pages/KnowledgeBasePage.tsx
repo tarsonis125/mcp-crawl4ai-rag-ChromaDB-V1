@@ -108,7 +108,7 @@ export const KnowledgeBasePage = () => {
     
     return () => {
       console.log('🧹 KnowledgeBasePage: Cleaning up');
-      // Clean up any active crawl progress connections if they exist
+      // Cleanup all crawl progress connections on unmount
       crawlProgressService.disconnect();
     };
   }, []); // Only run once on mount
@@ -692,7 +692,7 @@ export const KnowledgeBasePage = () => {
             <button onClick={() => setTypeFilter('technical')} className={`p-2 ${typeFilter === 'technical' ? 'bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300'}`} title="Technical/Coding">
               <BoxIcon className="w-4 h-4" />
             </button>
-            <button onClick={() => setTypeFilter('business')} className={`p-2 ${typeFilter === 'business' ? 'bg-purple-100 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300'}`} title="Business/Project">
+            <button onClick={() => setTypeFilter('business')} className={`p-2 ${typeFilter === 'business' ? 'bg-pink-100 dark:bg-pink-500/10 text-pink-600 dark:text-pink-400' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300'}`} title="Business/Project">
               <Brain className="w-4 h-4" />
             </button>
           </div>
