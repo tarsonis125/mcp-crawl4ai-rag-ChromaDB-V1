@@ -6,9 +6,12 @@ instead of importing heavy dependencies directly. This significantly reduces
 the container size from 1.66GB to ~150MB.
 
 Modules:
-- RAG Module: Delegates to API service via HTTP
-- Project Module: Delegates to API service via HTTP
+- RAG Module: RAG queries, search, and source management via HTTP
+- Project Module: Task and project management via HTTP
 - Health & Session: Local lightweight operations
+
+Note: Crawling and document upload operations are handled directly by the
+API service and frontend, not through MCP tools.
 """
 from mcp.server.fastmcp import FastMCP, Context
 from contextlib import asynccontextmanager
