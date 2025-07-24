@@ -3,6 +3,7 @@ Vector Search Service
 
 Handles vector similarity search for documents and code examples.
 """
+import os
 from typing import List, Dict, Any, Optional
 from supabase import Client
 
@@ -11,12 +12,17 @@ from ...config.logfire_config import safe_span, get_logger
 logger = get_logger(__name__)
 from ..embeddings.embedding_service import create_embedding, create_embedding_async
 
+# Fixed similarity threshold for RAG queries
+# Could make this configurable in the future, but that is unnecessary for now
+SIMILARITY_THRESHOLD = 0.15
+
+
+
 
 def search_documents(
     client: Client,
     query: str,
     match_count: int = 5,
-    threshold: float = 0.3,
     filter_metadata: Optional[dict] = None,
     use_hybrid_search: bool = False,
     cached_api_key: Optional[str] = None
@@ -28,7 +34,6 @@ def search_documents(
         client: Supabase client
         query: Search query string
         match_count: Number of results to return
-        threshold: Similarity threshold for results
         filter_metadata: Optional metadata filter dict
         use_hybrid_search: Whether to use hybrid keyword + semantic search
         cached_api_key: Cached OpenAI API key for embeddings (deprecated)
@@ -92,12 +97,13 @@ def search_documents(
                 if response.data:
                     for result in response.data:
                         similarity = result.get("similarity", 0.0)
-                        if similarity >= threshold:
+                        if similarity >= SIMILARITY_THRESHOLD:
                             filtered_results.append(result)
                 
                 span.set_attribute("rpc_success", True)
                 span.set_attribute("raw_results_count", len(response.data) if response.data else 0)
                 span.set_attribute("filtered_results_count", len(filtered_results))
+                span.set_attribute("threshold_used", SIMILARITY_THRESHOLD)
             
             results_count = len(filtered_results)
             
@@ -106,9 +112,9 @@ def search_documents(
             
             # Enhanced logging for debugging
             if results_count == 0:
-                logger.warning(f"Document search returned 0 results - query: {query[:100]}{'...' if len(query) > 100 else ''}, raw_count: {len(response.data) if response.data else 0}, threshold: {threshold}, filter: {filter_metadata}")
+                logger.warning(f"Document search returned 0 results - query: {query[:100]}{'...' if len(query) > 100 else ''}, raw_count: {len(response.data) if response.data else 0}, threshold: {actual_threshold}, filter: {filter_metadata}")
             else:
-                logger.info(f"Document search completed - query: {query[:100]}{'...' if len(query) > 100 else ''}, results: {results_count}, raw_count: {len(response.data) if response.data else 0}")
+                logger.info(f"Document search completed - query: {query[:100]}{'...' if len(query) > 100 else ''}, results: {results_count}, raw_count: {len(response.data) if response.data else 0}, threshold: {actual_threshold}")
             
             return filtered_results
         
@@ -126,7 +132,6 @@ async def search_documents_async(
     client: Client,
     query: str,
     match_count: int = 5,
-    threshold: float = 0.3,
     filter_metadata: Optional[dict] = None,
     use_hybrid_search: bool = False,
     cached_api_key: Optional[str] = None
@@ -138,7 +143,6 @@ async def search_documents_async(
         client: Supabase client
         query: Search query string
         match_count: Number of results to return
-        threshold: Similarity threshold for results
         filter_metadata: Optional metadata filter dict
         use_hybrid_search: Whether to use hybrid keyword + semantic search
         cached_api_key: Cached OpenAI API key for embeddings (deprecated)
@@ -197,24 +201,28 @@ async def search_documents_async(
                 
                 response = client.rpc("match_crawled_pages", rpc_params).execute()
                 
+                # Use fixed threshold
+                actual_threshold = SIMILARITY_THRESHOLD
+                
                 # Apply threshold filtering to results
                 filtered_results = []
                 if response.data:
                     for result in response.data:
                         similarity = result.get("similarity", 0.0)
-                        if similarity >= threshold:
+                        if similarity >= actual_threshold:
                             filtered_results.append(result)
                 
                 span.set_attribute("rpc_success", True)
                 span.set_attribute("raw_results_count", len(response.data) if response.data else 0)
                 span.set_attribute("filtered_results_count", len(filtered_results))
+                span.set_attribute("threshold_used", actual_threshold)
             
             results_count = len(filtered_results)
             
             span.set_attribute("success", True)
             span.set_attribute("final_results_count", results_count)
             
-            logger.info(f"Document search completed (async) - query: {query[:100]}{'...' if len(query) > 100 else ''}, results: {results_count}")
+            logger.info(f"Document search completed (async) - query: {query[:100]}{'...' if len(query) > 100 else ''}, results: {results_count}, threshold: {actual_threshold}")
             
             return filtered_results
         

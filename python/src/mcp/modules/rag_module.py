@@ -138,50 +138,6 @@ def register_rag_tools(mcp: FastMCP):
             }, indent=2)
     
     @mcp.tool()
-    async def delete_source(ctx: Context, source: str) -> str:
-        """
-        Delete all documents from a specific source.
-        
-        This tool uses HTTP call to the API service.
-        
-        Args:
-            source: The source domain to delete
-        
-        Returns:
-            JSON string with deletion results
-        """
-        try:
-            api_url = get_api_url()
-            timeout = httpx.Timeout(30.0, connect=5.0)
-            
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.delete(
-                    urljoin(api_url, f"/api/sources/{source}")
-                )
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    return json.dumps({
-                        "success": True,
-                        "source": source,
-                        "message": result.get("message", f"Successfully deleted source {source}")
-                    }, indent=2)
-                else:
-                    error_detail = response.text
-                    return json.dumps({
-                        "success": False,
-                        "source": source,
-                        "error": f"HTTP {response.status_code}: {error_detail}"
-                    }, indent=2)
-                    
-        except Exception as e:
-            logger.error(f"Error deleting source: {e}")
-            return json.dumps({
-                "success": False,
-                "error": str(e)
-            }, indent=2)
-    
-    @mcp.tool()
     async def search_code_examples(ctx: Context, query: str, source_id: str = None, match_count: int = 5) -> str:
         """
         Search for code examples relevant to the query.

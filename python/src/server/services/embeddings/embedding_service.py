@@ -36,14 +36,26 @@ def create_embedding(text: str) -> List[float]:
         try:
             loop = asyncio.get_running_loop()
             # If we're already in an async context, we can't run sync - return zero embedding
-            search_logger.warning("create_embedding called from async context - returning zero embedding")
+            search_logger.warning("create_embedding called from async context - using zero embedding fallback")
+            search_logger.warning(f"Text preview for zero embedding: {text[:100]}...")
             return [0.0] * 1536
         except RuntimeError:
             # No running loop, safe to use asyncio.run
             return asyncio.run(create_embedding_async(text))
     except Exception as e:
-        search_logger.error(f"Error creating embedding: {e}")
-        # Return zero embedding if there's an error
+        # Enhanced logging for zero embedding fallback
+        search_logger.warning(f"Embedding creation failed, using zero fallback: {str(e)}")
+        search_logger.warning(f"Failed text preview: {text[:100]}...")
+        
+        # Track failure metrics
+        if "insufficient_quota" in str(e):
+            search_logger.error("OpenAI quota exhausted - zero embeddings returned")
+        elif "rate_limit" in str(e).lower():
+            search_logger.warning("Rate limit hit - zero embeddings returned")
+        else:
+            search_logger.error(f"Unexpected embedding error: {type(e).__name__}")
+        
+        # Continue with zero embeddings to keep process working
         return [0.0] * 1536
 
 
@@ -61,7 +73,18 @@ async def create_embedding_async(text: str) -> List[float]:
         embeddings = await create_embeddings_batch_async([text])
         return embeddings[0] if embeddings else [0.0] * 1536
     except Exception as e:
-        search_logger.error(f"Error creating single embedding: {e}")
+        # Enhanced logging for zero embedding fallback
+        search_logger.warning(f"Async embedding creation failed, using zero fallback: {str(e)}")
+        search_logger.warning(f"Failed text preview: {text[:100]}...")
+        
+        # Track failure metrics
+        if "insufficient_quota" in str(e):
+            search_logger.error("OpenAI quota exhausted - zero embeddings returned")
+        elif "rate_limit" in str(e).lower():
+            search_logger.warning("Rate limit hit - zero embeddings returned")
+        else:
+            search_logger.error(f"Unexpected embedding error: {type(e).__name__}")
+        
         return [0.0] * 1536
 
 
@@ -85,13 +108,25 @@ def create_embeddings_batch(texts: List[str]) -> List[List[float]]:
         try:
             loop = asyncio.get_running_loop()
             # If we're already in an async context, we can't run sync - return zero embeddings
-            search_logger.warning("create_embeddings_batch called from async context - returning zero embeddings")
+            search_logger.warning("create_embeddings_batch called from async context - using zero embedding fallback")
+            search_logger.warning(f"Batch size: {len(texts)}, first text preview: {texts[0][:100] if texts else 'empty'}...")
             return [[0.0] * 1536 for _ in texts]
         except RuntimeError:
             # No running loop, safe to use asyncio.run
             return asyncio.run(create_embeddings_batch_async(texts))
     except Exception as e:
-        search_logger.error(f"Error creating batch embeddings: {e}")
+        # Enhanced logging for zero embedding fallback
+        search_logger.warning(f"Batch embedding creation failed, using zero fallback: {str(e)}")
+        search_logger.warning(f"Batch size: {len(texts)}, first text preview: {texts[0][:100] if texts else 'empty'}...")
+        
+        # Track failure metrics
+        if "insufficient_quota" in str(e):
+            search_logger.error("OpenAI quota exhausted - zero embeddings returned")
+        elif "rate_limit" in str(e).lower():
+            search_logger.warning("Rate limit hit - zero embeddings returned")
+        else:
+            search_logger.error(f"Unexpected embedding error: {type(e).__name__}")
+        
         # Return zero embeddings as fallback
         return [[0.0] * 1536 for _ in texts]
 
