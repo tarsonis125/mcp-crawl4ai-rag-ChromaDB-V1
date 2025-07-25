@@ -253,7 +253,7 @@ class CodeExtractionService:
                     text_content = html_content if html_content else md
                     if text_content:
                         safe_logfire_info(f"📝 Using {'HTML' if html_content else 'MARKDOWN'} content for text extraction")
-                        safe_logfire_info(f"🔍 Content preview (first 500 chars): {text_content[:500]}...")
+                        safe_logfire_info(f"🔍 Content preview (first 500 chars): {repr(text_content[:500])}...")
                         code_blocks = await self._extract_text_file_code_blocks(text_content, source_url)
                         safe_logfire_info(f"📦 Text extraction complete | found={len(code_blocks)} blocks | url={source_url}")
                     else:
@@ -325,7 +325,7 @@ class CodeExtractionService:
         
         # Check if we have actual content
         if len(content) < 1000:
-            safe_logfire_info(f"Warning: HTML content seems too short, first 500 chars: {content[:500]}")
+            safe_logfire_info(f"Warning: HTML content seems too short, first 500 chars: {repr(content[:500])}")
         
         # Look for specific indicators of code blocks
         has_prism = 'prism' in content.lower()
@@ -570,8 +570,8 @@ class CodeExtractionService:
         import re
         
         safe_logfire_info(f"🔍 TEXT FILE EXTRACTION START | url={url} | content_length={len(content)}")
-        safe_logfire_info(f"📄 First 1000 chars: {content[:1000]}...")
-        safe_logfire_info(f"📄 Sample showing backticks: {content[5000:6000]}..." if len(content) > 6000 else "Content too short for mid-sample")
+        safe_logfire_info(f"📄 First 1000 chars: {repr(content[:1000])}...")
+        safe_logfire_info(f"📄 Sample showing backticks: {repr(content[5000:6000])}..." if len(content) > 6000 else "Content too short for mid-sample")
         
         code_blocks = []
         
@@ -585,7 +585,8 @@ class CodeExtractionService:
             language = match.group(1) or ""
             code_content = match.group(2).strip()
             
-            safe_logfire_info(f"🔎 Match {i+1}: language='{language}', raw_length={len(code_content)}, first_50_chars='{code_content[:50]}...'")
+            # Use repr() to safely escape the code content for logging
+            safe_logfire_info(f"🔎 Match {i+1}: language='{language}', raw_length={len(code_content)}, first_50_chars={repr(code_content[:50])}...")
             
             # Get position info first
             start_pos = match.start()

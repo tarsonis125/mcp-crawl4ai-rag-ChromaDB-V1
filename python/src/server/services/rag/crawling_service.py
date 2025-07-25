@@ -187,6 +187,9 @@ class CrawlingService:
         elif 'copilotkit' in url_lower:
             # CopilotKit uses a custom setup, wait for any content
             return 'div[class*="content"], div[class*="doc"], #__next'
+        elif 'milkdown' in url_lower:
+            # Milkdown uses a custom rendering system
+            return 'main, article, .prose, [class*="content"]'
         else:
             # Simplified generic selector - just wait for body to have content
             return 'body'
@@ -234,10 +237,10 @@ class CrawlingService:
                         markdown_generator=self._get_markdown_generator(),
                         # Wait for documentation content to load
                         wait_for=wait_selector,
-                        # Wait for network idle for JavaScript-heavy sites
-                        wait_until='networkidle',
+                        # Use domcontentloaded for problematic sites
+                        wait_until='domcontentloaded' if 'milkdown' in url.lower() else 'networkidle',
                         # Increased timeout for JavaScript rendering
-                        page_timeout=30000,  # 30 seconds
+                        page_timeout=45000,  # 45 seconds
                         # Give JavaScript time to render
                         delay_before_return_html=2.0,
                         # Enable image waiting for completeness
@@ -263,7 +266,16 @@ class CrawlingService:
                     )
                 
                 logger.info(f"Crawling {url} (attempt {attempt + 1}/{retry_count})")
-                result = await self.crawler.arun(url=url, config=crawl_config)
+                logger.info(f"Using wait_until: {crawl_config.wait_until}, page_timeout: {crawl_config.page_timeout}")
+                
+                try:
+                    result = await self.crawler.arun(url=url, config=crawl_config)
+                except Exception as e:
+                    last_error = f"Crawler exception for {url}: {str(e)}"
+                    logger.error(last_error)
+                    if attempt < retry_count - 1:
+                        await asyncio.sleep(2 ** attempt)
+                    continue
                 
                 if not result.success:
                     last_error = f"Failed to crawl {url}: {result.error_message}"

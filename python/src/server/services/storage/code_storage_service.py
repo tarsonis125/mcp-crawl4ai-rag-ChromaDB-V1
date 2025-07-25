@@ -182,7 +182,7 @@ def extract_code_blocks(markdown_content: str, min_length: int = None) -> List[D
                 doc_ratio = doc_score / len(words)
                 # If more than 10% of words are documentation indicators, likely not code
                 if doc_ratio > 0.1:
-                    search_logger.debug(f"Skipping documentation text disguised as code | doc_ratio={doc_ratio:.2f} | first_50_chars={code_content[:50]}")
+                    search_logger.debug(f"Skipping documentation text disguised as code | doc_ratio={doc_ratio:.2f} | first_50_chars={repr(code_content[:50])}")
                     i += 2
                     continue
             
@@ -292,7 +292,7 @@ Format your response as JSON:
         )
         
         response_content = response.choices[0].message.content.strip()
-        search_logger.debug(f"OpenAI API response: {response_content[:200]}...")
+        search_logger.debug(f"OpenAI API response: {repr(response_content[:200])}...")
         
         result = json.loads(response_content)
         
@@ -309,7 +309,7 @@ Format your response as JSON:
         return final_result
     
     except json.JSONDecodeError as e:
-        search_logger.error(f"Failed to parse JSON response from OpenAI: {e}, Response: {response_content if 'response_content' in locals() else 'No response'}")
+        search_logger.error(f"Failed to parse JSON response from OpenAI: {e}, Response: {repr(response_content) if 'response_content' in locals() else 'No response'}")
         return {
             "example_name": f"Code Example{f' ({language})' if language else ''}",
             "summary": "Code example for demonstration purposes."
