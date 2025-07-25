@@ -10,8 +10,7 @@ ON CONFLICT (key) DO NOTHING;
 
 -- Add provider API key placeholders
 INSERT INTO settings (key, encrypted_value, is_encrypted, category, description) VALUES
-('openrouter_api_key', NULL, true, 'api_keys', 'OpenRouter API Key for accessing multiple models. Get from: https://openrouter.ai/keys'),
-('google_api_key', NULL, true, 'api_keys', 'Google API Key for Gemini models. Get from: https://aistudio.google.com/apikey')
+('GOOGLE_API_KEY', NULL, true, 'api_keys', 'Google API Key for Gemini models. Get from: https://aistudio.google.com/apikey')
 ON CONFLICT (key) DO NOTHING;
 
 -- Note: Ollama doesn't require an API key since it runs locally

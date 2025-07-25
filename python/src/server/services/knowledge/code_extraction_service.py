@@ -558,7 +558,8 @@ class CodeExtractionService:
                 metadatas=storage_data['metadatas'],
                 batch_size=20,
                 url_to_full_document=url_to_full_document,
-                progress_callback=storage_progress_callback
+                progress_callback=storage_progress_callback,
+                provider=None  # Use configured provider
             )
             
             # Ensure we report completion at end_progress
