@@ -398,6 +398,20 @@ async def initialize_credentials() -> None:
     # - USE_RERANKING
     # - MODEL_CHOICE
     
+    # Code extraction settings (loaded on demand, not set as env vars):
+    # - MIN_CODE_BLOCK_LENGTH
+    # - MAX_CODE_BLOCK_LENGTH
+    # - ENABLE_COMPLETE_BLOCK_DETECTION
+    # - ENABLE_LANGUAGE_SPECIFIC_PATTERNS
+    # - ENABLE_PROSE_FILTERING
+    # - MAX_PROSE_RATIO
+    # - MIN_CODE_INDICATORS
+    # - ENABLE_DIAGRAM_FILTERING
+    # - ENABLE_CONTEXTUAL_LENGTH
+    # - CODE_EXTRACTION_MAX_WORKERS
+    # - CONTEXT_WINDOW_SIZE
+    # - ENABLE_CODE_SUMMARIES
+    
     # Set infrastructure credentials
     for key in infrastructure_credentials:
         try:

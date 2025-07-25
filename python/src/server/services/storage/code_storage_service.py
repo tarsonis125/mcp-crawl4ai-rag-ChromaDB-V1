@@ -61,13 +61,18 @@ def extract_code_blocks(markdown_content: str, min_length: int = None) -> List[D
     
     Args:
         markdown_content: The markdown content to extract code blocks from
-        min_length: Minimum length of code blocks to extract (default: 1000 characters)
+        min_length: Minimum length of code blocks to extract (default: 250 characters)
         
     Returns:
         List of dictionaries containing code blocks and their context
     """
     if min_length is None:
-        min_length = 1000  # Default to 1000 to ensure only substantial code blocks are extracted
+        # Try to get from settings, but fall back to 250 if not available
+        try:
+            from ...services.credential_service import get_credential_sync
+            min_length = int(get_credential_sync('MIN_CODE_BLOCK_LENGTH', 250))
+        except:
+            min_length = 250  # Default to 250 for better code coverage
     
     search_logger.debug(f"Extracting code blocks with minimum length: {min_length} characters")
     code_blocks = []

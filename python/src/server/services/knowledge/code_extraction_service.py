@@ -14,12 +14,47 @@ from ..storage.code_storage_service import (
     generate_code_summaries_batch,
     add_code_examples_to_supabase
 )
+from ...services.credential_service import credential_service
 
 
 class CodeExtractionService:
     """
     Service for extracting and processing code examples from documents.
     """
+    
+    # Language-specific patterns for better extraction
+    LANGUAGE_PATTERNS = {
+        'typescript': {
+            'block_start': r'^\s*(export\s+)?(class|interface|function|const|type|enum)\s+\w+',
+            'block_end': r'^\}(\s*;)?$',
+            'min_indicators': [':', '{', '}', '=>', 'function', 'class', 'interface', 'type']
+        },
+        'javascript': {
+            'block_start': r'^\s*(export\s+)?(class|function|const|let|var)\s+\w+',
+            'block_end': r'^\}(\s*;)?$',
+            'min_indicators': ['function', '{', '}', '=>', 'const', 'let', 'var']
+        },
+        'python': {
+            'block_start': r'^\s*(class|def|async\s+def)\s+\w+',
+            'block_end': r'^\S',  # Unindented line
+            'min_indicators': ['def', ':', 'return', 'self', 'import', 'class']
+        },
+        'java': {
+            'block_start': r'^\s*(public|private|protected)?\s*(class|interface|enum)\s+\w+',
+            'block_end': r'^\}$',
+            'min_indicators': ['class', 'public', 'private', '{', '}', ';']
+        },
+        'rust': {
+            'block_start': r'^\s*(pub\s+)?(fn|struct|impl|trait|enum)\s+\w+',
+            'block_end': r'^\}$',
+            'min_indicators': ['fn', 'let', 'mut', 'impl', 'struct', '->']
+        },
+        'go': {
+            'block_start': r'^\s*(func|type|struct)\s+\w+',
+            'block_end': r'^\}$',
+            'min_indicators': ['func', 'type', 'struct', '{', '}', ':=']
+        }
+    }
     
     def __init__(self, supabase_client):
         """
@@ -29,6 +64,71 @@ class CodeExtractionService:
             supabase_client: The Supabase client for database operations
         """
         self.supabase_client = supabase_client
+        self._settings_cache = {}
+        
+    async def _get_setting(self, key: str, default: Any) -> Any:
+        """Get a setting from credential service with caching."""
+        if key in self._settings_cache:
+            return self._settings_cache[key]
+            
+        try:
+            value = await credential_service.get_credential(key, default)
+            # Convert string values to appropriate types
+            if isinstance(default, bool):
+                value = str(value).lower() == 'true' if value is not None else default
+            elif isinstance(default, int):
+                value = int(value) if value is not None else default
+            elif isinstance(default, float):
+                value = float(value) if value is not None else default
+            self._settings_cache[key] = value
+            return value
+        except Exception as e:
+            safe_logfire_error(f"Error getting setting {key}: {e}, using default: {default}")
+            return default
+    
+    async def _get_min_code_length(self) -> int:
+        """Get minimum code block length setting."""
+        return await self._get_setting('MIN_CODE_BLOCK_LENGTH', 250)
+    
+    async def _get_max_code_length(self) -> int:
+        """Get maximum code block length setting."""
+        return await self._get_setting('MAX_CODE_BLOCK_LENGTH', 5000)
+    
+    async def _is_complete_block_detection_enabled(self) -> bool:
+        """Check if complete block detection is enabled."""
+        return await self._get_setting('ENABLE_COMPLETE_BLOCK_DETECTION', True)
+    
+    async def _is_language_patterns_enabled(self) -> bool:
+        """Check if language-specific patterns are enabled."""
+        return await self._get_setting('ENABLE_LANGUAGE_SPECIFIC_PATTERNS', True)
+    
+    async def _is_prose_filtering_enabled(self) -> bool:
+        """Check if prose filtering is enabled."""
+        return await self._get_setting('ENABLE_PROSE_FILTERING', True)
+    
+    async def _get_max_prose_ratio(self) -> float:
+        """Get maximum allowed prose ratio."""
+        return await self._get_setting('MAX_PROSE_RATIO', 0.15)
+    
+    async def _get_min_code_indicators(self) -> int:
+        """Get minimum required code indicators."""
+        return await self._get_setting('MIN_CODE_INDICATORS', 3)
+    
+    async def _is_diagram_filtering_enabled(self) -> bool:
+        """Check if diagram filtering is enabled."""
+        return await self._get_setting('ENABLE_DIAGRAM_FILTERING', True)
+    
+    async def _is_contextual_length_enabled(self) -> bool:
+        """Check if contextual length adjustment is enabled."""
+        return await self._get_setting('ENABLE_CONTEXTUAL_LENGTH', True)
+    
+    async def _get_context_window_size(self) -> int:
+        """Get context window size for code blocks."""
+        return await self._get_setting('CONTEXT_WINDOW_SIZE', 1000)
+    
+    async def _is_code_summaries_enabled(self) -> bool:
+        """Check if code summaries generation is enabled."""
+        return await self._get_setting('ENABLE_CODE_SUMMARIES', True)
     
     async def extract_and_store_code_examples(
         self,
@@ -124,8 +224,9 @@ class CodeExtractionService:
                 # Debug logging
                 safe_logfire_info(f"Document content check | url={source_url} | has_html={bool(html_content)} | has_markdown={bool(md)} | html_len={len(html_content) if html_content else 0} | md_len={len(md) if md else 0}")
                 
-                # Use a reasonable threshold to extract meaningful code blocks
-                min_length = 250  # Extract code blocks >= 250 characters
+                # Get dynamic minimum length based on document context
+                # Extract some context from the document for analysis
+                doc_context = md[:1000] if md else html_content[:1000] if html_content else ""
                 
                 # Check markdown first to see if it has code blocks
                 if md:
@@ -146,17 +247,22 @@ class CodeExtractionService:
                 
                 if is_text_file:
                     # For text files, use specialized text extraction
-                    safe_logfire_info(f"Detected text file, using text extraction | url={source_url}")
+                    safe_logfire_info(f"🎯 TEXT FILE DETECTED | url={source_url}")
+                    safe_logfire_info(f"📊 Content types - has_html={bool(html_content)}, has_md={bool(md)}")
                     # For text files, the HTML content should be the raw text (not wrapped in <pre>)
                     text_content = html_content if html_content else md
                     if text_content:
-                        code_blocks = self._extract_text_file_code_blocks(text_content, source_url, min_length=min_length)
-                        safe_logfire_info(f"Found {len(code_blocks)} code blocks from text file | url={source_url}")
+                        safe_logfire_info(f"📝 Using {'HTML' if html_content else 'MARKDOWN'} content for text extraction")
+                        safe_logfire_info(f"🔍 Content preview (first 500 chars): {text_content[:500]}...")
+                        code_blocks = await self._extract_text_file_code_blocks(text_content, source_url)
+                        safe_logfire_info(f"📦 Text extraction complete | found={len(code_blocks)} blocks | url={source_url}")
+                    else:
+                        safe_logfire_info(f"⚠️ NO CONTENT for text file | url={source_url}")
                 
                 # If not a text file or no code blocks found, try HTML extraction first
                 if len(code_blocks) == 0 and html_content and not is_text_file:
                     safe_logfire_info(f"Trying HTML extraction first | url={source_url} | html_length={len(html_content)}")
-                    html_code_blocks = self._extract_html_code_blocks(html_content, min_length=min_length)
+                    html_code_blocks = await self._extract_html_code_blocks(html_content)
                     if html_code_blocks:
                         code_blocks = html_code_blocks
                         safe_logfire_info(f"Found {len(code_blocks)} code blocks from HTML | url={source_url}")
@@ -165,7 +271,9 @@ class CodeExtractionService:
                 if len(code_blocks) == 0 and md and '```' in md:
                     safe_logfire_info(f"No code blocks from HTML, trying markdown extraction | url={source_url}")
                     from ..storage.code_storage_service import extract_code_blocks
-                    code_blocks = extract_code_blocks(md, min_length=min_length)
+                    # Use dynamic minimum for markdown extraction
+                    base_min_length = 250  # Default for markdown
+                    code_blocks = extract_code_blocks(md, min_length=base_min_length)
                     safe_logfire_info(f"Found {len(code_blocks)} code blocks from markdown | url={source_url}")
                 
                 if code_blocks:
@@ -198,7 +306,7 @@ class CodeExtractionService:
         
         return all_code_blocks
     
-    def _extract_html_code_blocks(self, content: str, min_length: int = 20) -> List[Dict[str, Any]]:
+    async def _extract_html_code_blocks(self, content: str) -> List[Dict[str, Any]]:
         """
         Extract code blocks from HTML patterns in content.
         This is a fallback when markdown conversion didn't preserve code blocks.
@@ -320,8 +428,8 @@ class CodeExtractionService:
                     lang_match = re.search(r'class=["\'].*?language-(\w+)', full_match)
                     language = lang_match.group(1) if lang_match else ""
                 
-                # Initial HTML entity decoding will be done in _clean_code_content
-                # code_content = self._decode_html_entities(code_content)
+                # Get the start position for complete block extraction
+                code_start_pos = match.start()
                 
                 # For CodeMirror, extract text from cm-lines
                 if source_type == 'codemirror':
@@ -352,46 +460,64 @@ class CodeExtractionService:
                     code_content = re.sub(r'<span[^>]*>', '', code_content)
                     code_content = re.sub(r'</span>', '', code_content)
                 
-                # Skip if too short after cleaning
-                if len(code_content) >= min_length:
-                    # Extract position info for deduplication
-                    start_pos = match.start()
-                    end_pos = match.end()
-                    
-                    # Check if we've already extracted code from this position
-                    position_key = (start_pos, end_pos)
-                    overlapping = False
-                    for existing_start, existing_end in extracted_positions:
-                        # Check if this match overlaps with an existing extraction
-                        if not (end_pos <= existing_start or start_pos >= existing_end):
-                            overlapping = True
-                            break
-                    
-                    if not overlapping:
-                        extracted_positions.add(position_key)
-                        
-                        # Extract context
-                        context_before = content[max(0, start_pos - 1000):start_pos].strip()
-                        context_after = content[end_pos:min(len(content), end_pos + 1000)].strip()
-                        
-                        # Clean the code content
-                        cleaned_code = self._clean_code_content(code_content, language)
-                        
-                        # Validate code quality
-                        if self._validate_code_quality(cleaned_code, language):
-                            # Log successful extraction
-                            safe_logfire_info(f"Extracted code block | source_type={source_type} | language={language} | original_length={len(code_content)} | cleaned_length={len(cleaned_code)}")
-                            
-                            code_blocks.append({
-                                'code': cleaned_code,
-                                'language': language,
-                                'context_before': context_before,
-                                'context_after': context_after,
-                                'full_context': f"{context_before}\n\n{cleaned_code}\n\n{context_after}",
-                                'source_type': source_type  # Track which pattern matched
-                            })
+                # Calculate dynamic minimum length
+                context_for_length = content[max(0, code_start_pos - 500):code_start_pos + 500]
+                min_length = await self._calculate_min_length(language, context_for_length)
+                
+                # Skip if initial content is too short
+                if len(code_content) < min_length:
+                    # Try to find complete block if we have a language
+                    if language and code_start_pos > 0:
+                        # Look for complete code block
+                        complete_code, block_end_pos = await self._find_complete_code_block(
+                            content, code_start_pos, min_length, language
+                        )
+                        if len(complete_code) >= min_length:
+                            code_content = complete_code
+                            end_pos = block_end_pos
                         else:
-                            safe_logfire_info(f"Code block failed validation | source_type={source_type} | language={language} | length={len(cleaned_code)}")
+                            continue
+                    else:
+                        continue
+                
+                # Extract position info for deduplication
+                start_pos = match.start()
+                end_pos = match.end() if len(code_content) <= len(match.group(0)) else code_start_pos + len(code_content)
+                
+                # Check if we've already extracted code from this position
+                position_key = (start_pos, end_pos)
+                overlapping = False
+                for existing_start, existing_end in extracted_positions:
+                    # Check if this match overlaps with an existing extraction
+                    if not (end_pos <= existing_start or start_pos >= existing_end):
+                        overlapping = True
+                        break
+                
+                if not overlapping:
+                    extracted_positions.add(position_key)
+                    
+                    # Extract context
+                    context_before = content[max(0, start_pos - 1000):start_pos].strip()
+                    context_after = content[end_pos:min(len(content), end_pos + 1000)].strip()
+                    
+                    # Clean the code content
+                    cleaned_code = self._clean_code_content(code_content, language)
+                    
+                    # Validate code quality
+                    if await self._validate_code_quality(cleaned_code, language):
+                        # Log successful extraction
+                        safe_logfire_info(f"Extracted code block | source_type={source_type} | language={language} | min_length={min_length} | original_length={len(code_content)} | cleaned_length={len(cleaned_code)}")
+                        
+                        code_blocks.append({
+                            'code': cleaned_code,
+                            'language': language,
+                            'context_before': context_before,
+                            'context_after': context_after,
+                            'full_context': f"{context_before}\n\n{cleaned_code}\n\n{context_after}",
+                            'source_type': source_type  # Track which pattern matched
+                        })
+                    else:
+                        safe_logfire_info(f"Code block failed validation | source_type={source_type} | language={language} | length={len(cleaned_code)}")
         
         # Pattern 2: <code>...</code> (standalone)
         if not code_blocks:  # Only if we didn't find pre/code blocks
@@ -404,8 +530,9 @@ class CodeExtractionService:
                 cleaned_code = self._clean_code_content(code_content, "")
                 
                 # Check if it's multiline or substantial enough and validate quality
-                if len(cleaned_code) >= min_length and ('\n' in cleaned_code or len(cleaned_code) > 100):
-                    if self._validate_code_quality(cleaned_code, ""):
+                # Use a minimal length for standalone code tags
+                if len(cleaned_code) >= 100 and ('\n' in cleaned_code or len(cleaned_code) > 100):
+                    if await self._validate_code_quality(cleaned_code, ""):
                         start_pos = match.start()
                         end_pos = match.end()
                         context_before = content[max(0, start_pos - 1000):start_pos].strip()
@@ -423,7 +550,7 @@ class CodeExtractionService:
         
         return code_blocks
     
-    def _extract_text_file_code_blocks(self, content: str, url: str, min_length: int = 250) -> List[Dict[str, Any]]:
+    async def _extract_text_file_code_blocks(self, content: str, url: str, min_length: int = None) -> List[Dict[str, Any]]:
         """
         Extract code blocks from plain text files (like .txt files).
         Handles formats like llms.txt where code blocks may be indicated by:
@@ -442,29 +569,43 @@ class CodeExtractionService:
         """
         import re
         
-        safe_logfire_info(f"Processing text file for code extraction | url={url} | content_length={len(content)}")
+        safe_logfire_info(f"🔍 TEXT FILE EXTRACTION START | url={url} | content_length={len(content)}")
+        safe_logfire_info(f"📄 First 1000 chars: {content[:1000]}...")
+        safe_logfire_info(f"📄 Sample showing backticks: {content[5000:6000]}..." if len(content) > 6000 else "Content too short for mid-sample")
         
         code_blocks = []
         
         # Method 1: Look for triple backtick code blocks (Markdown style)
-        backtick_pattern = r'```(\w*)\n(.*?)```'
-        matches = re.finditer(backtick_pattern, content, re.DOTALL | re.MULTILINE)
+        # Pattern allows for additional text after language (e.g., "typescript TypeScript")
+        backtick_pattern = r'```(\w*)[^\n]*\n(.*?)```'
+        matches = list(re.finditer(backtick_pattern, content, re.DOTALL | re.MULTILINE))
+        safe_logfire_info(f"📊 Backtick pattern matches: {len(matches)}")
         
-        for match in matches:
+        for i, match in enumerate(matches):
             language = match.group(1) or ""
             code_content = match.group(2).strip()
             
-            if len(code_content) >= min_length:
+            safe_logfire_info(f"🔎 Match {i+1}: language='{language}', raw_length={len(code_content)}, first_50_chars='{code_content[:50]}...'")
+            
+            # Get position info first
+            start_pos = match.start()
+            end_pos = match.end()
+            
+            # Calculate dynamic minimum length
+            context_around = content[max(0, start_pos - 500):min(len(content), end_pos + 500)]
+            actual_min_length = await self._calculate_min_length(language, context_around) if min_length is None else min_length
+            
+            if len(code_content) >= actual_min_length:
                 # Get context
-                start_pos = match.start()
-                end_pos = match.end()
                 context_before = content[max(0, start_pos - 500):start_pos].strip()
                 context_after = content[end_pos:min(len(content), end_pos + 500)].strip()
                 
                 # Clean and validate
                 cleaned_code = self._clean_code_content(code_content, language)
-                if self._validate_code_quality(cleaned_code, language):
-                    safe_logfire_info(f"Found backtick code block | language={language} | length={len(cleaned_code)}")
+                safe_logfire_info(f"🧹 After cleaning: length={len(cleaned_code)}")
+                
+                if await self._validate_code_quality(cleaned_code, language):
+                    safe_logfire_info(f"✅ VALID backtick code block | language={language} | length={len(cleaned_code)}")
                     code_blocks.append({
                         'code': cleaned_code,
                         'language': language,
@@ -473,6 +614,10 @@ class CodeExtractionService:
                         'full_context': f"{context_before}\n\n{cleaned_code}\n\n{context_after}",
                         'source_type': 'text_backticks'
                     })
+                else:
+                    safe_logfire_info(f"❌ INVALID code block failed validation | language={language}")
+            else:
+                safe_logfire_info(f"❌ Code block too short: {len(code_content)} < {min_length}")
         
         # Method 2: Look for language-labeled code blocks (e.g., "TypeScript:" or "Python example:")
         language_pattern = r'(?:^|\n)((?:typescript|javascript|python|java|c\+\+|rust|go|ruby|php|swift|kotlin|scala|r|matlab|julia|dart|elixir|erlang|haskell|clojure|lua|perl|shell|bash|sql|html|css|xml|json|yaml|toml|ini|dockerfile|makefile|cmake|gradle|maven|npm|yarn|pip|cargo|gem|pod|composer|nuget|apt|yum|brew|choco|snap|flatpak|appimage|msi|exe|dmg|pkg|deb|rpm|tar|zip|7z|rar|gz|bz2|xz|zst|lz4|lzo|lzma|lzip|lzop|compress|uncompress|gzip|gunzip|bzip2|bunzip2|xz|unxz|zstd|unzstd|lz4|unlz4|lzo|unlzo|lzma|unlzma|lzip|lunzip|lzop|unlzop)\s*(?:code|example|snippet)?)[:\s]*\n((?:(?:^[ \t]+.*\n?)+)|(?:.*\n)+?)(?=\n(?:[A-Z][a-z]+\s*:|^\s*$|\n#|\n\*|\n-|\n\d+\.))'
@@ -484,7 +629,10 @@ class CodeExtractionService:
             language = re.match(r'(\w+)', language_info).group(1) if re.match(r'(\w+)', language_info) else ""
             code_content = match.group(2).strip()
             
-            if len(code_content) >= min_length:
+            # Calculate dynamic minimum length for language-labeled blocks
+            actual_min_length_lang = await self._calculate_min_length(language, code_content[:500]) if min_length is None else min_length
+            
+            if len(code_content) >= actual_min_length_lang:
                 # Get context
                 start_pos = match.start()
                 end_pos = match.end()
@@ -493,7 +641,7 @@ class CodeExtractionService:
                 
                 # Clean and validate
                 cleaned_code = self._clean_code_content(code_content, language)
-                if self._validate_code_quality(cleaned_code, language):
+                if await self._validate_code_quality(cleaned_code, language):
                     safe_logfire_info(f"Found language-labeled code block | language={language} | length={len(cleaned_code)}")
                     code_blocks.append({
                         'code': cleaned_code,
@@ -538,7 +686,7 @@ class CodeExtractionService:
                     
                     # Clean and validate
                     cleaned_code = self._clean_code_content(code_content, language)
-                    if self._validate_code_quality(cleaned_code, language):
+                    if await self._validate_code_quality(cleaned_code, language):
                         safe_logfire_info(f"Found indented code block | language={language} | length={len(cleaned_code)}")
                         code_blocks.append({
                             'code': cleaned_code,
@@ -561,7 +709,9 @@ class CodeExtractionService:
                         current_block = []
                         current_indent = None
         
-        safe_logfire_info(f"Total code blocks found in text file: {len(code_blocks)}")
+        safe_logfire_info(f"📊 TEXT FILE EXTRACTION COMPLETE | total_blocks={len(code_blocks)} | url={url}")
+        for i, block in enumerate(code_blocks[:3]):  # Log first 3 blocks
+            safe_logfire_info(f"📦 Block {i+1} summary: language='{block.get('language', '')}', source_type='{block.get('source_type', '')}', length={len(block.get('code', ''))}")
         return code_blocks
     
     def _detect_language_from_content(self, code: str) -> str:
@@ -597,16 +747,138 @@ class CodeExtractionService:
         
         return ""
     
+    async def _find_complete_code_block(self, content: str, start_pos: int, min_length: int = 250, language: str = "", max_length: int = None) -> tuple[str, int]:
+        """
+        Find a complete code block starting from a position, extending until we find a natural boundary.
+        
+        Args:
+            content: The full content to search in
+            start_pos: Starting position in the content
+            min_length: Minimum length for the code block
+            language: Detected language for language-specific patterns
+            
+        Returns:
+            Tuple of (complete_code_block, end_position)
+        """
+        # Start with the minimum content
+        if start_pos + min_length > len(content):
+            return content[start_pos:], len(content)
+        
+        # Look for natural code boundaries
+        boundary_patterns = [
+            r'\n}\s*$',           # Closing brace at end of line
+            r'\n}\s*;?\s*$',      # Closing brace with optional semicolon
+            r'\n\)\s*;?\s*$',     # Closing parenthesis
+            r'\n\s*$\n\s*$',      # Double newline (paragraph break)
+            r'\n(?=class\s)',     # Before next class
+            r'\n(?=function\s)',  # Before next function
+            r'\n(?=def\s)',       # Before next Python function
+            r'\n(?=export\s)',    # Before next export
+            r'\n(?=const\s)',     # Before next const declaration
+            r'\n(?=//)',          # Before comment block
+            r'\n(?=#)',           # Before Python comment
+            r'\n(?=\*)',          # Before JSDoc/comment
+            r'\n(?=```)',         # Before next code block
+        ]
+        
+        # Add language-specific patterns if available
+        if language and language.lower() in self.LANGUAGE_PATTERNS:
+            lang_patterns = self.LANGUAGE_PATTERNS[language.lower()]
+            if 'block_end' in lang_patterns:
+                boundary_patterns.insert(0, lang_patterns['block_end'])
+        
+        # Extend until we find a boundary
+        extended_pos = start_pos + min_length
+        while extended_pos < len(content):
+            # Check next 500 characters for a boundary
+            lookahead_end = min(extended_pos + 500, len(content))
+            lookahead = content[extended_pos:lookahead_end]
+            
+            for pattern in boundary_patterns:
+                match = re.search(pattern, lookahead, re.MULTILINE)
+                if match:
+                    final_pos = extended_pos + match.end()
+                    return content[start_pos:final_pos].rstrip(), final_pos
+            
+            # If no boundary found, extend by another chunk
+            extended_pos += 100
+            
+            # Cap at maximum length
+            if max_length is None:
+                max_length = await self._get_max_code_length()
+            if extended_pos - start_pos > max_length:
+                break
+        
+        # Return what we have
+        return content[start_pos:extended_pos].rstrip(), extended_pos
+    
+    async def _calculate_min_length(self, language: str, context: str) -> int:
+        """
+        Calculate appropriate minimum length based on language and context.
+        
+        Args:
+            language: The detected programming language
+            context: Surrounding context of the code
+            
+        Returns:
+            Calculated minimum length
+        """
+        # Base lengths by language
+        # Check if contextual length adjustment is enabled
+        if not await self._is_contextual_length_enabled():
+            # Return default minimum length
+            return await self._get_min_code_length()
+        
+        # Base lengths by language
+        base_lengths = {
+            'json': 100,        # JSON can be short
+            'yaml': 100,        # YAML too
+            'xml': 100,         # XML structures
+            'html': 150,        # HTML snippets
+            'css': 150,         # CSS rules
+            'sql': 150,         # SQL queries
+            'python': 200,      # Python functions
+            'javascript': 250,  # JavaScript typically longer
+            'typescript': 250,  # TypeScript typically longer
+            'java': 300,        # Java even more verbose
+            'c++': 300,         # C++ similar to Java
+            'cpp': 300,         # C++ alternative
+            'c': 250,           # C slightly less verbose
+            'rust': 250,        # Rust medium verbosity
+            'go': 200,          # Go is concise
+        }
+        
+        # Get default minimum from settings
+        default_min = await self._get_min_code_length()
+        min_length = base_lengths.get(language.lower(), default_min)
+        
+        # Adjust based on context clues
+        context_lower = context.lower()
+        if any(word in context_lower for word in ['example', 'snippet', 'sample', 'demo']):
+            min_length = int(min_length * 0.7)  # Examples can be shorter
+        elif any(word in context_lower for word in ['implementation', 'complete', 'full']):
+            min_length = int(min_length * 1.5)  # Full implementations should be longer
+        elif any(word in context_lower for word in ['minimal', 'simple', 'basic']):
+            min_length = int(min_length * 0.8)  # Simple examples can be shorter
+        
+        # Ensure reasonable bounds
+        return max(100, min(1000, min_length))
+    
     def _decode_html_entities(self, text: str) -> str:
         """Decode common HTML entities and clean HTML tags from code."""
         import re
         
         # First, handle span tags that wrap individual tokens
-        # This pattern handles both self-closing and paired span tags
-        # Replace closing span tags with a space to prevent word concatenation
-        text = re.sub(r'</span>\s*', ' ', text)
-        # Remove opening span tags
-        text = re.sub(r'<span[^>]*>', '', text)
+        # Check if spans are being used for syntax highlighting (no spaces between tags)
+        if '</span><span' in text:
+            # This indicates syntax highlighting - preserve the structure
+            text = re.sub(r'</span>', '', text)
+            text = re.sub(r'<span[^>]*>', '', text)
+        else:
+            # Normal span usage - might need spacing
+            # Only add space if there isn't already whitespace
+            text = re.sub(r'</span>(?=[A-Za-z0-9])', ' ', text)
+            text = re.sub(r'<span[^>]*>', '', text)
         
         # Remove any other HTML tags but preserve their content
         text = re.sub(r'</?[^>]+>', '', text)
@@ -713,9 +985,9 @@ class CodeExtractionService:
         
         return '\n'.join(cleaned_lines).strip()
     
-    def _validate_code_quality(self, code: str, language: str = "") -> bool:
+    async def _validate_code_quality(self, code: str, language: str = "") -> bool:
         """
-        Validate the quality of extracted code to ensure it's useful.
+        Enhanced validation to ensure extracted content is actual code.
         
         Args:
             code: The code content to validate
@@ -724,14 +996,22 @@ class CodeExtractionService:
         Returns:
             True if code passes quality checks, False otherwise
         """
+        import re
+        
         # Basic checks
         if not code or len(code.strip()) < 20:
             return False
         
+        # Skip diagram languages if filtering is enabled
+        if await self._is_diagram_filtering_enabled():
+            if language.lower() in ['mermaid', 'plantuml', 'graphviz', 'dot', 'diagram']:
+                safe_logfire_info(f"Skipping diagram language: {language}")
+                return False
+        
         # Check for common formatting issues that indicate poor extraction
         bad_patterns = [
-            # Concatenated keywords without spaces
-            r'\b(from|import|def|class|if|for|while|return)\w+\b',
+            # Concatenated keywords without spaces (but allow camelCase)
+            r'\b(from|import|def|class|if|for|while|return)(?=[a-z])',
             # HTML entities that weren't decoded
             r'&[lg]t;|&amp;|&quot;|&#\d+;',
             # Excessive HTML tags
@@ -739,46 +1019,115 @@ class CodeExtractionService:
             # Multiple spans in a row (indicates poor extraction)
             r'(<span[^>]*>){5,}',
             # Suspicious character sequences
-            r'[^\s]{100,}',  # Very long unbroken strings
+            r'[^\s]{200,}',  # Very long unbroken strings (increased threshold)
         ]
         
-        import re
         for pattern in bad_patterns:
             if re.search(pattern, code):
                 safe_logfire_info(f"Code failed quality check: pattern '{pattern}' found")
                 return False
         
-        # Language-specific checks
-        if language.lower() in ['python', 'py']:
-            # Check for basic Python syntax indicators
-            python_indicators = [
-                r'\b(def|class|import|from|if|for|while)\b',
-                r':\s*$',  # Colon at end of line
-                r'^\s{4,}',  # Indentation
-            ]
-            
-            found_indicators = sum(1 for pattern in python_indicators 
-                                 if re.search(pattern, code, re.MULTILINE))
-            if found_indicators == 0:
-                safe_logfire_info("Code failed Python syntax indicator check")
-                return False
+        # Check for minimum code complexity using various indicators
+        code_indicators = {
+            'function_calls': r'\w+\s*\([^)]*\)',
+            'assignments': r'\w+\s*=\s*.+',
+            'control_flow': r'\b(if|for|while|switch|case|try|catch|except)\b',
+            'declarations': r'\b(var|let|const|def|class|function|interface|type|struct|enum)\b',
+            'imports': r'\b(import|from|require|include|using|use)\b',
+            'brackets': r'[\{\}\[\]]',
+            'operators': r'[\+\-\*\/\%\&\|\^<>=!]',
+            'method_chains': r'\.\w+',
+            'arrows': r'(=>|->)',
+            'keywords': r'\b(return|break|continue|yield|await|async)\b',
+        }
         
-        # Check for reasonable code structure
+        indicator_count = 0
+        indicator_details = []
+        for name, pattern in code_indicators.items():
+            if re.search(pattern, code):
+                indicator_count += 1
+                indicator_details.append(name)
+        
+        # Require minimum code indicators
+        min_indicators = await self._get_min_code_indicators()
+        if indicator_count < min_indicators:
+            safe_logfire_info(f"Code has insufficient indicators: {indicator_count} found ({', '.join(indicator_details)})")
+            return False
+        
+        # Check code-to-comment ratio
         lines = code.split('\n')
         non_empty_lines = [line for line in lines if line.strip()]
         
+        if not non_empty_lines:
+            return False
+        
+        # Count comment lines (various comment styles)
+        comment_patterns = [
+            r'^\s*(//|#|/\*|\*|<!--)',  # Single line comments
+            r'^\s*"""',  # Python docstrings
+            r"^\s*'''",  # Python docstrings alt
+            r'^\s*\*\s',  # JSDoc style
+        ]
+        
+        comment_lines = 0
+        for line in lines:
+            for pattern in comment_patterns:
+                if re.match(pattern, line.strip()):
+                    comment_lines += 1
+                    break
+        
+        # Allow up to 70% comments (documentation is important)
+        if non_empty_lines and comment_lines / len(non_empty_lines) > 0.7:
+            safe_logfire_info(f"Code is mostly comments: {comment_lines}/{len(non_empty_lines)} lines")
+            return False
+        
+        # Language-specific validation
+        if language.lower() in self.LANGUAGE_PATTERNS:
+            lang_info = self.LANGUAGE_PATTERNS[language.lower()]
+            min_indicators = lang_info.get('min_indicators', [])
+            
+            # Check for language-specific indicators
+            found_lang_indicators = sum(1 for indicator in min_indicators 
+                                      if indicator in code.lower())
+            
+            if found_lang_indicators < 2:  # Need at least 2 language-specific indicators
+                safe_logfire_info(f"Code lacks {language} indicators: only {found_lang_indicators} found")
+                return False
+        
+        # Check for reasonable structure
         # Too few meaningful lines
         if len(non_empty_lines) < 3:
             safe_logfire_info(f"Code has too few non-empty lines: {len(non_empty_lines)}")
             return False
         
         # Check for reasonable line lengths
-        very_long_lines = sum(1 for line in lines if len(line) > 200)
-        if very_long_lines > len(lines) * 0.5:
+        very_long_lines = sum(1 for line in lines if len(line) > 300)
+        if len(lines) > 0 and very_long_lines > len(lines) * 0.5:
             safe_logfire_info("Code has too many very long lines")
             return False
         
+        # Check if it's mostly prose/documentation
+        prose_indicators = [
+            r'\b(the|this|that|these|those|is|are|was|were|will|would|should|could|have|has|had)\b',
+            r'[.!?]\s+[A-Z]',  # Sentence endings followed by capital letter
+            r'\b(however|therefore|furthermore|moreover|nevertheless)\b',
+        ]
+        
+        prose_score = 0
+        word_count = len(code.split())
+        for pattern in prose_indicators:
+            matches = len(re.findall(pattern, code, re.IGNORECASE))
+            prose_score += matches
+        
+        # Check prose filtering
+        if await self._is_prose_filtering_enabled():
+            max_prose_ratio = await self._get_max_prose_ratio()
+            if word_count > 0 and prose_score / word_count > max_prose_ratio:
+                safe_logfire_info(f"Code appears to be prose: prose_score={prose_score}, word_count={word_count}")
+                return False
+        
         # Passed all checks
+        safe_logfire_info(f"Code passed validation: indicators={indicator_count}, language={language}, lines={len(non_empty_lines)}")
         return True
     
     async def _generate_code_summaries(
