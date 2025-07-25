@@ -184,9 +184,13 @@ async def add_documents_to_supabase(
             # Prepare batch data
             batch_data = []
             for j in range(len(contextual_contents)):
-                # Extract source_id from URL
-                parsed_url = urlparse(batch_urls[j])
-                source_id = parsed_url.netloc or parsed_url.path
+                # Use source_id from metadata if available, otherwise extract from URL
+                if batch_metadatas[j].get('source_id'):
+                    source_id = batch_metadatas[j]['source_id']
+                else:
+                    # Fallback: Extract source_id from URL
+                    parsed_url = urlparse(batch_urls[j])
+                    source_id = parsed_url.netloc or parsed_url.path
                 
                 data = {
                     "url": batch_urls[j],
@@ -212,7 +216,11 @@ async def add_documents_to_supabase(
                     
                     # Increment completed batches and report simple progress
                     completed_batches += 1
-                    new_percentage = int((completed_batches / total_batches) * 100)
+                    # Ensure last batch reaches 100%
+                    if completed_batches == total_batches:
+                        new_percentage = 100
+                    else:
+                        new_percentage = int((completed_batches / total_batches) * 100)
                     
                     complete_msg = f"Completed batch {batch_num}/{total_batches} ({len(batch_data)} chunks)"
                     
@@ -250,7 +258,20 @@ async def add_documents_to_supabase(
                 delay = 1.5 if use_contextual_embeddings else 0.5
                 await asyncio.sleep(delay)
         
-        # Final completion already reported by last batch
+        # Send final 100% progress report to ensure UI shows completion
+        if progress_callback and asyncio.iscoroutinefunction(progress_callback):
+            await progress_callback(
+                f"Document storage completed: {len(contents)} chunks stored in {total_batches} batches",
+                100,  # Ensure we report 100%
+                {
+                    'completed_batches': total_batches,
+                    'total_batches': total_batches,
+                    'current_batch': total_batches,
+                    'chunks_processed': len(contents)
+                    # DON'T send 'status': 'completed' - that's for the orchestration service only!
+                }
+            )
+        
         span.set_attribute("success", True)
         span.set_attribute("total_processed", len(contents))
 

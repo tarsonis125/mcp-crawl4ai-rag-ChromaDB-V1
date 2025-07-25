@@ -466,8 +466,7 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
 
       {/* Show parallel workers info when available */}
       {progressData.parallelWorkers && progressData.parallelWorkers > 1 && 
-       progressData.status === 'document_storage' && 
-       progressData.status !== 'completed' && progressData.status !== 'error' && (
+       progressData.status === 'document_storage' && (
         <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-md">
           <div className="flex items-center gap-2">
             <Cpu className="w-4 h-4 text-blue-600 dark:text-blue-400" />
@@ -484,7 +483,7 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
       )}
 
       {/* Show info when crawling is complete but processing continues */}
-      {progressData.status === 'document_storage' && progressData.percentage < 30 && progressData.status !== 'completed' && (
+      {progressData.status === 'document_storage' && progressData.percentage < 30 && (
         <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-md">
           <div className="flex items-center gap-2">
             <Cpu className="w-4 h-4 text-blue-600 dark:text-blue-400 animate-pulse" />
@@ -609,13 +608,6 @@ export const CrawlingProgressCard: React.FC<CrawlingProgressCardProps> = ({
                             transition={{ duration: 0.5, ease: 'easeOut' }}
                           />
                         </div>
-                        
-                        {/* Worker Configuration Info */}
-                        {progressData.max_workers && progressData.max_workers > 0 && (
-                          <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
-                            Using {progressData.max_workers} workers for contextual embeddings
-                          </div>
-                        )}
                         
                         {/* Current batch details */}
                         {progressData.current_batch && progressData.current_batch > 0 && (

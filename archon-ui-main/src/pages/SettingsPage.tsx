@@ -7,10 +7,11 @@ import { useStaggeredEntrance } from '../hooks/useStaggeredEntrance';
 import { FeaturesSection } from '../components/settings/FeaturesSection';
 import { APIKeysSection } from '../components/settings/APIKeysSection';
 import { RAGSettings } from '../components/settings/RAGSettings';
+import { CodeExtractionSettings } from '../components/settings/CodeExtractionSettings';
 import { TestStatus } from '../components/settings/TestStatus';
 import { IDEGlobalRules } from '../components/settings/IDEGlobalRules';
 import { ButtonPlayground } from '../components/settings/ButtonPlayground';
-import { credentialsService, RagSettings } from '../services/credentialsService';
+import { credentialsService, RagSettings, CodeExtractionSettings as CodeExtractionSettingsType } from '../services/credentialsService';
 
 export const SettingsPage = () => {
   const [ragSettings, setRagSettings] = useState<RagSettings>({
@@ -20,6 +21,20 @@ export const SettingsPage = () => {
     USE_AGENTIC_RAG: false,
     USE_RERANKING: false,
     MODEL_CHOICE: 'gpt-4.1-nano'
+  });
+  const [codeExtractionSettings, setCodeExtractionSettings] = useState<CodeExtractionSettingsType>({
+    MIN_CODE_BLOCK_LENGTH: 250,
+    MAX_CODE_BLOCK_LENGTH: 5000,
+    ENABLE_COMPLETE_BLOCK_DETECTION: true,
+    ENABLE_LANGUAGE_SPECIFIC_PATTERNS: true,
+    ENABLE_PROSE_FILTERING: true,
+    MAX_PROSE_RATIO: 0.15,
+    MIN_CODE_INDICATORS: 3,
+    ENABLE_DIAGRAM_FILTERING: true,
+    ENABLE_CONTEXTUAL_LENGTH: true,
+    CODE_EXTRACTION_MAX_WORKERS: 3,
+    CONTEXT_WINDOW_SIZE: 1000,
+    ENABLE_CODE_SUMMARIES: true
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -45,8 +60,12 @@ export const SettingsPage = () => {
       setError(null);
       
       // Load RAG settings
-      const settings = await credentialsService.getRagSettings();
-      setRagSettings(settings);
+      const ragSettingsData = await credentialsService.getRagSettings();
+      setRagSettings(ragSettingsData);
+      
+      // Load Code Extraction settings
+      const codeExtractionSettingsData = await credentialsService.getCodeExtractionSettings();
+      setCodeExtractionSettings(codeExtractionSettingsData);
     } catch (err) {
       setError('Failed to load settings');
       console.error(err);
@@ -104,6 +123,12 @@ export const SettingsPage = () => {
           </motion.div>
           <motion.div variants={itemVariants}>
             <RAGSettings ragSettings={ragSettings} setRagSettings={setRagSettings} />
+          </motion.div>
+          <motion.div variants={itemVariants}>
+            <CodeExtractionSettings 
+              codeExtractionSettings={codeExtractionSettings} 
+              setCodeExtractionSettings={setCodeExtractionSettings} 
+            />
           </motion.div>
 
         </div>

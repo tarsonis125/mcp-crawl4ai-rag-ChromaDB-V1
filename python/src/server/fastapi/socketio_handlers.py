@@ -7,9 +7,12 @@ Keeps the main projects_api.py file focused on REST endpoints.
 
 # Removed direct logging import - using unified config
 import asyncio
+import time
+from typing import Dict, Any
 from ..socketio_app import get_socketio_instance
 from ..services.projects.project_service import ProjectService
 from ..services.projects.source_linking_service import SourceLinkingService
+from ..services.background_task_manager import get_task_manager
 
 from ..config.logfire_config import get_logger
 
@@ -18,6 +21,10 @@ logger = get_logger(__name__)
 # Get Socket.IO instance
 sio = get_socketio_instance()
 logger.info(f"🔗 [SOCKETIO] Socket.IO instance ID: {id(sio)}")
+
+# Rate limiting for Socket.IO broadcasts
+_last_broadcast_times: Dict[str, float] = {}
+_min_broadcast_interval = 0.1  # Minimum 100ms between broadcasts per room
 
 # Broadcast helper functions
 async def broadcast_task_update(project_id: str, event_type: str, task_data: dict):
@@ -50,12 +57,36 @@ async def broadcast_progress_update(progress_id: str, progress_data: dict):
     logger.debug(f"Broadcasted progress update for {progress_id}")
 
 async def broadcast_crawl_progress(progress_id: str, data: dict):
-    """Broadcast crawl progress to subscribers."""
+    """Broadcast crawl progress to subscribers with resilience and rate limiting."""
     # Ensure progressId is included in the data
     data['progressId'] = progress_id
     
-    # Get detailed room info for debugging
+    # Rate limiting: Check if we've broadcasted too recently
+    current_time = time.time()
+    last_broadcast = _last_broadcast_times.get(progress_id, 0)
+    time_since_last = current_time - last_broadcast
+    
+    # Skip this update if it's too soon (except for important statuses)
+    important_statuses = ['error', 'completed', 'complete', 'starting']
+    current_status = data.get('status', '')
+    
+    if time_since_last < _min_broadcast_interval and current_status not in important_statuses:
+        # Skip this update - too frequent
+        return
+    
+    # Update last broadcast time
+    _last_broadcast_times[progress_id] = current_time
+    
+    # Clean up old entries (older than 5 minutes)
+    if len(_last_broadcast_times) > 100:  # Only clean when it gets large
+        cutoff_time = current_time - 300  # 5 minutes
+        old_keys = [pid for pid, t in _last_broadcast_times.items() if t <= cutoff_time]
+        for key in old_keys:
+            del _last_broadcast_times[key]
+    
+    # Add resilience - don't let Socket.IO errors crash the crawl
     try:
+        # Get detailed room info for debugging
         room_sids = []
         all_rooms = {}
         if hasattr(sio.manager, 'rooms'):
@@ -81,25 +112,21 @@ async def broadcast_crawl_progress(progress_id: str, data: dict):
         import traceback
         traceback.print_exc()
     
-    # Log the data we're broadcasting
-    logger.info(f"📢 [SOCKETIO] Broadcasting crawl_progress to room: {progress_id}")
-    logger.info(f"📢 [SOCKETIO] Data keys: {list(data.keys())}")
-    logger.info(f"📢 [SOCKETIO] Progress percentage: {data.get('percentage', 'N/A')}")
-    logger.info(f"📢 [SOCKETIO] Status: {data.get('status', 'N/A')}")
+    # Log only important broadcasts (reduce log spam)
+    if current_status in important_statuses or data.get('percentage', 0) % 10 == 0:
+        logger.info(f"📢 [SOCKETIO] Broadcasting crawl_progress to room: {progress_id} | status={current_status} | progress={data.get('percentage', 'N/A')}%")
     
-    # Detailed debug logging
-    print(f"📢 [SOCKETIO DEBUG] Full broadcast data:")
-    for key, value in data.items():
-        if key in ['logs', 'workers']:  # Truncate long lists
-            print(f"  - {key}: {type(value).__name__} with {len(value) if isinstance(value, (list, dict)) else 'N/A'} items")
-        else:
-            print(f"  - {key}: {value}")
-    
-    # Emit the event
-    await sio.emit('crawl_progress', data, room=progress_id)
-    # Yield control to event loop to help with Socket.IO delivery
-    await asyncio.sleep(0)
-    logger.info(f"✅ [SOCKETIO] Broadcasted crawl progress for {progress_id}")
+    # Emit the event with error handling
+    try:
+        await sio.emit('crawl_progress', data, room=progress_id)
+        logger.info(f"✅ [SOCKETIO] Broadcasted crawl progress for {progress_id}")
+    except Exception as e:
+        # Don't let Socket.IO errors crash the crawl
+        logger.error(f"❌ [SOCKETIO] Failed to emit crawl_progress: {e}")
+        logger.error(f"Error type: {type(e).__name__}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        # Continue execution - crawl should not fail due to Socket.IO issues
 
 # Crawl progress helper functions for knowledge API
 async def start_crawl_progress(progress_id: str, data: dict):
@@ -324,28 +351,74 @@ async def crawl_subscribe(sid, data=None):
         import traceback
         traceback.print_exc()
     
+    # Check if there's an active task for this progress_id
+    task_manager = get_task_manager()
+    task_status = await task_manager.get_task_status(progress_id)
+    
+    if 'error' not in task_status:
+        # There's an active task - send current progress state
+        current_progress = task_status.get('progress', 0)
+        current_status = task_status.get('status', 'running')
+        last_update = task_status.get('last_update', {})
+        
+        logger.info(f"📤 [SOCKETIO] Found active task for {progress_id}: status={current_status}, progress={current_progress}%")
+        
+        # Send the complete last update state to the reconnecting client
+        # This includes all the fields like logs, currentUrl, etc.
+        current_state_data = last_update.copy() if last_update else {}
+        current_state_data.update({
+            'progressId': progress_id,
+            'status': current_status,
+            'percentage': current_progress,
+            'isReconnect': True
+        })
+        
+        # If no last_update, provide minimal data
+        if not last_update:
+            current_state_data['message'] = 'Reconnected to active crawl'
+        
+        await sio.emit('crawl_progress', current_state_data, to=sid)
+        logger.info(f"📤 [SOCKETIO] Sent current crawl state to reconnecting client {sid}")
+    else:
+        # No active task - just send acknowledgment
+        logger.info(f"📤 [SOCKETIO] No active task found for {progress_id}")
+    
     # Send acknowledgment
     ack_data = {'progress_id': progress_id, 'status': 'subscribed'}
-    print(f"📤 [SOCKETIO DEBUG] Sending acknowledgment: {ack_data}")
     await sio.emit('crawl_subscribe_ack', ack_data, to=sid)
     logger.info(f"📤 [SOCKETIO] Sent subscription acknowledgment to {sid} for {progress_id}")
-    
-    # Test broadcast to the room immediately
-    print(f"🧪 [SOCKETIO DEBUG] Testing broadcast to room '{progress_id}'...")
-    test_data = {
-        'progressId': progress_id,
-        'status': 'subscribed',
-        'message': f'Test broadcast after subscription',
-        'percentage': 0
-    }
-    await sio.emit('crawl_progress', test_data, room=progress_id)
-    print(f"🧪 [SOCKETIO DEBUG] Test broadcast sent to room '{progress_id}'")
 
 @sio.event
 async def crawl_unsubscribe(sid, data):
     """Unsubscribe from crawl progress updates."""
     progress_id = data.get('progress_id')
     if progress_id:
+        # Log why the client is unsubscribing
+        logger.info(f"📤 [SOCKETIO] crawl_unsubscribe event received | sid={sid} | progress_id={progress_id} | data={data}")
+        print(f"🛑 [SOCKETIO DEBUG] Client {sid} requesting to unsubscribe from crawl progress {progress_id}")
+        print(f"🛑 [SOCKETIO DEBUG] Unsubscribe data: {data}")
+        
         await sio.leave_room(sid, progress_id)
         logger.info(f"📤 [SOCKETIO] Client {sid} left crawl progress room: {progress_id}")
         print(f"🛑 Client {sid} unsubscribed from crawl progress {progress_id}")
+
+# Background Task Management Socket.IO Events
+@sio.event
+async def cancel_crawl(sid, data):
+    """Cancel a running crawl operation."""
+    task_id = data.get('task_id')
+    if task_id:
+        task_manager = get_task_manager()
+        cancelled = await task_manager.cancel_task(task_id)
+        return {'success': cancelled, 'task_id': task_id}
+    return {'success': False, 'error': 'No task_id provided'}
+
+@sio.event
+async def get_task_status(sid, data):
+    """Get status of a background task."""
+    task_id = data.get('task_id')
+    if task_id:
+        task_manager = get_task_manager()
+        status = await task_manager.get_task_status(task_id)
+        return status
+    return {'error': 'No task_id provided'}

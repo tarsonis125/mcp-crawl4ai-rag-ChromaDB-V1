@@ -41,19 +41,26 @@ def _get_max_workers() -> int:
     return int(os.getenv("CONTEXTUAL_EMBEDDINGS_MAX_WORKERS", "3"))
 
 
+
+
 def extract_code_blocks(markdown_content: str, min_length: int = None) -> List[Dict[str, Any]]:
     """
     Extract code blocks from markdown content along with context.
     
     Args:
         markdown_content: The markdown content to extract code blocks from
-        min_length: Minimum length of code blocks to extract (default: 1000 characters)
+        min_length: Minimum length of code blocks to extract (default: 250 characters)
         
     Returns:
         List of dictionaries containing code blocks and their context
     """
     if min_length is None:
-        min_length = 1000  # Default to 1000 to ensure only substantial code blocks are extracted
+        # Try to get from settings, but fall back to 250 if not available
+        try:
+            from ...services.credential_service import get_credential_sync
+            min_length = int(get_credential_sync('MIN_CODE_BLOCK_LENGTH', 250))
+        except:
+            min_length = 250  # Default to 250 for better code coverage
     
     search_logger.debug(f"Extracting code blocks with minimum length: {min_length} characters")
     code_blocks = []
@@ -65,19 +72,20 @@ def extract_code_blocks(markdown_content: str, min_length: int = None) -> List[D
     # Check for corrupted markdown (entire content wrapped in code block)
     if content.startswith('```'):
         first_line = content.split('\n')[0] if '\n' in content else content[:10]
-        # If it's ```K` or similar single-letter "language", skip the entire content
-        if re.match(r'^```[A-Z]`?$', first_line):
+        # If it's ```K` or similar single-letter "language" followed by backtick, it's corrupted
+        # This pattern specifically looks for ```K` or ```K` (with extra backtick)
+        if re.match(r'^```[A-Z]`$', first_line):
             search_logger.warning(f"Detected corrupted markdown with fake language: {first_line}")
             # Try to find actual code blocks within the corrupted content
             # Look for nested triple backticks
-            # Skip the outer ```K and closing ```
-            inner_content = content[4:-3] if content.endswith('```') else content[4:]
+            # Skip the outer ```K` and closing ```
+            inner_content = content[5:-3] if content.endswith('```') else content[5:]
             # Now extract normally from inner content
             search_logger.info(f"Attempting to extract from inner content (length: {len(inner_content)})")
             return extract_code_blocks(inner_content, min_length)
-        # Otherwise, skip the first triple backticks as before
-        start_offset = 3
-        print("Skipping initial triple backticks")
+        # For normal language identifiers (e.g., ```python, ```javascript), process normally
+        # No need to skip anything - the extraction logic will handle it correctly
+        start_offset = 0
     
     # Find all occurrences of triple backticks
     backtick_positions = []
@@ -104,19 +112,82 @@ def extract_code_blocks(markdown_content: str, min_length: int = None) -> List[D
             # Check if first line is a language specifier (no spaces, common language names)
             first_line = lines[0].strip()
             if first_line and not ' ' in first_line and len(first_line) < 20:
-                language = first_line
-                code_content = lines[1].strip() if len(lines) > 1 else ""
+                language = first_line.lower()
+                # Keep the code content with its original formatting (don't strip)
+                code_content = lines[1] if len(lines) > 1 else ""
             else:
                 language = ""
-                code_content = code_section.strip()
+                # No language identifier, so the entire section is code
+                code_content = code_section
         else:
             language = ""
-            code_content = code_section.strip()
+            # Single line code block - keep as is
+            code_content = code_section
         
         # Skip if code block is too short
         if len(code_content) < min_length:
             i += 2  # Move to next pair
             continue
+        
+        # Check if this is actually code or just documentation text
+        # If no language specified, check content to determine if it's code
+        if not language or language in ['text', 'plaintext', 'txt']:
+            # Check if content looks like prose/documentation rather than code
+            code_lower = code_content.lower()
+            
+            # Common indicators this is documentation, not code
+            doc_indicators = [
+                # Prose patterns
+                ('this ', 'that ', 'these ', 'those ', 'the '),  # Articles
+                ('is ', 'are ', 'was ', 'were ', 'will ', 'would '),  # Verbs
+                ('to ', 'from ', 'with ', 'for ', 'and ', 'or '),  # Prepositions/conjunctions
+                
+                # Documentation specific
+                'for example:', 'note:', 'warning:', 'important:',
+                'description:', 'usage:', 'parameters:', 'returns:',
+                
+                # Sentence endings
+                '. ', '? ', '! ',
+            ]
+            
+            # Count documentation indicators
+            doc_score = 0
+            for indicator in doc_indicators:
+                if isinstance(indicator, tuple):
+                    # Check if multiple words from tuple appear
+                    doc_score += sum(1 for word in indicator if word in code_lower)
+                else:
+                    if indicator in code_lower:
+                        doc_score += 2
+            
+            # Calculate lines and check structure
+            content_lines = code_content.split('\n')
+            non_empty_lines = [line for line in content_lines if line.strip()]
+            
+            # If high documentation score relative to content size, skip
+            words = code_content.split()
+            if len(words) > 0:
+                doc_ratio = doc_score / len(words)
+                # If more than 10% of words are documentation indicators, likely not code
+                if doc_ratio > 0.1:
+                    search_logger.debug(f"Skipping documentation text disguised as code | doc_ratio={doc_ratio:.2f} | first_50_chars={repr(code_content[:50])}")
+                    i += 2
+                    continue
+            
+            # Additional check: if no typical code patterns found
+            code_patterns = [
+                '=', '(', ')', '{', '}', '[', ']', ';', 
+                'function', 'def', 'class', 'import', 'export',
+                'const', 'let', 'var', 'return', 'if', 'for',
+                '->', '=>', '==', '!=', '<=', '>='
+            ]
+            
+            code_pattern_count = sum(1 for pattern in code_patterns if pattern in code_content)
+            if code_pattern_count < 3 and len(non_empty_lines) > 5:
+                # Looks more like prose than code
+                search_logger.debug(f"Skipping prose text | code_patterns={code_pattern_count} | lines={len(non_empty_lines)}")
+                i += 2
+                continue
         
         # Extract context before (1000 chars)
         context_start = max(0, start_pos - 1000)
@@ -126,12 +197,14 @@ def extract_code_blocks(markdown_content: str, min_length: int = None) -> List[D
         context_end = min(len(markdown_content), end_pos + 3 + 1000)
         context_after = markdown_content[end_pos + 3:context_end].strip()
         
+        # Add the extracted code block
+        stripped_code = code_content.strip()
         code_blocks.append({
-            'code': code_content,
+            'code': stripped_code,
             'language': language,
             'context_before': context_before,
             'context_after': context_after,
-            'full_context': f"{context_before}\n\n{code_content}\n\n{context_after}"
+            'full_context': f"{context_before}\n\n{stripped_code}\n\n{context_after}"
         })
         
         # Move to next pair (skip the closing backtick we just processed)
@@ -207,7 +280,7 @@ Format your response as JSON:
         )
         
         response_content = response.choices[0].message.content.strip()
-        search_logger.debug(f"OpenAI API response: {response_content[:200]}...")
+        search_logger.debug(f"OpenAI API response: {repr(response_content[:200])}...")
         
         result = json.loads(response_content)
         
@@ -224,7 +297,7 @@ Format your response as JSON:
         return final_result
     
     except json.JSONDecodeError as e:
-        search_logger.error(f"Failed to parse JSON response from OpenAI: {e}, Response: {response_content if 'response_content' in locals() else 'No response'}")
+        search_logger.error(f"Failed to parse JSON response from OpenAI: {e}, Response: {repr(response_content) if 'response_content' in locals() else 'No response'}")
         return {
             "example_name": f"Code Example{f' ({language})' if language else ''}",
             "summary": "Code example for demonstration purposes."

@@ -135,9 +135,7 @@ class BaseStorageService(ABC):
                 span.set_attribute("chunks_created", len(chunks))
                 span.set_attribute("success", True)
                 
-                logger.info(f"Successfully chunked text",
-                           original_length=len(text),
-                           chunks_created=len(chunks))
+                logger.info(f"Successfully chunked text: original_length={len(text)}, chunks_created={len(chunks)}")
                 
                 return chunks
                 

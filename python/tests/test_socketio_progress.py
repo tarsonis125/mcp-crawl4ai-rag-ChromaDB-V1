@@ -104,8 +104,8 @@ async def test_crawl_progress():
 
 async def test_progress_tracker_utility():
     """Test the new ProgressTracker utility."""
-    from python.src.server.utils.progress import ProgressTracker
-    from python.src.server.socketio_app import get_socketio_instance
+    from src.server.utils.progress import ProgressTracker
+    from src.server.socketio_app import get_socketio_instance
     
     print("\n=== Testing ProgressTracker Utility ===")
     

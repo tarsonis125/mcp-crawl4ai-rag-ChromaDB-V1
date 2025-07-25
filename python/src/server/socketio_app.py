@@ -20,10 +20,10 @@ sio = socketio.AsyncServer(
     cors_allowed_origins="*",  # TODO: Configure for production with specific origins
     logger=False,  # Disable verbose Socket.IO logging
     engineio_logger=False,  # Disable verbose Engine.IO logging
-    # Performance settings
+    # Performance settings for long-running operations
     max_http_buffer_size=1000000,  # 1MB
-    ping_timeout=60,
-    ping_interval=25,
+    ping_timeout=300,  # 5 minutes - increased for background tasks
+    ping_interval=60,  # 1 minute - check connection every minute
 )
 
 # Global Socket.IO instance for use across modules

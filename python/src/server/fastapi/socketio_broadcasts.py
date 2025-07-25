@@ -17,8 +17,17 @@ sio = get_socketio_instance()
 # Core broadcast functions
 async def broadcast_task_update(project_id: str, event_type: str, task_data: dict):
     """Broadcast task updates to project room."""
+    # Get room members for debugging
+    room_members = []
+    try:
+        if hasattr(sio.manager, 'get_participants'):
+            room_members = await sio.manager.get_participants('/', project_id)
+        logger.info(f"Broadcasting {event_type} to project room {project_id} with {len(room_members)} members")
+    except:
+        logger.info(f"Broadcasting {event_type} to project room {project_id}")
+    
     await sio.emit(event_type, task_data, room=project_id)
-    logger.info(f"Broadcasted {event_type} to project {project_id}")
+    logger.info(f"✅ Broadcasted {event_type} for task {task_data.get('id', 'unknown')} to project {project_id}")
 
 async def broadcast_project_update_simple(projects_data: list):
     """Broadcast project list to subscribers."""

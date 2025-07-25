@@ -766,8 +766,8 @@ export function ProjectPage({
                     <div className="flex items-center justify-center mb-4 px-2">
                       <h3 className={`font-medium text-center leading-tight line-clamp-2 transition-all duration-300 ${
                         selectedProject?.id === project.id 
-                          ? 'text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]' 
-                          : 'text-gray-600 dark:text-gray-500'
+                          ? 'text-gray-900 dark:text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]' 
+                          : 'text-gray-500 dark:text-gray-400'
                       }`}>
                         {project.title}
                       </h3>

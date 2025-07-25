@@ -55,16 +55,19 @@ class DocumentStorageService(BaseStorageService):
             
             try:
                 # Progress reporting helper
-                async def report_progress(message: str, percentage: int):
+                async def report_progress(message: str, percentage: int, batch_info: dict = None):
                     if websocket:
-                        await websocket.send_json({
+                        data = {
                             "type": "upload_progress",
                             "filename": filename,
                             "progress": percentage,
                             "message": message
-                        })
+                        }
+                        if batch_info:
+                            data.update(batch_info)
+                        await websocket.send_json(data)
                     if progress_callback:
-                        await progress_callback(message, percentage)
+                        await progress_callback(message, percentage, batch_info)
                 
                 await report_progress("Starting document processing...", 10)
                 
@@ -157,10 +160,7 @@ class DocumentStorageService(BaseStorageService):
                 span.set_attribute("chunks_stored", len(chunks))
                 span.set_attribute("total_word_count", total_word_count)
                 
-                logger.info("Document upload completed successfully",
-                           filename=filename,
-                           chunks_stored=len(chunks),
-                           total_word_count=total_word_count)
+                logger.info(f"Document upload completed successfully: filename={filename}, chunks_stored={len(chunks)}, total_word_count={total_word_count}")
                 
                 return True, result
                 

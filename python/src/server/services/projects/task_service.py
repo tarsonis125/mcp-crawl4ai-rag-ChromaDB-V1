@@ -17,7 +17,7 @@ logger = get_logger(__name__)
 
 # Import Socket.IO broadcasting capability
 try:
-    from src.server.fastapi.socketio_broadcasts import broadcast_task_update
+    from ...fastapi.socketio_broadcasts import broadcast_task_update
     _broadcast_available = True
     logger.info("✅ Socket.IO broadcasting is AVAILABLE - real-time updates enabled")
 except ImportError as e:
@@ -331,15 +331,20 @@ class TaskService:
                 # Broadcast Socket.IO update
                 if _broadcast_available:
                     try:
+                        logger.info(f"Broadcasting task_updated for task {task_id} to project room {task['project_id']}")
                         await broadcast_task_update(
                             project_id=task["project_id"],
                             event_type="task_updated",
                             task_data=task
                         )
-                        logger.info(f"Socket.IO broadcast sent for task {task_id}")
+                        logger.info(f"✅ Socket.IO broadcast successful for task {task_id}")
                     except Exception as ws_error:
                         # Don't fail the task update if Socket.IO broadcasting fails
-                        logger.warning(f"Failed to broadcast Socket.IO update for task {task_id}: {ws_error}")
+                        logger.error(f"❌ Failed to broadcast Socket.IO update for task {task_id}: {ws_error}")
+                        import traceback
+                        logger.error(f"Traceback: {traceback.format_exc()}")
+                else:
+                    logger.warning(f"⚠️ Socket.IO broadcasting not available - task {task_id} update won't be real-time")
                 
                 return True, {
                     "task": task,

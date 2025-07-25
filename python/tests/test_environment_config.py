@@ -2,7 +2,7 @@ import os
 from unittest.mock import patch
 import pytest
 
-from src.config import (
+from src.server.config.config import (
     load_environment_config,
     ConfigurationError,
     validate_openai_api_key,

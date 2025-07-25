@@ -22,6 +22,21 @@ export interface RagSettings {
   EMBEDDING_MODEL?: string;
 }
 
+export interface CodeExtractionSettings {
+  MIN_CODE_BLOCK_LENGTH: number;
+  MAX_CODE_BLOCK_LENGTH: number;
+  ENABLE_COMPLETE_BLOCK_DETECTION: boolean;
+  ENABLE_LANGUAGE_SPECIFIC_PATTERNS: boolean;
+  ENABLE_PROSE_FILTERING: boolean;
+  MAX_PROSE_RATIO: number;
+  MIN_CODE_INDICATORS: number;
+  ENABLE_DIAGRAM_FILTERING: boolean;
+  ENABLE_CONTEXTUAL_LENGTH: boolean;
+  CODE_EXTRACTION_MAX_WORKERS: number;
+  CONTEXT_WINDOW_SIZE: number;
+  ENABLE_CODE_SUMMARIES: boolean;
+}
+
 class CredentialsService {
   private baseUrl = (import.meta as any).env?.VITE_API_URL || this.getApiBaseUrl();
 
@@ -188,6 +203,61 @@ class CredentialsService {
         category: 'rag_strategy',
       })
     );
+    
+    await Promise.all(promises);
+  }
+
+  async getCodeExtractionSettings(): Promise<CodeExtractionSettings> {
+    const codeExtractionCredentials = await this.getCredentialsByCategory('code_extraction');
+    
+    const settings: CodeExtractionSettings = {
+      MIN_CODE_BLOCK_LENGTH: 250,
+      MAX_CODE_BLOCK_LENGTH: 5000,
+      ENABLE_COMPLETE_BLOCK_DETECTION: true,
+      ENABLE_LANGUAGE_SPECIFIC_PATTERNS: true,
+      ENABLE_PROSE_FILTERING: true,
+      MAX_PROSE_RATIO: 0.15,
+      MIN_CODE_INDICATORS: 3,
+      ENABLE_DIAGRAM_FILTERING: true,
+      ENABLE_CONTEXTUAL_LENGTH: true,
+      CODE_EXTRACTION_MAX_WORKERS: 3,
+      CONTEXT_WINDOW_SIZE: 1000,
+      ENABLE_CODE_SUMMARIES: true
+    };
+
+    // Map credentials to settings
+    codeExtractionCredentials.forEach(cred => {
+      if (cred.key in settings) {
+        const key = cred.key as keyof CodeExtractionSettings;
+        if (typeof settings[key] === 'number') {
+          if (key === 'MAX_PROSE_RATIO') {
+            settings[key] = parseFloat(cred.value || '0.15');
+          } else {
+            settings[key] = parseInt(cred.value || settings[key].toString(), 10);
+          }
+        } else if (typeof settings[key] === 'boolean') {
+          settings[key] = cred.value === 'true';
+        }
+      }
+    });
+
+    return settings;
+  }
+
+  async updateCodeExtractionSettings(settings: CodeExtractionSettings): Promise<void> {
+    const promises = [];
+    
+    // Update all code extraction settings
+    for (const [key, value] of Object.entries(settings)) {
+      promises.push(
+        this.updateCredential({
+          key,
+          value: value.toString(),
+          is_encrypted: false,
+          category: 'code_extraction',
+        })
+      );
+    }
     
     await Promise.all(promises);
   }

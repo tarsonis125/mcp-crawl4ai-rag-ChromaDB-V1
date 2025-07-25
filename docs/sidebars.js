@@ -23,6 +23,7 @@ module.exports = {
       items: [
         'projects-overview',
         'knowledge-overview',
+        'code-extraction-rules',
       ],
     },
     

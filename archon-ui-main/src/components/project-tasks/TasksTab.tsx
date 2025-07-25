@@ -235,6 +235,11 @@ export const TasksTab = ({
           // Join the project room after connection
           taskUpdateSocketIO.send({ type: 'join_project', project_id: projectId });
           
+          // Add a small delay to ensure room join is processed
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          console.log('✅ Successfully joined project room:', projectId);
+          
         } catch (error) {
           console.error('Failed to connect to task updates WebSocket:', error);
           setIsWebSocketConnected(false);
