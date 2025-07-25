@@ -252,6 +252,10 @@ async def refresh_knowledge_item(source_id: str):
         
         # Create a wrapped task that acquires the semaphore
         async def _perform_refresh_with_semaphore():
+            # Add a small delay to allow frontend WebSocket subscription to be established
+            # This prevents the "Room has 0 subscribers" issue
+            await asyncio.sleep(1.0)
+            
             async with crawl_semaphore:
                 safe_logfire_info(f"Acquired crawl semaphore for refresh | source_id={source_id}")
                 await crawl_service.orchestrate_crawl(request_dict)
@@ -303,6 +307,10 @@ async def crawl_knowledge_item(request: KnowledgeItemRequest):
 
 async def _perform_crawl_with_progress(progress_id: str, request: KnowledgeItemRequest):
     """Perform the actual crawl operation with progress tracking using service layer."""
+    # Add a small delay to allow frontend WebSocket subscription to be established
+    # This prevents the "Room has 0 subscribers" issue
+    await asyncio.sleep(1.0)
+    
     # Acquire semaphore to limit concurrent crawls
     async with crawl_semaphore:
         safe_logfire_info(f"Acquired crawl semaphore | progress_id={progress_id} | url={str(request.url)}")
@@ -403,6 +411,10 @@ async def upload_document(
 
 async def _perform_upload_with_progress(progress_id: str, file_content: bytes, file_metadata: dict, tag_list: List[str], knowledge_type: str):
     """Perform document upload with progress tracking using service layer."""
+    # Add a small delay to allow frontend WebSocket subscription to be established
+    # This prevents the "Room has 0 subscribers" issue
+    await asyncio.sleep(1.0)
+    
     # Import ProgressMapper to prevent progress from going backwards
     from ..services.knowledge.progress_mapper import ProgressMapper
     progress_mapper = ProgressMapper()

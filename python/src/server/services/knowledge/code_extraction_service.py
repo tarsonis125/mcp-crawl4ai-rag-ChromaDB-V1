@@ -1143,6 +1143,29 @@ class CodeExtractionService:
         Returns:
             List of summary results
         """
+        # Check if code summaries are enabled
+        if not await self._is_code_summaries_enabled():
+            safe_logfire_info("Code summaries generation is disabled, returning default summaries")
+            # Return default summaries for all code blocks
+            default_summaries = []
+            for item in all_code_blocks:
+                block = item['block']
+                language = block.get('language', '')
+                default_summaries.append({
+                    "example_name": f"Code Example{f' ({language})' if language else ''}",
+                    "summary": "Code example for demonstration purposes."
+                })
+            
+            # Report progress for skipped summaries
+            if progress_callback:
+                await progress_callback({
+                    'status': 'code_extraction',
+                    'percentage': end_progress,
+                    'log': f'Skipped AI summary generation (disabled). Using default summaries for {len(all_code_blocks)} code blocks.'
+                })
+            
+            return default_summaries
+        
         # Progress is handled by generate_code_summaries_batch
         
         # Use default max workers

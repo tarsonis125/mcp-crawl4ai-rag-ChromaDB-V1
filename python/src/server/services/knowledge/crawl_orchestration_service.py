@@ -44,7 +44,7 @@ class CrawlOrchestrationService:
         self.doc_storage_service = DocumentStorageService(supabase_client)
         self.progress_id = progress_id
         # Track progress state across all stages to prevent UI resets
-        self.progress_state = {}
+        self.progress_state = {'progressId': self.progress_id} if self.progress_id else {}
         # Initialize progress mapper to prevent backwards jumps
         self.progress_mapper = ProgressMapper()
     
@@ -690,6 +690,9 @@ class CrawlOrchestrationService:
         if self.progress_id:
             # Update and preserve progress state
             self.progress_state.update(update)
+            # Ensure progressId is always included
+            if self.progress_id and 'progressId' not in self.progress_state:
+                self.progress_state['progressId'] = self.progress_id
             
             # Throttle Socket.IO updates to prevent overwhelming the connection
             # Only send updates for:
