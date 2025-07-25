@@ -240,6 +240,12 @@ export const GroupedKnowledgeItemCard = ({
     );
   }, [groupedItem.items]);
 
+  // Calculate active item's code examples count
+  const activeCodeExamples = activeItem.code_examples?.length || 0;
+  
+  // Calculate active item's word count
+  const activeWordCount = activeItem.metadata.word_count || 0;
+
   // Get code examples from all items in the group
   const allCodeExamples = useMemo(() => {
     return groupedItem.items.reduce(
@@ -390,7 +396,7 @@ export const GroupedKnowledgeItemCard = ({
         {/* Right side - code examples and status inline */}
         <div className="flex items-center gap-2">
           {/* Code examples badge - updated colors */}
-          {totalCodeExamples > 0 && (
+          {activeCodeExamples > 0 && (
             <div
               className="cursor-pointer relative card-3d-layer-3"
               onClick={() => setShowCodeModal(true)}
@@ -416,29 +422,14 @@ export const GroupedKnowledgeItemCard = ({
                     ? item.metadata.knowledge_type === 'technical' ? 'text-blue-400' : 'text-cyan-400'
                     : item.metadata.knowledge_type === 'technical' ? 'text-purple-400' : 'text-pink-400'
                 }`}>
-                  {totalCodeExamples}
+                  {activeCodeExamples}
                 </span>
               </div>
               {/* Code Examples Tooltip - positioned relative to the badge */}
               {showCodeTooltip && (
-                <div className="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-black dark:bg-zinc-800 text-white text-xs rounded-lg py-2 px-3 shadow-lg z-50 max-w-xs">
-                  <div className={`font-semibold mb-2 ${
-                    item.metadata.source_type === 'url'
-                      ? item.metadata.knowledge_type === 'technical' ? 'text-blue-300' : 'text-cyan-300'
-                      : item.metadata.knowledge_type === 'technical' ? 'text-purple-300' : 'text-pink-300'
-                  }`}>
-                    Click for Code Browser
-                  </div>
-                  <div className="max-h-32 overflow-y-auto">
-                    {allCodeExamples.map((example, index) => (
-                      <div key={index} className={`mb-1 last:mb-0 ${
-                        item.metadata.source_type === 'url'
-                          ? item.metadata.knowledge_type === 'technical' ? 'text-blue-200' : 'text-cyan-200'
-                          : item.metadata.knowledge_type === 'technical' ? 'text-purple-200' : 'text-pink-200'
-                      }`}>
-                        • {example.title}
-                      </div>
-                    ))}
+                <div className="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-black dark:bg-zinc-800 text-white text-xs rounded-lg py-2 px-3 shadow-lg z-50 whitespace-nowrap">
+                  <div className="font-medium">
+                    Click to view Stored Code Examples
                   </div>
                   <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-black dark:border-t-zinc-800"></div>
                 </div>
@@ -455,21 +446,21 @@ export const GroupedKnowledgeItemCard = ({
             <div className="flex items-center gap-1 px-2 py-1 bg-orange-500/20 border border-orange-500/40 rounded-full backdrop-blur-sm shadow-[0_0_15px_rgba(251,146,60,0.3)] transition-all duration-300">
               <FileText className="w-3 h-3 text-orange-400" />
               <span className="text-xs text-orange-400 font-medium">
-                {Math.ceil(totalWordCount / 250).toLocaleString()}
+                {Math.ceil(activeWordCount / 250).toLocaleString()}
               </span>
             </div>
             {/* Page count tooltip - positioned relative to the badge */}
             {showPageTooltip && (
               <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 bg-black dark:bg-zinc-800 text-white text-xs px-3 py-2 rounded-lg shadow-lg z-50 whitespace-nowrap">
                 <div className="font-medium mb-1">
-                  {totalWordCount.toLocaleString()} words
+                  {activeWordCount.toLocaleString()} words
                 </div>
                 <div className="text-gray-300 space-y-0.5">
                   <div>
-                    = {Math.ceil(totalWordCount / 250).toLocaleString()} pages
+                    = {Math.ceil(activeWordCount / 250).toLocaleString()} pages
                   </div>
                   <div>
-                    = {(totalWordCount / 80000).toFixed(1)} average novels
+                    = {(activeWordCount / 80000).toFixed(1)} average novels
                   </div>
                 </div>
                 <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-black dark:border-t-zinc-800"></div>
