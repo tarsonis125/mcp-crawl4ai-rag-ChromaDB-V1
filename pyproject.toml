@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "crawl4ai==0.6.2",
+    "chromadb>=0.4.0",
     "mcp==1.7.1",
     "supabase==2.15.1",
     "openai==1.71.0",
@@ -13,3 +14,8 @@ dependencies = [
     "sentence-transformers>=4.1.0",
     "neo4j>=5.28.1",
 ]
+
+[project.optional-dependencies]
+chromadb = ["chromadb>=0.4.0", "sentence-transformers"]
+supabase = ["supabase>=2.0.0"]
+all = ["chromadb>=0.4.0", "supabase>=2.0.0", "sentence-transformers"]
